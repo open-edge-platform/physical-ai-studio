@@ -1,0 +1,135 @@
+name: Build and smoke-test trainer images
+description: Build and smoke-test one trainer device image after checkout and runner hardening.
+inputs:
+  device:
+    description: Build target device (cuda or xpu)
+    required: true
+  push:
+    description: Push staging images and write the build cache (true/false)
+    default: "false"
+  registry:
+    description: Image registry and namespace
+    required: true
+  protocol-version:
+    description: Trainer API protocol version
+    required: true
+  enable-compile-model:
+    description: Include compiler files instead of using the redistributable target
+    default: "true"
+  registry-token:
+    description: GitHub token for registry login
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set build metadata
+      id: build-metadata
+      shell: bash
+      run: |
+        echo "version=$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = \"(.*)\"/\1/')" >> "$GITHUB_OUTPUT"
+        echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
+        echo "library-version=$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.registry-token }}
+
+    - name: Build trainer image
+      id: build
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        file: application/docker/Dockerfile.trainer
+        build-contexts: |
+          libs=library
+        target: ${{ inputs.enable-compile-model == 'true' && format('physicalai-trainer-{0}', inputs.device) || format('physicalai-trainer-{0}-redistributable', inputs.device) }}
+        platforms: linux/amd64
+        load: ${{ inputs.push != 'true' }}
+        push: ${{ inputs.push }}
+        tags: ${{ inputs.push == 'true' && format('{0}/physicalai-trainer-{1}:build-{2}-{3}', inputs.registry, inputs.device, github.run_id, github.run_attempt) || format('physicalai-trainer-{0}:test', inputs.device) }}
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.version=${{ steps.build-metadata.outputs.version }}
+          org.opencontainers.image.created=${{ steps.build-metadata.outputs.created }}
+          org.open-edge-platform.physicalai.trainer.api-protocol=${{ inputs.protocol-version }}
+        sbom: ${{ inputs.push }}
+        provenance: ${{ inputs.push == 'true' && 'mode=max' || 'false' }}
+        # PR builds are cache-read-only; the per-device build cache is written
+        # only by main-branch builds.
+        cache-from: type=registry,ref=${{ inputs.registry }}/physicalai-trainer-${{ inputs.device }}:buildcache
+        cache-to: ${{ inputs.push == 'true' && format('type=registry,ref={0}/physicalai-trainer-{1}:buildcache,mode=max,compression=zstd,image-manifest=true,ignore-error=true', inputs.registry, inputs.device) || '' }}
+        build-args: |
+          GIT_SHA=${{ github.sha }}
+          BUILD_DATE=${{ steps.build-metadata.outputs.created }}
+          APPLICATION_VERSION=${{ steps.build-metadata.outputs.version }}
+          TRAINER_API_PROTOCOL_VERSION=${{ inputs.protocol-version }}
+          PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
+
+    - name: Pull trainer image by digest
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.registry }}/physicalai-trainer-${{ inputs.device }}@${{ steps.build.outputs.digest }}
+      run: docker pull "$IMAGE"
+
+    - name: Smoke-test trainer image
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.push == 'true' && format('{0}/physicalai-trainer-{1}@{2}', inputs.registry, inputs.device, steps.build.outputs.digest) || format('physicalai-trainer-{0}:test', inputs.device) }}
+        DEVICE: ${{ inputs.device }}
+        VERSION: ${{ steps.build-metadata.outputs.version }}
+        BUILD_DATE: ${{ steps.build-metadata.outputs.created }}
+        LIBRARY_VERSION: ${{ steps.build-metadata.outputs.library-version }}
+      run: |
+        container_name="physicalai-trainer-${DEVICE}-smoke"
+        cleanup() { docker rm -f "$container_name" >/dev/null 2>&1 || true; }
+        trap cleanup EXIT
+
+        test "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')" = "trainer"
+        test "$(docker image inspect "$IMAGE" --format '{{json .Config.Cmd}}')" = '["physicalai-trainer"]'
+        test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.api-protocol"}}')" = "1"
+        # `services.ssh.docker_ops.resolve_protocol_image` reads this label
+        # pre-pull, before `/health` is ever reachable: it must carry the
+        # real installed version, not the Dockerfile's `unknown` default.
+        test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.library-version"}}')" = "$LIBRARY_VERSION"
+        ! docker run --rm --entrypoint sh "$IMAGE" -c 'test -e /app/application/backend -o -e /app/application/ui -o -e /var/run/docker.sock'
+
+        docker run -d --name "$container_name" -p 127.0.0.1::8001 "$IMAGE"
+        host_port="$(docker port "$container_name" 8001/tcp | sed 's/.*://')"
+        for _ in $(seq 1 30); do
+          if curl --fail --silent "http://127.0.0.1:${host_port}/health" > health.json; then
+            break
+          fi
+          sleep 2
+        done
+        test -s health.json
+
+        # Read the installed library version from the image itself so this
+        # check never drifts from what /health actually reports.
+        reported_version="$(docker run --rm --entrypoint python "$IMAGE" -c 'from importlib.metadata import version; print(version("physicalai-train"))')"
+        test "$reported_version" = "$LIBRARY_VERSION"
+        LIBRARY_VERSION="$reported_version" python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"], "library_version": os.environ["LIBRARY_VERSION"]}'
+
+    - name: Record smoke-tested digest
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        DIGEST: ${{ steps.build.outputs.digest }}
+      run: printf '%s\n' "$DIGEST" > image-digest.txt
+
+    - name: Upload smoke-tested digest
+      if: inputs.push == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: trainer-image-digest-${{ inputs.device }}
+        path: image-digest.txt
+        if-no-files-found: error
+        overwrite: true

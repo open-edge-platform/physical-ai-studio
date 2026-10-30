@@ -18,7 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   TRAINER_API_PROTOCOL_VERSION: "1"
 
@@ -60,13 +59,14 @@ jobs:
               - library/MANIFEST.in
               - library/.dockerignore
               - .github/workflows/trainer-images.yml
+              - .github/actions/trainer-image-build/**
               - '!**/*.md'
               - '!**/docs/**'
 
   build-and-smoke-test:
     name: Build and smoke-test (${{ matrix.device }})
     needs: check-paths
-    if: needs.check-paths.outputs.run_workflow == 'true'
+    if: github.ref != 'refs/heads/main' && needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,6 +83,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             auth.docker.io:443
             deb.debian.org:80
             developer.download.nvidia.com:443
@@ -106,87 +107,73 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set build metadata
-        id: build-metadata
-        run: |
-          echo "version=$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = \"(.*)\"/\1/')" >> "$GITHUB_OUTPUT"
-          echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
-          echo "library-version=$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - name: Build and smoke-test trainer image
+        uses: $/.github/actions/trainer-image-build
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build trainer image
-        id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: application/docker/Dockerfile.trainer
-          build-contexts: |
-            libs=library
-          target: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL == 'true' && format('physicalai-trainer-{0}', matrix.device) || format('physicalai-trainer-{0}-redistributable', matrix.device) }}
-          platforms: linux/amd64
-          load: true
+          device: ${{ matrix.device }}
           push: false
-          tags: physicalai-trainer-${{ matrix.device }}:test
-          # PR builds are cache-read-only; the per-device build cache is written
-          # from `main` by the publish job below.
-          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ steps.build-metadata.outputs.created }}
-            APPLICATION_VERSION=${{ steps.build-metadata.outputs.version }}
-            TRAINER_API_PROTOCOL_VERSION=${{ env.TRAINER_API_PROTOCOL_VERSION }}
-            PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
+          registry: ${{ env.IMAGE_REGISTRY }}
+          protocol-version: ${{ env.TRAINER_API_PROTOCOL_VERSION }}
+          enable-compile-model: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Smoke-test trainer image
-        env:
-          IMAGE: physicalai-trainer-${{ matrix.device }}:test
-          DEVICE: ${{ matrix.device }}
-          VERSION: ${{ steps.build-metadata.outputs.version }}
-          BUILD_DATE: ${{ steps.build-metadata.outputs.created }}
-          LIBRARY_VERSION: ${{ steps.build-metadata.outputs.library-version }}
-        run: |
-          container_name="physicalai-trainer-${DEVICE}-smoke"
-          cleanup() { docker rm -f "$container_name" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
+  build-and-smoke-test-main:
+    name: Build and smoke-test main (${{ matrix.device }})
+    needs: check-paths
+    if: github.ref == 'refs/heads/main' && needs.check-paths.outputs.run_workflow == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [cuda, xpu]
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            auth.docker.io:443
+            deb.debian.org:80
+            developer.download.nvidia.com:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            files.pythonhosted.org:443
+            ghcr.io:443
+            ghcr1production.blob.core.windows.net:443
+            github.com:443
+            gitlab.com:443
+            keyserver.ubuntu.com:443
+            pkg-containers.githubusercontent.com:443
+            ppa.launchpadcontent.net:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
+            registry-1.docker.io:443
 
-          test "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')" = "trainer"
-          test "$(docker image inspect "$IMAGE" --format '{{json .Config.Cmd}}')" = '["physicalai-trainer"]'
-          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.api-protocol"}}')" = "1"
-          # `services.ssh.docker_ops.resolve_protocol_image` reads this label
-          # pre-pull, before `/health` is ever reachable: it must carry the
-          # real installed version, not the Dockerfile's `unknown` default.
-          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.library-version"}}')" = "$LIBRARY_VERSION"
-          ! docker run --rm --entrypoint sh "$IMAGE" -c 'test -e /app/application/backend -o -e /app/application/ui -o -e /var/run/docker.sock'
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-          docker run -d --name "$container_name" -p 127.0.0.1::8001 "$IMAGE"
-          host_port="$(docker port "$container_name" 8001/tcp | sed 's/.*://')"
-          for _ in $(seq 1 30); do
-            if curl --fail --silent "http://127.0.0.1:${host_port}/health" > health.json; then
-              break
-            fi
-            sleep 2
-          done
-          test -s health.json
-
-          # Read the installed library version from the image itself so this
-          # check never drifts from what /health actually reports.
-          reported_version="$(docker run --rm --entrypoint python "$IMAGE" -c 'from importlib.metadata import version; print(version("physicalai-train"))')"
-          test "$reported_version" = "$LIBRARY_VERSION"
-          LIBRARY_VERSION="$reported_version" python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"], "library_version": os.environ["LIBRARY_VERSION"]}'
+      - name: Build and smoke-test trainer image
+        uses: $/.github/actions/trainer-image-build
+        with:
+          device: ${{ matrix.device }}
+          push: true
+          registry: ${{ env.IMAGE_REGISTRY }}
+          protocol-version: ${{ env.TRAINER_API_PROTOCOL_VERSION }}
+          enable-compile-model: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
 
   publish:
     name: Publish, attest, scan, and sign (${{ matrix.device }})
-    needs: [check-paths, build-and-smoke-test]
+    needs: [check-paths, build-and-smoke-test-main]
     if: github.ref == 'refs/heads/main' && needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -241,8 +228,25 @@ jobs:
         run: |
           echo "version=$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = \"(.*)\"/\1/')" >> "$GITHUB_OUTPUT"
           echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
-          echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
           echo "library-version=$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Download smoke-tested digest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trainer-image-digest-${{ matrix.device }}
+          path: ${{ runner.temp }}/trainer-image
+
+      - name: Read smoke-tested digest
+        id: image
+        env:
+          DIGEST_FILE: ${{ runner.temp }}/trainer-image/image-digest.txt
+        run: |
+          digest="$(cat "$DIGEST_FILE")"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Invalid smoke-tested image digest"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -254,41 +258,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build and publish immutable image
-        id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: application/docker/Dockerfile.trainer
-          build-contexts: |
-            libs=library
-          target: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL == 'true' && format('physicalai-trainer-{0}', matrix.device) || format('physicalai-trainer-{0}-redistributable', matrix.device) }}
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
-            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.build-metadata.outputs.version }}
-            org.opencontainers.image.created=${{ steps.build-metadata.outputs.created }}
-            org.open-edge-platform.physicalai.trainer.api-protocol=${{ env.TRAINER_API_PROTOCOL_VERSION }}
-          sbom: true
-          provenance: mode=max
-          # `main` publishes warm the per-device build cache that PR builds read.
-          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache,mode=max,compression=zstd,image-manifest=true,ignore-error=true
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ steps.build-metadata.outputs.created }}
-            APPLICATION_VERSION=${{ steps.build-metadata.outputs.version }}
-            TRAINER_API_PROTOCOL_VERSION=${{ env.TRAINER_API_PROTOCOL_VERSION }}
-            PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
+      # Copy the tested index, including its SBOM and provenance, without rebuilding.
+      - name: Publish smoke-tested image
+        env:
+          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.image.outputs.digest }}
+          IMMUTABLE_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+          BRANCH_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
+        run: docker buildx imagetools create --tag "$IMMUTABLE_TAG" --tag "$BRANCH_TAG" "$IMAGE"
 
       - name: Verify required image metadata and attestations
         env:
-          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
+          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.image.outputs.digest }}
           VERSION: ${{ steps.build-metadata.outputs.version }}
           LIBRARY_VERSION: ${{ steps.build-metadata.outputs.library-version }}
         run: |
@@ -341,24 +321,27 @@ jobs:
       # signing.
       - name: Promote protocol tag after signing
         env:
-          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
+          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.image.outputs.digest }}
           PROTOCOL_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
         run: |
           docker buildx imagetools create --tag "$PROTOCOL_TAG" "$IMAGE"
 
   required-check:
     name: Required Check trainer-images
-    needs: [check-paths, build-and-smoke-test, publish]
+    needs:
+      [check-paths, build-and-smoke-test, build-and-smoke-test-main, publish]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - name: Check jobs results
         env:
           BUILD_RESULT: ${{ needs.build-and-smoke-test.result }}
+          MAIN_BUILD_RESULT: ${{ needs.build-and-smoke-test-main.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           REF: ${{ github.ref }}
         run: |
           test "$BUILD_RESULT" = success -o "$BUILD_RESULT" = skipped
+          test "$MAIN_BUILD_RESULT" = success -o "$MAIN_BUILD_RESULT" = skipped
           if [ "$REF" = refs/heads/main ]; then
             test "$PUBLISH_RESULT" = success -o "$PUBLISH_RESULT" = skipped
           fi
