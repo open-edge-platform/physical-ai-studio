@@ -51,10 +51,12 @@ def test_template_configuration_matches_resource_schema(region: str) -> None:
     assert deployment_region["Default"] == "us-east-1"
     assert deployment_region["AllowedValues"] == ["us-east-1", "us-west-2", "eu-central-1"]
     assertions = template["Rules"]["SupportedRegion"]["Assertions"]
-    assert assertions[0]["Assert"] == {
-        "Fn::Contains": [["us-east-1", "us-west-2", "eu-central-1"], {"Ref": "AWS::Region"}]
-    }
-    assert assertions[1]["Assert"] == {"Fn::Equals": [{"Ref": "DeploymentRegion"}, {"Ref": "AWS::Region"}]}
+    assert assertions == [
+        {
+            "Assert": {"Fn::Equals": [{"Ref": "DeploymentRegion"}, {"Ref": "AWS::Region"}]},
+            "AssertDescription": "Selected DeploymentRegion must match the current AWS Console region (AWS::Region).",
+        }
+    ]
     assert parsed.studio_role_arn == "arn:aws:iam::123456789012:role/studio"
     assert set(template["Outputs"]) == {"ConfigurationUri"}
 

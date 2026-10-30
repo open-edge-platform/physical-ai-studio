@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |-
-  Creates AWS Batch resources for Physical AI Studio training jobs in us-east-1 (N. Virginia),
-  us-west-2 (Oregon), or eu-central-1 (Frankfurt).
+  Creates AWS Batch resources for Physical AI Studio training jobs.
   Compute environments scale to zero when no jobs are running.
 
 Metadata:
@@ -60,15 +59,6 @@ Mappings:
 Rules:
   SupportedRegion:
     Assertions:
-      - Assert:
-          Fn::Contains:
-            - - us-east-1
-              - us-west-2
-              - eu-central-1
-            - Ref: AWS::Region
-        AssertDescription: >-
-          Deploy this stack in a supported region: us-east-1 (N. Virginia),
-          us-west-2 (Oregon), or eu-central-1 (Frankfurt).
       - Assert:
           Fn::Equals:
             - Ref: DeploymentRegion
