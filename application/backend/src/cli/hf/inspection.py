@@ -7,11 +7,14 @@ import json
 import os
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-BACKENDS = ("torch", "openvino", "onnx", "executorch")
-POLICIES = {"act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"}
+from utils.model_manifest import EXPORT_BACKENDS as BACKENDS
+from utils.model_manifest import manifest_artifact, manifest_policy
+
+CARDS_AND_LICENSES = {"README.md", "LICENSE", "LICENSE.md"}
 MAX_METADATA_BYTES = 4 * 1024 * 1024
 
 
@@ -95,7 +98,40 @@ def _one_root(candidates: set[str], resource: str) -> str:
     return candidates.pop()
 
 
-def _metadata(read_json: Callable[[str], dict], files: set[str], kind: str) -> dict:
+@dataclass(frozen=True)
+class _Inventory:
+    sizes: dict[str, int | None]
+    read: Callable[[str], dict]
+
+
+def _select_inventory(sizes: dict[str, int | None], read_json: Callable[[str], dict], root: str) -> _Inventory:
+    for name in sizes:
+        safe_path(name)
+    prefix = f"{root}/" if root else ""
+    relative = {name.removeprefix(prefix): size for name, size in sizes.items() if name.startswith(prefix)}
+
+    def read(name: str) -> dict:
+        return read_json(f"{prefix}{safe_path(name)}")
+
+    return _Inventory(relative, read)
+
+
+def _report(kind: str, subfolder: str | None) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "kind": kind,
+        "subfolder": subfolder,
+        "validation_level": "metadata",
+        "importable": False,
+        "errors": [],
+        "warnings": [],
+        "files": [],
+        "size_bytes": 0,
+        "size_complete": True,
+    }
+
+
+def _metadata(read_json: Callable[[str], dict], files: set[str], kind: str, errors: list[str]) -> dict:
     if "studio.json" not in files:
         return {}
     data = read_json("studio.json")
@@ -108,217 +144,167 @@ def _metadata(read_json: Callable[[str], dict], files: set[str], kind: str) -> d
         safe_path(name)
     if not isinstance(data.get("name"), str) or not data["name"].strip() or len(data["name"]) > 255:
         raise ValueError("Studio asset name must contain 1 to 255 characters")
+    if data.get("status") != "complete":
+        errors.append("This Studio export is incomplete. Resume its export before importing it.")
+    missing = set(payload) - files
+    if missing:
+        errors.append(f"Studio payload is incomplete; missing {sorted(missing)}")
     return data
 
 
-def inspect_model_files(  # noqa: C901, PLR0912, PLR0915
-    sizes: dict[str, int | None],
-    read_json: Callable[[str], dict],
-    subfolder: str | None = None,
-) -> dict[str, Any]:
-    """Detect and validate Studio model files without loading a policy."""
-    try:
-        for name in sizes:
-            safe_path(name)
-        root = _model_root(set(sizes), subfolder)
-    except ValueError as exc:
-        return {
-            "schema_version": 1,
-            "kind": "model",
-            "subfolder": subfolder,
-            "validation_level": "metadata",
-            "importable": False,
-            "errors": [str(exc)],
-            "warnings": [],
-            "files": [],
-            "size_bytes": 0,
-            "size_complete": True,
-        }
-    prefix = f"{root}/" if root else ""
-    relative = {name.removeprefix(prefix): size for name, size in sizes.items() if name.startswith(prefix)}
-    files = set(relative)
+def _set_payload(result: dict[str, Any], inventory: _Inventory, metadata: dict, payload: set[str]) -> None:
+    payload |= inventory.sizes.keys() & (CARDS_AND_LICENSES | {"studio.json"})
+    undeclared = set(metadata.get("files", [])) - payload
+    if undeclared:
+        result["errors"].append(f"Studio metadata references files outside the supported layout: {sorted(undeclared)}")
+    result["files"] = sorted(payload)
+    result["size_bytes"] = sum(inventory.sizes[name] or 0 for name in payload)
+    result["size_complete"] = all(inventory.sizes[name] is not None for name in payload)
 
-    def read(name: str) -> dict:
-        return read_json(f"{prefix}{safe_path(name)}")
 
-    errors: list[str] = []
-    warnings: list[str] = []
-    result: dict[str, Any] = {
-        "schema_version": 1,
-        "kind": "model",
-        "subfolder": root,
-        "validation_level": "metadata",
-        "warnings": warnings,
-        "errors": errors,
-    }
-    try:
-        metadata = _metadata(read, files, "model")
-        result["studio"] = metadata
-        if metadata:
-            if metadata.get("status") != "complete":
-                errors.append("This Studio export is incomplete. Resume its export before importing it.")
-            missing = set(metadata["files"]) - files
-            if missing:
-                errors.append(f"Studio payload is incomplete; missing {sorted(missing)}")
-        if type(metadata.get("version", 1)) is not int or metadata.get("version", 1) < 1:
-            raise ValueError("Studio model version must be a positive integer")
-        properties = metadata.get("properties", {})
-        if not isinstance(properties, dict) or any(
-            not isinstance(properties[key], bool)
-            for key in ("lora_enabled", "lora_use_dora", "snapflow_enabled")
-            if key in properties
-        ):
-            raise ValueError("Studio model properties must contain boolean feature flags")
-        backends = {}
-        policies = set()
-        exports_only = not any(f"exports/{backend}/manifest.json" in files for backend in BACKENDS)
-        for backend in BACKENDS:
-            directory = backend if exports_only else f"exports/{backend}"
-            manifest_name = f"{directory}/manifest.json"
-            if manifest_name not in files:
-                continue
-            manifest = read(manifest_name)
-            policy = manifest.get("policy", {}).get("name")
+def _validate_model_metadata(metadata: dict) -> None:
+    if type(metadata.get("version", 1)) is not int or metadata.get("version", 1) < 1:
+        raise ValueError("Studio model version must be a positive integer")
+    properties = metadata.get("properties", {})
+    if not isinstance(properties, dict) or any(
+        not isinstance(properties[key], bool)
+        for key in ("lora_enabled", "lora_use_dora", "snapflow_enabled")
+        if key in properties
+    ):
+        raise ValueError("Studio model properties must contain boolean feature flags")
+    if metadata.get("policy") is not None and not isinstance(metadata["policy"], str):
+        raise ValueError("Studio model policy must be a string")
+
+
+def _model_manifests(inventory: _Inventory, exports_only: bool, errors: list[str]) -> tuple[dict, set[str]]:
+    files = set(inventory.sizes)
+    backends = {}
+    policies: set[str] = set()
+    for backend in BACKENDS:
+        directory = backend if exports_only else f"exports/{backend}"
+        manifest_name = f"{directory}/manifest.json"
+        if manifest_name not in files:
+            continue
+        try:
+            manifest = inventory.read(manifest_name)
             if manifest.get("format") != "policy_package" or manifest.get("version") != "1.0":
                 errors.append(f"Unsupported policy manifest: {manifest_name}")
-            if policy not in POLICIES:
-                errors.append(f"Unsupported policy: {policy}")
-            policies.add(policy)
-            artifact = manifest.get("model", {}).get("artifacts", {}).get(backend)
-            artifact = safe_path(artifact) if isinstance(artifact, str) else ""
-            if not artifact or f"{directory}/{artifact}" not in files:
+            policies.add(manifest_policy(manifest, manifest_name))
+            artifact = safe_path(manifest_artifact(manifest, backend, manifest_name))
+            if f"{directory}/{artifact}" not in files:
                 errors.append(f"Missing {backend} artifact referenced by {manifest_name}")
             if backend == "openvino" and artifact.endswith(".xml"):
-                for xml in [name for name in files if name.startswith(f"{directory}/") and name.endswith(".xml")]:
-                    if f"{xml[:-4]}.bin" not in files:
-                        errors.append(f"Missing OpenVINO companion {xml[:-4]}.bin")
+                errors.extend(
+                    f"Missing OpenVINO companion {name[:-4]}.bin"
+                    for name in sorted(files)
+                    if name.startswith(f"{directory}/") and name.endswith(".xml") and f"{name[:-4]}.bin" not in files
+                )
             backends[backend] = manifest
-        if not backends or len(policies) != 1:
-            errors.append("Expected supported export manifests with one consistent policy")
+        except ValueError as exc:
+            errors.append(str(exc))
+    if not backends or len(policies) != 1:
+        errors.append("Expected supported export manifests with one consistent policy")
+    return backends, policies
+
+
+def inspect_model_files(
+    sizes: dict[str, int | None], read_json: Callable[[str], dict], subfolder: str | None = None
+) -> dict[str, Any]:
+    """Detect and validate Studio model files without loading a policy."""
+    result = _report("model", subfolder)
+    try:
+        root = _model_root(set(sizes), subfolder)
+        inventory = _select_inventory(sizes, read_json, root)
+        result["subfolder"] = root
+        files = set(inventory.sizes)
+        metadata = _metadata(inventory.read, files, "model", result["errors"])
+        result["studio"] = metadata
+        _validate_model_metadata(metadata)
+        exports_only = not any(f"exports/{backend}/manifest.json" in files for backend in BACKENDS)
+        backends, policies = _model_manifests(inventory, exports_only, result["errors"])
         if not exports_only and "model.ckpt" not in files:
-            warnings.append("Deployment-only model: no model.ckpt is available to resume training.")
+            result["warnings"].append("Deployment-only model: no model.ckpt is available to resume training.")
         if "snapflow-model.ckpt" in files:
-            warnings.append("SnapFlow checkpoint is present; original logger hparams may describe the base phase.")
+            result["warnings"].append(
+                "SnapFlow checkpoint is present; original logger hparams may describe the base phase."
+            )
         if metadata.get("policy") is not None and metadata["policy"] not in policies:
-            errors.append("Studio metadata policy disagrees with export manifests")
+            result["errors"].append("Studio metadata policy disagrees with export manifests")
         result.update(
             detected_format="studio_exports" if exports_only else "studio_model",
             model={
-                "policy": next(iter(policies), None),
+                "policy": next(iter(sorted(policies)), None),
                 "backends": backends,
                 "checkpoints": sorted(name for name in files if name.endswith(".ckpt")),
             },
             required_import_options=["project_id", "dataset_id"],
         )
         prefixes = tuple(f"{backend}/" for backend in BACKENDS) if exports_only else ("exports/",)
-        payload = [
+        payload = {
             name
             for name in files
             if name.startswith(prefixes)
             or name in {"model.ckpt", "snapflow-model.ckpt", "version_0/hparams.yaml", "version_0/metrics.csv"}
-        ]
-        payload += [name for name in files if name in {"README.md", "LICENSE", "LICENSE.md", "studio.json"}]
-        undeclared = set(metadata.get("files", [])) - set(payload)
-        if undeclared:
-            errors.append(f"Studio metadata references files outside the supported layout: {sorted(undeclared)}")
-        result["files"] = sorted(payload)
-        result["size_bytes"] = sum(relative[name] or 0 for name in payload)
-        result["size_complete"] = all(relative[name] is not None for name in payload)
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        errors.append(str(exc))
-    result["importable"] = not errors
+        }
+        _set_payload(result, inventory, metadata, payload)
+    except ValueError as exc:
+        result["errors"].append(str(exc))
+    result["importable"] = not result["errors"]
     return result
 
 
-def inspect_dataset_files(  # noqa: C901, PLR0912
-    sizes: dict[str, int | None],
-    read_json: Callable[[str], dict],
-    subfolder: str | None = None,
+def _dataset_info(inventory: _Inventory, errors: list[str]) -> dict[str, Any]:
+    files = set(inventory.sizes)
+    info = inventory.read("meta/info.json")
+    if info.get("codebase_version") != "v3.0":
+        errors.append("Only LeRobot v3.0 datasets are supported")
+    for marker in ("meta/tasks.parquet", "meta/stats.json"):
+        if marker not in files:
+            errors.append(f"Missing {marker}")
+    for pattern in ("data/chunk-*/file-*.parquet", "meta/episodes/chunk-*/file-*.parquet"):
+        if not any(PurePosixPath(name).match(pattern) for name in files):
+            errors.append(f"Missing {pattern}")
+    features = info.get("features", {})
+    if not isinstance(features, dict) or not all(isinstance(feature, dict) for feature in features.values()):
+        raise ValueError("Dataset features must map feature names to objects")
+    cameras = [name for name, feature in features.items() if feature.get("dtype") == "video"]
+    for camera in cameras:
+        if not any(name.startswith(f"videos/{camera}/") and name.endswith(".mp4") for name in files):
+            errors.append(f"No video files for {camera}")
+    return {
+        "episodes": info.get("total_episodes"),
+        "frames": info.get("total_frames"),
+        "fps": info.get("fps"),
+        "robot_type": info.get("robot_type"),
+        "features": features,
+        "cameras": cameras,
+    }
+
+
+def inspect_dataset_files(
+    sizes: dict[str, int | None], read_json: Callable[[str], dict], subfolder: str | None = None
 ) -> dict[str, Any]:
     """Detect and validate LeRobot v3 metadata without downloading data shards."""
+    result = _report("dataset", subfolder)
     try:
-        for name in sizes:
-            safe_path(name)
         root = _dataset_root(set(sizes), subfolder)
-    except ValueError as exc:
-        return {
-            "schema_version": 1,
-            "kind": "dataset",
-            "subfolder": subfolder,
-            "validation_level": "metadata",
-            "importable": False,
-            "errors": [str(exc)],
-            "warnings": [],
-            "files": [],
-            "size_bytes": 0,
-            "size_complete": True,
-        }
-    prefix = f"{root}/" if root else ""
-    relative = {name.removeprefix(prefix): size for name, size in sizes.items() if name.startswith(prefix)}
-    files = set(relative)
-
-    def read(name: str) -> dict:
-        return read_json(f"{prefix}{safe_path(name)}")
-
-    errors: list[str] = []
-    result: dict[str, Any] = {
-        "schema_version": 1,
-        "kind": "dataset",
-        "subfolder": root,
-        "validation_level": "metadata",
-        "warnings": [],
-        "errors": errors,
-    }
-    try:
-        metadata = _metadata(read, files, "dataset")
+        inventory = _select_inventory(sizes, read_json, root)
+        result["subfolder"] = root
+        files = set(inventory.sizes)
+        metadata = _metadata(inventory.read, files, "dataset", result["errors"])
         result["studio"] = metadata
-        if metadata:
-            if metadata.get("status") != "complete":
-                errors.append("This Studio export is incomplete. Resume its export before importing it.")
-            missing = set(metadata["files"]) - files
-            if missing:
-                errors.append(f"Studio payload is incomplete; missing {sorted(missing)}")
         if not isinstance(metadata.get("default_task", ""), str):
             raise ValueError("Studio dataset default_task must be a string")
-        info = read("meta/info.json")
-        if info.get("codebase_version") != "v3.0":
-            errors.append("Only LeRobot v3.0 datasets are supported")
-        for marker in ("meta/tasks.parquet", "meta/stats.json"):
-            if marker not in files:
-                errors.append(f"Missing {marker}")
-        for pattern in ("data/chunk-*/file-*.parquet", "meta/episodes/chunk-*/file-*.parquet"):
-            if not any(PurePosixPath(name).match(pattern) for name in files):
-                errors.append(f"Missing {pattern}")
-        features = info.get("features", {})
-        if not isinstance(features, dict):
-            raise ValueError("Dataset features must be an object")
-        cameras = [name for name, feature in features.items() if feature.get("dtype") == "video"]
-        for camera in cameras:
-            if not any(name.startswith(f"videos/{camera}/") and name.endswith(".mp4") for name in files):
-                errors.append(f"No video files for {camera}")
         result.update(
             detected_format="lerobot_v3",
-            dataset={
-                "episodes": info.get("total_episodes"),
-                "frames": info.get("total_frames"),
-                "fps": info.get("fps"),
-                "robot_type": info.get("robot_type"),
-                "features": features,
-                "cameras": cameras,
-            },
+            dataset=_dataset_info(inventory, result["errors"]),
             required_import_options=["project_id"],
         )
-        payload = [name for name in files if name.startswith(("meta/", "data/", "videos/"))]
-        payload += [name for name in files if name in {"README.md", "LICENSE", "LICENSE.md", "studio.json"}]
-        undeclared = set(metadata.get("files", [])) - set(payload)
-        if undeclared:
-            errors.append(f"Studio metadata references files outside the supported layout: {sorted(undeclared)}")
-        result["files"] = sorted(payload)
-        result["size_bytes"] = sum(relative[name] or 0 for name in payload)
-        result["size_complete"] = all(relative[name] is not None for name in payload)
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        errors.append(str(exc))
-    result["importable"] = not errors
+        payload = {name for name in files if name.startswith(("meta/", "data/", "videos/"))}
+        _set_payload(result, inventory, metadata, payload)
+    except ValueError as exc:
+        result["errors"].append(str(exc))
+    result["importable"] = not result["errors"]
     return result
 
 

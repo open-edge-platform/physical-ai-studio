@@ -9,7 +9,7 @@ from cli.hf.dataset import dataset
 from cli.hf.model import model
 
 
-@click.group()
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def hf() -> None:
     """Inspect and transfer Studio assets on Hugging Face Hub.
 

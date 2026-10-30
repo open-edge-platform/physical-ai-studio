@@ -3,6 +3,7 @@
 
 """Dataset commands and their inspection/import/export workflows."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,6 +11,7 @@ from uuid import UUID, uuid4
 import click
 
 from cli.hf.output import invoke
+from cli.hf.state import ExportState, ImportState
 
 
 @click.group()
@@ -151,8 +153,6 @@ def _import_dataset(
     dry_run: bool,
 ) -> dict[str, Any]:
     """Import a LeRobot dataset, creating its temporary environment at registration."""
-    import asyncio
-
     from cli.hf import transfer
     from cli.hf.inspection import inspect_remote_dataset
     from cli.hf.storage import validate_target
@@ -160,7 +160,7 @@ def _import_dataset(
     if resume:
         if any(value is not None for value in (repo_id, project_id, name, revision, subfolder)) or dry_run:
             raise ValueError("--resume cannot be combined with new transfer options")
-        directory, state = transfer._load(resume, "dataset", "import")
+        directory, state = transfer.load_transfer(resume, "dataset", "import")
     else:
         if not repo_id or not project_id:
             raise ValueError("A new import requires REPO_ID and --project-id")
@@ -168,15 +168,15 @@ def _import_dataset(
             raise ValueError("--name must contain 1 to 255 characters")
         asyncio.run(validate_target(str(project_id)))
         inspection = inspect_remote_dataset(repo_id, revision or "main", subfolder)
-        transfer._require_importable(inspection)
+        transfer.require_importable(inspection)
         if not inspection["size_complete"]:
             raise ValueError("Hub did not report all payload sizes; cannot enforce import disk limits")
         from settings import get_settings
 
-        transfer._space(get_settings().datasets_dir, inspection["size_bytes"])
+        transfer.check_disk_space(get_settings().datasets_dir, inspection["size_bytes"])
         if dry_run:
             return {**inspection, "dry_run": True, "project_id": str(project_id)}
-        directory, state = transfer._new(
+        directory, state = transfer.create_transfer(
             "dataset",
             "import",
             repo_id=repo_id,
@@ -187,17 +187,15 @@ def _import_dataset(
             asset_id=str(uuid4()),
             environment_id=str(uuid4()),
         )
-    with transfer._transfer(directory, state):
+    with transfer.locked_transfer(directory, state):
         if state["phase"] != "completed":
             state["result"] = _download_dataset(directory, state)
             state["phase"] = "completed"
-            transfer._save(directory, state)
-    return {**state["result"], "transfer_id": state["transfer_id"], "resume_command": transfer._resume_command(state)}
+            transfer.save_transfer(directory, state)
+    return transfer.transfer_receipt(state)
 
 
-def _download_dataset(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
-    import asyncio
-
+def _download_dataset(directory: Path, state: ImportState) -> dict[str, Any]:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_dataset
     from cli.hf.storage import register_dataset_import, validate_dataset_payload, validate_target
@@ -207,14 +205,14 @@ def _download_dataset(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
     destination = parent / state["asset_id"]
     asyncio.run(validate_target(state["project_id"]))
     if not destination.exists():
-        root = transfer._download_files(state, parent)
-        transfer._require_importable(inspect_local_dataset(root))
+        root = transfer.download_files(state, parent)
+        transfer.require_importable(inspect_local_dataset(root))
         validate_dataset_payload(root)
         root.rename(destination)
         state["phase"] = "downloaded"
-        transfer._save(directory, state)
+        transfer.save_transfer(directory, state)
     verified = inspect_local_dataset(destination)
-    transfer._require_importable(verified)
+    transfer.require_importable(verified)
     validate_dataset_payload(destination)
     return asyncio.run(register_dataset_import(state, destination, verified))
 
@@ -228,9 +226,6 @@ def _export_dataset(
     dry_run: bool,
 ) -> dict[str, Any]:
     """Publish a LeRobot dataset, validating its task/episode shard references."""
-    import asyncio
-    import shutil
-
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_dataset
     from cli.hf.storage import dataset_export_source, validate_dataset_payload
@@ -238,7 +233,7 @@ def _export_dataset(
     if resume:
         if repo_id is not None or dataset_id is not None or public or update or dry_run:
             raise ValueError("--resume cannot be combined with new transfer options")
-        directory, state = transfer._load(resume, "dataset", "export")
+        directory, state = transfer.load_transfer(resume, "dataset", "export")
     else:
         from huggingface_hub.utils import validate_repo_id
 
@@ -247,13 +242,9 @@ def _export_dataset(
         validate_repo_id(repo_id)
         source = asyncio.run(dataset_export_source(str(dataset_id)))
         inspection = inspect_local_dataset(Path(source["path"]))
-        transfer._require_importable(inspection)
+        transfer.require_importable(inspection)
         validate_dataset_payload(Path(source["path"]))
-        names = [name for name in inspection["files"] if name != "studio.json"]
-        remote = transfer._remote_destination(transfer.hub_api(), "dataset", repo_id, names, update)
-        preserved = remote & {"README.md", "LICENSE", "LICENSE.md"}
-        names = [name for name in names if name not in preserved]
-        fingerprints = transfer._fingerprint(Path(source["path"]), names)
+        names, fingerprints = transfer.prepare_export("dataset", repo_id, source, inspection, update)
         if dry_run:
             return {
                 "dry_run": True,
@@ -263,7 +254,7 @@ def _export_dataset(
                 "size_bytes": inspection["size_bytes"],
                 "private_if_created": not public,
             }
-        directory, state = transfer._new(
+        directory, state = transfer.create_transfer(
             "dataset",
             "export",
             repo_id=repo_id,
@@ -274,25 +265,13 @@ def _export_dataset(
             public=public,
             update=update,
         )
-    state.setdefault("url", f"https://huggingface.co/datasets/{state['repo_id']}")
-    with transfer._transfer(directory, state):
-        if state["phase"] != "completed":
-            _check_dataset_source(state)
-            transfer._upload_payload(directory, state)
-            _check_dataset_source(state)
-            state["result"] = transfer._complete_upload(state)
-            state["phase"] = "completed"
-            transfer._save(directory, state)
-        shutil.rmtree(directory / "payload", ignore_errors=True)
-    return {**state["result"], "transfer_id": state["transfer_id"], "resume_command": transfer._resume_command(state)}
+    return transfer.run_export(directory, state, _check_dataset_source)
 
 
-def _check_dataset_source(state: dict[str, Any]) -> None:
-    import asyncio
-
+def _check_dataset_source(state: ExportState) -> None:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_dataset
     from cli.hf.storage import dataset_export_source
 
     current = asyncio.run(dataset_export_source(state["asset_id"]))
-    transfer._check_source(state, current, inspect_local_dataset(Path(current["path"])))
+    transfer.check_source(state, current, inspect_local_dataset(Path(current["path"])))

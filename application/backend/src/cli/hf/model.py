@@ -3,6 +3,7 @@
 
 """Model commands and their inspection/import/export workflows."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,6 +11,7 @@ from uuid import UUID, uuid4
 import click
 
 from cli.hf.output import invoke
+from cli.hf.state import ExportState, ImportState
 
 
 @click.group()
@@ -158,8 +160,6 @@ def _import_model(  # noqa: PLR0913, PLR0917
     dry_run: bool,
 ) -> dict[str, Any]:
     """Import a Studio model with an explicit local dataset association."""
-    import asyncio
-
     from cli.hf import transfer
     from cli.hf.inspection import inspect_remote_model
     from cli.hf.storage import uuid_string, validate_target
@@ -167,7 +167,7 @@ def _import_model(  # noqa: PLR0913, PLR0917
     if resume:
         if any(value is not None for value in (repo_id, project_id, dataset_id, name, revision, subfolder)) or dry_run:
             raise ValueError("--resume cannot be combined with new transfer options")
-        directory, state = transfer._load(resume, "model", "import")
+        directory, state = transfer.load_transfer(resume, "model", "import")
     else:
         if not repo_id or not project_id:
             raise ValueError("A new import requires REPO_ID and --project-id")
@@ -177,16 +177,16 @@ def _import_model(  # noqa: PLR0913, PLR0917
             raise ValueError("--name must contain 1 to 255 characters")
         asyncio.run(validate_target(str(project_id), uuid_string(dataset_id)))
         inspection = inspect_remote_model(repo_id, revision or "main", subfolder)
-        transfer._require_importable(inspection)
+        transfer.require_importable(inspection)
         if not inspection["size_complete"]:
             raise ValueError("Hub did not report all payload sizes; cannot enforce import disk limits")
         from settings import get_settings
 
         settings = get_settings()
-        transfer._space(settings.models_dir, inspection["size_bytes"])
+        transfer.check_disk_space(settings.models_dir, inspection["size_bytes"])
         if dry_run:
             return {**inspection, "dry_run": True, "project_id": str(project_id), "dataset_id": uuid_string(dataset_id)}
-        directory, state = transfer._new(
+        directory, state = transfer.create_transfer(
             "model",
             "import",
             repo_id=repo_id,
@@ -197,17 +197,15 @@ def _import_model(  # noqa: PLR0913, PLR0917
             inspection=inspection,
             asset_id=str(uuid4()),
         )
-    with transfer._transfer(directory, state):
+    with transfer.locked_transfer(directory, state):
         if state["phase"] != "completed":
             state["result"] = _download_model(directory, state)
             state["phase"] = "completed"
-            transfer._save(directory, state)
-    return {**state["result"], "transfer_id": state["transfer_id"], "resume_command": transfer._resume_command(state)}
+            transfer.save_transfer(directory, state)
+    return transfer.transfer_receipt(state)
 
 
-def _download_model(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
-    import asyncio
-
+def _download_model(directory: Path, state: ImportState) -> dict[str, Any]:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_model
     from cli.hf.storage import register_model_import, validate_target
@@ -217,27 +215,18 @@ def _download_model(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
     destination = parent / state["asset_id"]
     asyncio.run(validate_target(state["project_id"], state["dataset_id"]))
     if not destination.exists():
-        root = transfer._download_files(state, parent)
+        root = transfer.download_files(state, parent)
         verified = inspect_local_model(root)
-        transfer._require_importable(verified)
-        if state["inspection"]["detected_format"] == "studio_exports":
-            _normalize_exports(root, destination)
-        else:
-            root.rename(destination)
+        transfer.require_importable(verified)
+        # Move the tree first; normalization below is safe to retry after a crash.
+        root.rename(destination)
         state["phase"] = "downloaded"
-        transfer._save(directory, state)
+        transfer.save_transfer(directory, state)
     if state["inspection"]["detected_format"] == "studio_exports":
         _finish_normalization(destination)
     verified = inspect_local_model(destination)
-    transfer._require_importable(verified)
+    transfer.require_importable(verified)
     return asyncio.run(register_model_import(state, destination, verified))
-
-
-def _normalize_exports(root: Path, destination: Path) -> None:
-    # Move the complete tree first. A crash before normalization finishes is
-    # recoverable because the same normalization runs on the next invocation.
-    root.rename(destination)
-    _finish_normalization(destination)
 
 
 def _finish_normalization(destination: Path) -> None:
@@ -255,7 +244,7 @@ def _finish_normalization(destination: Path) -> None:
         metadata["files"] = [
             f"exports/{name}" if name.split("/")[0] in BACKENDS else name for name in metadata["files"]
         ]
-        transfer._atomic_json(descriptor, metadata)
+        transfer.atomic_json(descriptor, metadata)
 
 
 def _export_model(
@@ -267,9 +256,6 @@ def _export_model(
     dry_run: bool,
 ) -> dict[str, Any]:
     """Publish a Studio model, with model-specific source and manifest checks."""
-    import asyncio
-    import shutil
-
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_model
     from cli.hf.storage import model_export_source
@@ -277,7 +263,7 @@ def _export_model(
     if resume:
         if repo_id is not None or model_id is not None or public or update or dry_run:
             raise ValueError("--resume cannot be combined with new transfer options")
-        directory, state = transfer._load(resume, "model", "export")
+        directory, state = transfer.load_transfer(resume, "model", "export")
     else:
         from huggingface_hub.utils import validate_repo_id
 
@@ -286,13 +272,7 @@ def _export_model(
         validate_repo_id(repo_id)
         source = asyncio.run(model_export_source(str(model_id)))
         inspection = inspect_local_model(Path(source["path"]))
-        transfer._require_importable(inspection)
-        names = [name for name in inspection["files"] if name != "studio.json"]
-        remote = transfer._remote_destination(transfer.hub_api(), "model", repo_id, names, update)
-        # Publish local cards/licenses to new repos, but never overwrite existing ones.
-        preserved = remote & {"README.md", "LICENSE", "LICENSE.md"}
-        names = [name for name in names if name not in preserved]
-        fingerprints = transfer._fingerprint(Path(source["path"]), names)
+        names, fingerprints = transfer.prepare_export("model", repo_id, source, inspection, update)
         if dry_run:
             return {
                 "dry_run": True,
@@ -302,7 +282,7 @@ def _export_model(
                 "size_bytes": inspection["size_bytes"],
                 "private_if_created": not public,
             }
-        directory, state = transfer._new(
+        directory, state = transfer.create_transfer(
             "model",
             "export",
             repo_id=repo_id,
@@ -313,26 +293,13 @@ def _export_model(
             public=public,
             update=update,
         )
-    state.setdefault("url", f"https://huggingface.co/{state['repo_id']}")
-    with transfer._transfer(directory, state):
-        if state["phase"] != "completed":
-            _check_model_source(state)
-            transfer._upload_payload(directory, state)
-            _check_model_source(state)
-            state["result"] = transfer._complete_upload(state)
-            state["phase"] = "completed"
-            transfer._save(directory, state)
-        # Completed transfers need only their receipt, not retained multi-GB payloads.
-        shutil.rmtree(directory / "payload", ignore_errors=True)
-    return {**state["result"], "transfer_id": state["transfer_id"], "resume_command": transfer._resume_command(state)}
+    return transfer.run_export(directory, state, _check_model_source)
 
 
-def _check_model_source(state: dict[str, Any]) -> None:
-    import asyncio
-
+def _check_model_source(state: ExportState) -> None:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_model
     from cli.hf.storage import model_export_source
 
     current = asyncio.run(model_export_source(state["asset_id"]))
-    transfer._check_source(state, current, inspect_local_model(Path(current["path"])))
+    transfer.check_source(state, current, inspect_local_model(Path(current["path"])))

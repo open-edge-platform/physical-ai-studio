@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
+from cli.hf.state import ExportSource, ImportState
+
 
 async def validate_target(project_id: str, dataset_id: str | None = None) -> None:
     """Validate local associations before starting a network transfer."""
@@ -22,7 +24,7 @@ async def validate_target(project_id: str, dataset_id: str | None = None) -> Non
                 raise ValueError("--dataset-id must identify a dataset in the target project")
 
 
-async def model_export_source(model_id: str) -> dict[str, Any]:
+async def model_export_source(model_id: str) -> ExportSource:
     """Read a model and its portable metadata; reject active training jobs."""
     from db import get_async_db_session_ctx
     from db.schema import JobDB, ModelDB
@@ -53,7 +55,7 @@ async def model_export_source(model_id: str) -> dict[str, Any]:
         return {"path": str(path.resolve()), "metadata": metadata}
 
 
-async def dataset_export_source(dataset_id: str) -> dict[str, Any]:
+async def dataset_export_source(dataset_id: str) -> ExportSource:
     """Read a dataset and its portable task/name metadata."""
     from db import get_async_db_session_ctx
     from db.schema import DatasetDB
@@ -82,14 +84,14 @@ def _validate_source_path(path: Path, parent: Path) -> None:
         raise ValueError("Resource directory is missing or outside managed storage")
 
 
-def _import_name(state: dict[str, Any], metadata: dict[str, Any]) -> str:
+def _import_name(state: ImportState, metadata: dict[str, Any]) -> str:
     name = state.get("name") or metadata.get("name") or state["repo_id"].split("/")[-1]
     if not isinstance(name, str) or not name.strip() or len(name) > 255:
         raise ValueError("Asset name must contain 1 to 255 characters")
     return name
 
 
-async def register_model_import(state: dict[str, Any], destination: Path, inspection: dict[str, Any]) -> dict[str, Any]:
+async def register_model_import(state: ImportState, destination: Path, inspection: dict[str, Any]) -> dict[str, Any]:
     """Register a model once without inventing training history or foreign links."""
     from db import get_async_db_session_ctx
     from db.schema import ModelDB
@@ -144,7 +146,7 @@ async def register_model_import(state: dict[str, Any], destination: Path, inspec
 
 
 async def register_dataset_import(
-    state: dict[str, Any],
+    state: ImportState,
     destination: Path,
     inspection: dict[str, Any],
 ) -> dict[str, Any]:

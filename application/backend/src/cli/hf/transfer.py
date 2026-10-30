@@ -9,22 +9,31 @@ import os
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 from uuid import UUID, uuid4
 
 import click
 
-from cli.hf.inspection import hub_api, safe_path, token
+from cli.hf.inspection import CARDS_AND_LICENSES, hub_api, safe_path, token
+from cli.hf.state import (
+    STATE_ADAPTER,
+    ExportSource,
+    ExportState,
+    FileFingerprint,
+    ImportState,
+    ResourceKind,
+    TransferState,
+)
 
 
 class TransferError(ValueError):
     """An interrupted operation with a machine-readable recovery command."""
 
-    def __init__(self, cause: BaseException, state: dict[str, Any]) -> None:
-        self.resume_command = _resume_command(state)
+    def __init__(self, cause: BaseException, state: TransferState) -> None:
+        self.resume_command = resume_command(state)
         self.transfer_id = state["transfer_id"]
         super().__init__(f"{str(cause) or 'Transfer interrupted'}\nResume: {self.resume_command}")
 
@@ -35,7 +44,8 @@ def _base() -> Path:
     return get_settings().cache_dir / "hf" / "transfers"
 
 
-def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+def atomic_json(path: Path, value: dict[str, Any]) -> None:
+    """Replace a JSON document atomically on its current filesystem."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
@@ -49,14 +59,24 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
         Path(temporary).unlink(missing_ok=True)
 
 
-def _save(directory: Path, state: dict[str, Any]) -> None:
-    _atomic_json(directory / "transfer.json", state)
+def save_transfer(directory: Path, state: TransferState) -> None:
+    """Persist a transfer, retaining version-one fingerprint arrays."""
+    atomic_json(directory / "transfer.json", STATE_ADAPTER.dump_python(state, mode="json"))
 
 
-def _load(resume: UUID, kind: str, operation: str) -> tuple[Path, dict[str, Any]]:
+@overload
+def load_transfer(resume: UUID, kind: ResourceKind, operation: Literal["import"]) -> tuple[Path, ImportState]: ...
+
+
+@overload
+def load_transfer(resume: UUID, kind: ResourceKind, operation: Literal["export"]) -> tuple[Path, ExportState]: ...
+
+
+def load_transfer(resume: UUID, kind: ResourceKind, operation: str) -> tuple[Path, TransferState]:
+    """Load and validate a saved transfer before resuming it."""
     directory = _base() / str(resume)
     try:
-        state = json.loads((directory / "transfer.json").read_text())
+        state = STATE_ADAPTER.validate_json((directory / "transfer.json").read_text())
     except (OSError, ValueError) as exc:
         raise ValueError(f"Cannot read transfer {resume}. Use the original STORAGE_DIR.") from exc
     if state.get("schema_version") != 1 or state.get("kind") != kind or state.get("operation") != operation:
@@ -64,46 +84,61 @@ def _load(resume: UUID, kind: str, operation: str) -> tuple[Path, dict[str, Any]
     return directory, state
 
 
-def _new(kind: str, operation: str, **options: Any) -> tuple[Path, dict[str, Any]]:
+@overload
+def create_transfer(kind: ResourceKind, operation: Literal["import"], **options: Any) -> tuple[Path, ImportState]: ...
+
+
+@overload
+def create_transfer(kind: ResourceKind, operation: Literal["export"], **options: Any) -> tuple[Path, ExportState]: ...
+
+
+def create_transfer(kind: ResourceKind, operation: str, **options: Any) -> tuple[Path, TransferState]:
+    """Validate and save a new transfer before touching its payload."""
     transfer_id = str(uuid4())
-    state = {
-        "schema_version": 1,
-        "transfer_id": transfer_id,
-        "kind": kind,
-        "operation": operation,
-        "phase": "prepared",
-        **options,
-    }
+    state = STATE_ADAPTER.validate_python(
+        {
+            "schema_version": 1,
+            "transfer_id": transfer_id,
+            "kind": kind,
+            "operation": operation,
+            "phase": "prepared",
+            **options,
+        }
+    )
     directory = _base() / transfer_id
-    _save(directory, state)
+    save_transfer(directory, state)
     return directory, state
 
 
-def _resume_command(state: dict[str, Any]) -> str:
+def resume_command(state: TransferState) -> str:
+    """Build the recovery command for a saved transfer."""
     return f"physicalai-studio hf {state['kind']} {state['operation']} --resume {state['transfer_id']}"
 
 
 @contextmanager
-def _transfer(directory: Path, state: dict[str, Any]) -> Iterator[None]:
+def locked_transfer(directory: Path, state: TransferState) -> Iterator[None]:
+    """Lock a transfer and wrap failures with its recovery command."""
     from huggingface_hub.utils import WeakFileLock
 
-    command = _resume_command(state)
+    command = resume_command(state)
     click.echo(f"Transfer: {state['transfer_id']}\nResume: {command}", err=True)
     try:
         with WeakFileLock(directory / "transfer.lock", timeout=0.1):
             # Read again under the lock: another invocation may have advanced state.
-            state.update(json.loads((directory / "transfer.json").read_text()))
+            state.update(STATE_ADAPTER.validate_json((directory / "transfer.json").read_text()))
             yield
     except (Exception, KeyboardInterrupt) as exc:
         raise TransferError(exc, state) from exc
 
 
-def _require_importable(inspection: dict[str, Any]) -> None:
+def require_importable(inspection: dict[str, Any]) -> None:
+    """Reject an inspection report containing validation errors."""
     if not inspection["importable"]:
         raise ValueError("Resource cannot be imported: " + "; ".join(inspection["errors"]))
 
 
-def _space(path: Path, required: int) -> None:
+def check_disk_space(path: Path, required: int) -> None:
+    """Enforce import limits and reserve the configured free-space headroom."""
     from settings import get_settings
 
     settings = get_settings()
@@ -116,7 +151,7 @@ def _space(path: Path, required: int) -> None:
         raise ValueError("Insufficient disk space (including DATA_IMPORT_MIN_FREE_BYTES headroom)")
 
 
-def _download_files(state: dict[str, Any], parent: Path) -> Path:
+def download_files(state: ImportState, parent: Path) -> Path:
     """Resume the pinned payload into staging on the destination filesystem."""
     from huggingface_hub import snapshot_download
 
@@ -132,7 +167,7 @@ def _download_files(state: dict[str, Any], parent: Path) -> Path:
     prefix = f"{inspection['subfolder']}/" if inspection["subfolder"] else ""
     names = [f"{prefix}{name}" for name in inspection["files"]]
     existing_bytes = sum(path.stat().st_size for path in staging.rglob("*") if path.is_file())
-    _space(staging, max(0, inspection["size_bytes"] - existing_bytes))
+    check_disk_space(staging, max(0, inspection["size_bytes"] - existing_bytes))
     click.echo(f"Downloading {state['repo_id']} @ {state['revision']}", err=True)
     snapshot_download(
         state["repo_id"],
@@ -145,14 +180,15 @@ def _download_files(state: dict[str, Any], parent: Path) -> Path:
     return staging / inspection["subfolder"]
 
 
-def _fingerprint(root: Path, names: list[str]) -> dict[str, list[int]]:
+def fingerprint_files(root: Path, names: list[str]) -> dict[str, FileFingerprint]:
+    """Capture source file identities without reading multi-GB payloads."""
     result = {}
     for name in names:
         path = root / safe_path(name)
         if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
             raise ValueError(f"Unsafe source file: {name}")
         stat = path.stat()
-        result[name] = [stat.st_size, stat.st_mtime_ns, stat.st_ino]
+        result[name] = FileFingerprint(stat.st_size, stat.st_mtime_ns, stat.st_ino)
     return result
 
 
@@ -163,7 +199,7 @@ def _remote_destination(api: Any, kind: str, repo_id: str, names: list[str], upd
         remote = set(api.list_repo_files(repo_id, repo_type=kind))
     except RepositoryNotFoundError:
         return set()
-    payload = remote - {".gitattributes", "README.md", "LICENSE", "LICENSE.md", "studio.json"}
+    payload = remote - CARDS_AND_LICENSES - {".gitattributes", "studio.json"}
     if (payload or "studio.json" in remote) and not update:
         raise ValueError("Destination is nonempty. Use --update to explicitly authorize overwriting it.")
     stale = payload - set(names)
@@ -172,24 +208,59 @@ def _remote_destination(api: Any, kind: str, repo_id: str, names: list[str], upd
     return remote
 
 
-def _check_source(state: dict[str, Any], current: dict[str, Any], inspection: dict[str, Any]) -> None:
-    if current != state["source"] or _fingerprint(Path(current["path"]), state["files"]) != state["fingerprints"]:
+def check_source(state: ExportState, current: ExportSource, inspection: dict[str, Any]) -> None:
+    """Reject source mutations and incompatible payload inventories."""
+    if current != state["source"] or fingerprint_files(Path(current["path"]), state["files"]) != state["fingerprints"]:
         raise ValueError("Export source changed. Start a new transfer rather than resuming mixed content.")
-    _require_importable(inspection)
+    require_importable(inspection)
     current_files = inspection["files"]
-    ignored = {"studio.json", "README.md", "LICENSE", "LICENSE.md"}
-    if sorted(set(current_files) - ignored) != sorted(set(state["files"]) - ignored):
+    ignored = CARDS_AND_LICENSES | {"studio.json"}
+    if set(current_files) - ignored != set(state["files"]) - ignored:
         raise ValueError("Export source file inventory changed. Start a new transfer.")
 
 
-def _upload_payload(directory: Path, state: dict[str, Any]) -> None:
+def prepare_export(
+    kind: ResourceKind, repo_id: str, source: ExportSource, inspection: dict[str, Any], update: bool
+) -> tuple[list[str], dict[str, FileFingerprint]]:
+    """Select export files, preserving remote cards and rejecting stale payloads."""
+    require_importable(inspection)
+    names = [name for name in inspection["files"] if name != "studio.json"]
+    remote = _remote_destination(hub_api(), kind, repo_id, names, update)
+    preserved = remote & CARDS_AND_LICENSES
+    names = [name for name in names if name not in preserved]
+    return names, fingerprint_files(Path(source["path"]), names)
+
+
+def transfer_receipt(state: TransferState) -> dict[str, Any]:
+    """Add recovery details to a completed transfer's result."""
+    return {**state["result"], "transfer_id": state["transfer_id"], "resume_command": resume_command(state)}
+
+
+def run_export(directory: Path, state: ExportState, validate_source: Callable[[ExportState], None]) -> dict[str, Any]:
+    """Upload unchanged source files and retain only the completed receipt."""
+    prefix = "datasets/" if state["kind"] == "dataset" else ""
+    state.setdefault("url", f"https://huggingface.co/{prefix}{state['repo_id']}")
+    with locked_transfer(directory, state):
+        if state["phase"] != "completed":
+            validate_source(state)
+            _upload_payload(directory, state)
+            validate_source(state)
+            state["result"] = _complete_upload(state)
+            state["phase"] = "completed"
+            save_transfer(directory, state)
+        # A completed receipt must remain usable without retained multi-GB payloads.
+        shutil.rmtree(directory / "payload", ignore_errors=True)
+    return transfer_receipt(state)
+
+
+def _upload_payload(directory: Path, state: ExportState) -> None:
     root = Path(state["source"]["path"])
     payload = directory / "payload"
     payload.mkdir(exist_ok=True)
     for name in state["files"]:
         target = payload / name
         if target.exists():
-            if target.stat().st_size != state["fingerprints"][name][0]:
+            if target.stat().st_size != state["fingerprints"][name].size:
                 raise ValueError(f"Staged export file changed: {name}. Start a new transfer.")
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -198,7 +269,7 @@ def _upload_payload(directory: Path, state: dict[str, Any]) -> None:
         try:
             os.link(root / name, temporary)
         except OSError:
-            _space(target.parent, (root / name).stat().st_size)
+            check_disk_space(target.parent, (root / name).stat().st_size)
             shutil.copy2(root / name, temporary)
         temporary.replace(target)
     api = hub_api()
@@ -207,20 +278,13 @@ def _upload_payload(directory: Path, state: dict[str, Any]) -> None:
         _remote_destination(api, kind, repo_id, state["files"], state["update"])
         api.create_repo(repo_id, repo_type=kind, private=not state["public"], exist_ok=True)
         state["phase"] = "uploading"
-        _save(directory, state)
+        save_transfer(directory, state)
     descriptor, head = _remote_descriptor(api, kind, repo_id)
     if descriptor.get("transfer_id") == state["transfer_id"] and descriptor.get("status") == "complete":
         return
     if descriptor.get("status") == "uploading" and descriptor.get("transfer_id") != state["transfer_id"]:
         raise ValueError("Another transfer owns this incomplete remote export. Resume that transfer first.")
-    metadata = {
-        "schema_version": 1,
-        "kind": kind,
-        "status": "uploading",
-        "transfer_id": state["transfer_id"],
-        **state["source"]["metadata"],
-        "files": state["files"],
-    }
+    metadata = _export_metadata(state, "uploading")
     api.upload_file(
         repo_id=repo_id,
         repo_type=kind,
@@ -233,7 +297,7 @@ def _upload_payload(directory: Path, state: dict[str, Any]) -> None:
     _large_upload(repo_id, kind, payload, state["files"])
 
 
-def _complete_upload(state: dict[str, Any]) -> dict[str, Any]:
+def _complete_upload(state: ExportState) -> dict[str, Any]:
     api = hub_api()
     kind, repo_id = state["kind"], state["repo_id"]
     descriptor, head = _remote_descriptor(api, kind, repo_id)
@@ -241,18 +305,11 @@ def _complete_upload(state: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Remote export ownership changed; refusing to publish completion metadata")
     inventory = api.repo_info(repo_id, repo_type=kind, revision=head, files_metadata=True)
     sizes = {item.rfilename: item.size for item in inventory.siblings}
-    if any(sizes.get(name) != state["fingerprints"][name][0] for name in state["files"]):
+    if any(sizes.get(name) != state["fingerprints"][name].size for name in state["files"]):
         raise ValueError("Remote payload is missing files or has unexpected sizes; resume before publishing completion")
     if descriptor.get("status") == "complete":
         return _export_result(state, head)
-    metadata = {
-        "schema_version": 1,
-        "kind": kind,
-        "status": "complete",
-        "transfer_id": state["transfer_id"],
-        **state["source"]["metadata"],
-        "files": state["files"],
-    }
+    metadata = _export_metadata(state, "complete")
     commit = api.upload_file(
         repo_id=repo_id,
         repo_type=kind,
@@ -264,7 +321,18 @@ def _complete_upload(state: dict[str, Any]) -> dict[str, Any]:
     return _export_result(state, commit.oid)
 
 
-def _export_result(state: dict[str, Any], revision: str) -> dict[str, Any]:
+def _export_metadata(state: ExportState, status: Literal["uploading", "complete"]) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "kind": state["kind"],
+        "status": status,
+        "transfer_id": state["transfer_id"],
+        **state["source"]["metadata"],
+        "files": state["files"],
+    }
+
+
+def _export_result(state: ExportState, revision: str) -> dict[str, Any]:
     return {
         "kind": state["kind"],
         "repo_id": state["repo_id"],

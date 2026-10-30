@@ -194,6 +194,18 @@ def transfer_state(env):
     return json.loads(next((env.settings.cache_dir / "hf/transfers").glob("*/transfer.json")).read_text())
 
 
+@pytest.fixture(params=["model", "dataset"])
+def imported_asset(environment, request):
+    env = environment
+    kind = request.param
+    repo_id = f"owner/{kind}"
+    env.hub.repos[repo_id] = model_files() if kind == "model" else dataset_files(env.tmp / "input")
+    options = ["--dataset-id", env.dataset_id] if kind == "model" else []
+    result = invoke(kind, "import", repo_id, "--project-id", env.project_id, *options, "--json")
+    assert result.exit_code == 0, result.output
+    return SimpleNamespace(**json.loads(result.stdout))
+
+
 def test_help_has_singular_groups_and_no_network(monkeypatch):
     monkeypatch.setattr(inspection, "hub_api", lambda: pytest.fail("Help must not initialize Hub"))
     for args in [(), ("model",), ("dataset", "import"), ("model", "export")]:
@@ -224,7 +236,7 @@ def test_model_and_dataset_commands_have_independent_options():
     assert "No such option" in result.output
 
 
-def test_inspect_commands_do_not_dispatch_through_resource_kind(monkeypatch):
+def test_inspect_commands_select_the_correct_inspector(monkeypatch):
     monkeypatch.setattr(inspection, "inspect_remote_model", lambda **kwargs: {"model_only": True})
     monkeypatch.setattr(inspection, "inspect_remote_dataset", lambda **kwargs: {"dataset_only": True})
     assert json.loads(invoke("model", "inspect", "owner/model", "--json").stdout) == {"model_only": True}
@@ -240,11 +252,9 @@ def test_inspect_commands_do_not_dispatch_through_resource_kind(monkeypatch):
         ("dataset", "export"),
     ],
 )
-def test_transfer_workflows_are_colocated_with_commands(resource, operation, monkeypatch):
+def test_transfer_commands_invoke_the_correct_workflow(resource, operation, monkeypatch):
     module = import_module(f"cli.hf.{resource}")
     workflow = f"_{operation}_{resource}"
-    assert getattr(module, workflow).__module__ == module.__name__
-    assert not hasattr(transfer, f"{operation}_{resource}")
     monkeypatch.setattr(module, workflow, lambda **options: {"workflow": workflow})
     result = invoke(resource, operation, "owner/repo", "--json")
     assert result.exit_code == 0, result.output
@@ -295,6 +305,51 @@ def test_checks_all_backends_and_companions(environment):
     assert "companion" in json.loads(result.stdout)["errors"][0]
 
 
+@pytest.mark.parametrize(
+    ("kind", "filename", "changes", "expected"),
+    [
+        ("model", "exports/torch/manifest.json", {"policy": []}, "'policy' section"),
+        ("model", "exports/torch/manifest.json", {"policy": {"name": []}}, "'policy.name'"),
+        ("model", "exports/torch/manifest.json", {"model": None}, "object field 'model'"),
+        ("model", "exports/torch/manifest.json", {"model": {"artifacts": []}}, "'model.artifacts'"),
+        ("dataset", "meta/info.json", {"features": []}, "feature names to objects"),
+        ("dataset", "meta/info.json", {"features": {"camera": None}}, "feature names to objects"),
+    ],
+)
+def test_inspection_reports_malformed_metadata(environment, kind, filename, changes, expected):
+    env = environment
+    files = model_files() if kind == "model" else dataset_files(env.tmp / "input")
+    files[filename] = json.dumps({**json.loads(files[filename]), **changes}).encode()
+    env.hub.repos["owner/asset"] = files
+    result = invoke(kind, "inspect", "owner/asset", "--json")
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert not report["importable"]
+    assert any(expected in error for error in report["errors"])
+
+
+@pytest.mark.parametrize("kind", ["model", "dataset"])
+def test_inspection_checks_declared_payload_and_unknown_sizes(environment, kind):
+    env = environment
+    files = model_files() if kind == "model" else dataset_files(env.tmp / "input")
+    metadata = {
+        "schema_version": 1,
+        "kind": kind,
+        "name": "Asset",
+        "status": "complete",
+        "files": [*files, "private.env"],
+    }
+    files["studio.json"] = json.dumps(metadata).encode()
+    sizes = dict.fromkeys(files)
+    inspect_files = inspection.inspect_model_files if kind == "model" else inspection.inspect_dataset_files
+    report = inspect_files(sizes, lambda name: json.loads(files[name]))
+    assert not report["importable"]
+    assert not report["size_complete"]
+    assert report["size_bytes"] == 0
+    assert any("missing ['private.env']" in error for error in report["errors"])
+    assert any("outside the supported layout" in error for error in report["errors"])
+
+
 def test_import_download_resume_and_duplicate_safe_registration(environment):
     env = environment
     env.hub.repos["owner/model"] = model_files()
@@ -312,9 +367,9 @@ def test_import_download_resume_and_duplicate_safe_registration(environment):
     assert Path(report["path"], "model.ckpt").exists()
     assert env.hub.downloaded.count(first_download) == 1
     # Simulate a crash after DB commit but before recording completion.
-    directory, state = transfer._load(UUID(state["transfer_id"]), "model", "import")
+    directory, state = transfer.load_transfer(UUID(state["transfer_id"]), "model", "import")
     state["phase"] = "downloaded"
-    transfer._save(directory, state)
+    transfer.save_transfer(directory, state)
     assert invoke("model", "import", "--resume", state["transfer_id"], "--json").exit_code == 0
 
     async def check():
@@ -404,6 +459,95 @@ def test_model_export_resume_preserves_properties(environment):
     asyncio.run(check())
 
 
+def test_completed_export_resume_uses_only_the_receipt(environment, imported_asset, monkeypatch):
+    env, asset = environment, imported_asset
+    result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--json")
+    assert result.exit_code == 0, result.output
+    receipt = json.loads(result.stdout)
+    directory, state = transfer.load_transfer(UUID(receipt["transfer_id"]), asset.kind, "export")
+    assert state["phase"] == "completed"
+    assert not (directory / "payload").exists()
+
+    def unexpected_check(*args, **kwargs):
+        pytest.fail("Completed exports must not require their source or contact the Hub")
+
+    monkeypatch.setattr(import_module(f"cli.hf.{asset.kind}"), f"_check_{asset.kind}_source", unexpected_check)
+    monkeypatch.setattr(env.hub, "repo_info", unexpected_check)
+    resumed = invoke(asset.kind, "export", "--resume", receipt["transfer_id"], "--json")
+    assert resumed.exit_code == 0, resumed.output
+    assert json.loads(resumed.stdout) == receipt
+
+
+def test_export_preserves_remote_cards_and_dry_run_has_no_side_effects(environment, imported_asset):
+    env, asset = environment, imported_asset
+    put_files(Path(asset.path), {"README.md": b"local card", "LICENSE": b"local license"})
+    remote = {"README.md": b"remote card", "LICENSE": b"remote license"}
+    env.hub.repos["owner/copy"] = remote.copy()
+    saved = set((env.settings.cache_dir / "hf/transfers").glob("*/transfer.json"))
+    args = (asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--public", "--json")
+    preview = invoke(*args, "--dry-run")
+    assert preview.exit_code == 0, preview.output
+    report = json.loads(preview.stdout)
+    assert not {"README.md", "LICENSE", "studio.json"} & set(report["files"])
+    assert report["private_if_created"] is False
+    assert env.hub.repos["owner/copy"] == remote
+    assert not env.hub.creations
+    assert set((env.settings.cache_dir / "hf/transfers").glob("*/transfer.json")) == saved
+
+    exported = invoke(*args)
+    assert exported.exit_code == 0, exported.output
+    assert env.hub.creations[0]["private"] is False
+    assert all(env.hub.repos["owner/copy"][name] == content for name, content in remote.items())
+    metadata = json.loads(env.hub.repos["owner/copy"]["studio.json"])
+    assert metadata["files"] == report["files"]
+
+
+def test_resumed_export_rejects_source_changes(environment, imported_asset):
+    env, asset = environment, imported_asset
+    env.hub.fail_upload = True
+    result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--json")
+    assert result.exit_code == 1, result.output
+    transfer_id = json.loads(result.stdout)["error"]["transfer_id"]
+    name = "model.ckpt" if asset.kind == "model" else "data/chunk-000/file-000.parquet"
+    Path(asset.path, name).write_bytes(b"changed")
+    uploaded = env.hub.uploaded.copy()
+    resumed = invoke(asset.kind, "export", "--resume", transfer_id, "--json")
+    assert resumed.exit_code == 1
+    assert "source changed" in resumed.stdout
+    assert env.hub.uploaded == uploaded
+    assert json.loads(env.hub.repos["owner/copy"]["studio.json"])["status"] == "uploading"
+
+
+def test_saved_export_retains_version_one_fingerprint_arrays(environment, imported_asset):
+    asset = imported_asset
+    result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--json")
+    assert result.exit_code == 0, result.output
+    transfer_id = UUID(json.loads(result.stdout)["transfer_id"])
+    directory, state = transfer.load_transfer(transfer_id, asset.kind, "export")
+    saved = json.loads((directory / "transfer.json").read_text())
+    assert saved["schema_version"] == 1
+    for name, fingerprint in state["fingerprints"].items():
+        stat = Path(asset.path, name).stat()
+        assert fingerprint.size == stat.st_size
+        assert saved["fingerprints"][name] == [stat.st_size, stat.st_mtime_ns, stat.st_ino]
+
+    # Load a version-one document directly, without using the new serializer.
+    (directory / "transfer.json").write_text(json.dumps(saved))
+    _, reloaded = transfer.load_transfer(transfer_id, asset.kind, "export")
+    assert reloaded == state
+
+
+@pytest.mark.parametrize("invalid", [[], {"schema_version": 1}, {"operation": "export", "phase": "downloaded"}])
+def test_malformed_transfer_state_fails_before_network(environment, invalid):
+    transfer_id = uuid4()
+    path = environment.settings.cache_dir / "hf/transfers" / str(transfer_id) / "transfer.json"
+    put_files(path.parent, {path.name: json.dumps(invalid).encode()})
+    result = invoke("model", "export", "--resume", str(transfer_id), "--json")
+    assert result.exit_code == 1
+    assert "Cannot read transfer" in result.stdout
+    assert not environment.hub.read_revisions
+
+
 def test_missing_associations_fail_before_network(environment):
     result = invoke("model", "import", "owner/model", "--project-id", environment.project_id, "--json")
     assert result.exit_code == 1
@@ -438,9 +582,9 @@ def test_source_mutation_is_rejected(environment):
     env = environment
     root = env.tmp / "model"
     put_files(root, model_files())
-    state = {"files": sorted(model_files()), "fingerprints": transfer._fingerprint(root, sorted(model_files()))}
+    state = {"files": sorted(model_files()), "fingerprints": transfer.fingerprint_files(root, sorted(model_files()))}
     (root / "model.ckpt").write_bytes(b"changed")
-    assert transfer._fingerprint(root, state["files"]) != state["fingerprints"]
+    assert transfer.fingerprint_files(root, state["files"]) != state["fingerprints"]
 
 
 def test_tokens_never_appear_in_json_errors(environment, monkeypatch):
@@ -483,6 +627,33 @@ def test_exports_only_import_normalizes_and_resumes_after_rename(environment, mo
     assert (Path(json.loads(resumed.stdout)["path"]) / "exports/torch/pi05.pt").exists()
 
 
+def test_exports_normalization_recovers_after_moving_files(tmp_path, monkeypatch):
+    model_cli = import_module("cli.hf.model")
+    files = {
+        name.removeprefix("exports/"): content for name, content in model_files().items() if name.startswith("exports/")
+    }
+    metadata = {"schema_version": 1, "kind": "model", "name": "Exports", "status": "complete", "files": sorted(files)}
+    put_files(tmp_path, {**files, "studio.json": json.dumps(metadata).encode()})
+    atomic_json = transfer.atomic_json
+
+    def fail_write(*args, **kwargs):
+        raise OSError("Crash before descriptor replacement")
+
+    monkeypatch.setattr(transfer, "atomic_json", fail_write)
+    with pytest.raises(OSError, match="descriptor replacement"):
+        model_cli._finish_normalization(tmp_path)
+    assert (tmp_path / "exports/torch/pi05.pt").exists()
+    assert json.loads((tmp_path / "studio.json").read_text()) == metadata
+
+    monkeypatch.setattr(transfer, "atomic_json", atomic_json)
+    model_cli._finish_normalization(tmp_path)
+    normalized = json.loads((tmp_path / "studio.json").read_text())
+    assert normalized["files"] == [f"exports/{name}" for name in sorted(files)]
+    model_cli._finish_normalization(tmp_path)
+    assert json.loads((tmp_path / "studio.json").read_text()) == normalized
+    assert inspection.inspect_local_model(tmp_path)["importable"]
+
+
 def test_placeholder_environment_rolls_back_on_registration_failure(environment, monkeypatch):
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -512,7 +683,16 @@ def test_placeholder_environment_rolls_back_on_registration_failure(environment,
 def test_resume_is_locked(environment):
     from huggingface_hub.utils import WeakFileLock
 
-    directory, state = transfer._new("dataset", "import")
+    directory, state = transfer.create_transfer(
+        "dataset",
+        "import",
+        repo_id="owner/data",
+        asset_id=str(uuid4()),
+        project_id=environment.project_id,
+        revision="a" * 40,
+        inspection={},
+        environment_id=str(uuid4()),
+    )
     with WeakFileLock(directory / "transfer.lock"):
         result = invoke("dataset", "import", "--resume", state["transfer_id"], "--json")
     assert result.exit_code == 1
