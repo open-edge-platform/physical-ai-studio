@@ -141,7 +141,8 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
         await self.db.commit()
         return item
 
-    async def update(self, item: ModelType, partial_update: dict) -> ModelType:
+    async def update(self, item: ModelType, partial_update: dict, *, commit: bool = True) -> ModelType:
+        """Update *item*; with ``commit=False`` only flush, so that the caller commits it with more."""
         # Remove None values and timestamp fields from partial_update
         partial_update = {
             k: v for k, v in partial_update.items() if v is not None and k not in {"created_at", "updated_at"}
@@ -156,7 +157,10 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
             setattr(schema_item, "project_id", self.project_id)
 
         await self.db.merge(schema_item)
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
+        else:
+            await self.db.flush()
 
         item_id = getattr(item, "id", None)
         if item_id is None:

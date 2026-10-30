@@ -22,6 +22,7 @@ import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
+import { SessionSimulationNotRunning } from '../../simulation/session-simulation-not-running';
 import { runtimeExportUrl } from '../runtime-export';
 
 interface InferenceViewerProps {
@@ -39,6 +40,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
     const {
         model,
         readyForInference,
+        waitingForSimulation,
         state,
         startTask,
         stopTask,
@@ -62,6 +64,17 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
               })
             : undefined;
 
+    const follower = environment.robots?.[0]?.robot;
+    const cancel = (
+        <Button variant={'secondary'} href={paths.project.models.index({ project_id })}>
+            Cancel
+        </Button>
+    );
+
+    if (!readyForInference && waitingForSimulation && follower !== undefined) {
+        return <SessionSimulationNotRunning robot={follower}>{cancel}</SessionSimulationNotRunning>;
+    }
+
     if (!readyForInference) {
         return (
             <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'} direction={'column'}>
@@ -73,9 +86,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                     <StatusLight variant={state.model_loaded ? 'positive' : 'yellow'}>Model</StatusLight>
                     <StatusLight variant={state.connected ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
-                <Button variant={'secondary'} href={paths.project.models.index({ project_id })}>
-                    Cancel
-                </Button>
+                {cancel}
             </Flex>
         );
     }

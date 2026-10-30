@@ -17,11 +17,27 @@ class RobotZeroCalibrationResponse(BaseModel):
     zero_tolerance_deg: float = Field(..., description="Largest joint reading, in degrees, that counts as zero")
 
 
+class RobotSimulationSceneResponse(BaseModel):
+    id: str = Field(..., description="Scene id to pass when starting the simulation")
+    display_name: str = Field(..., description="Human-readable scene name")
+    description: str = Field("", description="One-line description of the scene")
+
+
+class RobotSimulationResponse(BaseModel):
+    scenes: list[RobotSimulationSceneResponse] = Field(..., description="Scenes to choose from, in display order")
+    default_scene: str = Field(..., description="Id of the scene to preselect")
+    max_seed: int | None = Field(None, description="Largest fixed seed, or null when the simulation takes no seed")
+    labels: list[str] = Field(default_factory=list, description="Read-only facts shown in the start dialog")
+
+
 class RobotCatalogDefinitionResponse(BaseModel):
     type: str = Field(..., description="Stable backend robot type identifier")
     display_name: str = Field(..., description="Human-readable robot type label")
     role: Literal["follower", "leader"] = Field(..., description="Default robot role")
-    urdf_path: str = Field(description="URDF URL used by the UI model loader")
+    urdf_path: str | None = Field(
+        default=None,
+        description="URDF URL used by the UI model loader, or null when the robot type has no 3D model",
+    )
     package_map: dict[str, str] = Field(default_factory=dict, description="URDF package name to URL prefix map")
     joint_map: dict[str, list[str]] = Field(
         description="Observation joint name to URDF joint(s) mapping",
@@ -30,14 +46,20 @@ class RobotCatalogDefinitionResponse(BaseModel):
         default=None,
         description="Zero-pose calibration offered when adding this robot type, if any",
     )
+    simulation: RobotSimulationResponse | None = Field(
+        default=None,
+        description="How Studio can start this robot type's simulation, if it is simulated",
+    )
 
 
 def _to_response(definition: RobotCatalogDefinition) -> RobotCatalogDefinitionResponse:
     catalog_root = f"/api/robots/catalog/{definition.type}"
 
+    urdf_path = None
     package_map = {}
     joint_map = {}
     if definition.asset is not None:
+        urdf_path = f"{catalog_root}/urdf"
         package_map = dict.fromkeys(definition.asset.packages, f"{catalog_root}")
         joint_map = definition.asset.joint_map
 
@@ -45,7 +67,7 @@ def _to_response(definition: RobotCatalogDefinition) -> RobotCatalogDefinitionRe
         type=definition.type,
         display_name=definition.display_name,
         role=definition.role,
-        urdf_path=f"{catalog_root}/urdf",
+        urdf_path=urdf_path,
         package_map=package_map,
         joint_map=joint_map,
         zero_calibration=None
@@ -54,6 +76,22 @@ def _to_response(definition: RobotCatalogDefinition) -> RobotCatalogDefinitionRe
             instructions=definition.zero_calibration.instructions,
             zero_tolerance_deg=definition.zero_calibration.zero_tolerance_deg,
         ),
+        simulation=_simulation_response(getattr(definition, "simulation", None)),
+    )
+
+
+def _simulation_response(launch: Any) -> RobotSimulationResponse | None:
+    # `simulation` is missing on physicalai-studio-plugin releases without SimulationLaunch.
+    if launch is None:
+        return None
+    return RobotSimulationResponse(
+        scenes=[
+            RobotSimulationSceneResponse(id=scene.id, display_name=scene.display_name, description=scene.description)
+            for scene in launch.scenes
+        ],
+        default_scene=launch.default_scene,
+        max_seed=launch.max_seed,
+        labels=list(launch.labels),
     )
 
 

@@ -71,8 +71,11 @@ class RobotService:
     async def create_robot(self, project_id: UUID, robot: Robot) -> Robot:
         return await self._repo(project_id).save(robot)
 
-    async def update_robot(self, project_id: UUID, robot: Robot) -> Robot:
-        return await self._repo(project_id).update(robot, partial_update=robot.model_dump(exclude={"id"}))
+    async def update_robot(self, project_id: UUID, robot: Robot, *, commit: bool = True) -> Robot:
+        """Update *robot*; with ``commit=False`` the caller commits it, with more."""
+        return await self._repo(project_id).update(
+            robot, partial_update=robot.model_dump(exclude={"id"}), commit=commit
+        )
 
     async def delete_robot(self, project_id: UUID, robot_id: UUID) -> None:
         repo = self._repo(project_id)

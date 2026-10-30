@@ -14,6 +14,7 @@ from api.dependencies import (
     get_project_service,
     get_robot_client_factory,
     get_robot_service,
+    get_simulation_manager,
 )
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
@@ -25,14 +26,15 @@ if TYPE_CHECKING:
 
 PROJECT_ID = uuid4()
 ROBOT_ID = uuid4()
+LEADER_ID = uuid4()
 CAMERA_ID = uuid4()
 FOREIGN_CAMERA_ID = uuid4()
 
 
 class _StubRobot:
-    def __init__(self) -> None:
-        self.id = ROBOT_ID
-        self.name = "Khaos"
+    def __init__(self, robot_id: UUID = ROBOT_ID, name: str = "Khaos") -> None:
+        self.id = robot_id
+        self.name = name
 
 
 class _StubProject:
@@ -44,8 +46,23 @@ class _StubProject:
 class _StubRobotService:
     async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> _StubRobot:
         assert project_id == PROJECT_ID
-        assert robot_id == ROBOT_ID
-        return _StubRobot()
+        assert robot_id in {ROBOT_ID, LEADER_ID}
+        return _StubRobot(robot_id, "Khaos" if robot_id == ROBOT_ID else "Leader")
+
+
+class _StubSimulations:
+    """Stands in for the simulation manager: points a leader at a session's follower."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[UUID, UUID]] = []
+        self.pointed = _StubRobot(LEADER_ID, "Leader on the simulation's port")
+
+    async def point_leader_at_follower(
+        self, project_id: UUID, follower: _StubRobot, leader: _StubRobot
+    ) -> tuple[_StubRobot, _StubRobot]:
+        assert project_id == PROJECT_ID
+        self.calls.append((follower.id, leader.id))
+        return follower, self.pointed
 
 
 class _StubProjectService:
@@ -100,6 +117,7 @@ def client(
     app.dependency_overrides[get_robot_client_factory] = lambda: mock_robot_client_factory
     app.dependency_overrides[get_project_service] = lambda: _StubProjectService()
     app.dependency_overrides[get_camera_claim_registry] = lambda: claims
+    app.dependency_overrides[get_simulation_manager] = _StubSimulations
     try:
         yield TestClient(app)
     finally:
@@ -139,6 +157,7 @@ def test_a_failed_connect_releases_the_claim(mock_robot_client_factory, claims: 
     app.dependency_overrides[get_robot_client_factory] = lambda: mock_robot_client_factory
     app.dependency_overrides[get_project_service] = lambda: _StubProjectService()
     app.dependency_overrides[get_camera_claim_registry] = lambda: claims
+    app.dependency_overrides[get_simulation_manager] = _StubSimulations
     try:
         test_client = TestClient(app)
         url = f"/api/projects/{PROJECT_ID}/runtime/ws"
@@ -158,6 +177,23 @@ def test_a_failed_connect_releases_the_claim(mock_robot_client_factory, claims: 
 
     assert payload["event"] == "error"
     assert claims.holder_of({"serial": "cam-front"}) is None
+
+
+def test_a_session_starts_with_the_leader_pointed_at_the_followers_simulation(client: TestClient) -> None:
+    simulations = _StubSimulations()
+    app.dependency_overrides[get_simulation_manager] = lambda: simulations
+    url = f"/api/projects/{PROJECT_ID}/runtime/ws"
+
+    with (
+        patch("api.runtime_ws.build_runtime_config", side_effect=ValueError("stop here")) as build,
+        patch("api.runtime_ws.RuntimeSessionOwner"),
+        client.websocket_connect(url) as websocket,
+    ):
+        websocket.send_json({"follower_id": str(ROBOT_ID), "leader_id": str(LEADER_ID)})
+        websocket.receive_json()
+
+    assert simulations.calls == [(ROBOT_ID, LEADER_ID)]
+    assert build.call_args.kwargs["leader"] is simulations.pointed
 
 
 def test_waiter_releases_when_the_owner_dies() -> None:

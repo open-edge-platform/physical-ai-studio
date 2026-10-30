@@ -20,6 +20,7 @@ import { useHotkey } from '../../../features/hotkeys/use-hotkey';
 import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { useRuntimeSession } from '../../../features/robots/runtime-session-provider';
+import { SessionSimulationNotRunning } from '../../../features/simulation/session-simulation-not-running';
 import { paths } from '../../../paths';
 
 import classes from './recording-viewer.module.css';
@@ -67,6 +68,7 @@ export const RecordingViewer = () => {
         discardEpisode,
         saveEpisode,
         readyForRecording,
+        waitingForSimulation,
         environment,
         observation,
         actions,
@@ -103,6 +105,23 @@ export const RecordingViewer = () => {
         }
     };
 
+    const follower = environment.robots?.[0]?.robot;
+    const cancel = (
+        <Button
+            variant={'secondary'}
+            href={paths.project.datasets.show({
+                dataset_id: dataset.id!,
+                project_id: dataset.project_id,
+            })}
+        >
+            Cancel
+        </Button>
+    );
+
+    if (!readyForRecording && waitingForSimulation && follower !== undefined) {
+        return <SessionSimulationNotRunning robot={follower}>{cancel}</SessionSimulationNotRunning>;
+    }
+
     if (!readyForRecording) {
         return (
             <Flex width='100%' height={'100%'} alignItems={'center'} justifyContent={'center'} direction={'column'}>
@@ -114,15 +133,7 @@ export const RecordingViewer = () => {
                     <StatusLight variant={state.dataset_loaded ? 'positive' : 'yellow'}>Dataset</StatusLight>
                     <StatusLight variant={state.connected ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
-                <Button
-                    variant={'secondary'}
-                    href={paths.project.datasets.show({
-                        dataset_id: dataset.id!,
-                        project_id: dataset.project_id,
-                    })}
-                >
-                    Cancel
-                </Button>
+                {cancel}
             </Flex>
         );
     }

@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from uuid import UUID
 
 from loguru import logger
 from sqlalchemy import or_, select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from db.schema import EnvironmentCameraDB, EnvironmentRobotDB, ProjectEnvironmentDB
@@ -16,6 +17,7 @@ from schemas.environment import (
     TeleoperatorNoneWithRobot,
     TeleoperatorRobotWithRobot,
 )
+from schemas.project_camera import Camera
 
 
 class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnvironmentDB]):
@@ -31,7 +33,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
     def from_schema(self) -> Callable[[ProjectEnvironmentDB], Environment]:
         return ProjectEnvironmentMapper.from_schema
 
-    async def update(self, item: Environment, partial_update: dict) -> Environment:
+    async def update(self, item: Environment, partial_update: dict, *, commit: bool = True) -> Environment:
         """Update an environment, fully replacing its robot/camera join rows.
 
         Reassigning the ``robot_links`` / ``camera_links`` collections lets the ``delete-orphan``
@@ -55,12 +57,47 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
         existing.name = to_update.name
         existing.robot_links = ProjectEnvironmentMapper.build_robot_links(to_update)
         existing.camera_links = ProjectEnvironmentMapper.build_camera_links(to_update)
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
+        else:
+            await self.db.flush()
 
         updated = await self.get_by_id(item.id)
         if updated is None:
             raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
         return updated
+
+    async def add_cameras(
+        self,
+        environment_id: UUID,
+        camera_ids: Sequence[UUID],
+        *,
+        new_cameras: Sequence[Camera] = (),
+        changed_cameras: Sequence[Camera] = (),
+    ) -> None:
+        """Link cameras to an environment, keeping its other links; a camera it has already is skipped.
+
+        One ``INSERT``, unlike ``update``, which replaces every link with those of a snapshot: two
+        additions at the same time both stay. *new_cameras* are created and *changed_cameras* saved
+        first, in the same transaction: if linking fails, none of it is kept.
+        """
+        for camera in new_cameras:
+            row = ProjectCameraMapper.to_schema(camera)
+            row.project_id = self.project_id
+            self.db.add(row)
+        for camera in changed_cameras:
+            row = ProjectCameraMapper.to_schema(camera)
+            row.project_id = self.project_id
+            await self.db.merge(row)
+        if camera_ids:
+            await self.db.execute(
+                insert(EnvironmentCameraDB)
+                .values(
+                    [{"environment_id": str(environment_id), "camera_id": str(camera_id)} for camera_id in camera_ids]
+                )
+                .on_conflict_do_nothing()
+            )
+        await self.db.commit()
 
     async def get_by_id_with_relations(self, environment_id: UUID) -> EnvironmentWithRelations | None:
         """Get an environment by ID with eager loaded robots and cameras."""

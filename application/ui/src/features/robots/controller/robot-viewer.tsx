@@ -11,7 +11,7 @@ import { URDFRobot } from 'urdf-loader';
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useRobotCatalogDefinitionQuery } from '../robot-catalog.hooks';
 import { SchemaRobot } from '../robot-types';
-import { mapJointToURDFJoint, useLoadModelQuery } from './../robot-models-context';
+import { mapJointToURDFJoint, robotModelPath, useLoadModelQuery } from './../robot-models-context';
 import { RobotViewerScene, SCENE_COLORS, useConfigureModelShadows } from './../robot-viewer-scene';
 
 import classes from './robot-viewer.module.css';
@@ -120,6 +120,7 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
 
     const { data: definition } = useRobotCatalogDefinitionQuery(robot.type);
     const jointMap = definition.joint_map;
+    const hasModel = robotModelPath(definition) !== null;
 
     const { data: model, error, isPending } = useLoadModelQuery(robot.type);
     const ref = useRef<HTMLDivElement>(null);
@@ -155,10 +156,18 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
                         </group>
                     )}
                 </Canvas>
-                {isPending && <div className={classes.loadingOverlay}>Loading robot model...</div>}
-                {error && (
-                    <div className={classes.errorOverlay} role='alert'>
-                        Failed to load robot model: {error instanceof Error ? error.message : String(error)}
+                {!hasModel && (
+                    <div className={classes.messageOverlay} role='status'>
+                        No 3D model for this robot
+                    </div>
+                )}
+                {hasModel && isPending && <div className={classes.loadingOverlay}>Loading robot model...</div>}
+                {hasModel && error && (
+                    <div className={classes.messageOverlay} role='alert'>
+                        <span>No 3D model for this robot</span>
+                        <span className={classes.messageDetail}>
+                            {error instanceof Error ? error.message : String(error)}
+                        </span>
                     </div>
                 )}
             </div>

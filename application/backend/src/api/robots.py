@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from api.dependencies import get_robot_service
+from api.dependencies import SimulationManagerDep, get_robot_service
 from exceptions import RuntimeSessionBusyError
 from runtime.owner import runtime_session_holder
 from schemas.robot import (
@@ -64,15 +64,25 @@ async def update_project_robot(
     project_id: ProjectID,
     robot_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
+    simulations: SimulationManagerDep,
     robot: Robot,
 ) -> Robot:
-    """Set robot."""
+    """Set robot.
+
+    While Studio starts, runs or stops the robot's simulation, the robot keeps the simulation's
+    address (``payload.http_url``) Studio stored and the one in the request is ignored: a form
+    opened before the simulation started still carries the old one.
+    """
     robot_with_id = robot.model_copy(update={"id": robot_id})
 
-    return await robot_service.update_robot(
-        project_id,
-        robot_with_id,
-    )
+    async with simulations.updating_robot(project_id, robot_id) as simulated_by_studio:
+        if simulated_by_studio and "http_url" in type(robot.payload).model_fields:
+            stored = await robot_service.get_robot_by_id(project_id, robot_id)
+            stored_url = getattr(stored.payload, "http_url", None)
+            if isinstance(stored_url, str):
+                payload = robot.payload.model_copy(update={"http_url": stored_url})
+                robot_with_id = robot_with_id.model_copy(update={"payload": payload})
+        return await robot_service.update_robot(project_id, robot_with_id)
 
 
 @router.delete("/{robot_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -5,8 +5,16 @@ import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
+import { SchemaRobotCatalogDefinitionResponse } from '../../api/openapi-spec';
 import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
 import { SchemaRobotType } from './robot-types';
+
+/**
+ * The URDF a robot type's 3D model loads from, or `null` when the type has none (the backend
+ * advertises no `urdf_path` for a type without a model asset).
+ */
+export const robotModelPath = (definition: Pick<SchemaRobotCatalogDefinitionResponse, 'urdf_path'>) =>
+    definition.urdf_path ? definition.urdf_path : null;
 
 export const mapJointToURDFJoint = (
     joint: { name: string; value: number },
@@ -93,8 +101,9 @@ export const useLoadModelQuery = (robotType: SchemaRobotType) => {
     const { getModel, setModel } = useRobotModels();
 
     const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
-    const path = definition.urdf_path;
     const packageMap = definition.package_map ?? {};
+    // A type without a URDF has no model to load: the query stays disabled.
+    const path = robotModelPath(definition);
 
     const cachedModel = path == null ? undefined : getModel(path);
 

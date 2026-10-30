@@ -20,7 +20,7 @@ class ProjectCameraMapper(IBaseMapper):
             driver=db_schema.driver,
             fingerprint=json.dumps(db_schema.fingerprint, sort_keys=True, separators=(",", ":")),
             hardware_name=db_schema.hardware_name,
-            payload=db_schema.payload.model_dump(exclude_none=True),
+            payload=db_schema.payload.model_dump(mode="json", exclude_none=True),
             created_at=db_schema.created_at,
             updated_at=db_schema.updated_at,
         )

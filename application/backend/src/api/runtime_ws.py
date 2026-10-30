@@ -19,6 +19,7 @@ from api.dependencies import (
     ProjectServiceDep,
     RobotClientFactoryDep,
     SettingsDep,
+    SimulationManagerDep,
     get_robot_service,
 )
 from exceptions import BaseException as AppBaseException
@@ -240,6 +241,7 @@ async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
     robot_client_factory: RobotClientFactoryDep,
     claims: CameraClaimRegistryDep,
     settings: SettingsDep,
+    simulations: SimulationManagerDep,
     websocket: WebSocket,
 ) -> None:
     """Stream follower state and accept hold/teleop mode changes."""
@@ -255,6 +257,9 @@ async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
     try:
         handshake = await websocket.receive_json("text")
         follower, leader, cameras = await _devices_from_handshake(handshake, project_id, robot_service, camera_service)
+        if leader is not None:
+            # A virtual leader reads from the follower's simulation, whenever it was added or linked.
+            follower, leader = await simulations.point_leader_at_follower(project_id, follower, leader)
         document = await build_runtime_config(
             follower=follower,
             leader=leader,

@@ -1,5 +1,6 @@
 from abc import ABC
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -50,6 +51,13 @@ class IPCameraPayload(BaseModel):
     width: int | None = Field(None, ge=160, le=4096, description="Frame width in pixels (if supported)")
     height: int | None = Field(None, ge=120, le=2160, description="Frame height in pixels (if supported)")
     fps: int = Field(25, ge=1, le=60, description="Expected frame rate")
+    simulation_robot_id: UUID | None = Field(
+        None,
+        description=(
+            "The simulated robot whose simulation serves this stream. Studio points the URL at the "
+            "simulation's new address when it starts that robot's simulation."
+        ),
+    )
 
 
 class BaslerCameraPayload(BaseModel):

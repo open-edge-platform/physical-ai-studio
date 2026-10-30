@@ -595,3 +595,85 @@ class PluginOperationError(BaseException):
             error_code="plugin_operation_failed",
             http_status=http.HTTPStatus.BAD_GATEWAY,
         )
+
+
+class SimulationNotSupportedError(BaseException):
+    """Raised when Studio cannot start a simulation for a robot."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="simulation_not_supported",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SimulationInvalidRequestError(BaseException):
+    """Raised when the scene or seed of a simulation start request is not valid for the robot type."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="simulation_invalid_request",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SimulationBusyError(BaseException):
+    """Raised when Studio already runs a simulation and the request did not ask to replace it."""
+
+    def __init__(self, *, project_id: str, robot_id: str, scene: str) -> None:
+        super().__init__(
+            message="Studio is already running a simulation. Stop it first, or start this one in its place.",
+            error_code="simulation_busy",
+            http_status=http.HTTPStatus.CONFLICT,
+            details={"project_id": project_id, "robot_id": robot_id, "scene": scene},
+        )
+
+
+class SimulationNameInUseError(BaseException):
+    """Raised when a simulation that Studio did not start already runs under the robot's name."""
+
+    def __init__(self, owner_name: str) -> None:
+        super().__init__(
+            message=(
+                f"A simulation named {owner_name!r} is already running outside Studio. Stop it, or use it as it is."
+            ),
+            error_code="simulation_name_in_use",
+            http_status=http.HTTPStatus.CONFLICT,
+            details={"owner_name": owner_name},
+        )
+
+
+class SimulationMovedError(BaseException):
+    """Raised when a simulation moved to another address while its cameras were being added."""
+
+    def __init__(self, owner_name: str) -> None:
+        super().__init__(
+            message=f"The simulation {owner_name!r} restarted on another address. Try adding its cameras again.",
+            error_code="simulation_moved",
+            http_status=http.HTTPStatus.CONFLICT,
+            details={"owner_name": owner_name},
+        )
+
+
+class SimulationNotServingError(BaseException):
+    """Raised when a robot's simulation does not serve what the browser asked Studio to pass on."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, error_code="simulation_not_serving", http_status=http.HTTPStatus.CONFLICT)
+
+
+class SimulationNotRunningError(BaseException):
+    """Raised when a simulated robot cannot attach because its simulation is not running.
+
+    The message comes from the simulation plugin: it names the simulation and says how to start it.
+    """
+
+    def __init__(self, message: str, *, robot_name: str | None = None) -> None:
+        super().__init__(
+            message=message,
+            error_code="simulation_not_running",
+            http_status=http.HTTPStatus.SERVICE_UNAVAILABLE,
+            details={"robot_name": robot_name} if robot_name else None,
+        )
