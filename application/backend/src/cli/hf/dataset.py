@@ -4,12 +4,12 @@
 """Dataset commands and their inspection/import/export workflows."""
 
 import asyncio
-from typing import Any
 from uuid import UUID, uuid4
 
 import click
 
 from cli.hf.output import invoke
+from cli.hf.schemas import JsonObject, TransferResult, to_json
 from cli.hf.state import ExportState, ImportState
 
 
@@ -150,7 +150,7 @@ def _import_dataset(
     subfolder: str | None,
     resume: UUID | None,
     dry_run: bool,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Import a LeRobot dataset, creating its temporary environment at registration."""
     from cli.hf import transfer
     from cli.hf.inspection import inspect_remote_dataset
@@ -167,20 +167,20 @@ def _import_dataset(
             raise ValueError("--name must contain 1 to 255 characters")
         asyncio.run(validate_target(str(project_id)))
         inspection = inspect_remote_dataset(repo_id, revision or "main", subfolder)
-        transfer.require_importable(inspection)
-        if not inspection["size_complete"]:
+        inspection.require_importable()
+        if not inspection.size_complete:
             raise ValueError("Hub did not report all payload sizes; cannot enforce import disk limits")
         from settings import get_settings
 
-        transfer.check_disk_space(get_settings().datasets_dir, inspection["size_bytes"])
+        transfer.check_disk_space(get_settings().datasets_dir, inspection.size_bytes)
         if dry_run:
-            return {**inspection, "dry_run": True, "project_id": str(project_id)}
+            return {**to_json(inspection), "dry_run": True, "project_id": str(project_id)}
         state = ImportState(
             kind="dataset",
             repo_id=repo_id,
             project_id=str(project_id),
             name=name,
-            revision=inspection["revision"],
+            revision=inspection.pinned_revision,
             inspection=inspection,
             asset_id=str(uuid4()),
             environment_id=str(uuid4()),
@@ -194,7 +194,7 @@ def _import_dataset(
     return state.receipt
 
 
-def _download_dataset(state: ImportState) -> dict[str, Any]:
+def _download_dataset(state: ImportState) -> TransferResult:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_dataset
     from cli.hf.storage import register_dataset_import, validate_dataset_payload, validate_target
@@ -205,13 +205,13 @@ def _download_dataset(state: ImportState) -> dict[str, Any]:
     asyncio.run(validate_target(state.project_id))
     if not destination.exists():
         root = transfer.download_files(state, parent)
-        transfer.require_importable(inspect_local_dataset(root))
+        inspect_local_dataset(root).require_importable()
         validate_dataset_payload(root)
         root.rename(destination)
         state.phase = "downloaded"
         state.save()
     verified = inspect_local_dataset(destination)
-    transfer.require_importable(verified)
+    verified.require_importable()
     validate_dataset_payload(destination)
     return asyncio.run(register_dataset_import(state, destination, verified))
 
@@ -223,7 +223,7 @@ def _export_dataset(
     update: bool,
     resume: UUID | None,
     dry_run: bool,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Publish a LeRobot dataset, validating its task/episode shard references."""
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_dataset
@@ -241,11 +241,11 @@ def _export_dataset(
         validate_repo_id(repo_id)
         source = asyncio.run(dataset_export_source(str(dataset_id)))
         inspection = inspect_local_dataset(source.path)
-        transfer.require_importable(inspection)
+        inspection.require_importable()
         validate_dataset_payload(source.path)
         state = transfer.prepare_export("dataset", repo_id, str(dataset_id), source, inspection, public, update)
         if dry_run:
-            return state.preview(inspection["size_bytes"])
+            return state.preview(inspection.size_bytes)
         state.save()
     return transfer.run_export(state, _check_dataset_source)
 

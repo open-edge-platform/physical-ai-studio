@@ -5,15 +5,18 @@
 
 import json
 from collections.abc import Callable
-from typing import Any
 
 import click
 
+from cli.hf.schemas import Inspection, JsonObject, to_json
 
-def invoke(callback: Callable[..., dict[str, Any]], *, as_json: bool, **kwargs: Any) -> None:
+
+def invoke[**P](
+    callback: Callable[P, JsonObject | Inspection], as_json: bool, *args: P.args, **kwargs: P.kwargs
+) -> None:
     """Run a command's workflow with consistent output and sanitized errors."""
     try:
-        result = callback(**kwargs)
+        result = to_json(callback(*args, **kwargs))
     except (Exception, KeyboardInterrupt) as exc:
         # SDK exceptions can contain request details. Never echo credentials.
         from cli.hf.inspection import redact

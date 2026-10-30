@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cli.hf import hf, inspection, storage, transfer
 from cli.hf.inspection import token as resolve_token
+from cli.hf.schemas import AssetMetadata, Inspection
 from cli.hf.state import ExportSource, ExportState, ImportState
 from db.schema import Base, DatasetDB, ModelDB, ProjectDB, ProjectEnvironmentDB
 from settings import Settings
@@ -344,11 +345,11 @@ def test_inspection_checks_declared_payload_and_unknown_sizes(environment, kind)
     sizes = dict.fromkeys(files)
     inspect_files = inspection.inspect_model_files if kind == "model" else inspection.inspect_dataset_files
     report = inspect_files(sizes, lambda name: json.loads(files[name]))
-    assert not report["importable"]
-    assert not report["size_complete"]
-    assert report["size_bytes"] == 0
-    assert any("missing ['private.env']" in error for error in report["errors"])
-    assert any("outside the supported layout" in error for error in report["errors"])
+    assert not report.importable
+    assert not report.size_complete
+    assert report.size_bytes == 0
+    assert any("missing ['private.env']" in error for error in report.errors)
+    assert any("outside the supported layout" in error for error in report.errors)
 
 
 def test_import_download_resume_and_duplicate_safe_registration(environment):
@@ -547,7 +548,7 @@ def test_state_round_trip_preserves_null_portable_metadata(environment):
         kind="model",
         repo_id="owner/model",
         asset_id=str(uuid4()),
-        source=ExportSource(environment.tmp, {"source_dataset_id": None}),
+        source=ExportSource(environment.tmp, AssetMetadata(source_dataset_id=None)),
         files=[],
         fingerprints={},
         public=False,
@@ -689,7 +690,7 @@ def test_exports_normalization_recovers_after_moving_files(tmp_path, monkeypatch
     assert normalized["files"] == [f"exports/{name}" for name in sorted(files)]
     model_cli._finish_normalization(tmp_path)
     assert json.loads((tmp_path / "studio.json").read_text()) == normalized
-    assert inspection.inspect_local_model(tmp_path)["importable"]
+    assert inspection.inspect_local_model(tmp_path).importable
 
 
 def test_placeholder_environment_rolls_back_on_registration_failure(environment, monkeypatch):
@@ -727,7 +728,7 @@ def test_resume_is_locked(environment):
         asset_id=str(uuid4()),
         project_id=environment.project_id,
         revision="a" * 40,
-        inspection={},
+        inspection=Inspection(kind="dataset"),
         environment_id=str(uuid4()),
     )
     state.save()

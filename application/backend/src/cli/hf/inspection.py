@@ -3,16 +3,32 @@
 
 """Metadata-only detection shared by CLI inspection and import."""
 
+from __future__ import annotations
+
 import json
 import os
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
+from cli.hf.schemas import (
+    AssetMetadata,
+    DatasetDetails,
+    DatasetInfo,
+    Inspection,
+    JsonObject,
+    ModelDetails,
+    ResourceKind,
+)
 from utils.model_manifest import EXPORT_BACKENDS as BACKENDS
 from utils.model_manifest import manifest_artifact, manifest_policy
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from huggingface_hub import DatasetInfo as HubDatasetInfo
+    from huggingface_hub import HfApi, ModelInfo
 
 CARDS_AND_LICENSES = {"README.md", "LICENSE", "LICENSE.md"}
 MAX_METADATA_BYTES = 4 * 1024 * 1024
@@ -36,7 +52,7 @@ def redact(message: str) -> str:
     return re.sub(r"hf_[A-Za-z0-9]+", "[REDACTED]", message)
 
 
-def hub_api() -> Any:
+def hub_api() -> HfApi:
     """Construct an authenticated client without changing global login state."""
     from huggingface_hub import HfApi
 
@@ -101,84 +117,59 @@ def _one_root(candidates: set[str], resource: str) -> str:
 @dataclass(frozen=True)
 class _Inventory:
     sizes: dict[str, int | None]
-    read: Callable[[str], dict]
+    read: Callable[[str], JsonObject]
 
 
-def _select_inventory(sizes: dict[str, int | None], read_json: Callable[[str], dict], root: str) -> _Inventory:
+def _select_inventory(sizes: dict[str, int | None], read_json: Callable[[str], JsonObject], root: str) -> _Inventory:
     for name in sizes:
         safe_path(name)
     prefix = f"{root}/" if root else ""
     relative = {name.removeprefix(prefix): size for name, size in sizes.items() if name.startswith(prefix)}
 
-    def read(name: str) -> dict:
+    def read(name: str) -> JsonObject:
         return read_json(f"{prefix}{safe_path(name)}")
 
     return _Inventory(relative, read)
 
 
-def _report(kind: str, subfolder: str | None) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "kind": kind,
-        "subfolder": subfolder,
-        "validation_level": "metadata",
-        "importable": False,
-        "errors": [],
-        "warnings": [],
-        "files": [],
-        "size_bytes": 0,
-        "size_complete": True,
-    }
-
-
-def _metadata(read_json: Callable[[str], dict], files: set[str], kind: str, errors: list[str]) -> dict:
+def _metadata(
+    read_json: Callable[[str], JsonObject], files: set[str], kind: ResourceKind, errors: list[str]
+) -> AssetMetadata:
     if "studio.json" not in files:
-        return {}
+        return AssetMetadata()
     data = read_json("studio.json")
     if data.get("schema_version") != 1 or data.get("kind") != kind:
         raise ValueError("Unsupported studio.json schema version or resource kind")
-    payload = data.get("files")
-    if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
+    if "files" not in data:
         raise ValueError("studio.json must contain a payload file list")
-    for name in payload:
+    metadata = AssetMetadata.model_validate(data)
+    for name in metadata.files:
         safe_path(name)
-    if not isinstance(data.get("name"), str) or not data["name"].strip() or len(data["name"]) > 255:
+    if metadata.name is None:
         raise ValueError("Studio asset name must contain 1 to 255 characters")
-    if data.get("status") != "complete":
+    if metadata.status != "complete":
         errors.append("This Studio export is incomplete. Resume its export before importing it.")
-    missing = set(payload) - files
+    missing = set(metadata.files) - files
     if missing:
         errors.append(f"Studio payload is incomplete; missing {sorted(missing)}")
-    return data
+    return metadata
 
 
-def _set_payload(result: dict[str, Any], inventory: _Inventory, metadata: dict, payload: set[str]) -> None:
+def _set_payload(result: Inspection, inventory: _Inventory, metadata: AssetMetadata, payload: set[str]) -> None:
     payload |= inventory.sizes.keys() & (CARDS_AND_LICENSES | {"studio.json"})
-    undeclared = set(metadata.get("files", [])) - payload
+    undeclared = set(metadata.files) - payload
     if undeclared:
-        result["errors"].append(f"Studio metadata references files outside the supported layout: {sorted(undeclared)}")
-    result["files"] = sorted(payload)
-    result["size_bytes"] = sum(inventory.sizes[name] or 0 for name in payload)
-    result["size_complete"] = all(inventory.sizes[name] is not None for name in payload)
+        result.errors.append(f"Studio metadata references files outside the supported layout: {sorted(undeclared)}")
+    result.files = sorted(payload)
+    result.size_bytes = sum(inventory.sizes[name] or 0 for name in payload)
+    result.size_complete = all(inventory.sizes[name] is not None for name in payload)
 
 
-def _validate_model_metadata(metadata: dict) -> None:
-    if type(metadata.get("version", 1)) is not int or metadata.get("version", 1) < 1:
-        raise ValueError("Studio model version must be a positive integer")
-    properties = metadata.get("properties", {})
-    if not isinstance(properties, dict) or any(
-        not isinstance(properties[key], bool)
-        for key in ("lora_enabled", "lora_use_dora", "snapflow_enabled")
-        if key in properties
-    ):
-        raise ValueError("Studio model properties must contain boolean feature flags")
-    if metadata.get("policy") is not None and not isinstance(metadata["policy"], str):
-        raise ValueError("Studio model policy must be a string")
-
-
-def _model_manifests(inventory: _Inventory, exports_only: bool, errors: list[str]) -> tuple[dict, set[str]]:
+def _model_manifests(
+    inventory: _Inventory, exports_only: bool, errors: list[str]
+) -> tuple[dict[str, JsonObject], set[str]]:
     files = set(inventory.sizes)
-    backends = {}
+    backends: dict[str, JsonObject] = {}
     policies: set[str] = set()
     for backend in BACKENDS:
         directory = backend if exports_only else f"exports/{backend}"
@@ -208,37 +199,34 @@ def _model_manifests(inventory: _Inventory, exports_only: bool, errors: list[str
 
 
 def inspect_model_files(
-    sizes: dict[str, int | None], read_json: Callable[[str], dict], subfolder: str | None = None
-) -> dict[str, Any]:
+    sizes: dict[str, int | None], read_json: Callable[[str], JsonObject], subfolder: str | None = None
+) -> Inspection:
     """Detect and validate Studio model files without loading a policy."""
-    result = _report("model", subfolder)
+    result = Inspection(kind="model", subfolder=subfolder)
     try:
         root = _model_root(set(sizes), subfolder)
         inventory = _select_inventory(sizes, read_json, root)
-        result["subfolder"] = root
+        result.subfolder = root
         files = set(inventory.sizes)
-        metadata = _metadata(inventory.read, files, "model", result["errors"])
-        result["studio"] = metadata
-        _validate_model_metadata(metadata)
+        metadata = _metadata(inventory.read, files, "model", result.errors)
+        result.studio = metadata
         exports_only = not any(f"exports/{backend}/manifest.json" in files for backend in BACKENDS)
-        backends, policies = _model_manifests(inventory, exports_only, result["errors"])
+        backends, policies = _model_manifests(inventory, exports_only, result.errors)
         if not exports_only and "model.ckpt" not in files:
-            result["warnings"].append("Deployment-only model: no model.ckpt is available to resume training.")
+            result.warnings.append("Deployment-only model: no model.ckpt is available to resume training.")
         if "snapflow-model.ckpt" in files:
-            result["warnings"].append(
+            result.warnings.append(
                 "SnapFlow checkpoint is present; original logger hparams may describe the base phase."
             )
-        if metadata.get("policy") is not None and metadata["policy"] not in policies:
-            result["errors"].append("Studio metadata policy disagrees with export manifests")
-        result.update(
-            detected_format="studio_exports" if exports_only else "studio_model",
-            model={
-                "policy": next(iter(sorted(policies)), None),
-                "backends": backends,
-                "checkpoints": sorted(name for name in files if name.endswith(".ckpt")),
-            },
-            required_import_options=["project_id", "dataset_id"],
+        if metadata.policy is not None and metadata.policy not in policies:
+            result.errors.append("Studio metadata policy disagrees with export manifests")
+        result.detected_format = "studio_exports" if exports_only else "studio_model"
+        result.model = ModelDetails(
+            policy=next(iter(sorted(policies)), None),
+            backends=backends,
+            checkpoints=sorted(name for name in files if name.endswith(".ckpt")),
         )
+        result.required_import_options = ["project_id", "dataset_id"]
         prefixes = tuple(f"{backend}/" for backend in BACKENDS) if exports_only else ("exports/",)
         payload = {
             name
@@ -248,15 +236,14 @@ def inspect_model_files(
         }
         _set_payload(result, inventory, metadata, payload)
     except ValueError as exc:
-        result["errors"].append(str(exc))
-    result["importable"] = not result["errors"]
+        result.errors.append(str(exc))
     return result
 
 
-def _dataset_info(inventory: _Inventory, errors: list[str]) -> dict[str, Any]:
+def _dataset_info(inventory: _Inventory, errors: list[str]) -> DatasetDetails:
     files = set(inventory.sizes)
-    info = inventory.read("meta/info.json")
-    if info.get("codebase_version") != "v3.0":
+    info = DatasetInfo.model_validate(inventory.read("meta/info.json"))
+    if info.codebase_version != "v3.0":
         errors.append("Only LeRobot v3.0 datasets are supported")
     for marker in ("meta/tasks.parquet", "meta/stats.json"):
         if marker not in files:
@@ -264,82 +251,91 @@ def _dataset_info(inventory: _Inventory, errors: list[str]) -> dict[str, Any]:
     for pattern in ("data/chunk-*/file-*.parquet", "meta/episodes/chunk-*/file-*.parquet"):
         if not any(PurePosixPath(name).match(pattern) for name in files):
             errors.append(f"Missing {pattern}")
-    features = info.get("features", {})
-    if not isinstance(features, dict) or not all(isinstance(feature, dict) for feature in features.values()):
-        raise ValueError("Dataset features must map feature names to objects")
-    cameras = [name for name, feature in features.items() if feature.get("dtype") == "video"]
+    cameras = info.cameras
     for camera in cameras:
         if not any(name.startswith(f"videos/{camera}/") and name.endswith(".mp4") for name in files):
             errors.append(f"No video files for {camera}")
-    return {
-        "episodes": info.get("total_episodes"),
-        "frames": info.get("total_frames"),
-        "fps": info.get("fps"),
-        "robot_type": info.get("robot_type"),
-        "features": features,
-        "cameras": cameras,
-    }
+    return DatasetDetails(
+        episodes=info.total_episodes,
+        frames=info.total_frames,
+        fps=info.fps,
+        robot_type=info.robot_type,
+        features=info.features,
+        cameras=cameras,
+    )
 
 
 def inspect_dataset_files(
-    sizes: dict[str, int | None], read_json: Callable[[str], dict], subfolder: str | None = None
-) -> dict[str, Any]:
+    sizes: dict[str, int | None], read_json: Callable[[str], JsonObject], subfolder: str | None = None
+) -> Inspection:
     """Detect and validate LeRobot v3 metadata without downloading data shards."""
-    result = _report("dataset", subfolder)
+    result = Inspection(kind="dataset", subfolder=subfolder)
     try:
         root = _dataset_root(set(sizes), subfolder)
         inventory = _select_inventory(sizes, read_json, root)
-        result["subfolder"] = root
+        result.subfolder = root
         files = set(inventory.sizes)
-        metadata = _metadata(inventory.read, files, "dataset", result["errors"])
-        result["studio"] = metadata
-        if not isinstance(metadata.get("default_task", ""), str):
-            raise ValueError("Studio dataset default_task must be a string")
-        result.update(
-            detected_format="lerobot_v3",
-            dataset=_dataset_info(inventory, result["errors"]),
-            required_import_options=["project_id"],
-        )
+        metadata = _metadata(inventory.read, files, "dataset", result.errors)
+        result.studio = metadata
+        result.dataset = _dataset_info(inventory, result.errors)
+        result.detected_format = "lerobot_v3"
+        result.required_import_options = ["project_id"]
         payload = {name for name in files if name.startswith(("meta/", "data/", "videos/"))}
         _set_payload(result, inventory, metadata, payload)
     except ValueError as exc:
-        result["errors"].append(str(exc))
-    result["importable"] = not result["errors"]
+        result.errors.append(str(exc))
     return result
 
 
-def _remote_files(repo_type: str, repo_id: str, revision: str) -> tuple[str, dict, Callable[[str], dict]]:
+def repo_inventory(
+    api: HfApi, kind: ResourceKind, repo_id: str, revision: str | None = None
+) -> tuple[str, dict[str, int | None]]:
+    """Require a pinned model/dataset inventory from the SDK's broader repo API."""
+    info = cast(
+        "ModelInfo | HubDatasetInfo", api.repo_info(repo_id, repo_type=kind, revision=revision, files_metadata=True)
+    )
+    if not info.sha or info.siblings is None:
+        raise ValueError("Hub did not return a pinned file inventory")
+    return info.sha, {item.rfilename: item.size for item in info.siblings}
+
+
+def _remote_files(
+    repo_type: ResourceKind, repo_id: str, revision: str
+) -> tuple[str, dict[str, int | None], Callable[[str], JsonObject]]:
     """Read a pinned inventory and provide a size-bounded JSON download function."""
     from huggingface_hub import hf_hub_download
     from huggingface_hub.utils import validate_repo_id
 
     validate_repo_id(repo_id)
-    api = hub_api()
-    info = api.repo_info(repo_id, repo_type=repo_type, revision=revision, files_metadata=True)
-    sizes = {item.rfilename: item.size for item in info.siblings}
+    sha, sizes = repo_inventory(hub_api(), repo_type, repo_id, revision)
 
-    def read(name: str) -> dict:
-        if name not in sizes or sizes[name] is None or sizes[name] > MAX_METADATA_BYTES:
+    def read(name: str) -> JsonObject:
+        size = sizes.get(name)
+        if size is None or size > MAX_METADATA_BYTES:
             raise ValueError(f"Missing or oversized metadata: {name}")
-        path = Path(hf_hub_download(repo_id, name, repo_type=repo_type, revision=info.sha, token=token()))
+        path = Path(hf_hub_download(repo_id, name, repo_type=repo_type, revision=sha, token=token()))
         return read_json_file(path)
 
-    return info.sha, sizes, read
+    return sha, sizes, read
 
 
-def inspect_remote_model(repo_id: str, revision: str = "main", subfolder: str | None = None) -> dict[str, Any]:
+def inspect_remote_model(repo_id: str, revision: str = "main", subfolder: str | None = None) -> Inspection:
     """Inspect a pinned Studio model repository."""
     sha, sizes, read = _remote_files("model", repo_id, revision)
-    return {**inspect_model_files(sizes, read, subfolder), "repo_id": repo_id, "revision": sha}
+    result = inspect_model_files(sizes, read, subfolder)
+    result.repo_id, result.revision = repo_id, sha
+    return result
 
 
-def inspect_remote_dataset(repo_id: str, revision: str = "main", subfolder: str | None = None) -> dict[str, Any]:
+def inspect_remote_dataset(repo_id: str, revision: str = "main", subfolder: str | None = None) -> Inspection:
     """Inspect a pinned LeRobot dataset repository."""
     sha, sizes, read = _remote_files("dataset", repo_id, revision)
-    return {**inspect_dataset_files(sizes, read, subfolder), "repo_id": repo_id, "revision": sha}
+    result = inspect_dataset_files(sizes, read, subfolder)
+    result.repo_id, result.revision = repo_id, sha
+    return result
 
 
-def read_json_file(path: Path) -> dict:
+def read_json_file(path: Path) -> JsonObject:
     """Read bounded JSON without constructing objects specified by the resource."""
     with path.open("rb") as stream:
         content = stream.read(MAX_METADATA_BYTES + 1)
@@ -348,7 +344,7 @@ def read_json_file(path: Path) -> dict:
     result = json.loads(content)
     if not isinstance(result, dict):
         raise ValueError(f"Expected a JSON object: {path.name}")
-    return result
+    return cast("JsonObject", result)
 
 
 def _local_sizes(root: Path) -> dict[str, int | None]:
@@ -361,11 +357,11 @@ def _local_sizes(root: Path) -> dict[str, int | None]:
     return sizes
 
 
-def inspect_local_model(root: Path) -> dict[str, Any]:
+def inspect_local_model(root: Path) -> Inspection:
     """Inspect local model files, rejecting symbolic links."""
     return inspect_model_files(_local_sizes(root), lambda name: read_json_file(root / name), subfolder="")
 
 
-def inspect_local_dataset(root: Path) -> dict[str, Any]:
+def inspect_local_dataset(root: Path) -> Inspection:
     """Inspect local dataset files, rejecting symbolic links."""
     return inspect_dataset_files(_local_sizes(root), lambda name: read_json_file(root / name), subfolder="")

@@ -3,21 +3,29 @@
 
 """Shared resumable transfer state and Hub I/O; resource workflows live beside commands."""
 
+from __future__ import annotations
+
 import json
 import multiprocessing
 import os
 import shutil
 import sys
-from collections.abc import Callable, Iterator
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 import click
 
-from cli.hf.inspection import CARDS_AND_LICENSES, hub_api, safe_path, token
-from cli.hf.state import ExportSource, ExportState, FileFingerprint, ImportState, ResourceKind, TransferState
+from cli.hf.inspection import CARDS_AND_LICENSES, hub_api, repo_inventory, safe_path, token
+from cli.hf.schemas import Inspection, JsonObject, ResourceKind, TransferResult, to_json
+from cli.hf.state import ExportSource, ExportState, FileFingerprint, ImportState, TransferState
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from multiprocessing.connection import Connection
+
+    from huggingface_hub import HfApi
 
 
 class TransferError(ValueError):
@@ -43,12 +51,6 @@ def locked_transfer[T: TransferState](state: T) -> Iterator[T]:
         raise TransferError(exc, state) from exc
 
 
-def require_importable(inspection: dict[str, Any]) -> None:
-    """Reject an inspection report containing validation errors."""
-    if not inspection["importable"]:
-        raise ValueError("Resource cannot be imported: " + "; ".join(inspection["errors"]))
-
-
 def check_disk_space(path: Path, required: int) -> None:
     """Enforce import limits and reserve the configured free-space headroom."""
     from settings import get_settings
@@ -71,15 +73,15 @@ def download_files(state: ImportState, parent: Path) -> Path:
 
     settings = get_settings()
     inspection = state.inspection
-    if inspection["size_bytes"] > settings.data_import_max_uncompressed_bytes:
+    if inspection.size_bytes > settings.data_import_max_uncompressed_bytes:
         raise ValueError("Transfer exceeds DATA_IMPORT_MAX_UNCOMPRESSED_BYTES")
     parent.mkdir(parents=True, exist_ok=True)
     staging = parent / f".hf-{state.transfer_id}"
     staging.mkdir(exist_ok=True)
-    prefix = f"{inspection['subfolder']}/" if inspection["subfolder"] else ""
-    names = [f"{prefix}{name}" for name in inspection["files"]]
+    prefix = f"{inspection.subfolder}/" if inspection.subfolder else ""
+    names = [f"{prefix}{name}" for name in inspection.files]
     existing_bytes = sum(path.stat().st_size for path in staging.rglob("*") if path.is_file())
-    check_disk_space(staging, max(0, inspection["size_bytes"] - existing_bytes))
+    check_disk_space(staging, max(0, inspection.size_bytes - existing_bytes))
     click.echo(f"Downloading {state.repo_id} @ {state.revision}", err=True)
     snapshot_download(
         state.repo_id,
@@ -89,7 +91,7 @@ def download_files(state: ImportState, parent: Path) -> Path:
         allow_patterns=names,
         token=token(),
     )
-    return staging / inspection["subfolder"]
+    return staging / (inspection.subfolder or "")
 
 
 def fingerprint_files(root: Path, names: list[str]) -> dict[str, FileFingerprint]:
@@ -104,7 +106,7 @@ def fingerprint_files(root: Path, names: list[str]) -> dict[str, FileFingerprint
     return result
 
 
-def _remote_destination(api: Any, kind: str, repo_id: str, names: list[str], update: bool) -> set[str]:
+def _remote_destination(api: HfApi, kind: ResourceKind, repo_id: str, names: list[str], update: bool) -> set[str]:
     from huggingface_hub.errors import RepositoryNotFoundError
 
     try:
@@ -120,12 +122,12 @@ def _remote_destination(api: Any, kind: str, repo_id: str, names: list[str], upd
     return remote
 
 
-def check_source(state: ExportState, current: ExportSource, inspection: dict[str, Any]) -> None:
+def check_source(state: ExportState, current: ExportSource, inspection: Inspection) -> None:
     """Reject source mutations and incompatible payload inventories."""
     if current != state.source or fingerprint_files(current.path, state.files) != state.fingerprints:
         raise ValueError("Export source changed. Start a new transfer rather than resuming mixed content.")
-    require_importable(inspection)
-    current_files = inspection["files"]
+    inspection.require_importable()
+    current_files = inspection.files
     ignored = CARDS_AND_LICENSES | {"studio.json"}
     if set(current_files) - ignored != set(state.files) - ignored:
         raise ValueError("Export source file inventory changed. Start a new transfer.")
@@ -136,13 +138,13 @@ def prepare_export(
     repo_id: str,
     asset_id: str,
     source: ExportSource,
-    inspection: dict[str, Any],
+    inspection: Inspection,
     public: bool,
     update: bool,
 ) -> ExportState:
     """Select export files, preserving remote cards and rejecting stale payloads."""
-    require_importable(inspection)
-    names = [name for name in inspection["files"] if name != "studio.json"]
+    inspection.require_importable()
+    names = [name for name in inspection.files if name != "studio.json"]
     remote = _remote_destination(hub_api(), kind, repo_id, names, update)
     preserved = remote & CARDS_AND_LICENSES
     names = [name for name in names if name not in preserved]
@@ -158,7 +160,7 @@ def prepare_export(
     )
 
 
-def run_export(saved: ExportState, validate_source: Callable[[ExportState], None]) -> dict[str, Any]:
+def run_export(saved: ExportState, validate_source: Callable[[ExportState], None]) -> JsonObject:
     """Upload unchanged source files and retain only the completed receipt."""
     with locked_transfer(saved) as state:
         if state.phase != "completed":
@@ -217,14 +219,13 @@ def _upload_payload(state: ExportState) -> None:
     _large_upload(repo_id, kind, payload, state.files)
 
 
-def _complete_upload(state: ExportState) -> dict[str, Any]:
+def _complete_upload(state: ExportState) -> TransferResult:
     api = hub_api()
     kind, repo_id = state.kind, state.repo_id
     descriptor, head = _remote_descriptor(api, kind, repo_id)
     if descriptor.get("transfer_id") != state.transfer_id:
         raise ValueError("Remote export ownership changed; refusing to publish completion metadata")
-    inventory = api.repo_info(repo_id, repo_type=kind, revision=head, files_metadata=True)
-    sizes = {item.rfilename: item.size for item in inventory.siblings}
+    _, sizes = repo_inventory(api, kind, repo_id, head)
     if any(sizes.get(name) != state.fingerprints[name].size for name in state.files):
         raise ValueError("Remote payload is missing files or has unexpected sizes; resume before publishing completion")
     if descriptor.get("status") == "complete":
@@ -241,43 +242,39 @@ def _complete_upload(state: ExportState) -> dict[str, Any]:
     return _export_result(state, commit.oid)
 
 
-def _export_metadata(state: ExportState, status: Literal["uploading", "complete"]) -> dict[str, Any]:
+def _export_metadata(state: ExportState, status: Literal["uploading", "complete"]) -> JsonObject:
     return {
+        **to_json(state.source.metadata),
         "schema_version": 1,
         "kind": state.kind,
         "status": status,
         "transfer_id": state.transfer_id,
-        **state.source.metadata,
-        "files": state.files,
+        "files": [*state.files],
     }
 
 
-def _export_result(state: ExportState, revision: str) -> dict[str, Any]:
-    return {
-        "kind": state.kind,
-        "repo_id": state.repo_id,
-        "id": state.asset_id,
-        "revision": revision,
-        "url": state.url,
-    }
+def _export_result(state: ExportState, revision: str) -> TransferResult:
+    return TransferResult(kind=state.kind, repo_id=state.repo_id, id=state.asset_id, revision=revision, url=state.url)
 
 
-def _remote_descriptor(api: Any, kind: str, repo_id: str) -> tuple[dict[str, Any], str]:
+def _remote_descriptor(api: HfApi, kind: ResourceKind, repo_id: str) -> tuple[JsonObject, str]:
     from huggingface_hub import hf_hub_download
 
     from cli.hf.inspection import MAX_METADATA_BYTES, read_json_file
 
-    info = api.repo_info(repo_id, repo_type=kind, files_metadata=True)
-    descriptor = next((item for item in info.siblings if item.rfilename == "studio.json"), None)
-    if descriptor is None:
-        return {}, info.sha
-    if descriptor.size is None or descriptor.size > MAX_METADATA_BYTES:
+    sha, sizes = repo_inventory(api, kind, repo_id)
+    if "studio.json" not in sizes:
+        return {}, sha
+    size = sizes["studio.json"]
+    if size is None or size > MAX_METADATA_BYTES:
         raise ValueError("Remote studio.json is oversized; refusing to overwrite it")
-    path = hf_hub_download(repo_id, "studio.json", repo_type=kind, revision=info.sha, token=token())
-    return read_json_file(Path(path)), info.sha
+    path = hf_hub_download(repo_id, "studio.json", repo_type=kind, revision=sha, token=token())
+    return read_json_file(Path(path)), sha
 
 
-def _upload_worker(repo_id: str, kind: str, payload: str, names: list[str], credential: str | bool, pipe: Any) -> None:
+def _upload_worker(
+    repo_id: str, kind: ResourceKind, payload: str, names: list[str], credential: str | bool, pipe: Connection
+) -> None:
     from huggingface_hub import HfApi
 
     try:
@@ -296,7 +293,7 @@ def _upload_worker(repo_id: str, kind: str, payload: str, names: list[str], cred
         pipe.close()
 
 
-def _large_upload(repo_id: str, kind: str, payload: Path, names: list[str]) -> None:
+def _large_upload(repo_id: str, kind: ResourceKind, payload: Path, names: list[str]) -> None:
     """Isolate SDK worker threads so cancellation cannot leave uploads running."""
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)

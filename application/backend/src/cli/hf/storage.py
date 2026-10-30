@@ -3,10 +3,16 @@
 
 """Local database boundaries for the standalone HF commands."""
 
-from pathlib import Path
-from typing import Any, cast
+from __future__ import annotations
 
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+from cli.hf.schemas import DATA_PATH, VIDEO_PATH, AssetMetadata, DatasetInfo, Inspection, TransferResult, feature_flags
 from cli.hf.state import ExportSource, ImportState
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 async def validate_target(project_id: str, dataset_id: str | None = None) -> None:
@@ -34,21 +40,18 @@ async def model_export_source(model_id: str) -> ExportSource:
         record = await session.get(ModelDB, model_id)
         if record is None:
             raise ValueError(f"Local model {model_id} does not exist")
-        metadata: dict[str, Any] = {"name": record.name, "source_id": record.id, "source_project_id": record.project_id}
         job = await session.get(JobDB, record.train_job_id) if record.train_job_id else None
         if job and job.status in {"pending", "running"}:
             raise ValueError("Cannot export a model while its training job is active")
         path = Path(record.path)
-        properties = cast("dict[str, Any]", record.properties)
-        metadata.update(
+        metadata = AssetMetadata(
+            name=record.name,
+            source_id=record.id,
+            source_project_id=record.project_id,
             policy=record.policy,
             version=record.version,
             source_dataset_id=record.dataset_id,
-            properties={
-                key: properties[key]
-                for key in ("lora_enabled", "lora_use_dora", "snapflow_enabled")
-                if isinstance(properties.get(key), bool)
-            },
+            properties=feature_flags(cast("Mapping[str, object]", record.properties)),
         )
         _validate_source_path(path, settings.models_dir)
         return ExportSource(path.resolve(), metadata)
@@ -69,12 +72,12 @@ async def dataset_export_source(dataset_id: str) -> ExportSource:
         _validate_source_path(path, settings.datasets_dir)
         return ExportSource(
             path.resolve(),
-            {
-                "name": record.name,
-                "source_id": record.id,
-                "source_project_id": record.project_id,
-                "default_task": record.default_task,
-            },
+            AssetMetadata(
+                name=record.name,
+                source_id=record.id,
+                source_project_id=record.project_id,
+                default_task=record.default_task,
+            ),
         )
 
 
@@ -83,14 +86,14 @@ def _validate_source_path(path: Path, parent: Path) -> None:
         raise ValueError("Resource directory is missing or outside managed storage")
 
 
-def _import_name(state: ImportState, metadata: dict[str, Any]) -> str:
-    name = state.name or metadata.get("name") or state.repo_id.rsplit("/", 1)[-1]
+def _import_name(state: ImportState, metadata: AssetMetadata) -> str:
+    name = state.name or metadata.name or state.repo_id.rsplit("/", 1)[-1]
     if not isinstance(name, str) or not name.strip() or len(name) > 255:
         raise ValueError("Asset name must contain 1 to 255 characters")
     return name
 
 
-async def register_model_import(state: ImportState, destination: Path, inspection: dict[str, Any]) -> dict[str, Any]:
+async def register_model_import(state: ImportState, destination: Path, inspection: Inspection) -> TransferResult:
     """Register a model once without inventing training history or foreign links."""
     from db import get_async_db_session_ctx
     from db.schema import ModelDB
@@ -99,7 +102,9 @@ async def register_model_import(state: ImportState, destination: Path, inspectio
     project_id = state.project_id
     dataset_id = state.dataset_id
     await validate_target(project_id, dataset_id)
-    metadata = inspection.get("studio", {})
+    metadata = inspection.studio or AssetMetadata()
+    if inspection.model is None or inspection.model.policy is None:
+        raise ValueError("Model inspection must identify a supported policy")
     name = _import_name(state, metadata)
     async with get_async_db_session_ctx() as session:
         existing = await session.get(ModelDB, asset_id)
@@ -107,12 +112,6 @@ async def register_model_import(state: ImportState, destination: Path, inspectio
             if existing.project_id != project_id or Path(existing.path).resolve() != destination.resolve():
                 raise ValueError("Saved import ID conflicts with an existing resource")
         else:
-            properties = metadata.get("properties", {})
-            if not isinstance(properties, dict):
-                raise ValueError("Studio model properties must be an object")
-            version = metadata.get("version", 1)
-            if not isinstance(version, int) or version < 1:
-                raise ValueError("Studio model version must be a positive integer")
             session.add(
                 ModelDB(
                     id=asset_id,
@@ -120,13 +119,9 @@ async def register_model_import(state: ImportState, destination: Path, inspectio
                     dataset_id=dataset_id,
                     name=name,
                     path=str(destination),
-                    policy=inspection["model"]["policy"],
-                    properties={
-                        key: properties[key]
-                        for key in ("lora_enabled", "lora_use_dora", "snapflow_enabled")
-                        if isinstance(properties.get(key), bool)
-                    },
-                    version=version,
+                    policy=inspection.model.policy,
+                    properties=feature_flags(metadata.properties),
+                    version=metadata.version,
                     # Do not invent training history or restore foreign job/snapshot IDs.
                     train_job_id=None,
                     snapshot_id=None,
@@ -134,28 +129,28 @@ async def register_model_import(state: ImportState, destination: Path, inspectio
                 )
             )
         await session.commit()
-    return {
-        "kind": "model",
-        "id": asset_id,
-        "project_id": project_id,
-        "path": str(destination),
-        "repo_id": state.repo_id,
-        "revision": state.revision,
-    }
+    return TransferResult(
+        kind="model",
+        id=asset_id,
+        project_id=project_id,
+        path=str(destination),
+        repo_id=state.repo_id,
+        revision=state.revision,
+    )
 
 
 async def register_dataset_import(
     state: ImportState,
     destination: Path,
-    inspection: dict[str, Any],
-) -> dict[str, Any]:
+    inspection: Inspection,
+) -> TransferResult:
     """Register a dataset and temporary empty environment in one transaction."""
     from db import get_async_db_session_ctx
     from db.schema import DatasetDB, ProjectEnvironmentDB
 
     asset_id, project_id = state.asset_id, state.project_id
     await validate_target(project_id)
-    metadata = inspection.get("studio", {})
+    metadata = inspection.studio or AssetMetadata()
     name = _import_name(state, metadata)
     async with get_async_db_session_ctx() as session:
         existing = await session.get(DatasetDB, asset_id)
@@ -177,19 +172,19 @@ async def register_dataset_import(
                     environment_id=environment.id,
                     name=name,
                     path=str(destination),
-                    default_task=metadata.get("default_task", ""),
+                    default_task=metadata.default_task,
                 )
             )
         await session.commit()
-    return {
-        "kind": "dataset",
-        "id": asset_id,
-        "project_id": project_id,
-        "path": str(destination),
-        "repo_id": state.repo_id,
-        "revision": state.revision,
-        "environment_id": state.environment_id,
-    }
+    return TransferResult(
+        kind="dataset",
+        id=asset_id,
+        project_id=project_id,
+        path=str(destination),
+        repo_id=state.repo_id,
+        revision=state.revision,
+        environment_id=state.environment_id,
+    )
 
 
 def validate_dataset_payload(root: Path) -> None:
@@ -198,26 +193,21 @@ def validate_dataset_payload(root: Path) -> None:
 
     from cli.hf.inspection import read_json_file
 
-    info = read_json_file(root / "meta/info.json")
-    expected = {
-        "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
-        "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
-    }
-    for field, template in expected.items():
-        if info.get(field, template) != template:
-            raise ValueError(f"Unsupported LeRobot {field} template: {info.get(field)}")
+    info = DatasetInfo.model_validate(read_json_file(root / "meta/info.json"))
+    for field, template in (("data_path", DATA_PATH), ("video_path", VIDEO_PATH)):
+        if getattr(info, field) != template:
+            raise ValueError(f"Unsupported LeRobot {field} template: {getattr(info, field)}")
     tasks = pd.read_parquet(root / "meta/tasks.parquet")
     if tasks.empty:
         raise ValueError("Dataset task index is empty")
+    paths = {"data": info.data_path} | {
+        f"videos/{key}": info.video_path.replace("{video_key}", key) for key in info.cameras
+    }
     for shard in sorted((root / "meta/episodes").glob("chunk-*/file-*.parquet")):
         frame = pd.read_parquet(shard)
         if frame.empty or "episode_index" not in frame:
             raise ValueError(f"Empty or invalid episode metadata: {shard.name}")
-        for prefix, template in [("data", expected["data_path"])] + [
-            (f"videos/{key}", expected["video_path"].replace("{video_key}", key))
-            for key, feature in info["features"].items()
-            if feature.get("dtype") == "video"
-        ]:
+        for prefix, template in paths.items():
             columns = [f"{prefix}/chunk_index", f"{prefix}/file_index"]
             if not all(column in frame for column in columns):
                 raise ValueError(f"Episode metadata is missing shard references: {columns}")

@@ -8,13 +8,13 @@ import os
 import tempfile
 from dataclasses import field
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, Self
+from typing import Literal, NamedTuple, Self
 from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass
 
-type ResourceKind = Literal["model", "dataset"]
+from cli.hf.schemas import AssetMetadata, Inspection, JsonObject, JsonRecord, ResourceKind, TransferResult, to_json
 
 
 class FileFingerprint(NamedTuple):
@@ -30,11 +30,11 @@ class ExportSource:
     """Managed source directory and portable asset metadata."""
 
     path: Path
-    metadata: dict[str, Any]
+    metadata: AssetMetadata
 
 
 @dataclass(kw_only=True)
-class TransferState[Operation: str, Phase: str]:
+class TransferState[Operation: str, Phase: str](JsonRecord):
     """A validated receipt with its managed storage and recovery operations."""
 
     kind: ResourceKind
@@ -44,7 +44,7 @@ class TransferState[Operation: str, Phase: str]:
     phase: Phase
     schema_version: Literal[1] = 1
     transfer_id: str = field(default_factory=lambda: str(uuid4()))
-    result: dict[str, Any] | None = None
+    result: TransferResult | None = None
 
     @property
     def directory(self) -> Path:
@@ -59,16 +59,15 @@ class TransferState[Operation: str, Phase: str]:
         return f"physicalai-studio hf {self.kind} {self.operation} --resume {self.transfer_id}"
 
     @property
-    def receipt(self) -> dict[str, Any]:
+    def receipt(self) -> JsonObject:
         """Add recovery details to a completed result."""
         if self.result is None:
             raise ValueError("Transfer has not completed")
-        return {**self.result, "transfer_id": self.transfer_id, "resume_command": self.resume_command}
+        return {**to_json(self.result), "transfer_id": self.transfer_id, "resume_command": self.resume_command}
 
     def save(self) -> None:
         """Persist state atomically, retaining version-one fingerprint arrays."""
-        data = TypeAdapter(type(self)).dump_python(self, mode="json", exclude_none=True)
-        atomic_json(self.directory / "transfer.json", data)
+        atomic_json(self.directory / "transfer.json", to_json(self))
 
     @classmethod
     def load(cls, resume: UUID, kind: ResourceKind) -> Self:
@@ -96,7 +95,7 @@ class ImportState(TransferState[Literal["import"], Literal["prepared", "download
     phase: Literal["prepared", "downloaded", "completed"] = "prepared"
     project_id: str
     revision: str
-    inspection: dict[str, Any]
+    inspection: Inspection
     name: str | None = None
     dataset_id: str | None = None
     environment_id: str | None = None
@@ -114,13 +113,13 @@ class ExportState(TransferState[Literal["export"], Literal["prepared", "uploadin
     public: bool
     update: bool
 
-    def preview(self, size_bytes: int) -> dict[str, Any]:
+    def preview(self, size_bytes: int) -> JsonObject:
         """Describe a planned export without persisting or uploading it."""
         return {
             "dry_run": True,
             "kind": self.kind,
             "repo_id": self.repo_id,
-            "files": self.files,
+            "files": [*self.files],
             "size_bytes": size_bytes,
             "private_if_created": not self.public,
         }
@@ -132,7 +131,7 @@ class ExportState(TransferState[Literal["export"], Literal["prepared", "uploadin
         return f"https://huggingface.co/{prefix}{self.repo_id}"
 
 
-def atomic_json(path: Path, value: dict[str, Any]) -> None:
+def atomic_json(path: Path, value: JsonObject) -> None:
     """Replace a JSON document atomically on its current filesystem."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")

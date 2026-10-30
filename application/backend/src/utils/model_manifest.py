@@ -3,14 +3,14 @@
 
 """Dependency-light policy manifest rules shared by local and Hub imports."""
 
+from collections.abc import Mapping
 from pathlib import PurePosixPath
-from typing import Any
 
 EXPORT_BACKENDS = ("torch", "openvino", "onnx", "executorch")
 SUPPORTED_POLICIES = frozenset({"act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"})
 
 
-def manifest_artifact(manifest: dict[str, Any], backend: str, label: str) -> str:
+def manifest_artifact(manifest: Mapping[str, object], backend: str, label: str) -> str:
     """Extract a relative artifact path from a policy manifest."""
     model = manifest.get("model")
     if not isinstance(model, dict):
@@ -27,7 +27,7 @@ def manifest_artifact(manifest: dict[str, Any], backend: str, label: str) -> str
     return artifact
 
 
-def manifest_policy(manifest: dict[str, Any], label: str) -> str:
+def manifest_policy(manifest: Mapping[str, object], label: str) -> str:
     """Extract a supported policy name without importing policy implementations."""
     policy = manifest.get("policy")
     if not isinstance(policy, dict):

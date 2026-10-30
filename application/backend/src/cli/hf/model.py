@@ -5,12 +5,12 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any
 from uuid import UUID, uuid4
 
 import click
 
 from cli.hf.output import invoke
+from cli.hf.schemas import AssetMetadata, JsonObject, TransferResult, to_json
 from cli.hf.state import ExportState, ImportState, atomic_json
 
 
@@ -158,7 +158,7 @@ def _import_model(  # noqa: PLR0913, PLR0917
     subfolder: str | None,
     resume: UUID | None,
     dry_run: bool,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Import a Studio model with an explicit local dataset association."""
     from cli.hf import transfer
     from cli.hf.inspection import inspect_remote_model
@@ -177,22 +177,27 @@ def _import_model(  # noqa: PLR0913, PLR0917
             raise ValueError("--name must contain 1 to 255 characters")
         asyncio.run(validate_target(str(project_id), str(dataset_id)))
         inspection = inspect_remote_model(repo_id, revision or "main", subfolder)
-        transfer.require_importable(inspection)
-        if not inspection["size_complete"]:
+        inspection.require_importable()
+        if not inspection.size_complete:
             raise ValueError("Hub did not report all payload sizes; cannot enforce import disk limits")
         from settings import get_settings
 
         settings = get_settings()
-        transfer.check_disk_space(settings.models_dir, inspection["size_bytes"])
+        transfer.check_disk_space(settings.models_dir, inspection.size_bytes)
         if dry_run:
-            return {**inspection, "dry_run": True, "project_id": str(project_id), "dataset_id": str(dataset_id)}
+            return {
+                **to_json(inspection),
+                "dry_run": True,
+                "project_id": str(project_id),
+                "dataset_id": str(dataset_id),
+            }
         state = ImportState(
             kind="model",
             repo_id=repo_id,
             project_id=str(project_id),
             dataset_id=str(dataset_id),
             name=name,
-            revision=inspection["revision"],
+            revision=inspection.pinned_revision,
             inspection=inspection,
             asset_id=str(uuid4()),
         )
@@ -205,7 +210,7 @@ def _import_model(  # noqa: PLR0913, PLR0917
     return state.receipt
 
 
-def _download_model(state: ImportState) -> dict[str, Any]:
+def _download_model(state: ImportState) -> TransferResult:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_model
     from cli.hf.storage import register_model_import, validate_target
@@ -217,15 +222,15 @@ def _download_model(state: ImportState) -> dict[str, Any]:
     if not destination.exists():
         root = transfer.download_files(state, parent)
         verified = inspect_local_model(root)
-        transfer.require_importable(verified)
+        verified.require_importable()
         # Move the tree first; normalization below is safe to retry after a crash.
         root.rename(destination)
         state.phase = "downloaded"
         state.save()
-    if state.inspection["detected_format"] == "studio_exports":
+    if state.inspection.detected_format == "studio_exports":
         _finish_normalization(destination)
     verified = inspect_local_model(destination)
-    transfer.require_importable(verified)
+    verified.require_importable()
     return asyncio.run(register_model_import(state, destination, verified))
 
 
@@ -239,11 +244,9 @@ def _finish_normalization(destination: Path) -> None:
             (destination / backend).rename(exports / backend)
     descriptor = destination / "studio.json"
     if descriptor.is_file():
-        metadata = read_json_file(descriptor)
-        metadata["files"] = [
-            f"exports/{name}" if name.split("/")[0] in BACKENDS else name for name in metadata["files"]
-        ]
-        atomic_json(descriptor, metadata)
+        metadata = AssetMetadata.model_validate(read_json_file(descriptor))
+        metadata.files = [f"exports/{name}" if name.split("/", 1)[0] in BACKENDS else name for name in metadata.files]
+        atomic_json(descriptor, to_json(metadata))
 
 
 def _export_model(
@@ -253,7 +256,7 @@ def _export_model(
     update: bool,
     resume: UUID | None,
     dry_run: bool,
-) -> dict[str, Any]:
+) -> JsonObject:
     """Publish a Studio model, with model-specific source and manifest checks."""
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_model
@@ -273,7 +276,7 @@ def _export_model(
         inspection = inspect_local_model(source.path)
         state = transfer.prepare_export("model", repo_id, str(model_id), source, inspection, public, update)
         if dry_run:
-            return state.preview(inspection["size_bytes"])
+            return state.preview(inspection.size_bytes)
         state.save()
     return transfer.run_export(state, _check_model_source)
 
