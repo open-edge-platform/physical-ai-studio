@@ -54,6 +54,13 @@ class Simulation(BaseModel):
     pid: int | None = Field(None, description="Process id of the simulation once it is running")
     started_at: datetime | None = None
     http_url: str | None = Field(None, description="HTTP API of the running simulation")
+    robot_http_url: str | None = Field(
+        None,
+        description=(
+            "The robot's address when Studio started the simulation. The simulation reuses its port when it is "
+            "free; when http_url differs, the port was taken and the robot and its cameras moved to http_url"
+        ),
+    )
     viewer_url: str | None = Field(None, description="3D viewer of the running simulation")
     viewer_proxy_url: str | None = Field(
         None, description="The 3D viewer through Studio, for the browser: a path on Studio's own address"
@@ -100,6 +107,17 @@ class RobotSimulation(BaseModel):
     )
     scene: str | None = None
     cameras: list[SimulationCamera] = Field(default_factory=list)
+
+
+class SimulationCommand(BaseModel):
+    """The command that starts a robot's simulation in a terminal, outside Studio.
+
+    Studio attaches to that simulation as one started outside Studio; it keeps running when Studio
+    stops, and scripts can drive it too.
+    """
+
+    argv: list[str] = Field(..., description="The command line, executable first")
+    command: str = Field(..., description="The command line quoted for a POSIX shell, ready to copy")
 
 
 class ProjectRobotSimulation(RobotSimulation):

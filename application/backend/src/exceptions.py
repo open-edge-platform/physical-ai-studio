@@ -619,6 +619,17 @@ class SimulationInvalidRequestError(BaseException):
         )
 
 
+class SimulationCommandUnavailableError(BaseException):
+    """Raised when the plugin of a simulated robot type offers no command to start its simulation by hand."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="simulation_command_unavailable",
+            http_status=http.HTTPStatus.NOT_FOUND,
+        )
+
+
 class SimulationBusyError(BaseException):
     """Raised when Studio already runs a simulation and the request did not ask to replace it."""
 

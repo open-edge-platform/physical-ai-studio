@@ -111,9 +111,13 @@ class DatabaseSimulationRobots:
             # the robot's previous address, so they must not move without it. If any of it fails,
             # none of it is kept, and the next start moves them all from the address still stored.
             cameras = ProjectCameraService(session, self._registry)
-            await _move_simulation_cameras(cameras, project_id, robot_id, http_url, commit=False)
+            environments = EnvironmentService(session, self._registry)
+            # Cameras saved by hand on the robot's stream, in this robot's environments only.
+            claimed = await _cameras_claimed_by(service, environments, project_id, robot_id)
+            await _move_simulation_cameras(
+                cameras, project_id, robot_id, http_url, adopt=(robot.payload.http_url, claimed), commit=False
+            )
             if robot.payload.http_url != http_url:
-                environments = EnvironmentService(session, self._registry)
                 await _move_simulation_leaders(
                     service, environments, self._registry, project_id, robot_id, robot.payload.http_url, http_url
                 )
@@ -144,26 +148,67 @@ class DatabaseSimulationRobots:
 
 
 async def _move_simulation_cameras(
-    cameras: ProjectCameraService, project_id: UUID, robot_id: UUID, new_url: str, *, commit: bool = True
+    cameras: ProjectCameraService,
+    project_id: UUID,
+    robot_id: UUID,
+    new_url: str,
+    *,
+    adopt: tuple[str, frozenset[UUID]] | None = None,
+    commit: bool = True,
 ) -> None:
-    """Point the IP cameras added from a robot's simulation at the simulation's new address.
+    """Point the IP cameras of a robot's simulation at the simulation's new address.
 
-    Simulations start on free ports, so the address changes on every start. A camera added from a
-    simulation records its robot, and only that robot's cameras move, from whatever address they
-    were on (the robot's stored address may have changed since). A camera without a robot never
-    moves: its address cannot tell which simulation it came from.
+    A simulation reuses its robot's port while that port is free and takes a free one otherwise, so
+    the address can change from one start to the next. A camera added from a simulation records its
+    robot, and only that robot's cameras move, from whatever address they were on (the robot's stored
+    address may have changed since). A camera without a robot moves only when *adopt*, the robot's
+    stored address and the cameras it claims (:func:`_cameras_claimed_by`), names it and it streams
+    from that address; it then records the robot. Any other camera without a robot never moves: its
+    address alone cannot tell which simulation it came from.
     """
+    adopt_from, claimed = adopt if adopt is not None else (None, frozenset[UUID]())
     for camera in await cameras.get_camera_list(project_id):
-        if not isinstance(camera, IPCamera) or camera.payload.simulation_robot_id != robot_id:
+        if not isinstance(camera, IPCamera):
             continue
+        owner = camera.payload.simulation_robot_id
         base, separator, stream = camera.payload.url.partition("/cameras/")
-        if not separator or base == new_url:
+        adopted = owner is None and camera.id in claimed and base == adopt_from
+        if (owner != robot_id and not adopted) or not separator or base == new_url:
             continue
         url = f"{new_url}/cameras/{stream}"
-        payload = camera.payload.model_copy(update={"url": url})
+        payload = camera.payload.model_copy(update={"url": url, "simulation_robot_id": robot_id})
         await cameras.update_camera(
             project_id, camera.model_copy(update={"payload": payload, "fingerprint": {"url": url}}), commit=commit
         )
+
+
+async def _cameras_claimed_by(
+    robots: RobotService, environments: EnvironmentService, project_id: UUID, robot_id: UUID
+) -> frozenset[UUID]:
+    """Return the cameras whose environments all have this robot and no other robot with an address.
+
+    A camera saved by hand on a simulation's stream records no robot. It belongs to the robot's
+    simulation when every environment it is in has the robot and no other simulated robot (one with
+    an address of its own). A camera in no environment, or next to another simulated robot, is not
+    claimed: robots that shared an address could each claim it, in whatever order they start.
+    """
+    addressed = {
+        other.id
+        for other in await robots.get_robot_list(project_id)
+        if not isinstance(other, UnavailableRobot) and isinstance(getattr(other.payload, "http_url", None), str)
+    }
+    claims: dict[UUID, bool] = {}
+    for environment in await environments.get_environment_list(project_id):
+        members = {
+            member
+            for configuration in environment.robots
+            for member in (configuration.robot_id, getattr(configuration.tele_operator, "robot_id", None))
+            if member is not None
+        }
+        only_this_robot = robot_id in members and not (members & addressed) - {robot_id}
+        for configuration in environment.cameras:
+            claims[configuration.camera_id] = claims.get(configuration.camera_id, True) and only_this_robot
+    return frozenset(camera_id for camera_id, claim in claims.items() if claim)
 
 
 async def _move_simulation_leaders(
@@ -417,7 +462,10 @@ class SimulationManager:
             # it cannot overwrite the address of the one starting now.
             await self._finish_address_writes()
 
-            await self._spawn(argv, owner_name, request, robot.type)
+            robot_http_url = getattr(robot.payload, "http_url", None)
+            await self._spawn(
+                argv, owner_name, request, robot.type, robot_http_url if isinstance(robot_http_url, str) else None
+            )
             return self.state()
 
     async def stop(self) -> Simulation:
@@ -443,7 +491,14 @@ class SimulationManager:
 
     # -- process -----------------------------------------------------------
 
-    async def _spawn(self, argv: list[str], owner_name: str, request: StartSimulationRequest, robot_type: str) -> None:
+    async def _spawn(
+        self,
+        argv: list[str],
+        owner_name: str,
+        request: StartSimulationRequest,
+        robot_type: str,
+        robot_http_url: str | None = None,
+    ) -> None:
         self._logs.clear()
         logger.info("Starting simulation {!r}: {}", owner_name, argv)
         try:
@@ -469,6 +524,7 @@ class SimulationManager:
                 scene=request.scene,
                 seed=request.seed,
                 started_at=datetime.now(UTC),
+                robot_http_url=robot_http_url,
             )
         )
         stdout = asyncio.create_task(self._read_events(child))

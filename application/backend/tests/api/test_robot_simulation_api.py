@@ -13,12 +13,13 @@ from api.robot_simulation import get_robot_simulation_service
 from exceptions import (
     ResourceNotFoundError,
     ResourceType,
+    SimulationCommandUnavailableError,
     SimulationInvalidRequestError,
     SimulationNotRunningError,
     SimulationNotSupportedError,
 )
 from main import app
-from schemas.simulation import RobotSimulation
+from schemas.simulation import RobotSimulation, SimulationCommand
 
 PROJECT_ID = uuid4()
 ROBOT_ID = uuid4()
@@ -32,6 +33,12 @@ class StubService:
         if self.error is not None:
             raise self.error
         return RobotSimulation(running=True, started_by="external", owner_name="sim", scene="yahtzee")
+
+    async def command(self, project_id, robot_id, scene, seed) -> SimulationCommand:
+        self.commanded = (scene, seed)
+        if self.error is not None:
+            raise self.error
+        return SimulationCommand(argv=["sim", "start", "--scene", scene], command=f"sim start --scene {scene}")
 
     async def add_cameras(self, project_id, environment_id, robot_id, names, camera_names) -> list:
         self.added = (names, camera_names)
@@ -99,6 +106,53 @@ def test_errors_map_to_their_codes(stub: StubService, error: Exception, status_c
     response = TestClient(app).post(
         f"/api/projects/{PROJECT_ID}/environments/{ENVIRONMENT_ID}/simulation-cameras",
         json={"robot_id": str(ROBOT_ID), "cameras": ["wrist"]},
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["error_code"] == error_code
+
+
+def test_command_returns_the_command_for_the_scene_and_seed(stub: StubService) -> None:
+    response = TestClient(app).get(
+        f"/api/projects/{PROJECT_ID}/robots/{ROBOT_ID}/simulation/command", params={"scene": "yahtzee", "seed": 7}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"argv": ["sim", "start", "--scene", "yahtzee"], "command": "sim start --scene yahtzee"}
+    assert stub.commanded == ("yahtzee", 7)
+
+
+def test_command_seed_is_optional(stub: StubService) -> None:
+    response = TestClient(app).get(
+        f"/api/projects/{PROJECT_ID}/robots/{ROBOT_ID}/simulation/command", params={"scene": "yahtzee"}
+    )
+
+    assert response.status_code == 200
+    assert stub.commanded == ("yahtzee", None)
+
+
+@pytest.mark.parametrize("params", [{}, {"scene": "yahtzee", "seed": -1}])
+def test_command_needs_a_scene_and_a_non_negative_seed(stub: StubService, params: dict) -> None:
+    response = TestClient(app).get(f"/api/projects/{PROJECT_ID}/robots/{ROBOT_ID}/simulation/command", params=params)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "error_code"),
+    [
+        (SimulationCommandUnavailableError("no command"), 404, "simulation_command_unavailable"),
+        (SimulationInvalidRequestError("Unknown scene"), 400, "simulation_invalid_request"),
+        (SimulationNotSupportedError("no simulation"), 400, "simulation_not_supported"),
+    ],
+)
+def test_command_errors_map_to_their_codes(
+    stub: StubService, error: Exception, status_code: int, error_code: str
+) -> None:
+    stub.error = error
+
+    response = TestClient(app).get(
+        f"/api/projects/{PROJECT_ID}/robots/{ROBOT_ID}/simulation/command", params={"scene": "yahtzee"}
     )
 
     assert response.status_code == status_code

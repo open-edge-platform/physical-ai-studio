@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import services.robot_simulation_service as module
 from db.schema import Base, EnvironmentCameraDB, ProjectDB, ProjectEnvironmentDB
 from exceptions import (
+    SimulationCommandUnavailableError,
     SimulationInvalidRequestError,
     SimulationMovedError,
     SimulationNotRunningError,
@@ -104,9 +105,9 @@ def fake_manager(state: Any) -> SimpleNamespace:
 
 
 def service(
-    responses: dict[str, Any], state: Simulation | None = None, simulated: bool = True
+    responses: dict[str, Any], state: Simulation | None = None, simulated: bool = True, launch: Any = None
 ) -> RobotSimulationService:
-    launch = SimpleNamespace(owner_name=lambda payload: payload.name)
+    launch = launch or SimpleNamespace(owner_name=lambda payload: payload.name)
     registry = SimpleNamespace(
         get_definition=lambda robot_type: SimpleNamespace(
             simulation=launch if simulated and robot_type.startswith("Sim") else None
@@ -171,6 +172,51 @@ async def test_nothing_answering_is_not_running(robot: SimpleNamespace) -> None:
 async def test_a_robot_type_without_a_simulation_is_refused(robot: SimpleNamespace) -> None:
     with pytest.raises(SimulationNotSupportedError):
         await service({}, simulated=False).get(PROJECT_ID, ROBOT_ID)
+
+
+def standalone_launch(*, scenes: tuple[str, ...] = ("yahtzee",)) -> SimpleNamespace:
+    """A launch whose ``standalone_argv`` starts the robot's simulation at its payload's address."""
+
+    def standalone_argv(scene: str, payload: Payload, seed: int | None = None) -> list[str]:
+        if scene not in scenes:
+            raise ValueError(f"Unknown scene {scene!r}")
+        argv = ["sim", "start", "--scene", scene, f"--name={payload.name}", "--url", payload.http_url]
+        return argv if seed is None else [*argv, "--seed", str(seed)]
+
+    return SimpleNamespace(owner_name=lambda payload: payload.name, standalone_argv=standalone_argv)
+
+
+async def test_the_command_starts_the_robots_simulation_at_its_address(robot: SimpleNamespace) -> None:
+    robot.payload = Payload(name="my sim")
+
+    result = await service({}, launch=standalone_launch()).command(PROJECT_ID, ROBOT_ID, "yahtzee", 7)
+
+    assert result.argv == ["sim", "start", "--scene", "yahtzee", "--name=my sim", "--url", EXTERNAL, "--seed", "7"]
+    assert result.command == f"sim start --scene yahtzee '--name=my sim' --url {EXTERNAL} --seed 7"
+
+
+async def test_an_invalid_scene_for_the_command_is_refused(robot: SimpleNamespace) -> None:
+    with pytest.raises(SimulationInvalidRequestError, match="Unknown scene 'fold'"):
+        await service({}, launch=standalone_launch()).command(PROJECT_ID, ROBOT_ID, "fold", None)
+
+
+@pytest.mark.parametrize(
+    "launch",
+    [
+        # A plugin built against a physicalai-studio-plugin without `standalone_argv`.
+        SimpleNamespace(owner_name=lambda payload: payload.name),
+        # One whose launch has no `build_standalone_argv`.
+        SimpleNamespace(owner_name=lambda payload: payload.name, standalone_argv=lambda *args: None),
+    ],
+)
+async def test_a_plugin_without_a_command_offers_none(robot: SimpleNamespace, launch: SimpleNamespace) -> None:
+    with pytest.raises(SimulationCommandUnavailableError):
+        await service({}, launch=launch).command(PROJECT_ID, ROBOT_ID, "yahtzee", None)
+
+
+async def test_a_robot_type_without_a_simulation_has_no_command(robot: SimpleNamespace) -> None:
+    with pytest.raises(SimulationNotSupportedError):
+        await service({}, simulated=False).command(PROJECT_ID, ROBOT_ID, "yahtzee", None)
 
 
 @pytest.fixture

@@ -52,7 +52,7 @@ export const ROBOT_SIMULATION_STATUS_LABEL: Record<RobotSimulationStatus, string
     studio: 'Running · Studio',
     starting: 'Starting…',
     stopping: 'Stopping…',
-    external: 'Running · external',
+    external: 'Running · outside Studio',
     offline: 'Offline',
     unknown: 'Loading...',
 };

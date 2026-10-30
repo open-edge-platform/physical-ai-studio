@@ -153,8 +153,10 @@ def runtime_export_readme(document: dict[str, Any], *, unresolved: list[str]) ->
             "The `device` field on the model is from the machine that produced this",
             "export. Change it if this host has no matching accelerator.",
             "",
-            f"The robot name is `{robot_name}`. Two runs that share it collide on",
-            "one host — that is the intended lock. Stop the other run first.",
+            f"The robot name is `{robot_name}`. Nothing stops two programs from driving",
+            "it at once: before you run this, stop any Studio session that uses the",
+            "robot (and leave its environment page, whose session keeps the robot for",
+            "about 45 seconds) and any other run of this recipe.",
             "",
         ]
     )

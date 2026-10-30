@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
+    ActionButton,
     Button,
     ButtonGroup,
     Content,
@@ -15,6 +16,7 @@ import {
     Divider,
     Flex,
     Heading,
+    Icon,
     Item,
     NumberField,
     Picker,
@@ -22,14 +24,17 @@ import {
     Radio,
     RadioGroup,
     Text,
+    toast,
     View,
 } from '@geti-ui/ui';
+import { Checkmark, Copy } from '@geti-ui/ui/icons';
 
 import { getApiErrorMessage } from '../../api/errors';
 import { useProjectId } from '../projects/use-project';
 import { useRobotCatalogQuery } from '../robots/robot-catalog.hooks';
 import { InlineAlert } from '../robots/setup-wizard/shared/inline-alert';
 import { rememberedScene, rememberScene, RobotSimulationLaunch, useRobotSimulationLaunch } from './robot-simulation';
+import { useRobotSimulation, useSimulationCommand } from './use-robot-simulation';
 import {
     isActiveSimulation,
     Simulation,
@@ -48,6 +53,96 @@ interface SimulatedRobot {
 }
 
 const robotTypeLabel = (type: string | null | undefined) => (type ?? 'robot').replaceAll('_', ' ');
+
+/** "<robot type> · <scene>" with the catalog's display names, e.g. "MuJoCo SO-101 Follower · Yahtzee". */
+const useSimulationTitle = (robotType: string | null | undefined, scene: string | null | undefined): string => {
+    const { data: catalog } = useRobotCatalogQuery();
+    const entry = catalog.find(({ type }) => type === robotType);
+    const robotLabel = entry?.display_name ?? robotTypeLabel(robotType);
+    if (scene == null) {
+        return robotLabel;
+    }
+
+    return `${robotLabel} · ${entry?.simulation?.scenes.find(({ id }) => id === scene)?.display_name ?? scene}`;
+};
+
+/** An argument as `shlex.join` quotes it, so the shown command reads like the copied one. */
+const shellQuote = (argument: string): string =>
+    /^[\w@%+=:,./-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", `'"'"'`)}'`;
+
+/** The port of a URL, or undefined when it has none or is not a URL. */
+const urlPort = (url: string | null | undefined): string | undefined => {
+    try {
+        return url == null ? undefined : new URL(url).port || undefined;
+    } catch {
+        return undefined;
+    }
+};
+
+/**
+ * The command that starts the chosen scene in a terminal instead, which Studio attaches to as a
+ * simulation started outside Studio. Hidden when the robot type's plugin offers none.
+ */
+const RunItYourself = ({
+    project_id,
+    robot_id,
+    scene,
+    seed,
+}: {
+    project_id: string;
+    robot_id: string;
+    scene: string;
+    seed: number | null;
+}) => {
+    const { data } = useSimulationCommand(project_id, robot_id, scene, seed);
+    const [copied, setCopied] = useState(false);
+
+    if (data === undefined) {
+        return null;
+    }
+
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(data.command);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            toast.negative('Could not copy the command.');
+        }
+    };
+
+    return (
+        <Disclosure isQuiet>
+            <DisclosureTitle>Run it yourself</DisclosureTitle>
+            <DisclosurePanel>
+                <Flex direction='column' gap='size-100'>
+                    <Text UNSAFE_className={classes.detail}>
+                        Start this simulation in a terminal instead. Studio connects to it, scripts can too, and it
+                        keeps running when Studio stops.
+                    </Text>
+                    <Flex gap='size-100' alignItems='start'>
+                        <View flex UNSAFE_className={classes.command}>
+                            {/* One unbreakable span per argument: lines break only between arguments. */}
+                            <pre>
+                                {data.argv.map((argument, index) => (
+                                    <span key={index}>
+                                        {index > 0 ? ' ' : null}
+                                        <span className={classes.argument}>{shellQuote(argument)}</span>
+                                    </span>
+                                ))}
+                            </pre>
+                        </View>
+                        {/* Wide enough for both labels, so copying does not move the command box. */}
+                        <ActionButton aria-label='Copy command' onPress={copy} width='size-1600'>
+                            <Icon>{copied ? <Checkmark /> : <Copy />}</Icon>
+                            <Text>{copied ? 'Copied' : 'Copy'}</Text>
+                        </ActionButton>
+                    </Flex>
+                </Flex>
+            </DisclosurePanel>
+        </Disclosure>
+    );
+};
 
 const StartForm = ({
     robot,
@@ -70,9 +165,11 @@ const StartForm = ({
     const startMutation = useStartSimulation(project_id);
 
     const other = isActiveSimulation(simulation) && simulation.robot_id !== robot.id ? simulation : undefined;
+    const otherTitle = useSimulationTitle(other?.robot_type, other?.scene);
     const { data: catalog } = useRobotCatalogQuery();
     const displayName = catalog.find(({ type }) => type === robot.type)?.display_name ?? robotTypeLabel(robot.type);
     const sceneDescription = launch.scenes.find(({ id }) => id === scene)?.description;
+    const chosenSeed = launch.max_seed !== null && seedMode === 'fixed' ? seed : null;
 
     const start = () => {
         rememberScene(robot.id, scene);
@@ -82,7 +179,7 @@ const StartForm = ({
                     project_id,
                     robot_id: robot.id,
                     scene,
-                    seed: launch.max_seed !== null && seedMode === 'fixed' ? seed : null,
+                    seed: chosenSeed,
                     // Also this robot's own simulation, e.g. one still stopping after a failed start.
                     replace: isActiveSimulation(simulation),
                 },
@@ -148,12 +245,13 @@ const StartForm = ({
                             </DisclosurePanel>
                         </Disclosure>
                     ) : null}
+                    <RunItYourself project_id={project_id} robot_id={robot.id} scene={scene} seed={chosenSeed} />
                     {other !== undefined ? (
                         <InlineAlert variant='warning'>
                             <strong>Another simulation is running</strong>
                             <br />
-                            Studio runs one simulation at a time. {robotTypeLabel(other.robot_type)} · {other.scene} is
-                            running; it will be stopped, and so will the sessions that use it.
+                            Studio runs one simulation at a time. {otherTitle} is running; it will be stopped, and so
+                            will the sessions that use it.
                         </InlineAlert>
                     ) : null}
                     {startError !== undefined ? <InlineAlert variant='error'>{startError}</InlineAlert> : null}
@@ -226,8 +324,18 @@ const SimulationProgress = ({
     const stopMutation = useStopSimulation(project_id);
     const { data: logs } = useSimulationLogs(showLog);
 
+    const title = useSimulationTitle(simulation.robot_type, simulation.scene);
     const step = currentStep(simulation);
     const failed = simulation.status === 'failed';
+    // The simulation reuses the robot's port while it is free; Studio moved the robot and its
+    // cameras to the port it took instead.
+    const askedPort = urlPort(simulation.robot_http_url);
+    const runningPort = urlPort(simulation.http_url);
+    const movedPort =
+        simulation.status === 'running' &&
+        askedPort !== undefined &&
+        runningPort !== undefined &&
+        askedPort !== runningPort;
     const stepState = (index: number): StepState =>
         index < step ? 'done' : index > step ? 'pending' : failed ? 'failed' : 'active';
     const download = simulation.download;
@@ -247,9 +355,7 @@ const SimulationProgress = ({
             <Divider />
             <Content>
                 <Flex direction='column' gap='size-150'>
-                    <Text>
-                        {robotTypeLabel(simulation.robot_type)} · {simulation.scene}
-                    </Text>
+                    <Text>{title}</Text>
                     {STEPS.map((label, index) => (
                         <Step key={label} state={stepState(index)}>
                             <Text>{label}</Text>
@@ -266,6 +372,12 @@ const SimulationProgress = ({
                     ))}
                     {failed && simulation.error != null ? (
                         <InlineAlert variant='error'>{simulation.error.message}</InlineAlert>
+                    ) : null}
+                    {movedPort ? (
+                        <InlineAlert variant='info'>
+                            Port {askedPort} was in use; the simulation runs on {runningPort}, and the robot and its
+                            cameras now use it.
+                        </InlineAlert>
                     ) : null}
                     {simulation.status === 'running' && (simulation.cameras ?? []).length === 0 ? (
                         <InlineAlert variant='warning'>
@@ -306,6 +418,43 @@ const SimulationProgress = ({
 };
 
 /**
+ * The robot's simulation runs, started outside Studio (e.g. with the "Run it yourself" command
+ * while the dialog was open): Studio is connected to it, so there is nothing left to start.
+ */
+const ExternalSimulationRunning = ({
+    robot,
+    scene,
+    close,
+}: {
+    robot: SimulatedRobot;
+    scene: string | null | undefined;
+    close: () => void;
+}) => {
+    const title = useSimulationTitle(robot.type, scene);
+
+    return (
+        <Dialog width='size-6000'>
+            <Heading>Simulation running</Heading>
+            <Divider />
+            <Content>
+                <Flex direction='column' gap='size-150'>
+                    <Text>{title}</Text>
+                    <Step state='done'>
+                        <Text>Started outside Studio</Text>
+                        <Text UNSAFE_className={classes.detail}>Studio is connected to it</Text>
+                    </Step>
+                </Flex>
+            </Content>
+            <ButtonGroup>
+                <Button variant='accent' onPress={close}>
+                    Close
+                </Button>
+            </ButtonGroup>
+        </Dialog>
+    );
+};
+
+/**
  * Starts a simulated robot's simulation and follows it until it runs or fails. Opens on the
  * progress view when the robot's simulation is already starting.
  */
@@ -325,6 +474,9 @@ export const SimulationDialog = ({
     const { data: simulation } = useSimulation();
     const isThisRobot = simulation?.robot_id === robot.id && simulation.status !== 'idle';
     const [showForm, setShowForm] = useState(!isThisRobot);
+    // Probed while the form shows: a simulation started in a terminal is only known from probes.
+    const { data: robotSimulation } = useRobotSimulation(project_id, robot.id, showForm && !isThisRobot);
+    const runsOutsideStudio = robotSimulation?.running === true && robotSimulation.started_by === 'external';
     // Undefined until the state has loaded, so a simulation already running on open is not news.
     const wasRunning = useRef<boolean | undefined>(undefined);
 
@@ -354,6 +506,10 @@ export const SimulationDialog = ({
                 onBack={() => setShowForm(true)}
             />
         );
+    }
+
+    if (showForm && !isThisRobot && runsOutsideStudio) {
+        return <ExternalSimulationRunning robot={robot} scene={robotSimulation?.scene} close={close} />;
     }
 
     return (

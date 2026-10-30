@@ -4,6 +4,7 @@
 """What a simulated robot's simulation serves (viewer, speed, cameras), and adding its cameras."""
 
 import asyncio
+import shlex
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from exceptions import (
     ResourceNotFoundError,
     ResourceType,
+    SimulationCommandUnavailableError,
     SimulationInvalidRequestError,
     SimulationMovedError,
     SimulationNotRunningError,
@@ -29,6 +31,7 @@ from schemas.simulation import (
     ProjectRobotSimulation,
     RobotSimulation,
     SimulationCamera,
+    SimulationCommand,
     SimulationStatus,
     simulation_proxy_path,
 )
@@ -62,6 +65,32 @@ class RobotSimulationService:
         """
         robot = await RobotService(self._session, self._registry).get_robot_by_id(project_id, robot_id)
         return _with_proxy_urls(project_id, robot_id, await self._probe(robot, self._owner_name(robot)))
+
+    async def command(self, project_id: UUID, robot_id: UUID, scene: str, seed: int | None) -> SimulationCommand:
+        """Return the command that starts the robot's simulation in a terminal, outside Studio.
+
+        The simulation plugin builds it from the robot's payload: its name and address, so that Studio
+        attaches to that simulation as it is.
+
+        Raises:
+            ResourceNotFoundError: The robot does not exist.
+            SimulationNotSupportedError: The robot type has no simulation.
+            SimulationCommandUnavailableError: The robot type's plugin offers no such command.
+            SimulationInvalidRequestError: The scene or seed is not valid for the robot type, or the
+                robot's payload has no address to start it at.
+        """
+        robot = await RobotService(self._session, self._registry).get_robot_by_id(project_id, robot_id)
+        # `standalone_argv` is missing on physicalai-studio-plugin releases before it.
+        standalone_argv = getattr(self._launch(robot), "standalone_argv", None)
+        try:
+            argv = None if standalone_argv is None else standalone_argv(scene, robot.payload, seed)
+        except ValueError as error:
+            raise SimulationInvalidRequestError(str(error)) from error
+        if argv is None:
+            raise SimulationCommandUnavailableError(
+                f"The simulation of robot {robot.name!r} ({robot.type}) cannot be started outside Studio."
+            )
+        return SimulationCommand(argv=argv, command=shlex.join(argv))
 
     async def proxy_addresses(self, project_id: UUID, robot_id: UUID) -> tuple[str | None, str | None]:
         """Return where the robot's simulation serves its HTTP API and its viewer, for passing them on.
@@ -237,11 +266,14 @@ class RobotSimulationService:
         return http_url if isinstance(http_url, str) else None
 
     def _owner_name(self, robot: Any) -> str:
+        return self._launch(robot).owner_name(robot.payload)
+
+    def _launch(self, robot: Any) -> Any:
         definition = None if isinstance(robot, UnavailableRobot) else self._registry.get_definition(robot.type)
         launch = getattr(definition, "simulation", None)
         if launch is None:
             raise SimulationNotSupportedError(f"Robot {robot.name!r} ({robot.type}) has no simulation.")
-        return launch.owner_name(robot.payload)
+        return launch
 
 
 async def _get_json(client: httpx.AsyncClient, url: str) -> Any:

@@ -289,6 +289,9 @@ def test_runtime_export_readme_lists_unresolved_paths() -> None:
     assert "physicalai run --config runtime.yaml" in text
     assert "/dev/ttyACM0" in text
     assert "rt-follower" in text
+    # Studio and a script can drive the same robot at once; the README must not promise a lock.
+    assert "Nothing stops two programs from driving" in text
+    assert "lock" not in text
 
 
 async def test_inference_export_document_validates_with_a_policy_source(mocker: Any) -> None:

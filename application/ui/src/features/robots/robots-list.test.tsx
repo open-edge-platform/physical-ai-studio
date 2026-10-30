@@ -3,7 +3,7 @@ import { ReactNode, Suspense } from 'react';
 import { ThemeProvider } from '@geti-ui/ui';
 import { rs } from '@rstest/core';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { act, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -311,7 +311,34 @@ describe('RobotsList runtime sessions', () => {
             expect(await screen.findByRole('heading', { name: 'Start simulation' })).toBeInTheDocument();
         });
 
-        it('shows a simulation started outside Studio as external', async () => {
+        it('notices a simulation started outside Studio without a reload', async () => {
+            mockSimulatedCatalog();
+            let started = false;
+            server.use(
+                http.get(ONLINE_ROBOTS_PATH, () =>
+                    HttpResponse.json([
+                        { ...so101Robot, connection_status: started ? ('online' as const) : ('offline' as const) },
+                    ])
+                ),
+                http.get('/api/simulation', () => HttpResponse.json({ status: 'idle', cameras: [] }))
+            );
+            rs.useFakeTimers({ shouldAdvanceTime: true });
+            try {
+                renderRobotsList();
+                expect(await screen.findByText('Offline')).toBeInTheDocument();
+
+                started = true;
+                await act(async () => {
+                    await rs.advanceTimersByTimeAsync(5_000);
+                });
+
+                expect(await screen.findByText('Running · outside Studio')).toBeInTheDocument();
+            } finally {
+                rs.useRealTimers();
+            }
+        });
+
+        it('shows a simulation started outside Studio as such', async () => {
             mockSimulatedCatalog();
             server.use(
                 http.get(ONLINE_ROBOTS_PATH, () =>
@@ -321,7 +348,7 @@ describe('RobotsList runtime sessions', () => {
             );
             renderRobotsList();
 
-            expect(await screen.findByText('Running · external')).toBeInTheDocument();
+            expect(await screen.findByText('Running · outside Studio')).toBeInTheDocument();
         });
     });
 });

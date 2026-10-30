@@ -113,7 +113,7 @@ describe('Robot page of a simulated robot', () => {
             'href',
             '/api/projects/project-1/robots/robot-1/simulation/viewer/'
         );
-        expect(screen.getByText('started by someone else (CLI)')).toBeInTheDocument();
+        expect(screen.getByText('started outside Studio')).toBeInTheDocument();
         expect(screen.queryByText(/real time/)).not.toBeInTheDocument();
         expect(screen.queryByText(':8080 / :8081')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Stop simulation' })).not.toBeInTheDocument();

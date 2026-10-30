@@ -21,6 +21,7 @@ import {
     robotSimulationStatus,
     RobotSimulationStatus,
     useRobotSimulationLaunch,
+    useSimulatedRobotTypes,
 } from '../simulation/robot-simulation';
 import { useSimulationDialog } from '../simulation/simulation-dialog';
 import { useSimulation, useStopSimulation } from '../simulation/use-simulation';
@@ -312,16 +313,25 @@ const RobotListItem = ({
     );
 };
 
+/** How often the online state of a project with simulated robots is checked again. */
+const ONLINE_POLL_INTERVAL_MS = 5_000;
+
 export const RobotsList = () => {
     const { project_id } = useProjectId();
     const { data: projectRobots } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
         params: { path: { project_id } },
     });
 
-    const { data: onlineProjectRobots } = $api.useQuery('get', '/api/projects/{project_id}/robots/online', {
-        params: { path: { project_id } },
-        suspense: false,
-    });
+    // A simulation started outside Studio comes and goes without telling Studio: only a probe of
+    // its robot shows it, so poll while the project has a simulated robot.
+    const simulatedTypes = useSimulatedRobotTypes();
+    const hasSimulatedRobot = projectRobots.some(({ type }) => simulatedTypes.has(type));
+    const { data: onlineProjectRobots } = $api.useQuery(
+        'get',
+        '/api/projects/{project_id}/robots/online',
+        { params: { path: { project_id } }, suspense: false },
+        { refetchInterval: hasSimulatedRobot ? ONLINE_POLL_INTERVAL_MS : false }
+    );
 
     // Sessions are host-wide, so this is one query for the page rather than one
     // per row. A session name is rt-<robot id>, which makes the match exact.

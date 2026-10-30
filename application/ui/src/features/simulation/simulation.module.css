@@ -41,6 +41,26 @@
     word-break: break-word;
 }
 
+.command {
+    min-width: 0;
+    background: var(--spectrum-global-color-gray-75);
+    border-radius: var(--spectrum-global-dimension-size-50);
+    padding: var(--spectrum-global-dimension-size-100);
+}
+
+.command pre {
+    margin: 0;
+    overflow-x: auto;
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    white-space: pre-wrap;
+    user-select: all;
+}
+
+/* Lines break between arguments only, never inside one (e.g. after "--" or a hyphen in a name). */
+.argument {
+    white-space: nowrap;
+}
+
 .chips {
     display: flex;
     flex-wrap: wrap;
