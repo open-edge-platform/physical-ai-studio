@@ -47,6 +47,7 @@ DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
 
 # VLA policies that need smaller batch/episode counts for GPU memory
 _VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
+_MULTI_STEP_NUM_STEPS = 10
 
 
 def _empty_accelerator_cache(device: torch.device) -> None:
@@ -445,6 +446,25 @@ def _run_trainer_capture_and_native_replay(
     return wrapper_losses, native_losses, wrapper, native
 
 
+@pytest.fixture(scope="module", params=ALL_POLICIES_PARAMS)
+def ten_step_equivalence(
+    request: pytest.FixtureRequest,
+    aloha_dataset: Any,
+) -> tuple[list[float], list[float], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    """Share CPU-resident results between loss and weight checks for each policy."""
+    policy_name = str(request.param)
+    _vla_cpu_skip(policy_name)
+    wrapper_losses, native_losses, wrapper, native = _run_trainer_capture_and_native_replay(
+        policy_name,
+        aloha_dataset,
+        base_seed=303,
+        max_steps=_MULTI_STEP_NUM_STEPS,
+    )
+    wrapper_params = {n: p.detach().cpu() for n, p in wrapper.lerobot_policy.named_parameters()}
+    native_params = {n: p.detach().cpu() for n, p in native.named_parameters()}
+    return wrapper_losses, native_losses, wrapper_params, native_params
+
+
 def _assert_trajectories_match(
     wrapper_losses: list[float],
     native_losses: list[float],
@@ -501,21 +521,10 @@ class TestFastDevRunEquivalence:
 # Tier 2: Multi-step (10 steps) — all policies, CI
 # ---------------------------------------------------------------------------- #
 class TestMultiStepTrainerEquivalence:
-    NUM_STEPS = 10
+    NUM_STEPS = _MULTI_STEP_NUM_STEPS
 
-    @pytest.fixture(params=ALL_POLICIES_PARAMS)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        name = str(request.param)
-        _vla_cpu_skip(name)
-        return name
-
-    def test_loss_trajectories_match(self, policy_name: str, aloha_dataset: Any) -> None:
-        wrapper_losses, native_losses, _, _ = _run_trainer_capture_and_native_replay(
-            policy_name,
-            aloha_dataset,
-            base_seed=202,
-            max_steps=self.NUM_STEPS,
-        )
+    def test_loss_trajectories_match(self, ten_step_equivalence: Any) -> None:
+        wrapper_losses, native_losses, _, _ = ten_step_equivalence
 
         assert len(wrapper_losses) == self.NUM_STEPS
         assert len(native_losses) == self.NUM_STEPS
@@ -582,15 +591,9 @@ class TestGradientEquivalence:
 # Catches optimizer-state bugs invisible to loss-trajectory comparisons.
 # ---------------------------------------------------------------------------- #
 class TestWeightEquivalenceAfterTraining:
-    NUM_STEPS = 10
+    NUM_STEPS = _MULTI_STEP_NUM_STEPS
 
-    @pytest.fixture(params=ALL_POLICIES_PARAMS)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        name = str(request.param)
-        _vla_cpu_skip(name)
-        return name
-
-    def test_final_weights_match(self, policy_name: str, aloha_dataset: Any) -> None:
+    def test_final_weights_match(self, ten_step_equivalence: Any) -> None:
         """Per-parameter weight match after 10 trainer steps.
 
         Tolerance: ``rtol=atol=5e-5``. Justification: per-step fp32 rounding
@@ -602,15 +605,7 @@ class TestWeightEquivalenceAfterTraining:
         because direct forward avoids accumulator paths; this tier exercises
         the full optimizer cycle and warrants the slightly looser bound.
         """
-        _, _, wrapper, native = _run_trainer_capture_and_native_replay(
-            policy_name,
-            aloha_dataset,
-            base_seed=303,
-            max_steps=self.NUM_STEPS,
-        )
-
-        wrapper_params = {n: p.detach().cpu() for n, p in wrapper.lerobot_policy.named_parameters()}
-        native_params = {n: p.detach().cpu() for n, p in native.named_parameters()}
+        _, _, wrapper_params, native_params = ten_step_equivalence
         assert set(wrapper_params) == set(native_params)
 
         for name in wrapper_params:
@@ -896,20 +891,18 @@ class TestTrainingForwardContract:
         assert loss.ndim == 0
         assert loss.requires_grad
 
+    @pytest.mark.parametrize("training_policy_and_batch", ["act"], indirect=True)
     def test_act_loss_dict_contains_expected_keys(self, training_policy_and_batch):
-        policy, batch, policy_name = training_policy_and_batch
-        if policy_name != "act":
-            pytest.skip("ACT-specific: loss_dict structure")
+        policy, batch, _ = training_policy_and_batch
 
         _, loss_dict = policy(batch)
 
         assert loss_dict is not None
         assert "l1_loss" in loss_dict
 
+    @pytest.mark.parametrize("training_policy_and_batch", ["diffusion"], indirect=True)
     def test_diffusion_loss_dict_is_none(self, training_policy_and_batch):
-        policy, batch, policy_name = training_policy_and_batch
-        if policy_name != "diffusion":
-            pytest.skip("Diffusion-specific: loss_dict is None")
+        policy, batch, _ = training_policy_and_batch
 
         _, loss_dict = policy(batch)
 

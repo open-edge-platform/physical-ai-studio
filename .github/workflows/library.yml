@@ -230,7 +230,7 @@ jobs:
           # a warm /tmp cache, adding to job runtime in exchange for reliability.
           HF_LEROBOT_HOME: ${{ runner.temp }}/lerobot_test
         run: |
-          uv run --no-sync pytest tests/integration -m "not slow"
+          uv run --no-sync pytest tests/integration -m "not slow" --durations=20
 
   integration-tests-robocasa:
     runs-on: [self-hosted, Linux, X64, gpu]
