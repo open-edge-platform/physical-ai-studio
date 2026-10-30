@@ -5,7 +5,6 @@
 
 from pathlib import Path
 from typing import Any, cast
-from uuid import UUID
 
 from cli.hf.state import ExportSource, ImportState
 
@@ -52,7 +51,7 @@ async def model_export_source(model_id: str) -> ExportSource:
             },
         )
         _validate_source_path(path, settings.models_dir)
-        return {"path": str(path.resolve()), "metadata": metadata}
+        return ExportSource(path.resolve(), metadata)
 
 
 async def dataset_export_source(dataset_id: str) -> ExportSource:
@@ -68,15 +67,15 @@ async def dataset_export_source(dataset_id: str) -> ExportSource:
             raise ValueError(f"Local dataset {dataset_id} does not exist")
         path = settings.datasets_dir / record.id
         _validate_source_path(path, settings.datasets_dir)
-        return {
-            "path": str(path.resolve()),
-            "metadata": {
+        return ExportSource(
+            path.resolve(),
+            {
                 "name": record.name,
                 "source_id": record.id,
                 "source_project_id": record.project_id,
                 "default_task": record.default_task,
             },
-        }
+        )
 
 
 def _validate_source_path(path: Path, parent: Path) -> None:
@@ -85,7 +84,7 @@ def _validate_source_path(path: Path, parent: Path) -> None:
 
 
 def _import_name(state: ImportState, metadata: dict[str, Any]) -> str:
-    name = state.get("name") or metadata.get("name") or state["repo_id"].split("/")[-1]
+    name = state.name or metadata.get("name") or state.repo_id.rsplit("/", 1)[-1]
     if not isinstance(name, str) or not name.strip() or len(name) > 255:
         raise ValueError("Asset name must contain 1 to 255 characters")
     return name
@@ -96,9 +95,9 @@ async def register_model_import(state: ImportState, destination: Path, inspectio
     from db import get_async_db_session_ctx
     from db.schema import ModelDB
 
-    asset_id = state["asset_id"]
-    project_id = state["project_id"]
-    dataset_id = state.get("dataset_id")
+    asset_id = state.asset_id
+    project_id = state.project_id
+    dataset_id = state.dataset_id
     await validate_target(project_id, dataset_id)
     metadata = inspection.get("studio", {})
     name = _import_name(state, metadata)
@@ -140,8 +139,8 @@ async def register_model_import(state: ImportState, destination: Path, inspectio
         "id": asset_id,
         "project_id": project_id,
         "path": str(destination),
-        "repo_id": state["repo_id"],
-        "revision": state["revision"],
+        "repo_id": state.repo_id,
+        "revision": state.revision,
     }
 
 
@@ -154,7 +153,7 @@ async def register_dataset_import(
     from db import get_async_db_session_ctx
     from db.schema import DatasetDB, ProjectEnvironmentDB
 
-    asset_id, project_id = state["asset_id"], state["project_id"]
+    asset_id, project_id = state.asset_id, state.project_id
     await validate_target(project_id)
     metadata = inspection.get("studio", {})
     name = _import_name(state, metadata)
@@ -167,7 +166,7 @@ async def register_dataset_import(
             # TODO: Remove this placeholder environment creation once datasets can
             # be registered without an environment. Keep it in the same transaction.
             environment = ProjectEnvironmentDB(
-                id=state["environment_id"], project_id=project_id, name=f"Imported dataset {asset_id}"
+                id=state.environment_id, project_id=project_id, name=f"Imported dataset {asset_id}"
             )
             session.add(environment)
             await session.flush()
@@ -187,9 +186,9 @@ async def register_dataset_import(
         "id": asset_id,
         "project_id": project_id,
         "path": str(destination),
-        "repo_id": state["repo_id"],
-        "revision": state["revision"],
-        "environment_id": state["environment_id"],
+        "repo_id": state.repo_id,
+        "revision": state.revision,
+        "environment_id": state.environment_id,
     }
 
 
@@ -226,8 +225,3 @@ def validate_dataset_payload(root: Path) -> None:
                 path = root / template.format(chunk_index=int(chunk), file_index=int(index))
                 if not path.is_file():
                     raise ValueError(f"Episode references missing payload {path.relative_to(root)}")
-
-
-def uuid_string(value: UUID | None) -> str | None:
-    """Serialize an optional Click UUID for transfer state."""
-    return str(value) if value is not None else None

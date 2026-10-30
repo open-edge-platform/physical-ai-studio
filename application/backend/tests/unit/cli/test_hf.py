@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cli.hf import hf, inspection, storage, transfer
 from cli.hf.inspection import token as resolve_token
+from cli.hf.state import ExportSource, ExportState, ImportState
 from db.schema import Base, DatasetDB, ModelDB, ProjectDB, ProjectEnvironmentDB
 from settings import Settings
 
@@ -367,10 +368,10 @@ def test_import_download_resume_and_duplicate_safe_registration(environment):
     assert Path(report["path"], "model.ckpt").exists()
     assert env.hub.downloaded.count(first_download) == 1
     # Simulate a crash after DB commit but before recording completion.
-    directory, state = transfer.load_transfer(UUID(state["transfer_id"]), "model", "import")
-    state["phase"] = "downloaded"
-    transfer.save_transfer(directory, state)
-    assert invoke("model", "import", "--resume", state["transfer_id"], "--json").exit_code == 0
+    state = ImportState.load(UUID(state["transfer_id"]), "model")
+    state.phase = "downloaded"
+    state.save()
+    assert invoke("model", "import", "--resume", state.transfer_id, "--json").exit_code == 0
 
     async def check():
         async with env.sessions() as session:
@@ -464,9 +465,12 @@ def test_completed_export_resume_uses_only_the_receipt(environment, imported_ass
     result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--json")
     assert result.exit_code == 0, result.output
     receipt = json.loads(result.stdout)
-    directory, state = transfer.load_transfer(UUID(receipt["transfer_id"]), asset.kind, "export")
-    assert state["phase"] == "completed"
-    assert not (directory / "payload").exists()
+    state = ExportState.load(UUID(receipt["transfer_id"]), asset.kind)
+    assert state.phase == "completed"
+    assert not (state.directory / "payload").exists()
+    state.phase = "prepared"
+    with transfer.locked_transfer(state) as refreshed:
+        assert refreshed.phase == "completed"
 
     def unexpected_check(*args, **kwargs):
         pytest.fail("Completed exports must not require their source or contact the Hub")
@@ -523,18 +527,52 @@ def test_saved_export_retains_version_one_fingerprint_arrays(environment, import
     result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--json")
     assert result.exit_code == 0, result.output
     transfer_id = UUID(json.loads(result.stdout)["transfer_id"])
-    directory, state = transfer.load_transfer(transfer_id, asset.kind, "export")
-    saved = json.loads((directory / "transfer.json").read_text())
+    state = ExportState.load(transfer_id, asset.kind)
+    saved = json.loads((state.directory / "transfer.json").read_text())
     assert saved["schema_version"] == 1
-    for name, fingerprint in state["fingerprints"].items():
+    for name, fingerprint in state.fingerprints.items():
         stat = Path(asset.path, name).stat()
         assert fingerprint.size == stat.st_size
         assert saved["fingerprints"][name] == [stat.st_size, stat.st_mtime_ns, stat.st_ino]
 
     # Load a version-one document directly, without using the new serializer.
-    (directory / "transfer.json").write_text(json.dumps(saved))
-    _, reloaded = transfer.load_transfer(transfer_id, asset.kind, "export")
+    saved["url"] = state.url
+    (state.directory / "transfer.json").write_text(json.dumps(saved))
+    reloaded = ExportState.load(transfer_id, asset.kind)
     assert reloaded == state
+
+
+def test_state_round_trip_preserves_null_portable_metadata(environment):
+    state = ExportState(
+        kind="model",
+        repo_id="owner/model",
+        asset_id=str(uuid4()),
+        source=ExportSource(environment.tmp, {"source_dataset_id": None}),
+        files=[],
+        fingerprints={},
+        public=False,
+        update=False,
+    )
+    state.save()
+    saved = json.loads((state.directory / "transfer.json").read_text())
+    assert saved["source"]["metadata"] == {"source_dataset_id": None}
+    assert saved["source"]["path"] == str(environment.tmp)
+    assert ExportState.load(UUID(state.transfer_id), "model") == state
+
+
+@pytest.mark.parametrize("field", ["schema_version", "transfer_id", "operation", "phase"])
+def test_saved_transfer_requires_explicit_headers(environment, imported_asset, field):
+    asset = imported_asset
+    state = ImportState.load(UUID(asset.transfer_id), asset.kind)
+    path = state.directory / "transfer.json"
+    saved = json.loads(path.read_text())
+    del saved[field]
+    path.write_text(json.dumps(saved))
+    reads = environment.hub.read_revisions.copy()
+    result = invoke(asset.kind, "import", "--resume", asset.transfer_id, "--json")
+    assert result.exit_code == 1
+    assert "Cannot read transfer" in result.stdout
+    assert environment.hub.read_revisions == reads
 
 
 @pytest.mark.parametrize("invalid", [[], {"schema_version": 1}, {"operation": "export", "phase": "downloaded"}])
@@ -634,18 +672,18 @@ def test_exports_normalization_recovers_after_moving_files(tmp_path, monkeypatch
     }
     metadata = {"schema_version": 1, "kind": "model", "name": "Exports", "status": "complete", "files": sorted(files)}
     put_files(tmp_path, {**files, "studio.json": json.dumps(metadata).encode()})
-    atomic_json = transfer.atomic_json
+    atomic_json = model_cli.atomic_json
 
     def fail_write(*args, **kwargs):
         raise OSError("Crash before descriptor replacement")
 
-    monkeypatch.setattr(transfer, "atomic_json", fail_write)
+    monkeypatch.setattr(model_cli, "atomic_json", fail_write)
     with pytest.raises(OSError, match="descriptor replacement"):
         model_cli._finish_normalization(tmp_path)
     assert (tmp_path / "exports/torch/pi05.pt").exists()
     assert json.loads((tmp_path / "studio.json").read_text()) == metadata
 
-    monkeypatch.setattr(transfer, "atomic_json", atomic_json)
+    monkeypatch.setattr(model_cli, "atomic_json", atomic_json)
     model_cli._finish_normalization(tmp_path)
     normalized = json.loads((tmp_path / "studio.json").read_text())
     assert normalized["files"] == [f"exports/{name}" for name in sorted(files)]
@@ -683,9 +721,8 @@ def test_placeholder_environment_rolls_back_on_registration_failure(environment,
 def test_resume_is_locked(environment):
     from huggingface_hub.utils import WeakFileLock
 
-    directory, state = transfer.create_transfer(
-        "dataset",
-        "import",
+    state = ImportState(
+        kind="dataset",
         repo_id="owner/data",
         asset_id=str(uuid4()),
         project_id=environment.project_id,
@@ -693,8 +730,9 @@ def test_resume_is_locked(environment):
         inspection={},
         environment_id=str(uuid4()),
     )
-    with WeakFileLock(directory / "transfer.lock"):
-        result = invoke("dataset", "import", "--resume", state["transfer_id"], "--json")
+    state.save()
+    with WeakFileLock(state.directory / "transfer.lock"):
+        result = invoke("dataset", "import", "--resume", state.transfer_id, "--json")
     assert result.exit_code == 1
     assert "lock" in json.loads(result.stdout)["error"]["message"]
 

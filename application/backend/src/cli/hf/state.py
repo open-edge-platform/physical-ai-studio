@@ -3,9 +3,16 @@
 
 """Validated transfer receipts, preserving the version-one JSON format."""
 
-from typing import Annotated, Any, Literal, NamedTuple, NotRequired, TypedDict
+import json
+import os
+import tempfile
+from dataclasses import field
+from pathlib import Path
+from typing import Any, Literal, NamedTuple, Self
+from uuid import UUID, uuid4
 
-from pydantic import Field, TypeAdapter
+from pydantic import TypeAdapter
+from pydantic.dataclasses import dataclass
 
 type ResourceKind = Literal["model", "dataset"]
 
@@ -18,50 +25,123 @@ class FileFingerprint(NamedTuple):
     inode: int
 
 
-class ExportSource(TypedDict):
+@dataclass(frozen=True)
+class ExportSource:
     """Managed source directory and portable asset metadata."""
 
-    path: str
+    path: Path
     metadata: dict[str, Any]
 
 
-class BaseState(TypedDict):
-    """Fields shared by import and export receipts."""
+@dataclass(kw_only=True)
+class TransferState[Operation: str, Phase: str]:
+    """A validated receipt with its managed storage and recovery operations."""
 
-    schema_version: Literal[1]
-    transfer_id: str
     kind: ResourceKind
     repo_id: str
     asset_id: str
-    result: NotRequired[dict[str, Any]]
+    operation: Operation
+    phase: Phase
+    schema_version: Literal[1] = 1
+    transfer_id: str = field(default_factory=lambda: str(uuid4()))
+    result: dict[str, Any] | None = None
+
+    @property
+    def directory(self) -> Path:
+        """Return the managed directory for this transfer."""
+        from settings import get_settings
+
+        return get_settings().cache_dir / "hf/transfers" / self.transfer_id
+
+    @property
+    def resume_command(self) -> str:
+        """Return the CLI command that resumes this transfer."""
+        return f"physicalai-studio hf {self.kind} {self.operation} --resume {self.transfer_id}"
+
+    @property
+    def receipt(self) -> dict[str, Any]:
+        """Add recovery details to a completed result."""
+        if self.result is None:
+            raise ValueError("Transfer has not completed")
+        return {**self.result, "transfer_id": self.transfer_id, "resume_command": self.resume_command}
+
+    def save(self) -> None:
+        """Persist state atomically, retaining version-one fingerprint arrays."""
+        data = TypeAdapter(type(self)).dump_python(self, mode="json", exclude_none=True)
+        atomic_json(self.directory / "transfer.json", data)
+
+    @classmethod
+    def load(cls, resume: UUID, kind: ResourceKind) -> Self:
+        """Validate a saved receipt before resuming the requested operation."""
+        from settings import get_settings
+
+        path = get_settings().cache_dir / "hf/transfers" / str(resume) / "transfer.json"
+        try:
+            data = json.loads(path.read_text())
+            if not isinstance(data, dict) or not {"schema_version", "transfer_id", "operation", "phase"} <= data.keys():
+                raise ValueError("Incomplete transfer receipt")
+            state = TypeAdapter(cls).validate_python(data)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"Cannot read transfer {resume}. Use the original STORAGE_DIR.") from exc
+        if state.kind != kind or state.transfer_id != str(resume):
+            raise ValueError("Transfer resource kind or ID does not match this command")
+        return state
 
 
-class ImportState(BaseState):
+@dataclass(kw_only=True)
+class ImportState(TransferState[Literal["import"], Literal["prepared", "downloaded", "completed"]]):
     """Pinned download and local registration options."""
 
-    operation: Literal["import"]
-    phase: Literal["prepared", "downloaded", "completed"]
+    operation: Literal["import"] = "import"
+    phase: Literal["prepared", "downloaded", "completed"] = "prepared"
     project_id: str
     revision: str
     inspection: dict[str, Any]
-    name: NotRequired[str | None]
-    dataset_id: NotRequired[str | None]
-    environment_id: NotRequired[str]
+    name: str | None = None
+    dataset_id: str | None = None
+    environment_id: str | None = None
 
 
-class ExportState(BaseState):
+@dataclass(kw_only=True)
+class ExportState(TransferState[Literal["export"], Literal["prepared", "uploading", "completed"]]):
     """Source identity and resumable upload options."""
 
-    operation: Literal["export"]
-    phase: Literal["prepared", "uploading", "completed"]
+    operation: Literal["export"] = "export"
+    phase: Literal["prepared", "uploading", "completed"] = "prepared"
     source: ExportSource
     files: list[str]
     fingerprints: dict[str, FileFingerprint]
     public: bool
     update: bool
-    url: NotRequired[str]
+
+    def preview(self, size_bytes: int) -> dict[str, Any]:
+        """Describe a planned export without persisting or uploading it."""
+        return {
+            "dry_run": True,
+            "kind": self.kind,
+            "repo_id": self.repo_id,
+            "files": self.files,
+            "size_bytes": size_bytes,
+            "private_if_created": not self.public,
+        }
+
+    @property
+    def url(self) -> str:
+        """Return the Hub URL without persisting derivable state."""
+        prefix = "datasets/" if self.kind == "dataset" else ""
+        return f"https://huggingface.co/{prefix}{self.repo_id}"
 
 
-type TransferState = ImportState | ExportState
-
-STATE_ADAPTER = TypeAdapter(Annotated[TransferState, Field(discriminator="operation")])
+def atomic_json(path: Path, value: dict[str, Any]) -> None:
+    """Replace a JSON document atomically on its current filesystem."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)

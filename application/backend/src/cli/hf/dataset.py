@@ -4,7 +4,6 @@
 """Dataset commands and their inspection/import/export workflows."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -160,7 +159,7 @@ def _import_dataset(
     if resume:
         if any(value is not None for value in (repo_id, project_id, name, revision, subfolder)) or dry_run:
             raise ValueError("--resume cannot be combined with new transfer options")
-        directory, state = transfer.load_transfer(resume, "dataset", "import")
+        state = ImportState.load(resume, "dataset")
     else:
         if not repo_id or not project_id:
             raise ValueError("A new import requires REPO_ID and --project-id")
@@ -176,9 +175,8 @@ def _import_dataset(
         transfer.check_disk_space(get_settings().datasets_dir, inspection["size_bytes"])
         if dry_run:
             return {**inspection, "dry_run": True, "project_id": str(project_id)}
-        directory, state = transfer.create_transfer(
-            "dataset",
-            "import",
+        state = ImportState(
+            kind="dataset",
             repo_id=repo_id,
             project_id=str(project_id),
             name=name,
@@ -187,30 +185,31 @@ def _import_dataset(
             asset_id=str(uuid4()),
             environment_id=str(uuid4()),
         )
-    with transfer.locked_transfer(directory, state):
-        if state["phase"] != "completed":
-            state["result"] = _download_dataset(directory, state)
-            state["phase"] = "completed"
-            transfer.save_transfer(directory, state)
-    return transfer.transfer_receipt(state)
+        state.save()
+    with transfer.locked_transfer(state) as state:
+        if state.phase != "completed":
+            state.result = _download_dataset(state)
+            state.phase = "completed"
+            state.save()
+    return state.receipt
 
 
-def _download_dataset(directory: Path, state: ImportState) -> dict[str, Any]:
+def _download_dataset(state: ImportState) -> dict[str, Any]:
     from cli.hf import transfer
     from cli.hf.inspection import inspect_local_dataset
     from cli.hf.storage import register_dataset_import, validate_dataset_payload, validate_target
     from settings import get_settings
 
     parent = get_settings().datasets_dir
-    destination = parent / state["asset_id"]
-    asyncio.run(validate_target(state["project_id"]))
+    destination = parent / state.asset_id
+    asyncio.run(validate_target(state.project_id))
     if not destination.exists():
         root = transfer.download_files(state, parent)
         transfer.require_importable(inspect_local_dataset(root))
         validate_dataset_payload(root)
         root.rename(destination)
-        state["phase"] = "downloaded"
-        transfer.save_transfer(directory, state)
+        state.phase = "downloaded"
+        state.save()
     verified = inspect_local_dataset(destination)
     transfer.require_importable(verified)
     validate_dataset_payload(destination)
@@ -233,7 +232,7 @@ def _export_dataset(
     if resume:
         if repo_id is not None or dataset_id is not None or public or update or dry_run:
             raise ValueError("--resume cannot be combined with new transfer options")
-        directory, state = transfer.load_transfer(resume, "dataset", "export")
+        state = ExportState.load(resume, "dataset")
     else:
         from huggingface_hub.utils import validate_repo_id
 
@@ -241,31 +240,14 @@ def _export_dataset(
             raise ValueError("A new export requires REPO_ID and --dataset-id")
         validate_repo_id(repo_id)
         source = asyncio.run(dataset_export_source(str(dataset_id)))
-        inspection = inspect_local_dataset(Path(source["path"]))
+        inspection = inspect_local_dataset(source.path)
         transfer.require_importable(inspection)
-        validate_dataset_payload(Path(source["path"]))
-        names, fingerprints = transfer.prepare_export("dataset", repo_id, source, inspection, update)
+        validate_dataset_payload(source.path)
+        state = transfer.prepare_export("dataset", repo_id, str(dataset_id), source, inspection, public, update)
         if dry_run:
-            return {
-                "dry_run": True,
-                "kind": "dataset",
-                "repo_id": repo_id,
-                "files": names,
-                "size_bytes": inspection["size_bytes"],
-                "private_if_created": not public,
-            }
-        directory, state = transfer.create_transfer(
-            "dataset",
-            "export",
-            repo_id=repo_id,
-            asset_id=str(dataset_id),
-            source=source,
-            files=names,
-            fingerprints=fingerprints,
-            public=public,
-            update=update,
-        )
-    return transfer.run_export(directory, state, _check_dataset_source)
+            return state.preview(inspection["size_bytes"])
+        state.save()
+    return transfer.run_export(state, _check_dataset_source)
 
 
 def _check_dataset_source(state: ExportState) -> None:
@@ -273,5 +255,5 @@ def _check_dataset_source(state: ExportState) -> None:
     from cli.hf.inspection import inspect_local_dataset
     from cli.hf.storage import dataset_export_source
 
-    current = asyncio.run(dataset_export_source(state["asset_id"]))
-    transfer.check_source(state, current, inspect_local_dataset(Path(current["path"])))
+    current = asyncio.run(dataset_export_source(state.asset_id))
+    transfer.check_source(state, current, inspect_local_dataset(current.path))
