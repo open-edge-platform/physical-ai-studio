@@ -8,6 +8,6 @@ export const getMockedOptimizeModelJob = (overrides: Partial<SchemaOptimizeModel
     progress: 0,
     message: 'Queued for optimization',
     created_at: '2026-07-14T13:00:00Z',
-    payload: { model_id: 'model-1', mode: 'int8_sym' },
+    payload: { model_id: 'model-1', mode: 'int8_sym', cancellation_requested: false },
     ...overrides,
 });

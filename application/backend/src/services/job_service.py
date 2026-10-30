@@ -104,14 +104,14 @@ class JobService:
         """Cancel unclaimed jobs unless a persisted remote execution needs worker cancellation."""
         return await self.cancel_pending_job(job_id, JobType.TRAINING)
 
-    async def interrupt_job(self, job_id: UUID, signal_cancel: Callable[[UUID], None]) -> None:
+    async def interrupt_job(self, job_id: UUID, signal_cancel: Callable[[UUID], None]) -> Job | None:
         """Request interruption through the job's policy, never fake worker cancellation."""
         job = await self.get_job_by_id(job_id)
         if job.status == JobStatus.CANCELED:
-            return
+            return job
         if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
             raise InvalidJobStateError("Cannot stop a finished job")
-        await get_job_handler(job.type).interrupt(job, self, signal_cancel)
+        return await get_job_handler(job.type).interrupt(job, self, signal_cancel)
 
     async def update_job_payload(
         self,

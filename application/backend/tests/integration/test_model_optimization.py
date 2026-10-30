@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import json
 import multiprocessing as mp
 import zipfile
@@ -13,10 +14,13 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from physicalai.inference.manifest import Manifest
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.sql.dml import Update
 
+from api.dependencies import get_scheduler
 from api.job import interrupt_job
+from core.scheduler import Scheduler
 from db.engine import get_async_db_session
 from db.schema import Base, JobDB, ModelDB, ProjectDB
 from exceptions import DuplicateJobException, InvalidResourceError
@@ -24,6 +28,7 @@ from main import app
 from repositories.job_repo import JobRepository
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Dataset
+from schemas.job import LocalTrainJobPayload, OptimizeModelJob, TrainJob
 from schemas.model import Model
 from services.event_processor import EventType
 from services.job_service import JobService
@@ -61,6 +66,10 @@ async def optimization(tmp_path, monkeypatch):
     monkeypatch.setattr("workers.model_optimization_worker.get_async_db_session_ctx", session_scope)
     monkeypatch.setitem(app.dependency_overrides, get_async_db_session, dependency)
     monkeypatch.setitem(app.dependency_overrides, get_settings, lambda: settings)
+    scheduler = MagicMock(spec=Scheduler)
+    scheduler.event_queue = MagicMock()
+    monkeypatch.setitem(app.dependency_overrides, get_scheduler, lambda: scheduler)
+    monkeypatch.setattr("services.model_optimization_service._submission_lock", asyncio.Lock())
 
     source = Model(
         name="Test policy",
@@ -99,7 +108,12 @@ async def optimization(tmp_path, monkeypatch):
 
     monkeypatch.setattr("physicalai.export.hooks.compress_weights_openvino_int8_sym", compress)
     yield SimpleNamespace(
-        sessions=session_scope, source=source, models_dir=models_dir, compressed=compressed, compress=compress
+        sessions=session_scope,
+        source=source,
+        models_dir=models_dir,
+        compressed=compressed,
+        compress=compress,
+        scheduler=scheduler,
     )
     await engine.dispose()
 
@@ -113,7 +127,11 @@ async def test_optimize_api_creates_independent_model_and_preserves_original(opt
         response = await client.post(f"/api/models/{optimization.source.id}/optimize")
         assert response.status_code == 202
         assert response.json()["type"] == "optimize_model"
-        assert response.json()["payload"] == {"model_id": str(optimization.source.id), "mode": "int8_sym"}
+        assert response.json()["payload"] == {
+            "model_id": str(optimization.source.id),
+            "mode": "int8_sym",
+            "cancellation_requested": False,
+        }
         duplicate = await client.post(f"/api/models/{optimization.source.id}/optimize")
         assert duplicate.status_code == 409
         async with optimization.sessions() as session:
@@ -287,14 +305,14 @@ async def test_rejects_missing_and_unsafe_artifacts(optimization, artifact):
 async def test_failed_publication_rolls_back_model_and_cleans_output(optimization, monkeypatch):
     async with optimization.sessions() as session:
         job = await ModelOptimizationService(session).submit(optimization.source.id)
-    merge = AsyncSession.merge
+    commit = AsyncSession.commit
 
-    async def fail_completion(self, instance, **kwargs):
-        if isinstance(instance, JobDB) and instance.status == JobStatus.COMPLETED:
+    async def fail_completion(self):
+        if any(isinstance(instance, ModelDB) and instance.id == str(job.id) for instance in self.new):
             raise RuntimeError("Database write failed")
-        return await merge(self, instance, **kwargs)
+        return await commit(self)
 
-    monkeypatch.setattr(AsyncSession, "merge", fail_completion)
+    monkeypatch.setattr(AsyncSession, "commit", fail_completion)
     await make_worker(job).run_loop()
     async with optimization.sessions() as session:
         assert (await JobService(session).get_job_by_id(job.id)).status == JobStatus.FAILED
@@ -351,3 +369,179 @@ async def test_worker_claim_is_atomic_against_queued_cancellation(optimization):
         assert await service.cancel_pending_job(job.id, JobType.OPTIMIZE_MODEL) is None
         with pytest.raises(DuplicateJobException):
             await ModelOptimizationService(session).submit(optimization.source.id)
+
+
+@pytest.mark.parametrize("job_type", [JobType.TRAINING, JobType.OPTIMIZE_MODEL])
+async def test_queued_cancellation_broadcasts_without_starting_a_worker(optimization, job_type):
+    async with optimization.sessions() as session:
+        if job_type == JobType.OPTIMIZE_MODEL:
+            job = await ModelOptimizationService(session).submit(optimization.source.id)
+        else:
+            job = TrainJob(
+                project_id=optimization.source.project_id,
+                payload=LocalTrainJobPayload(
+                    project_id=optimization.source.project_id, dataset_id=uuid4(), policy="act", model_name="queued"
+                ),
+            )
+            await JobService(session).create_job(job)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(f"/api/jobs/{job.id}:interrupt")
+    assert response.status_code == 200
+    optimization.scheduler.cancel_job.assert_not_called()
+    event, canceled = optimization.scheduler.event_queue.put.call_args.args[0]
+    assert event == EventType.JOB_UPDATE
+    assert canceled.id == job.id
+    assert canceled.status == JobStatus.CANCELED
+    async with optimization.sessions() as session:
+        assert (await JobService(session).get_job_by_id(job.id)).status == JobStatus.CANCELED
+
+
+async def test_concurrent_optimization_requests_queue_only_one_job(optimization, monkeypatch):
+    save = JobRepository.save
+    get_one = JobRepository.get_one
+    validate = ModelOptimizationService.openvino_artifact
+    saving, second_validated, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    checks = 0
+    validations = 0
+
+    async def count_checks(self, *args, **kwargs):
+        nonlocal checks
+        if kwargs.get("extra_filters", {}).get("type") == JobType.OPTIMIZE_MODEL:
+            checks += 1
+        return await get_one(self, *args, **kwargs)
+
+    def validate_source(path):
+        nonlocal validations
+        result = validate(path)
+        validations += 1
+        if validations == 2:
+            second_validated.set()
+        return result
+
+    async def pause_save(self, job):
+        if isinstance(job, OptimizeModelJob):
+            saving.set()
+            await release.wait()
+        return await save(self, job)
+
+    monkeypatch.setattr(JobRepository, "get_one", count_checks)
+    monkeypatch.setattr(JobRepository, "save", pause_save)
+    monkeypatch.setattr(ModelOptimizationService, "openvino_artifact", staticmethod(validate_source))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        path = f"/api/models/{optimization.source.id}/optimize"
+        requests = [asyncio.create_task(client.post(path))]
+        try:
+            await asyncio.wait_for(saving.wait(), timeout=5)
+            requests.append(asyncio.create_task(client.post(path)))
+            await asyncio.wait_for(second_validated.wait(), timeout=5)
+            assert checks == 1
+        finally:
+            release.set()
+            responses = await asyncio.wait_for(asyncio.gather(*requests), timeout=5)
+    assert sorted(response.status_code for response in responses) == [202, 409]
+    async with optimization.sessions() as session:
+        assert len(await JobService(session).get_job_list()) == 1
+
+
+@pytest.mark.parametrize("legacy_payload", [True, False])
+async def test_duplicate_identity_ignores_cancellation_and_legacy_default_fields(optimization, legacy_payload):
+    async with optimization.sessions() as session:
+        service = JobService(session)
+        job = await ModelOptimizationService(session).submit(optimization.source.id)
+        if legacy_payload:
+            await session.execute(
+                update(JobDB)
+                .where(JobDB.id == str(job.id))
+                .values(payload=func.json_remove(JobDB.payload, "$.mode", "$.cancellation_requested"))
+            )
+            await session.commit()
+        else:
+            await service.claim_pending_job(job.id, job.type)
+            assert await service.interrupt_job(job.id, MagicMock()) is None
+            requested = await service.get_job_by_id(job.id)
+            assert requested.payload.cancellation_requested is True
+        with pytest.raises(DuplicateJobException):
+            await ModelOptimizationService(session).submit(optimization.source.id)
+
+
+def _is_publication(statement):
+    return (
+        isinstance(statement, Update)
+        and statement.table.name == "jobs"
+        and statement.compile().params.get("status") == JobStatus.COMPLETED
+    )
+
+
+async def test_cancellation_during_publication_prevents_model_commit(optimization, monkeypatch):
+    async with optimization.sessions() as session:
+        job = await ModelOptimizationService(session).submit(optimization.source.id)
+    execute = AsyncSession.execute
+    publishing, release = asyncio.Event(), asyncio.Event()
+
+    async def pause_publication(self, statement, *args, **kwargs):
+        if _is_publication(statement):
+            publishing.set()
+            await release.wait()
+        return await execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", pause_publication)
+    worker = make_worker(job)
+    task = asyncio.create_task(worker.run_loop())
+    try:
+        await asyncio.wait_for(publishing.wait(), timeout=5)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(f"/api/jobs/{job.id}:interrupt")
+        assert response.status_code == 200
+        optimization.scheduler.cancel_job.assert_called_once_with(job.id)
+        optimization.scheduler.event_queue.put.assert_not_called()
+        # Even a lost process event must not defeat the persisted request.
+        assert not worker.cancel_event.is_set()
+        async with optimization.sessions() as session:
+            requested = await JobService(session).get_job_by_id(job.id)
+            assert requested.status == JobStatus.RUNNING
+            assert requested.payload.cancellation_requested is True
+    finally:
+        release.set()
+        await asyncio.wait_for(task, timeout=5)
+    async with optimization.sessions() as session:
+        assert (await JobService(session).get_job_by_id(job.id)).status == JobStatus.CANCELED
+        assert len(await ModelService(session).get_model_list()) == 1
+    assert not (optimization.models_dir / str(job.id)).exists()
+    assert not (optimization.models_dir / f".optimize-{job.id}").exists()
+
+
+async def test_publication_that_wins_rejects_stale_cancellation(optimization, monkeypatch):
+    async with optimization.sessions() as session:
+        job = await ModelOptimizationService(session).submit(optimization.source.id)
+    execute, commit = AsyncSession.execute, AsyncSession.commit
+    publishing, cancellation_started, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def observe_cancellation(self, statement, *args, **kwargs):
+        if isinstance(statement, Update) and statement.compile().params.get("status") == JobStatus.CANCELED:
+            cancellation_started.set()
+        return await execute(self, statement, *args, **kwargs)
+
+    async def pause_commit(self):
+        if any(isinstance(instance, ModelDB) and instance.id == str(job.id) for instance in self.new):
+            publishing.set()
+            await release.wait()
+        return await commit(self)
+
+    monkeypatch.setattr(AsyncSession, "execute", observe_cancellation)
+    monkeypatch.setattr(AsyncSession, "commit", pause_commit)
+    worker = asyncio.create_task(make_worker(job).run_loop())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        cancellation = None
+        try:
+            await asyncio.wait_for(publishing.wait(), timeout=5)
+            cancellation = asyncio.create_task(client.post(f"/api/jobs/{job.id}:interrupt"))
+            await asyncio.wait_for(cancellation_started.wait(), timeout=5)
+        finally:
+            release.set()
+            await asyncio.wait_for(worker, timeout=5)
+            response = await asyncio.wait_for(cancellation, timeout=5) if cancellation is not None else None
+    assert response.status_code == 409
+    optimization.scheduler.cancel_job.assert_not_called()
+    async with optimization.sessions() as session:
+        assert (await JobService(session).get_job_by_id(job.id)).status == JobStatus.COMPLETED
+        assert (await ModelService(session).get_model_by_id(job.id)).available_backends == ["openvino"]

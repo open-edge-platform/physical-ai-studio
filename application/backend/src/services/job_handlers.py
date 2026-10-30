@@ -90,10 +90,12 @@ class JobHandler(ABC):
             expressions=self.cancel_filters(),
         )
 
-    async def interrupt(self, job: Job, service: JobService, signal_cancel: Callable[[UUID], None]) -> None:
-        """Coordinate queued cancellation with a concurrent worker claim."""
-        if await service.cancel_pending_job(job.id, self.job_type) is None:
+    async def interrupt(self, job: Job, service: JobService, signal_cancel: Callable[[UUID], None]) -> Job | None:
+        """Return queued cancellations for the API to broadcast; signal already-claimed work."""
+        canceled = await service.cancel_pending_job(job.id, self.job_type)
+        if canceled is None:
             signal_cancel(job.id)
+        return canceled
 
     def needs_exit_recovery(self, assigned: Job, current: Job) -> bool:  # noqa: ARG002
         """Whether persisted state still belongs to the exited worker's execution."""
@@ -204,6 +206,28 @@ class ModelOptimizationJobHandler(JobHandler):
         from workers.model_optimization_worker import ModelOptimizationWorker
 
         return ModelOptimizationWorker(job_id, stop_event, cancel_event, queue)
+
+    async def interrupt(self, job: Job, service: JobService, signal_cancel: Callable[[UUID], None]) -> Job | None:
+        canceled = await service.cancel_pending_job(job.id, self.job_type)
+        if canceled is not None:
+            return canceled
+        requested = await service.repo.update_job_if_status(
+            job.id,
+            self.job_type,
+            JobStatus.RUNNING,
+            {
+                "payload": func.json_set(JobDB.payload, "$.cancellation_requested", func.json("true")),
+                "message": "Canceling model optimization",
+            },
+        )
+        if requested is None:
+            current = await service.get_job_by_id(job.id)
+            if current.status == JobStatus.CANCELED:
+                return current
+            raise InvalidJobStateError("Cannot stop a finished job")
+        signal_cancel(job.id)
+        # The worker owns terminal updates; an API RUNNING snapshot could arrive after them.
+        return None
 
     async def recover(self, job: Job, service: JobService) -> Job:
         from services.model_optimization_service import ModelOptimizationService

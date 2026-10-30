@@ -410,6 +410,9 @@ class OptimizeModelJobPayload(BaseModel):
 
     model_id: UUID
     mode: Literal["int8_sym"] = "int8_sym"
+    cancellation_requested: bool = Field(
+        default=False, description="Persisted interruption request, checked atomically during model publication"
+    )
 
 
 class OptimizeModelJob(BaseJob):

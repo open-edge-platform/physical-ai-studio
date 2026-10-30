@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from sqlalchemy import func, update
 
 from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
-from repositories.mappers.job_mapper import JobMapper
+from db.schema import JobDB
 from repositories.mappers.model_mapper import ModelMapper
 from schemas.base_job import JobStatus, JobType
 from schemas.job import OptimizeModelJob
@@ -102,11 +103,35 @@ class ModelOptimizationWorker(BaseProcessWorker):
             }
         )
         async with get_async_db_session_ctx() as session:
-            session.add(ModelMapper.to_schema(model))
-            await session.merge(JobMapper.to_schema(completed))
-            # Commit last: a failing refresh must not trigger cleanup of published artifacts.
-            await session.commit()
-            self._published = True
+            # Cancellation and publication compete for the same RUNNING row before inserting the model.
+            publication = await session.execute(
+                update(JobDB)
+                .where(
+                    JobDB.id == str(job.id),
+                    JobDB.type == JobType.OPTIMIZE_MODEL,
+                    JobDB.status == JobStatus.RUNNING,
+                    func.coalesce(func.json_extract(JobDB.payload, "$.cancellation_requested"), False).is_(False),
+                )
+                .values(
+                    status=JobStatus.COMPLETED,
+                    message=completed.message,
+                    progress=completed.progress,
+                    end_time=completed.end_time,
+                )
+                .returning(JobDB.id)
+            )
+            canceled = publication.scalar_one_or_none() is None or self.should_stop() or self.cancel_event.is_set()
+            if canceled:
+                await session.rollback()
+            else:
+                session.add(ModelMapper.to_schema(model))
+                # Commit last: a failing refresh must not trigger cleanup of published artifacts.
+                await session.commit()
+                self._published = True
+        if canceled:
+            ModelOptimizationService.cleanup(job.id)
+            await self._finish(job, JobStatus.CANCELED, "Model optimization canceled")
+            return None
         return model, completed
 
     async def _finish(self, job: OptimizeModelJob, status: JobStatus, message: str) -> None:

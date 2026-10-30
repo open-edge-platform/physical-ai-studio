@@ -152,8 +152,15 @@ packages still require one.
 
 Optimization runs locally, including for models trained on remote trainers.
 Its status and cancellation control appear on the source model's OpenVINO card.
-NNCF cannot be interrupted during compression: cancellation discards its result
-once that call finishes. Failed or interrupted jobs discard unpublished files
+Submissions are serialized within the single API process, so concurrent requests
+for the same model cannot queue duplicate active optimization jobs. Queued
+cancellations publish job updates immediately, without waiting for a worker.
+
+NNCF cannot be interrupted during compression. Running cancellation requests are
+persisted in the job payload; publication checks that request atomically before
+committing the optimized model. Cancellation that wins discards unpublished output;
+if publication wins first, a late cancellation receives a finished-job conflict.
+Failed or interrupted jobs discard unpublished files
 and can be retried; Studio reconciles abandoned jobs after a restart.
 
 This is **weight-only** compression, not full INT8 activation quantization.

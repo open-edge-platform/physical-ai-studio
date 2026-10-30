@@ -1,19 +1,26 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.schema import JobDB
 from exceptions import DuplicateJobException, InsufficientDiskSpaceError, InvalidResourceError
 from repositories.job_repo import JobRepository
+from schemas.base_job import JobStatus, JobType
 from schemas.job import OptimizeModelJob, OptimizeModelJobPayload
 from schemas.model import Model, ModelOptimizationInfo
 from services.model_service import ModelService
 from settings import get_settings
+
+# Submission runs in one API process; serialize the duplicate check and insert.
+_submission_lock = asyncio.Lock()
 
 
 class ModelOptimizationService:
@@ -30,11 +37,20 @@ class ModelOptimizationService:
         self.openvino_artifact(Path(model.path) / "exports" / "openvino")
         payload = OptimizeModelJobPayload(model_id=model.id)
         repository = JobRepository(self.session)
-        if await repository.is_job_duplicate(model.project_id, payload):
-            raise DuplicateJobException
-        job = OptimizeModelJob(project_id=model.project_id, payload=payload, message="Model optimization queued")
-        await repository.save(job)
-        return job
+        async with _submission_lock:
+            existing = await repository.get_one(
+                extra_filters={"project_id": str(model.project_id), "type": JobType.OPTIMIZE_MODEL},
+                expressions=[
+                    JobDB.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+                    func.json_extract(JobDB.payload, "$.model_id") == str(model.id),
+                    func.coalesce(func.json_extract(JobDB.payload, "$.mode"), "int8_sym") == payload.mode,
+                ],
+            )
+            if existing is not None:
+                raise DuplicateJobException
+            job = OptimizeModelJob(project_id=model.project_id, payload=payload, message="Model optimization queued")
+            await repository.save(job)
+            return job
 
     @staticmethod
     def openvino_artifact(export_dir: Path) -> Path:

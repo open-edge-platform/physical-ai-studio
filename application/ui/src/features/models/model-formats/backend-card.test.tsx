@@ -152,7 +152,7 @@ describe('BackendCard optimization', () => {
                     getMockedTrainJob(),
                     getMockedOptimizeModelJob({
                         id: 'other-model-job',
-                        payload: { model_id: 'other-model', mode: 'int8_sym' },
+                        payload: { model_id: 'other-model', mode: 'int8_sym', cancellation_requested: false },
                         created_at: '2026-07-14T14:00:00Z',
                     }),
                     getMockedOptimizeModelJob({

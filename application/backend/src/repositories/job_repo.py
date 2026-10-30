@@ -74,8 +74,20 @@ class JobRepository(BaseRepository):
             values["start_time"] = func.coalesce(JobDB.start_time, now)
         else:
             values["end_time"] = now
+        return await self.update_job_if_status(job_id, job_type, JobStatus.PENDING, values, expressions=expressions)
+
+    async def update_job_if_status(
+        self,
+        job_id: UUID,
+        job_type: JobType,
+        expected_status: JobStatus,
+        values: dict,
+        *,
+        expressions: list[ColumnElement[bool]] | None = None,
+    ) -> Job | None:
+        """Persist an update only if the expected state still owns the job."""
         query = update(JobDB).where(
-            JobDB.id == str(job_id), JobDB.type == job_type, JobDB.status == JobStatus.PENDING, *(expressions or [])
+            JobDB.id == str(job_id), JobDB.type == job_type, JobDB.status == expected_status, *(expressions or [])
         )
         result = await self.db.execute(query.values(**values).returning(JobDB.id))
         changed_id = result.scalar_one_or_none()

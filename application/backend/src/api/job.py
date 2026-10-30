@@ -58,7 +58,9 @@ async def interrupt_job(
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
     """Request interruption using the job type's supported cancellation policy."""
-    await job_service.interrupt_job(job_id, scheduler.cancel_job)
+    updated = await job_service.interrupt_job(job_id, scheduler.cancel_job)
+    if updated is not None:
+        scheduler.event_queue.put((EventType.JOB_UPDATE, updated))
 
 
 @router.get("/{job_id}/model_metrics")
