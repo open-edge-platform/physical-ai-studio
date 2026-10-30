@@ -37,18 +37,6 @@ export const isSerialPermissionDeniedError = (error: unknown): boolean =>
     (error as Record<string, string>).error_code.toLowerCase() === 'serial_permission_denied';
 
 /**
- * Returns true when a live runtime session holds the robot (HTTP 423).
- *
- * Expected when deleting a robot that is still being driven, or when connecting
- * with a different rig (leader, fps) than the session that already owns it.
- */
-export const isRuntimeSessionBusyError = (error: unknown): boolean =>
-    typeof error === 'object' &&
-    error !== null &&
-    'error_code' in error &&
-    (error as Record<string, unknown>).error_code === 'runtime_session_busy';
-
-/**
  * Returns true when managed SSH trainers are unavailable
  * (HTTP 503, `{ error_code: "ssh_feature_unavailable" }`).
  *
@@ -162,7 +150,7 @@ export const getSshHostKeyFingerprint = (error: unknown): string | undefined => 
 export const getRobotConnectionErrorTitle = (errorCode: string | null): string => {
     switch (errorCode) {
         case 'robot_device_already_owned':
-        case 'runtime_session_busy':
+        case 'device_in_use':
             return 'Robot already in use';
         case 'robot_name_conflict':
             return 'Robot name conflict';

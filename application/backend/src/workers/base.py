@@ -1,252 +1,316 @@
+"""Workers that own a resource for as long as they run.
+
+A worker is a thread or a process whose body is::
+
+    async with self.lifecycle() as context:
+        await self.run_loop(context)
+
+``lifecycle`` acquires what the worker holds (a robot, a camera, a dataset) and
+releases it on the way out, on the worker's own thread or in its own process.
+That keeps acquiring and releasing next to each other, and a device is always
+released by whoever opened it.
+
+The parent enters the worker as an async context manager. ``async with worker:``
+starts it, waits until ``lifecycle`` has yielded, and raises if it failed to get
+there. Leaving the block asks the worker to stop, waits for it, and kills a
+process that will not stop. A session holds its workers on one
+``AsyncExitStack`` so they are torn down in reverse order.
+
+Workers are single-use, like the thread or process they are.
+"""
+
 from __future__ import annotations
 
-import abc
 import asyncio
 import multiprocessing as mp
-import os
 import signal
 import threading
 import time
+import traceback
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from multiprocessing import Event
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self, cast
 
-if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Iterable
-    from multiprocessing.queues import Queue
-    from multiprocessing.synchronize import Event as EventClass
-
-import loguru
+import anyio
 from loguru import logger
 
+from utils.multiprocessing import ensure_spawn_start_method
 
-@asynccontextmanager
-async def run_at_frequency(frequency: float) -> AsyncGenerator[None]:
-    """Run a function at a specified frequency.
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+    from multiprocessing.queues import Queue
+    from multiprocessing.synchronize import Event as ProcessEvent
+    from types import FrameType, TracebackType
 
-    Note: This is a frequency, not time (1/s vs s).
-    Example:
+_POLL_INTERVAL_S = 0.05
+"""How often the parent checks on a worker it is waiting for."""
 
-    fps = 30
-    async with run_at_frequency(fps):
-       get_frame_from_camera()
+
+class WorkerStartupError(RuntimeError):
+    """The worker failed, died or timed out before ``lifecycle`` yielded."""
+
+    def __init__(self, name: str, reason: str) -> None:
+        super().__init__(f"Worker {name} failed to start: {reason}")
+        self.worker_name = name
+        self.reason = reason
+
+
+def _describe(error: BaseException) -> str:
+    return "".join(traceback.format_exception_only(error)).strip()
+
+
+class _Worker[C](ABC):
+    """What thread and process workers share: the body and the parent side.
+
+    Subclasses mix this with ``threading.Thread`` or ``multiprocessing.Process``
+    and supply the primitives that differ between the two.
     """
 
-    t0 = time.perf_counter()
-    yield
-    target_dt = 1 / frequency
-    elapsed = time.perf_counter() - t0
-    sleep_time = target_dt - elapsed
-    if sleep_time > 0:
-        await asyncio.sleep(sleep_time)
-    else:
-        logger.debug(f"Missed timing on run_at_frequency: {-sleep_time * 1000}ms")
-        await asyncio.sleep(0)
+    ready_timeout_s: float = 30.0
+    """How long the parent waits for ``lifecycle`` to yield."""
 
+    stop_timeout_s: float = 10.0
+    """How long the parent waits for the worker to finish after asking it to stop.
 
-def log_threads(log_level="DEBUG") -> None:  # noqa: ANN001
-    """Log all the alive threads associated with the current process"""
-    pid = os.getpid()
-    alive_threads = [thread for thread in threading.enumerate() if thread.is_alive()]
-    thread_list_msg = (
-        f"Alive threads for process with pid '{pid}': "
-        f"{', '.join([str((thread.name, thread.ident)) for thread in alive_threads])}"
-    )
-    logger.log(log_level, thread_list_msg)
+    A worker whose teardown is slow on purpose -- copying a recording back to
+    the dataset -- raises this rather than being killed in the middle of it.
+    """
 
+    if TYPE_CHECKING:
+        # threading.Thread and multiprocessing.Process provide these.
+        name: str
 
-class StoppableMixin:
-    """Mixin providing stop-aware functionality using external stop event."""
+        def start(self) -> None: ...
+        def join(self, timeout: float | None = None) -> None: ...
+        def is_alive(self) -> bool: ...
+
+    # Hooks for subclasses
+
+    @asynccontextmanager
+    async def lifecycle(self) -> AsyncIterator[C]:
+        """Acquire what this worker holds, yield it, and release it after.
+
+        Runs on the worker's own thread or in its own process. Override it as
+        an ``@asynccontextmanager``; the default holds nothing.
+        """
+        yield cast("C", None)
+
+    @abstractmethod
+    async def run_loop(self, context: C) -> None:
+        """Do the work until :meth:`should_stop`, then return."""
 
     def should_stop(self) -> bool:
-        """Check if a stop has been requested."""
-        if not hasattr(self, "_interrupt_event"):
-            raise AttributeError("StoppableMixin requires a '_interrupt_event' to be set.")
+        """Whether the parent has asked this worker to stop."""
+        return self._stop_event.is_set()
 
-        if not hasattr(self, "_stop_event"):
-            raise AttributeError("StoppableMixin requires a '_stop_event' to be set.")
+    def request_stop(self) -> None:
+        """Ask the worker to stop without waiting for it; leaving ``async with`` waits."""
+        self._stop_event.set()
 
-        # Stop if parent process died
-        parent_process = mp.parent_process()
-        parent_died = parent_process is not None and not parent_process.is_alive()
+    async def sleep(self, seconds: float) -> None:
+        """Sleep up to ``seconds``, waking early once a stop is requested."""
+        deadline = time.monotonic() + seconds
+        # Polled: the stop is a multiprocessing event, which has nothing to await.
+        while not self.should_stop() and (remaining := deadline - time.monotonic()) > 0:  # noqa: ASYNC110
+            await asyncio.sleep(min(remaining, _POLL_INTERVAL_S))
 
-        return self._interrupt_event.is_set() or self._stop_event.is_set() or parent_died  # type: ignore
+    def _init_events(self) -> None:
+        """Create the events the parent and the worker share.
 
-    def stop_aware_sleep(self, seconds: float) -> bool:
+        ``multiprocessing`` events for both kinds, so a thread and a process
+        coordinate the same way. Created before ``start`` so spawning carries
+        them into a child.
         """
-        Sleep for the specified time, but wake up immediately if stop is requested.
+        context = mp.get_context("spawn")
+        self._stop_event: ProcessEvent = context.Event()
+        # ``lifecycle`` has yielded: the worker holds its resource.
+        self._started_event: ProcessEvent = context.Event()
+        # Startup is over, either way: the parent can stop waiting.
+        self._settled_event: ProcessEvent = context.Event()
 
-        Args:
-            seconds: Maximum time to sleep in seconds
+    # What differs between a thread and a process
 
-        Returns:
-            True if woke up due to stop request, False if timeout elapsed
-        """
-        if not hasattr(self, "_stop_event"):
-            raise AttributeError("StoppableMixin requires _stop_event to be set")
-        return self._stop_event.wait(seconds)  # type: ignore
+    @abstractmethod
+    def _report_failure(self, error: BaseException) -> None: ...
 
+    @abstractmethod
+    def _reported_failure(self) -> str | None: ...
 
-class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
-    """
-    Reusable worker with a clean lifecycle: setup() -> run_loop() [until stop_event] -> teardown()
-    Subclasses only implement what's specific to their job.
-    """
+    @abstractmethod
+    def _kill(self) -> None: ...
 
-    # Override in subclasses for a nicer auto-name:
-    ROLE: str = "Worker"
+    # The worker's body
 
-    loop: asyncio.AbstractEventLoop | None = None
+    async def _main(self) -> None:
+        try:
+            async with self.lifecycle() as context:
+                self._started_event.set()
+                self._settled_event.set()
+                await self.run_loop(context)
+        except BaseException as error:
+            logger.exception("Worker {} failed", self.name)
+            self._report_failure(error)
+        finally:
+            # Also set when acquiring failed, so the parent stops waiting.
+            self._settled_event.set()
 
-    def __init__(
+    def _run_body(self) -> None:
+        # Keyed by class: LogConfig routes each worker type to its own log file.
+        with logger.contextualize(worker=type(self).__name__):
+            logger.info("Starting worker {}", self.name)
+            asyncio.run(self._main())
+            logger.info("Stopped worker {}", self.name)
+
+    # The parent side
+
+    @property
+    def failure(self) -> str | None:
+        """Why the worker stopped, if it stopped because of an error."""
+        return self._reported_failure()
+
+    async def wait_stopped(self) -> None:
+        """Return once the worker has exited, for whatever reason."""
+        # Polled: a process exit has no awaitable, and a thread blocked in
+        # ``join`` would outlive a cancelled wait.
+        while self.is_alive():  # noqa: ASYNC110
+            await asyncio.sleep(_POLL_INTERVAL_S)
+
+    async def __aenter__(self) -> Self:
+        self.start()
+        try:
+            await self._wait_until_ready()
+        except BaseException:
+            # Failed or cancelled while starting: whatever it acquired so far
+            # is released by its own lifecycle once it sees the stop.
+            await self._stop_and_join()
+            raise
+        return self
+
+    async def __aexit__(
         self,
-        *,
-        stop_event: EventClass,
-        queues_to_cancel: Iterable[Queue] | None = None,
-        logger_: loguru.Logger | None = None,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
-        super().__init__()
-        self._interrupt_event = stop_event
-        self._stop_event = Event()
-        self._parent_pid = os.getpid()
-        self._queues_to_cancel = list(queues_to_cancel or [])
+        await self._stop_and_join()
+        failure = self.failure
+        if failure is not None:
+            # It died while the parent thought it was running. Raising here
+            # would mask whatever the parent's block is exiting with.
+            logger.error("Worker {} stopped early: {}", self.name, failure)
 
-        # Platforms that use "spawn" for multiprocessing (e.g. Windows) cause logging concurrency issues.
-        # Therefore, we need to copy the logger with enqueue=True in child processes.
-        # https://loguru.readthedocs.io/en/stable/resources/recipes.html#compatibility-with-multiprocessing-using-enqueue-argument
-        global logger  # noqa: PLW0603
-        logger = logger_ or logger
+    async def _wait_until_ready(self) -> None:
+        deadline = time.monotonic() + self.ready_timeout_s
+        while not self._settled_event.is_set():
+            if not self.is_alive():
+                # Died without reaching its ``finally``: a hard exit or a signal.
+                break
+            if time.monotonic() >= deadline:
+                raise WorkerStartupError(self.name, f"not ready within {self.ready_timeout_s:.0f}s")
+            await asyncio.sleep(_POLL_INTERVAL_S)
+        if self._started_event.is_set():
+            # Started, even if it has failed since; ``__aexit__`` reports that.
+            return
+        failure = self.failure
+        raise WorkerStartupError(self.name, failure if failure is not None else self._exit_description())
 
-    # Hooks to be implemented by subclasses
+    def _exit_description(self) -> str:
+        return "exited before it was ready"
 
-    async def setup(self) -> None:
-        """Allocate resources and initialize settings. Called once in the child process."""
-        # Logging must be re-setup in child processes because loguru sinks don't
-        # transfer across process boundaries and settings are non-picklable.
+    async def _stop_and_join(self) -> None:
+        self._stop_event.set()
+        # Shielded: a cancelled parent (a closed websocket) still waits for the device to be released.
+        with anyio.CancelScope(shield=True):
+            await asyncio.to_thread(self.join, self.stop_timeout_s)
+            if self.is_alive():
+                logger.warning("Worker {} did not stop within {:.0f}s", self.name, self.stop_timeout_s)
+                self._kill()
+
+
+class ThreadWorker[C](threading.Thread, _Worker[C], ABC):
+    """A worker on its own thread, for work that releases the GIL or is light.
+
+    A thread cannot be killed: one that ignores the stop is left running as a
+    daemon and logged. Anything holding hardware that must be released
+    belongs in a :class:`ProcessWorker`.
+    """
+
+    def __init__(self, *, name: str, daemon: bool = True) -> None:
+        super().__init__(name=name, daemon=daemon)
+        self._init_events()
+        self._failure: str | None = None
+
+    def run(self) -> None:
+        self._run_body()
+
+    def _report_failure(self, error: BaseException) -> None:
+        self._failure = _describe(error)
+
+    def _reported_failure(self) -> str | None:
+        return self._failure
+
+    def _kill(self) -> None:
+        logger.error("Worker {} is a thread and cannot be killed; leaving it running", self.name)
+
+
+class ProcessWorker[C](mp.Process, _Worker[C], ABC):
+    """A worker in its own process, for hardware and anything heavy.
+
+    The worker object is pickled into the child, so it may only hold what
+    pickles: configuration, not drivers. Build the device in ``lifecycle``,
+    which runs in the child.
+
+    The child ignores SIGINT, so a Ctrl+C on the backend stops it through the
+    parent rather than tearing it down twice. SIGTERM asks it to stop the same
+    way the parent does, so a terminated child still releases its device. A
+    child whose parent has died stops by itself.
+    """
+
+    def __init__(self, *, name: str, daemon: bool = True) -> None:
+        """Pass ``daemon=False`` for a worker that starts processes of its own."""
+        ensure_spawn_start_method()
+        super().__init__(name=name, daemon=daemon)
+        self._init_events()
+        # A failure crosses back as text: the child writes to its own copy of
+        # this object, so the parent cannot read an attribute the child set.
+        self._failed_event: ProcessEvent = mp.get_context("spawn").Event()
+        self._failures: Queue[str] = mp.get_context("spawn").Queue()
+        self._failure: str | None = None
+
+    def run(self) -> None:
         from core.logging import setup_logging
 
+        # Loguru sinks do not cross the process boundary.
         setup_logging()
-
-    @abstractmethod
-    async def run_loop(self) -> None:
-        """
-        Main loop. Return only when asked to stop or on unrecoverable error.
-        self.should_stop() should be used the loop condition.
-        """
-        ...
-
-    async def teardown(self) -> None:
-        """Release resources (optional)."""
-
-    # Internal + final run orchestration
-
-    @staticmethod
-    def _install_signal_policy() -> None:
-        """
-        Ignore shutdown signals (SIGINT) in child processes.
-
-        This function prevents child processes from handling shutdown signals directly,
-        ensuring that cleanup is coordinated through the parent process via the stop_event
-        mechanism.
-        """
         signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, self._on_sigterm)
+        self._run_body()
 
-    def _auto_name(self) -> str:
-        """Generate a name for the process based on its role and PIDs."""
-        return "-".join([self.ROLE, str(self._parent_pid), str(os.getpid())])
-
-    def _cancel_queue_join_threads(self) -> None:
-        for q in self._queues_to_cancel:
-            try:
-                # https://docs.python.org/3/library/multiprocessing.html#all-start-methods
-                # section: Joining processes that use queues
-                # Call cancel_join_thread() to prevent the parent process from blocking
-                # indefinitely when joining child processes that used this queue. This avoids potential
-                # deadlocks if the queue's background thread adds more items during the flush.
-                q.cancel_join_thread()
-                logger.debug(f"Cancelled join thread for queue {getattr(q, 'name', q)!r}")
-            except Exception as e:
-                logger.warning(f"Failed cancelling queue join thread: {e}")
-
-    def run(self) -> None:
-        with logger.contextualize(worker=self.__class__.__name__):
-            self._install_signal_policy()
-            self.name = self._auto_name()
-            logger.info(f"Starting {self.name}...")
-
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-
-            try:
-                self.loop.run_until_complete(self.setup())
-                self.loop.run_until_complete(self.run_loop())
-            except Exception:
-                logger.exception(f"Unhandled exception in {self.name}")
-            finally:
-                try:
-                    self.loop.run_until_complete(self.teardown())
-                finally:
-                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-                    self.loop.close()
-
-                    self._cancel_queue_join_threads()
-                    log_threads()
-                    logger.info(f"Stopped {self.name}.")
-
-    def stop(self) -> None:
-        timeout = 10
+    def _on_sigterm(self, _signum: int, _frame: FrameType | None) -> None:
+        logger.info("Worker {} received SIGTERM, stopping", self.name)
         self._stop_event.set()
-        if not self.is_alive():
-            return
-        self.join(timeout=timeout)
-        if self.is_alive():
-            logger.warning(f"Process {self.name} did not stop within {timeout}s, terminating")
-            self.terminate()
-            self.join(timeout=2.0)
 
+    def should_stop(self) -> bool:
+        parent = mp.parent_process()
+        return super().should_stop() or (parent is not None and not parent.is_alive())
 
-class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
-    ROLE: str = "Worker"
+    def _report_failure(self, error: BaseException) -> None:
+        # Message before flag: a parent that sees the flag then reads the queue.
+        self._failures.put(_describe(error))
+        self._failed_event.set()
 
-    def __init__(self, *, stop_event: EventClass, daemon: bool = False):
-        super().__init__(daemon=daemon)
-        self._interrupt_event = stop_event
-        self._stop_event = Event()
-        self.name = f"{self.ROLE}-{os.getpid()}-thread"
-        self.loop: asyncio.AbstractEventLoop | None = None
-
-    # hooks
-    def setup(self) -> None:
-        pass
-
-    @abstractmethod
-    async def run_loop(self) -> None: ...
-
-    async def teardown(self) -> None:
-        pass
-
-    # final run orchestration
-    def run(self) -> None:
-        with logger.contextualize(worker=self.__class__.__name__):
-            logger.info(f"Starting {self.name}")
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-
+    def _reported_failure(self) -> str | None:
+        if self._failure is None and self._failed_event.is_set():
             try:
-                self.setup()
-                self.loop.run_until_complete(self.run_loop())
-            except Exception:
-                logger.exception(f"Unhandled exception in {self.name}")
-            finally:
-                try:
-                    self.loop.run_until_complete(self.teardown())
-                finally:
-                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-                    self.loop.close()
-                    log_threads()
-                    logger.info(f"Stopped {self.name}")
+                self._failure = self._failures.get(timeout=1.0)
+            except Exception:  # an empty or closed queue tells us nothing more
+                self._failure = "no reason reported"
+        return self._failure
 
-    def stop(self) -> None:
-        self._stop_event.set()
-        self.join(timeout=10)
+    def _exit_description(self) -> str:
+        return f"exited with code {self.exitcode} before it was ready"
+
+    def _kill(self) -> None:
+        logger.warning("Killing worker {}", self.name)
+        self.kill()
+        self.join(timeout=1.0)

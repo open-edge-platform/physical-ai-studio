@@ -1,439 +1,226 @@
 # Runtime Session Architecture
 
-Studio drives a physical robot four ways: teleoperation by hand, running a trained policy, recording a dataset, and exporting a model that reproduces the run elsewhere. All four run on one session, a long-lived process that owns the robot and its cameras for as long as you are working with them. Each capability arrives as a command sent to that session.
+Studio drives a physical robot in a few ways: previewing it, teleoperating it by hand, recording a dataset, replaying an episode and running a trained policy. All of them run in one **runtime session**. The session belongs to a websocket, holds what that page has loaded (an environment, a dataset, a model) and runs one **control** that decides what the follower does.
 
-This replaced two hand-written control loops (`TeleoperateWorker`, `RobotControlWorker`) and a separate model-worker process pool. Studio no longer owns loop machinery, timing, or teardown ordering. It owns three things: which action to send, what to stream to the browser, and what to write to a dataset. `physicalai.runtime.RobotRuntime` runs the loop.
-
-This document covers the decisions and constraints you cannot read off the code, especially the traps. For what the code does, read `backend/src/runtime/`.
+This page covers the decisions and constraints you cannot read off the code, especially the traps. For what the code does, read `backend/src/runtime_session/` and `backend/src/workers/`. For how it was built and why in this order, see [the runtime inhousing plan](../feature_plans/runtime-inhousing-plan.md).
 
 ## Contents
 
+- [Why Studio runs its own runtime](#why-studio-runs-its-own-runtime)
 - [The shape](#the-shape)
-- [One request, end to end](#one-request-end-to-end)
-- [One tick](#one-tick)
-- [Modes](#modes)
-- [Session lifecycle and ownership](#session-lifecycle-and-ownership)
-- [Identity: when two sessions are the same session](#identity-when-two-sessions-are-the-same-session)
+- [The store](#the-store)
+- [The bus](#the-bus)
+- [Parts and slots](#parts-and-slots)
+- [Controls](#controls)
+- [Models](#models)
+- [The socket](#the-socket)
+- [Lifecycle](#lifecycle)
 - [Exclusivity](#exclusivity)
 - [Export](#export)
 - [Traps](#traps)
 - [Constraints](#constraints)
 
+## Why Studio runs its own runtime
+
+Studio used to run on `physicalai.runtime.RobotRuntime`: one loop at one fps, with Studio plugging in an action source and callbacks, in a detached process found again over zenoh. That is the right shape for running one policy on a robot, and it stays the deployment path (see [Export](#export)). It is the wrong shape for Studio, which needs:
+
+- **Different rates at once.** The follower runs at 100 Hz, cameras at their own fps, a dataset records at 30 Hz and a model is asked for chunks when its queue runs low. One loop at one fps forces all of them onto the slowest.
+- **Parts that come and go.** A page swaps the dataset or the model, or reloads the environment, while the session keeps running. The old runtime fixed its devices and callbacks at construction and had to be rebuilt around them.
+- **Controls that can be anything.** Teleop, a move to a pose, a replay, a policy, and later a human in the loop. Each is a small class that can act on many things, not a mode inside one action source.
+
+Studio still uses `physicalai` for everything below the loop: `physicalai.robot` drivers, `SharedCamera`, `InferenceModel`, and `physicalai.runtime`'s policy execution (`PolicySource`, the executors, `ChunkedActionQueue`, `LerpSmoother`), so a policy runs in Studio exactly as an export runs it.
+
 ## The shape
 
-### Why one session
-
-Every capability used to get its own worker process, and each one opened the robot itself.
-
 ```mermaid
 flowchart LR
-  subgraph before["Replaced"]
-    direction TB
-    api1["FastAPI process<br/>robot_control · record"]
-    tw["TeleoperateWorker"]
-    rcw["RobotControlWorker"]
-    mw["ModelWorker"]
-    ctl["control/<br/>5 modules"]
-    arm1(["Robot<br/><i>three owners, one arm</i>"])
-    api1 --> tw
-    api1 --> rcw
-    api1 --> mw
-    rcw --> ctl
-    tw --> arm1
-    ctl --> arm1
-    mw --> arm1
+  ui["Browser<br/>RuntimeSessionProvider"]
+  subgraph api["FastAPI process"]
+    ws["runtime_ws<br/>forwards commands, samples the store"]
+    sess["RuntimeSession<br/>parts in slots · claims"]
+    ctl["Control thread<br/>teleop · move · replay · model"]
+    cam["CameraWorker threads"]
   end
+  robot["RobotWorker process<br/>follower"]
+  ds["DatasetWorker process"]
+  mw["ModelWorker process"]
+  pub(["SharedCamera publishers"])
+  store[("Store<br/>shared memory")]
 
-  subgraph after["Now"]
-    direction TB
-    api2["FastAPI process<br/>runtime_ws"]
-    sess2["Session process<br/>RuntimeSession · StudioActionSource · callbacks"]
-    arm2(["Robot + cameras<br/><i>one owner, held open</i>"])
-    api2 -->|zenoh| sess2
-    sess2 --> arm2
-  end
+  ui <-->|"JSON commands, acks, state<br/>binary observations"| ws
+  ws <-->|bus| sess
+  sess --- ctl
+  ctl -->|action| store
+  robot <-->|"state / action"| store
+  cam -->|frames| store
+  pub --> cam
+  ds -->|reads| store
+  mw -->|reads frames| store
+  sess <-->|"bus: commands, status"| robot
+  sess <-->|bus| ds
+  ctl <-->|"bus: rpc/model/infer"| mw
+  ws -->|reads| store
 ```
 
-Three processes wanting the same arm means handing the hardware back and forth, with none of them able to see what the others are doing. A crash in any one of them took the API process down too, since they ran as threads inside it.
+Two kinds of traffic, two channels:
 
-One session holding the robot for the length of the work removes both problems. Teleoperation, inference and recording became modes and commands on a process that already has the hardware open.
+- **Data** (joints and frames) goes through the **store**, a shared-memory block every process attaches to. Nothing samples-and-forwards it: each reader takes the latest value when it wants one.
+- **Commands and status** go over the **bus**, a zenoh session private to this session.
 
-### Layered ownership
+What runs where follows from one rule: **anything that holds hardware or holds the GIL for long runs in its own process.** The follower's driver, lerobot's parquet and video writing, and model inference are processes. Cameras are threads, because `SharedCamera` already captures in a publisher process. Controls are threads in the API process, because they borrow things that cannot cross a process boundary (the connected leader driver, the loaded model's executor).
 
-Each layer owns exactly one class of resource, and the edges name their transport.
+## The store
 
-```mermaid
-flowchart TB
-  ui["Browser"]
-  api["FastAPI backend<br/><i>stateless client</i>"]
-  sess["Runtime session<br/><i>one per controlled robot</i>"]
-  ro["SharedRobot owner<br/><i>one per robot</i>"]
-  cp["SharedCamera publisher<br/><i>one per camera</i>"]
-  hw1(["Serial / IP arm"])
-  hw2(["USB / RealSense camera"])
-
-  ui <-->|WebSocket| api
-  api <-->|"commands + events"| sess
-  api -.->|"spawn, kill backstop"| sess
-  sess <-->|"zenoh: state, action"| ro
-  sess <-->|"iceoryx2: frames"| cp
-  api <-->|"iceoryx2: frames (preview)"| cp
-  ro --> hw1
-  cp --> hw2
-```
-
-Two things to read off this diagram. Hardware I/O already lives in its own processes: `SharedRobot` spawns an owner that holds the serial port, and `SharedCamera` spawns a publisher that holds the device. Studio inherited that when it adopted SharedRobot. The API also reaches camera frames directly without them passing through the session, so frames never cross the session boundary.
-
-### Transport
-
-The session runs in its own OS process. Control and telemetry go over Zenoh; frames do not.
-
-```mermaid
-flowchart LR
-  subgraph apiproc["FastAPI process"]
-    api["session client"]
-    obs_sub["telemetry subscriber"]
-  end
-
-  subgraph sessproc["Runtime session process"]
-    cmd_sub["command subscriber<br/>RingChannel(1)"]
-    qable["queryable<br/>acked commands"]
-    meta["queryable<br/>/metadata"]
-    tel_pub["telemetry publisher<br/>BEST_EFFORT / DROP"]
-  end
-
-  ext["observer CLI · rerun · jsonl"]
-
-  api -->|"put · command"| cmd_sub
-  api <-->|"get · request"| qable
-  api <-->|"get · metadata"| meta
-  tel_pub -->|"put · tick, state, error, lifecycle"| obs_sub
-  tel_pub --> ext
-```
-
-The split mirrors what physicalai already does for robots. Commands that set desired state go out as best-effort publications, because re-sending them is harmless and only the newest matters. Commands that fire once and cannot be lost go through a queryable and get a reply.
-
-| Idempotent (sets desired state) | Edge-triggered (needs a reply) |
-| --- | --- |
-| `set_follower_source`, `load_model`, `load_dataset`, `start_task`, `stop_task`, `start_recording`, `disconnect` | `save_episode`, `discard_episode` |
-
-Losing a `save_episode` loses an episode someone recorded, which is why those two are the exception.
-
-A `/metadata` queryable answers "is there a session for this robot, and what is it doing", which is what makes discovery and reattach work. Telemetry is best-effort with drop-on-congestion, so a slow consumer degrades to a lower frame rate instead of stalling the control loop. It is a publication rather than a pipe, so an observer CLI or a Rerun viewer can attach to a live session without the session knowing.
-
-### Session names
-
-Zenoh keys look like `studio/rt/rt-<follower-uuid>/…` (`runtime/transport/ids.py`).
-
-The `rt-` prefix keeps a session's name clear of the robot's. Without it a session would be named after the follower UUID, which `SharedRobot` already claims through `SharedRobot.from_config(name=...)`. Upstream turns that name into two things and namespaces neither:
-
-- a lock file at `sha256(f"name:{identity}")`
-- a rendezvous port from `physicalai/robot/{name}`
-
-A session sharing the name grabs the lock the robot's owner needs and binds the port it listens on, so the owner dies at startup with `name_lock_contention` while the session waits for a robot nobody started.
-
-Studio separates them three ways:
-
-- The name carries the `rt-` prefix, checked by `_SESSION_NAME_RE`. Upstream's `validate_name` allows letters, digits, `_` and `-`, so it passes.
-- `derive_endpoint_port` hashes into 10000–19999. Physicalai robots use 20000–59999.
-- The lock hashes `f"{SESSION_LOCK_KIND}:{identity}"`, which changes the kind as well as the identity. Upstream's `_lock.py` is private, so Studio carries its own copy.
-
-## One request, end to end
-
-Recording one episode is the clearest single path through the architecture, because it touches every layer: the socket, the spawn, the wire, the control loop, and the dataset.
-
-```mermaid
-sequenceDiagram
-  participant UI as Browser
-  participant WS as api/runtime_ws.py
-  participant OWN as RuntimeSessionOwner
-  participant S as Session process
-  participant REC as RecordingState
-
-  UI->>WS: open /runtime/ws · handshake
-  WS->>OWN: start_runtime_session()
-  OWN->>OWN: probe /metadata
-  OWN->>S: spawn session_worker.main()
-  S-->>OWN: ready · on stdout
-  OWN->>S: attach · zenoh
-  UI->>WS: load_dataset
-  WS->>S: apply() · publication
-  S->>S: RuntimeSession.apply() → _load_dataset
-  UI->>WS: start_recording
-  WS->>S: apply() · publication
-  S->>REC: RecordingState.start()
-  loop every tick
-    S->>REC: RecordingCallback.on_tick → add_frame
-  end
-  UI->>WS: save_episode
-  WS->>S: request() · queryable
-  S->>REC: CommandWorker → _save_episode
-  S-->>WS: ack · request_id
-  WS-->>UI: settled
-  Note over S,REC: last subscriber leaves → finalize_recording()
-```
-
-1. The browser opens the runtime socket. The handshake names the follower, the leader, and the
-   camera ids; the API resolves each against the project before anything is spawned.
-2. `start_runtime_session` hands off to `RuntimeSessionOwner`, which probes `/metadata` and either
-   attaches to a live session or spawns one. See
-   [Identity](#identity-when-two-sessions-are-the-same-session) for how it decides.
-3. `RuntimeProcessHost.start()` spawns `session_worker.main()`. Readiness crosses two channels: the
-   child reports ready on its stdout before Zenoh is up, and only then does the client attach over
-   the wire.
-4. `load_dataset` reaches `handle_incoming`, which validates the payload and forwards it.
-5. `RuntimeSessionClient.apply()` publishes it. `RuntimeZenohServer` pumps it into
-   `RuntimeSession.apply()`, which opens the dataset in `_load_dataset`.
-6. `start_recording` arms recording. `StudioActionSource` handles it rather than the session
-   directly, because recording has to line up with the control loop.
-7. Every tick, `RecordingCallback.on_tick` appends one observation-and-action pair through
-   `RecordingState.add_frame`.
-8. `save_episode` shows the two command classes in action. It travels through the queryable as a
-   request and comes back as an ack carrying its `request_id`, so the browser learns whether the
-   write succeeded. `load_dataset` and `start_recording` above are fire-and-forget.
-9. The write itself runs on `CommandWorker`, off the control thread, because it encodes video.
-10. When the last subscriber leaves, `finalize_recording()` is queued and the cache is copied back
-    into the dataset, so the episode does not wait for process exit.
-
-## One tick
-
-The upstream loop calls into Studio's code at three points.
-
-```mermaid
-sequenceDiagram
-  participant RT as RobotRuntime
-  participant SA as StudioActionSource
-  participant PS as PolicySource
-  participant CB as callbacks
-  participant R as SharedRobot
-
-  RT->>R: get_observation()
-  RT->>RT: read camera frames
-  RT->>SA: update (robot_state, frames, step)
-  SA->>SA: drain command mailbox
-  alt mode = policy
-    SA->>PS: update(...)
-    PS-->>SA: action from queue
-  end
-  alt mode = teleop
-    SA->>SA: read leader, push efforts back
-  end
-  SA-->>RT: one action
-  RT->>CB: on_action_ready (action)
-  CB-->>RT: action (possibly filtered)
-  RT->>R: send_action (action, goal_time)
-  RT->>CB: on_action_sent · emit_tick
-  CB->>CB: stream to browser · write dataset frame
-  RT->>RT: sleep to hold fps
-```
-
-Two consequences. Commands drain at the top of `update()` before the action is decided, so a mode change takes effect on the tick it arrives. The recording callback also sees `TickEvent`, which carries the observation and the action that was sent, so recording never reads the robot separately.
-
-## Modes
-
-Teleoperation and policy execution are modes of one session. `StudioActionSource` implements the upstream `ActionSource` protocol and picks between them.
-
-| Mode | Action sent |
-| --- | --- |
-| `hold` | a target latched when the mode was entered |
-| `teleop` | leader joint positions, plus efforts to the leader |
-| `policy` | next action from `PolicySource` |
-
-`hold` exists because `ActionSource.update()` must return an action every tick. The protocol has no way to send nothing.
-
-**`hold` latches its target on entry and resends that same value.** Sending the freshly measured position each tick makes the arm sag. Measured position trails the commanded target by the servo's steady-state error, so feeding it back integrates that error downward under gravity. The latch is copied once, returned as a copy each tick, and cleared on a mode change.
-
-**A policy failure drops to `hold` with a fresh latch** instead of stopping the loop. The arm holds where it is and the session stays alive to report the error.
-
-### Modes rather than session types
-
-The delegates are live simultaneously, and the mode selects whose output wins:
-
-```python
-policy_action = self._policy.update(...) if self._policy else None
-leader_action = self._read_leader(robot_state) if self._leader else None
-return self._arbitrate(mode, policy_action, leader_action, robot_state)
-```
-
-The alternative forecloses human-in-the-loop by leaving the policy idle and its queue stale:
-
-```python
-match mode:
-    case "teleop": return self._leader_action(robot_state)
-    case "policy": return self._policy.update(...)
-```
-
-Human-in-the-loop puts a person and a policy in control during the same episode, which two session types cannot express. Committing to modes now makes HIL an arbitration change later instead of a restructuring. Nothing implements it yet, and `FollowerSource` is `hold | teleop | policy`. Adding it would not change the shape.
-
-Both delegates are optional. Dataset recording runs with no model loaded, so `policy_action is None` happens routinely.
-
-## Session lifecycle and ownership
-
-### The session owns devices; the runtime is a view
-
-The runtime's `robot`, `cameras`, `fps` and `callbacks` are fixed at construction. That does not block reconfiguration, because of two properties:
-
-- `run()` returning does **not** disconnect devices. Device teardown lives in `RobotRuntime.disconnect()`, reachable only through `__exit__` or an explicit call.
-- Every `connect()` in the chain is idempotent. `RobotRuntime.connect()` guards on its own flag; `SharedRobot.connect()` and `SharedCamera.connect()` return early when already connected.
-
-The session therefore holds the device objects and treats the runtime as disposable:
-
-```text
-RuntimeSession  (long-lived)
-├── owns    SharedRobot, dict[name, SharedCamera]     survive rebuilds
-├── owns    StudioActionSource, callbacks
-└── holds   current RobotRuntime                      rebuilt on rig change
-```
-
-Swapping a camera means: stop the run, mutate the device dict, construct a new `RobotRuntime` over it, run again. Surviving devices are never disconnected, so no owner process restarts and the follower never drops torque.
-
-Devices **preconnect in parallel** during setup, one thread per device, because serial and camera opens are independent and each costs real wall time.
-
-### Work that must not run on the control loop
-
-Three things run off the control thread, each for a different reason:
-
-| What | Where | Why |
-| --- | --- | --- |
-| `save_episode`, `discard_episode`, dataset copy-back | `CommandWorker`, one serialized thread | They write parquet and encode video. Serialized because ordering matters: a save then a discard must not interleave. |
-| Model loading | `PolicyLoader`, its own thread | So a dataset copy cannot sit in front of a model load. Handover is by generation number, and a load that finishes too late is dropped. |
-| Per-frame image writes | lerobot's own writer threads | Already threaded upstream. `RecordingCallback` stays synchronous so it keeps ordering against save and discard. |
-
-The control loop itself does the frame copy and appends to the episode buffer. Video encoding happens at `save_episode`, in a process pool.
-
-### Start and stop
-
-```mermaid
-stateDiagram-v2
-  [*] --> Probing: client needs a session
-  Probing --> Attached: owner answered /metadata
-  Probing --> Spawning: nobody answered
-  Spawning --> Attached: metadata published
-  Spawning --> Failed: name lock lost / startup error
-  Attached --> Running: connect() then run()
-  Running --> Running: mode changes
-  Running --> Stopping: disconnect / idle_timeout / error
-  Stopping --> [*]: finalize recording, disconnect devices, exit
-  Failed --> [*]
-  Attached --> Stopping: kill backstop
-```
-
-**Start** follows `SharedRobot.connect()`: probe `/metadata`, spawn if nobody answers, resolve the spawn race with a name lock and re-probe. Idempotent, and reattach comes free. `Probing` before `Spawning` is what gives reattach, so a page refresh finds the existing session instead of fighting it.
-
-Readiness crosses two channels. The child reports ready on its **stdout** before Zenoh is up, then the client attaches over the wire.
-
-**Stop** has three paths, all required:
-
-1. **Explicit.** The user disconnects. Stop the run, finalize recording, disconnect devices, exit.
-2. **Idle self-exit.** No subscriber present for `idle_timeout`. This covers an API crash, a closed browser, and a dropped network. It is a safety property. An abandoned session in hold mode keeps commanding a latched target with torque on and nobody watching.
-3. **Kill backstop.** The API is the parent process, so it can terminate a wedged session. Control over Zenoh buys reattach; being the parent buys "die now regardless of internal state".
-
-**Recording finalizes when the last subscriber leaves.** The process stays alive for the idle window, so a returning client keeps the hardware connection. The dataset must not wait that long: the user navigates straight back to the dataset page expecting their episodes. The arm latches to `hold` first, then the recording commits.
-
-**The idle timeout is 45 seconds, as a setting** (`RUNTIME_IDLE_TIMEOUT_S`). A websocket reconnect after a page refresh completes well under 5 seconds, so 45 leaves roughly nine times the headroom for a slow reload or a brief network drop. At the other end it bounds an abandoned, torque-holding arm to under a minute. It runs much longer than `SharedRobot`'s 10-second owner default, because that timeout only costs a process respawn while this one can cost a recording session. Hardware labs on flaky networks will want it longer, and an unattended rig will want it shorter.
-
-On shutdown, leave follower torque enabled. SO101 holds position rather than dropping under gravity.
-
-## Identity: when two sessions are the same session
-
-A client asking for a session gets one of three answers: attach to what is running, restart it, or refuse. Two separate questions decide which.
-
-- **`runtime_identity_digest`** covers the hardware: robot recipe, leader recipe, fps. Cameras are excluded.
-- **`runtime_camera_keys`** covers which cameras the session has.
-
-The check runs in that order:
-
-1. **Different identity, refuse** with `423 Busy`, naming the holder. A client asking for a different arm must never take one over.
-2. **Same identity, missing a camera, restart.** The check asks whether the running session's cameras cover what the client needs, so a session with extra cameras is still a valid attach target. Only a missing camera forces a restart, and the displaced client reattaches to the superset because its identity still matches.
-3. **Otherwise, attach.**
-
-Cameras sit outside identity because they are read-only observation. Folding them in makes every camera edit in the environment form look like a rig change, so a healthy session gets killed and respawned for something that did not affect the arm. Order matters for the same reason in reverse: checking cameras first would let a client wanting a different arm silently take over a session because it also happened to need another camera.
-
-A rig change while recording is rejected. Changing the camera set mid-episode corrupts the dataset.
+`runtime_session/store.py`. One block per session holds the latest `state` (measured joints), `action` (commanded joints) and one frame per camera, each with a timestamp.
+
+- **No locking.** Readers copy a buffer out while the writer may be writing it, so a read can mix two consecutive samples. They are one tick apart and the world moves continuously, so a torn sample is still physically plausible. Aligned 8-byte stores are atomic on x86-64 and arm64, so a torn joint vector never holds half-written floats.
+- **Write order matters.** Writers store the values first and the timestamp last, and readers read the timestamp first. NaN means "not written yet", so a reader never takes an unwritten feature's zeros for a reading.
+- **Timestamps are `time.monotonic()`**, which is system-wide on Linux and comparable across processes. An action's timestamp is when it should happen, which is how a model's chunk reaches the robot as a `goal_time` (see [Controls](#controls)).
+- **The spec is the session's shape.** `FeatureSpec` is one robot's joint names (namespaced the way a dataset stores them, `shoulder_pan.pos`) and the cameras by dataset key. A dataset's `observation.state`, `action` and `observation.images.<key>` compare to it directly. A dataset or model that needs something the spec lacks is refused with the differences listed.
+- **The store outlives a reloaded environment** while its spec stays the same, so a dataset that is recording keeps recording across a reload.
+- **Blocks are named `pai-<creator pid>-<session id>`.** A backend killed with SIGKILL leaves its blocks in `/dev/shm`, and startup sweeps those whose creator is gone. The pid is there so the sweep leaves a live backend's blocks alone: an earlier sweep removed every block on the host, and the test suite deleted a running dev server's store.
+
+## The bus
+
+`runtime_session/bus.py`. The session hosts a zenoh router on a Unix socket (`pai-<session id>.sock`), with scouting off, and its worker processes join it as clients. Nothing listens on the network, and two sessions cannot hear each other.
+
+- **Everything that must arrive is a request.** Every websocket command becomes a `request` on `cmd/<command>`, and whoever serves it replies: the session for loads and `set_control`, the dataset worker for `start_episode`, `save_episode` and `discard_episode`. A command for a part that is not loaded finds no responder and comes back as `command_unavailable`, so the socket needs to know nothing about which part serves what.
+- **Pub/sub is for status only.** Each part publishes its status on `evt/status/<part>` (`environment`, `environment/<device>`, `dataset`, `model`, `control`), and the session publishes its state and errors on `evt/session`. A publication sent before a subscriber reached the router is lost, which is acceptable for status and not for a save.
+- **Handler errors cross the bus.** A handler's exception reaches the requester as `BusRequestError` with its error code and data, which the socket spreads into the ack (`incompatible_parts` carries the parts that would be unloaded).
+- **A worker that just started takes a moment to be reachable.** Its queryables need to reach the router, so a parent waits with `until_serving` instead of sending its first request straight away.
+- **`request_sync`** blocks the calling thread instead of the event loop, for `ModelControl`'s executor thread. The async `request` is the same call on a worker thread.
+
+## Parts and slots
+
+The session holds four optional parts, each in a `Slot` (`runtime_session/slot.py`): the **environment**, the **dataset**, the **model** and the **control**. A part is an async context manager, so loading enters it and unloading leaves it, and every part is acquired and released the same way. The session is the only thing that loads and unloads them, under one lock.
+
+- **The environment** (`runtime_session/environment.py`) claims the devices, then connects the follower's `RobotWorker`, a `CameraWorker` per camera and the leader as a plain driver, **in parallel**. If any of them fails, what already connected is released, except for the leader: only teleop needs it, so a leader that fails to connect reports so and the environment runs without it until a reload. Its devices report as `environment/<device>`.
+- **The dataset** (`runtime_session/dataset.py`) is a `Recording`: a `DatasetWorker` that records from the store into the dataset's recording mutation, a copy in the cache.
+- **The model** (`runtime_session/model.py`) is a `ProcessModel`, see [Models](#models).
+- **The control** borrows the others and writes `action`, see [Controls](#controls).
+
+### Order and dependencies
+
+- **What is loaded first defines the store.** An environment supplies its joints and cameras. A dataset with episodes supplies its own. Every later load is checked against the spec.
+- **Loading an environment swaps.** The new environment is described before anything is unloaded, so a refusal changes nothing. A loaded dataset or model that no longer fits is refused with `incompatible_parts`, listing each part and why. The UI asks, then sends the load again with `unload_incompatible`. A dataset or model that still fits is loaded again on the new store.
+- **Dependencies unload first.** Unloading the environment unloads the control first. A part that reads the store (the dataset, the model) is unloaded before the store is replaced.
+- **Reload is in place.** `reload_environment` asks the environment to connect its devices again. The store and the dataset stay.
+
+### When a part fails
+
+| Part | What happens |
+|---|---|
+| Environment | Stays loaded and reported `failed`, so it can be reloaded. Its control is dropped. |
+| Control | Dropped; the follower holds. |
+| Model | Unloaded; the follower holds if the model was driving it. |
+| Dataset | Unloaded. What it saved but did not copy back is lost. |
+
+A worker that dies is reported `failed` with its reason. Nothing retries silently.
+
+## Controls
+
+`runtime_session/controls/`. Exactly one control runs at a time, as a thread in the session's process at its own rate. Each tick it writes the next `action`; the follower's `RobotWorker` sends whatever `action` holds.
+
+| Control | Writes | Grace move |
+|---|---|---|
+| `TeleopControl` | what the leader measures, at 100 Hz; held relative, its movement slowed down, grippers absolute | over `grace_s` to the leader |
+| `MoveControl` | a straight line to a pose over `duration_s`, then holds | – (it is one) |
+| `ReplayControl` | an episode of the loaded dataset as it is on disk, at its fps, then holds the last frame | to the first frame, before playing |
+| `ModelControl` | the loaded model's executor's next action, at 30 Hz | over `grace_s` to the model's actions |
+| none | nothing: the follower holds the last action | – |
+
+- **One at a time is structural, not arbitrated.** `set_control` stops and joins the old control, writes the measured state into `action`, then starts the new one. The follower therefore holds where it is, not where the old control last pointed it.
+- **No control means hold.** The robot worker seeds `action` with the measured position when it connects, and keeps sending `action` as it is.
+- **Every control that can start far from the follower eases in.** A leader, an episode's first frame or a model's rest pose can be anywhere. Without the grace move the follower is driven there at full speed: on an SO-101, an ACT policy commanding its rest pose swung the arm about 150° in one go. Teleop and the model blend from where the follower was to their target while they keep tracking it, so they are on it when the grace period ends. Replay moves to the first frame and only then starts the clock.
+- **`goal_time` is the only interpolation.** The robot worker sends each action with `goal_time = max(action.timestamp - previous tick, 1/hz)`. An action stamped in the future (a model's chunk at `t0 + i·dt`) is approached over that time, anything else as fast as one tick allows.
+- **What changes while a control runs is a command, not a new control.** Switching joins the old control before the next starts, so the follower is undriven for that moment, which shows in a recording. A control therefore serves its own commands on the session's bus while it runs (`Control.commands`), handled on its thread between ticks, and publishes its changed config on `evt/control` for the session to report. Teleop's `set_teleop_slowdown` switches between absolute and relative this way, moving on from the last command in the new mode.
+- **Controls borrow; they never connect.** A control gets references to what the session loaded (the leader, the model), so switching control, which happens all the time, never connects or disconnects a device. Some robots reset on disconnect.
+
+Combinations such as a human taking over from a policy get a control of their own when they are designed, rather than two controls fighting over `action`.
+
+## Models
+
+A loaded model is a `ModelWorker` process (`workers/model_worker.py`) that loads one of the model's exports with `InferenceModel`. In the session, `ProcessModel` stands in for the model: to `ModelControl`'s executor it is a local model, with `predict_action_chunk` and `reset`.
+
+- **Inference runs in its own process** because preprocessing and the runtimes' Python side hold the GIL long enough to stall the API's event loop, and with it every websocket.
+- **The control still writes the action.** Only the chunk crosses the bus. Queueing, smoothing and deciding when to ask again stay with `physicalai.runtime`'s executor in `ModelControl`, as in an export. With async execution the request blocks the executor's own thread, which waits on the bus with the GIL released.
+- **Images never cross the bus.** `rpc/model/infer` carries the state and the task; the worker adds each camera's latest frame from the store itself.
+- **The manifest is checked against the store** when the model loads: the state's size, and each camera the export reads. A model that does not fit is refused before its process starts.
+- **Sync and async take the same parameters** (`request_threshold`, the fraction of the chunk left when the next one is requested), so one flat `ExecutionConfig` fits both.
+
+Measured on an SO-101 with an ACT export: OpenVINO loads in about 1.3 s and answers a chunk in about 60 ms round trip; torch on CUDA loads in about 6 s.
+
+## The socket
+
+`/api/projects/{project_id}/runtime/ws` (`api/runtime_ws.py`). Opening it creates a session, and closing it ends the session. The socket only forwards: commands onto the bus, events off it, and the store to the browser.
+
+- **Every command gets an ack** with `ok` and either a result or an error with a code. There is no fire-and-forget command.
+- **`state`** (JSON) is sent whenever what is loaded changes: the environment's joints and cameras, the control, the dataset with its recording status, the model with its backend and device.
+- **`status`** (JSON) is each part's and device's `starting`, `running`, `failed` or `stopped`, with the reason for a failure.
+- **`error`** (JSON) says whether the session survived it. `session_closed` ends the socket.
+- **Observations are binary**, at `?hz=` (20 by default): `[u32 big-endian header length][header JSON][JPEGs]`. The header has the joints, the action and the frames, and lists only frames newer than the last ones sent, so a camera slower than the socket is not encoded twice. Binary avoids base64's third more on every JPEG. JPEGs are encoded off the event loop.
+
+In the browser, `RuntimeSessionProvider` opens the socket and loads what its page asks for: the environment, then a dataset or a model. Observations and frames go into channels outside React state, so a 20 Hz tick does not re-render the page. The session workspace offers every mode (record, replay, inference) whatever page opened it; a mode says which parts it is missing, with a way to load each.
+
+### Forms
+
+The camera form and the robot form do not open a session. `/api/cameras/ws` streams one `SharedCamera`, and `/robots/{id}/observations/ws` runs a `RobotWorker` with `observe_only`, which never sends an action. A device a session holds is refused there with `device_in_use`, naming the session, rather than connected twice.
+
+## Lifecycle
+
+- **A session belongs to its socket.** It lives in the API process; closing the socket unloads everything in reverse and releases the claims. Backend shutdown closes whatever is left. Nothing is reattached: a page reload opens a new session.
+- **Workers are context managers.** `async with worker:` starts it, waits until its `lifecycle()` has acquired what it holds, and raises if that failed. Leaving asks it to stop, waits, and kills a process that will not. A device is always released by whoever opened it, in the worker's own thread or process.
+- **Workers build their hardware in the child.** A `ProcessWorker` is pickled into its child, so it carries configuration only (a robot recipe, an export path), never a driver.
+- **The dataset worker is waited for long** (`stop_timeout_s`, 5 minutes). Leaving it discards an open episode and copies the cache back over the dataset, and killing it during that copy loses the dataset.
+- **A child stops when its parent dies**, and ignores SIGINT so Ctrl+C on the backend stops it through the parent instead of twice.
+- **A load waits for a closing session.** A page that opens a session has usually just closed one on the same devices, which takes a moment to disconnect them. A load first waits (up to 10 s) for sessions that are already closing. A browser refresh can still get there before the server notices the old socket close; that load is refused with `device_in_use`, and the dock offers to try again.
 
 ## Exclusivity
 
-Two resources, two different answers.
+Three guards, each against a different kind of holder:
 
-**The robot is exclusive.** Two sessions must not command one follower. Both would attach as subscribers to the same owner, whose action channel is latest-wins, so their command streams would interleave on one arm. The session name enforces it: only one session can hold a given name, so a second session for the same follower cannot come into existence.
+| Guard | Against | Storage |
+|---|---|---|
+| Session registry (`runtime_session/registry.py`) | another session, a form, a delete | in memory, per API process |
+| Device locks (`claim_robot` in `workers/robot_worker.py`) | setup wizards, calibration, `SharedRobot` owners, other processes | lock files, held by the parent |
+| Camera claims (`services/camera_claims.py`) | a session opening a camera at other settings | in memory, per API process |
 
-**Cameras are shared, but their settings are not.** One publisher per physical camera serves many subscribers by design. The conflict is configuration. A session connecting with `overwrite_settings=True` and a different resolution reconfigures the publisher, and every other subscriber's frames change underneath it. `validate_on_connect` checks only at connect, not continuously.
-
-The fix is a **camera claim registry** keyed by fingerprint. The first claimant pins the settings, and a later session asking for different settings is rejected with an error naming the conflicting project. Recording holds a claim like anything else, without a separate mechanism.
-
-Sessions connect to cameras strictly, with `overwrite_settings=False` and `validate_on_connect=True`. A session never reconfigures another session's publisher. If a camera delivers a resolution the environment did not declare, the session fails instead of reading the wrong size, because wrong pixel dimensions look fine and give a wrong answer.
-
-### The two guards persist differently, on purpose
-
-| Guard | Storage | Why |
-| --- | --- | --- |
-| Camera claims | in-memory, per API process | A claim only protects against concurrent misconfiguration inside one API process. |
-| Robot holder | on-disk lock, read first | A detached session keeps driving the arm across an API restart, so this one must survive it. |
-
-Deleting a robot, camera, or environment that is in use is rejected with the holder named. Robot deletion reads the on-disk lock registry first and only probes `/metadata` on a hit. A miss is the common case and must not open a Zenoh session. An in-memory registry would forget everything on restart and let a delete succeed while a live session is still driving the arm.
-
-**A live lock with a metadata miss still counts as held.** The worker can hold the flock and the arm before `/metadata` answers, so a probe timeout must not be read as an idle robot.
+- **The robot is exclusive.** Two sessions must not command one follower. The registry names the holder, so the error tells the user which session to close.
+- **Device locks are taken by the parent**, whose open lock file dies with it, so a killed child cannot leave a robot locked.
+- **Cameras are shared, their settings are not.** One `SharedCamera` publisher serves many readers, but a reader asking for another resolution would reconfigure it underneath the others. The first claimant pins the settings; a later one asking for different settings is refused, naming the project. A camera that delivers another resolution than the environment declares is resized to it, so the store's shape always holds.
+- **In memory is enough** now that sessions live and die with the API process. The old runtime's detached sessions outlived it, which needed an on-disk registry.
 
 ## Export
 
-One builder, two consumers. Studio builds its own session from the same document it exports, so the two cannot drift.
+The environment and model "export runtime config" endpoints write a YAML that runs on `physicalai.runtime.RobotRuntime` outside Studio, the deployment path. `services/runtime_export.py` builds it from Studio's database and never runs it, which is why it names `physicalai.runtime` classes only as class paths.
 
-```text
-        build_runtime_config(environment, model?, device?, task?, fps)
-                              │
-        ┌─────────────────────┴─────────────────────┐
-   export bundle                              Studio session
-   action_source:                             action_source: StudioActionSource{
-     PolicySource{model, execution, task}       policy = PolicySource{same fragment},
-     or                                     leader = same leader fragment }
-     TeleopSource{leader}
-   robot / cameras / fps ──── identical fragments ──── robot / cameras / fps
-```
+**Whatever Studio runs with `ModelControl` must stay exportable.** Its settings were chosen so each maps onto a `physicalai.runtime` equivalent: the execution mode to `SyncExecution` or `AsyncExecution` with the same `request_threshold`, and the queue and smoother to `ChunkedActionQueue` with `LerpSmoother`. The export builds its execution from the same `ExecutionConfig`. A Studio-only setting with no runtime equivalent (the grace move) is left out.
 
-Only the wrapper differs. The robot recipe, calibration, camera recipes, fps, model path, device, execution strategy and task are all shared, so none of them can drift. The export leaves out the multiplexer, since `hold` and mode switching have no meaning in a headless run.
+The bundle is self-contained: SO-101 calibration travels inside the YAML, the model path is relative, and the README has the exact `physicalai run` command. Machine-specific values are flagged:
 
-The builder reads Studio's database, never a live runtime, so reconfiguration needs no special handling. Swap a camera and both the export and the rebuilt session read the same updated environment. It assembles plain data instead of calling `to_config()` on a live runtime, because `InferenceModel.__init__` loads weights and `StudioActionSource` is not config-exportable.
-
-### Bundle
-
-```text
-studio-runtime-<name>-<timestamp>.zip
-├── runtime.yaml        self-contained config, relative model path
-├── exports/<backend>/  model artifacts
-└── README.md           the exact physicalai run command, and the CHANGE_ME list
-```
-
-Self-contained: **SO101 calibration travels inside the YAML.** `SO101Calibration.to_config_value()` emits the LeRobot calibration mapping as a plain dict, and `SO101.__init__` accepts it inline. Nothing depends on machine-local paths under `~/.local/share`. Same for fps, role, unit, baudrate, camera dimensions and frame rate.
-
-Machine-specific, and flagged with `CHANGE_ME` in the emitted file:
-
-- **`SO101.port`.** Studio stores pyserial's `port.device`, something like `/dev/ttyACM0`, which depends on enumeration order and shifts across reboots. The builder resolves a `/dev/serial/by-id/...` path where possible and falls back to the raw port with a marker.
-- **Camera `device`.** Same treatment, using `/dev/v4l/by-id/...`.
-- **`SharedRobot.name`.** Portable, but it derives the Zenoh port, so two bundles sharing a name collide on one host. That collision is the intended lock behaviour and belongs in the README.
+- **`port` and camera `device`.** A `/dev/serial/by-id/...` or `/dev/v4l/by-id/...` path is portable. Anything else, such as `/dev/ttyACM0`, which shifts across reboots, is listed under `CHANGE_ME` in the README.
+- **`SharedRobot.name`.** It derives the zenoh port, so two bundles with one name collide on one host. That is the intended lock behaviour.
 
 ## Traps
 
 Each of these has cost someone time.
 
-- **Never use `with runtime:`.** `__exit__` disconnects devices, which is what a rebuild must avoid. Call `connect()` explicitly and tear devices down at the session level.
-- **`StudioActionSource.disconnect()` must not disconnect the leader.** The session owns it. Upstream's `TeleopSource.disconnect()` does disconnect its leader, so read that class for reference and do not subclass it.
-- **Treat `stop()` then `run()` as a session boundary.** Every `run()` ends by calling `_bus.close()`, which closes every callback. Stateful callbacks do not survive a second run: `JsonlCallback` writes to a closed file and logs a traceback every tick, while `AsyncCallback` joins its worker with no restart path and loses telemetry silently.
-- **`hold` must latch.** Resending the measured position sags the arm. See [Modes](#modes).
-- **Camera feature keys must match the dataset the model was trained on**, which is not always the current environment's camera names. They diverge the moment someone renames a camera between recording and inference. `InferenceModel._prepare_inputs` raises `KeyError` on a missing input, so inference stops at the first tick. The error names the missing key and leaves you to work out why.
-- **Model input collapses to a bare `images` key when there is exactly one camera**, discarding the name. With two or more it emits `images.<name>`. Single-camera setups are therefore insensitive to naming, and multi-camera setups are not.
-- **The browser addresses camera panels by `camera.id`, not by feature key.** Any stream payload carrying per-camera values needs a name-to-UUID mapping alongside it.
-- **Fingerprints must be canonicalized consistently.** The runtime config strips the legacy `/dev/video0:0` suffix to `/dev/video0` before opening the device. Anything keyed on a fingerprint, claims especially, must use the same canonical form. Otherwise one physical device gets two keys and the lock stops holding.
+- **Pickle-safe workers.** Anything a `ProcessWorker` holds is pickled into the child under `spawn`. A driver, a database session or a `TypeAdapter` there fails when the worker starts.
+- **A request right after a worker starts finds no responder.** Wait with `until_serving`. The session's own commands do not need it, because it serves and requests on the same zenoh session.
+- **A refused command used to leave no trace.** Refusals are logged as warnings now (`Session command … refused`); an internal error is logged with its traceback. Look there first when "nothing happened" in the UI.
+- **Episodes recorded this session cannot be replayed until the recording is finished.** The dataset worker records into a copy in the cache, which is copied back when the dataset is unloaded or reloaded. Replay reads the dataset on disk.
+- **Camera keys must match what the model was trained on**, which is not always the environment's current camera names. They diverge the moment someone renames a camera between recording and inference. The model's manifest is checked at load, so this is refused with the missing camera named rather than failing on the first inference.
+- **One camera collapses to a bare `images` input.** With exactly one camera an export may read `images` instead of `images.<key>`, which `model_inputs` maps to the store's only camera. With two or more the names have to match.
+- **OpenVINO's device names are not torch's.** OpenVINO rejects `cpu` and wants `CPU`, `GPU` or `AUTO`. Take the names `/api/system/devices/inference` lists for the backend.
+- **The browser addresses camera panels by camera id, not by feature key.** `state.environment.cameras` maps one to the other.
 
-### Dataset frames are RGB end to end
+### Frames are RGB end to end
 
-This is invisible in the code and easy to break by "fixing" it. The path is RGB at every step: `SharedCamera(color_mode=ColorMode.RGB)`, no conversion on the recording path, lerobot's `RGBEncoderConfig` and `rgb24` decode, and no channel swap anywhere in `physicalai.data` or `physicalai.policies`. `PolicySource._to_model_input` performs no swap either.
-
-The backend does one RGB→BGR conversion, in the episode thumbnail immediately before `cv2.imencode`. That one is correct because the stored frame is RGB. Thumbnails are the check: if stored frames were BGR they would come out double-swapped and visibly wrong.
+This is invisible in the code and easy to break by "fixing" it. `SharedCamera` captures with `ColorMode.RGB`, the store holds RGB, lerobot encodes RGB, and models take RGB; nothing on that path swaps channels. The one RGB→BGR conversion is in `utils/jpeg.py`, right before `cv2.imencode`, which expects BGR. Thumbnails and the live view are the check: if stored frames were BGR they would come out double-swapped and visibly wrong.
 
 ## Constraints
 
-- **One follower per session.** `RobotRuntime` takes a single robot. Bimanual arms are a single robot type, so this is not a limitation today. Two independent arms in one environment would need two sessions.
-- **fps is 30** (`RUNTIME_FPS`). Dataset metadata records it, so an exported config emits the same value recording used.
-- **No database access in the session.** `RobotCatalogRegistry` holds builder, probe and resolver callables, pydantic classes generated by `create_model`, and a `TypeAdapter`. None of that pickles under `spawn`. The API resolves rows and sends plain data; the session builds its own factory during setup and touches only the filesystem for the dataset. This mirrors `SharedRobot.from_config`, which ships a recipe and lets the owner rebuild the driver.
-- **A session process pays spawn plus imports before its first tick.** The old `ModelWorkerRegistry` pre-spawned, which only hid process creation. `load_inference_model` still ran on demand inside it, and that is the multi-second part. If the median time from `load_model` to first policy action exceeds **10 seconds**, build a warm session-process pool. Otherwise accept it.
-- **HIL sessions have no headless equivalent.** `physicalai run` takes one action source and there is no operator in it. An exported HIL session describes the policy alone. That is the right output, though it means no round-trip fidelity.
+- **One robot per environment.** An environment with more robots is refused. Bimanual arms are a single robot type, so this is not a limitation today; two independent arms would need the spec to hold two robots.
+- **Controls run in the API process.** They are light, and they borrow what cannot cross a process boundary. A control that needs heavy work puts it in a worker, as `ModelControl` does with inference.
+- **No reattach.** A session ends with its socket. A page reload starts again from what the page asks for, not from what was swapped in since.
+- **The leader has no worker.** It is a driver the environment connects, read by `TeleopControl` on its own thread. Disconnecting it during teleop fails the control; it is not in the store, and giving it a worker would mean adding it there.

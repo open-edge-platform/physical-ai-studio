@@ -26,14 +26,14 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from schemas import Job
-    from workers.base import BaseProcessWorker
+    from workers.base import ProcessWorker
 
 
 def _run_job(
     job_type: JobType, job_id: UUID, stop_event: EventClass, cancel_event: EventClass | None, queue: mp.Queue
 ) -> None:
     """Import and run the assigned worker only inside its child process."""
-    worker: BaseProcessWorker
+    worker: ProcessWorker
     if job_type == JobType.TRAINING:
         from workers.training_worker import TrainingWorker
 

@@ -1,7 +1,6 @@
 import asyncio
 import multiprocessing as mp
 from collections.abc import Awaitable, Callable, Collection
-from multiprocessing.synchronize import Event
 from queue import Empty
 from uuid import UUID
 
@@ -12,10 +11,10 @@ from schemas.base_job import JobStatus, JobType
 from schemas.job import RemoteTrainJobPayload, TrainingTarget
 from services.event_processor import EventType
 from services.job_service import JobService
-from workers.base import BaseThreadWorker
+from workers.base import ThreadWorker
 
 
-class TrainingTrackingDispatcher(BaseThreadWorker):
+class TrainingTrackingDispatcher(ThreadWorker[None]):
     """Forward progress updates to the job store and event stream off the hot path.
 
     Backends call :meth:`report` (a `ProgressReporter`) from the training thread
@@ -27,18 +26,16 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
         self,
         job_id: UUID,
         event_queue: mp.Queue,
-        interrupt_event: Event,
         update_progress: Callable[[UUID, int, str | None, dict | None], Awaitable[Job]],
     ):
-        super().__init__(stop_event=interrupt_event)
+        super().__init__(name=f"TrainingTrackingDispatcher-{job_id}")
         self.job_id = job_id
         self.event_queue = event_queue
         self.queue: mp.Queue = mp.Queue()
-        self.interrupt_event = interrupt_event
         self.update_progress = update_progress
 
-    async def run_loop(self) -> None:
-        while not self.interrupt_event.is_set():
+    async def run_loop(self, context: None) -> None:  # noqa: ARG002
+        while not self.should_stop():
             if not await self._drain_one():
                 await asyncio.sleep(0.05)
         while await self._drain_one():

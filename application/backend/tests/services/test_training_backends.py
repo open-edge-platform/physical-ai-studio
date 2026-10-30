@@ -71,7 +71,7 @@ async def test_get_training_backend_returns_remote_for_remote_job() -> None:
 
 
 def test_dispatcher_report_enqueues_progress_tuple() -> None:
-    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), mp.Event(), AsyncMock())
+    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), AsyncMock())
 
     dispatcher.report(42, message="halfway", extra_info={"train/loss_step": 0.1})
 
@@ -79,7 +79,7 @@ def test_dispatcher_report_enqueues_progress_tuple() -> None:
 
 
 def test_dispatcher_report_defaults_message_and_extra_to_none() -> None:
-    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), mp.Event(), AsyncMock())
+    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), AsyncMock())
 
     dispatcher.report(10)
 

@@ -4,7 +4,9 @@ from pathlib import Path
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
+from internal_datasets.lerobot.video_encoding_settings import resolve_video_encoding_settings
 from schemas import Dataset
+from settings import get_settings
 
 
 def get_internal_dataset(dataset: Dataset, mode: DatasetAccessMode = DatasetAccessMode.READ_ONLY) -> DatasetClient:
@@ -27,5 +29,9 @@ def get_internal_read_dataset(dataset: Dataset) -> DatasetClient:
 
 
 def get_internal_recording_dataset(dataset: Dataset) -> DatasetClient:
-    """Load a dataset in recording-mutation mode for worker flows."""
-    return get_internal_dataset(dataset, mode=DatasetAccessMode.RECORDING_MUTATION)
+    """Load a dataset in recording-mutation mode for worker flows, encoding with the configured preset."""
+    return InternalLeRobotDataset(
+        Path(dataset.path),
+        access_mode=DatasetAccessMode.RECORDING_MUTATION,
+        recording_video_encoding_settings=resolve_video_encoding_settings(get_settings().video_recording.preset),
+    )

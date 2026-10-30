@@ -5,12 +5,14 @@ import { DockviewApi, IDockviewPanelProps } from 'dockview';
 import { DockviewReact, DockviewReadyEvent, IDockviewReactProps } from 'dockview-react';
 
 import { $api } from '../../../api/client';
+import { SchemaEnvironmentDraft } from '../../../api/openapi-spec';
 import { physicalAiTheme } from '../../dockview';
 import { useProjectId } from '../../projects/use-project';
+import { CameraCell } from '../../runtime-session/cells/camera-cell';
+import { RobotCell } from '../../runtime-session/cells/robot-cell';
+import { RuntimeSessionProvider } from '../../runtime-session/runtime-session-provider';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
-import { CameraCell } from './cells/camera-cell';
-import { RobotCell } from './cells/robot-cell';
-import { EnvironmentFormState, useEnvironmentForm } from './provider';
+import { EnvironmentForm, EnvironmentFormState, useEnvironmentForm } from './provider';
 
 const EmptyPreview = () => {
     return (
@@ -39,13 +41,7 @@ const components = {
             camera_ids: string[];
         }>
     ) => {
-        return (
-            <RobotCell
-                follower_id={props.params.follower_id}
-                leader_id={props.params.leader_id}
-                camera_ids={props.params.camera_ids}
-            />
-        );
+        return <RobotCell follower_id={props.params.follower_id} />;
     },
     camera: (props: IDockviewPanelProps<{ camera_id: string }>) => {
         return <CameraCell camera_id={props.params.camera_id} />;
@@ -160,6 +156,19 @@ const ActualPreview = () => {
     return <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />;
 };
 
+/** What the session loads: the form's devices, saved or not. A fixed name, so typing one does not reconnect. */
+const toDraft = (environment: EnvironmentForm): SchemaEnvironmentDraft => ({
+    name: 'Environment preview',
+    robots: environment.robots.map((robot) => ({
+        robot_id: robot.robot_id,
+        tele_operator:
+            robot.teleoperator.type === 'robot'
+                ? { type: 'robot', robot_id: robot.teleoperator.robot_id }
+                : { type: 'none' },
+    })),
+    cameras: environment.cameras.map(({ camera_id }) => ({ camera_id })),
+});
+
 const CenteredLoading = () => {
     return (
         <Flex width='100%' height='100%' alignItems={'center'} justifyContent={'center'}>
@@ -170,6 +179,7 @@ const CenteredLoading = () => {
 
 export const Preview = () => {
     const environment = useEnvironmentForm();
+    const { project_id } = useProjectId();
 
     const hasRobots = environment.robots.length > 0;
     const hasCameras = environment.cameras.length > 0;
@@ -177,9 +187,11 @@ export const Preview = () => {
     if (hasRobots || hasCameras) {
         return (
             <View height='100%'>
-                <Suspense fallback={<CenteredLoading />}>
-                    <ActualPreview />
-                </Suspense>
+                <RuntimeSessionProvider project_id={project_id} environment={toDraft(environment)}>
+                    <Suspense fallback={<CenteredLoading />}>
+                        <ActualPreview />
+                    </Suspense>
+                </RuntimeSessionProvider>
             </View>
         );
     }

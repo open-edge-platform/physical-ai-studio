@@ -15,16 +15,20 @@ once calibration succeeds, as it does after the SO101 setup wizard.
 import asyncio
 import math
 import time
+from contextlib import ExitStack
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import anyio
 from loguru import logger
 from pydantic import ValidationError
 
+from exceptions import RobotDeviceAlreadyOwnedError
 from robots.catalog.registry import RobotCatalogRegistry
+from robots.features import observation_to_dict
 from robots.robot_client_factory import RobotClientFactory
-from runtime.features import observation_to_dict
+from workers.robot_worker import claim_devices
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState
 
@@ -78,6 +82,8 @@ class RobotZeroCalibrationWorker(TransportWorker):
         self.phase = ZeroCalibrationPhase.WAITING
 
         self.driver: Any | None = None
+        # Held while connected, so no session or other wizard opens the same device.
+        self._device_claim = ExitStack()
         self.zero_calibration: RobotZeroCalibration | None = None
         # Drivers are not thread-safe: serialize the broadcast loop's reads with set_zero.
         self._driver_lock = asyncio.Lock()
@@ -87,6 +93,8 @@ class RobotZeroCalibrationWorker(TransportWorker):
         """Map an exception to a frontend-friendly error code."""
         if isinstance(exc, ZeroCalibrationUnsupportedError):
             return "zero_calibration_unsupported"
+        if isinstance(exc, RobotDeviceAlreadyOwnedError):
+            return exc.error_code
         if isinstance(exc, ValidationError):
             return "invalid_config"
         if isinstance(exc, PermissionError):
@@ -139,6 +147,7 @@ class RobotZeroCalibrationWorker(TransportWorker):
             raise ZeroCalibrationUnsupportedError(f"Robot type {robot.type} does not support calibration")
 
         driver, _definition = await self.robot_client_factory.build_robot_driver(robot, self.robot_client_factory)
+        self._device_claim.enter_context(claim_devices(f"studio-calibration-{uuid4().hex}", tuple(driver.device_ids)))
         async with self._driver_lock:
             await asyncio.to_thread(driver.connect)
             self.driver = driver
@@ -268,10 +277,11 @@ class RobotZeroCalibrationWorker(TransportWorker):
         await self.transport.send_json({"event": event, **kwargs})
 
     async def _cleanup(self) -> None:
-        """Disconnect the driver."""
+        """Disconnect the driver, then release the device."""
         driver = self.driver
         self.driver = None
         if driver is None:
+            self._device_claim.close()
             return
         # Shield so a cancelled websocket task still releases the hardware. Starlette
         # cancels the ASGI task on client close; an unshielded await here would skip
@@ -282,3 +292,5 @@ class RobotZeroCalibrationWorker(TransportWorker):
                     await asyncio.to_thread(driver.disconnect)
             except Exception:
                 logger.warning("Failed to disconnect robot after calibration", exc_info=True)
+            finally:
+                self._device_claim.close()

@@ -39,8 +39,6 @@ class ImmediatelyClosingEventSource extends EventTarget {
 const mockApi = () => {
     server.use(
         http.get('/api/jobs', () => HttpResponse.json([])),
-        http.get('/api/runtime/sessions/count', () => HttpResponse.json({ count: 0 })),
-        http.get('/api/runtime/sessions', () => HttpResponse.json([])),
         http.get('/api/logs/sources', () =>
             HttpResponse.json([{ id: 'application', name: 'Application', type: 'application', created_at: null }])
         )

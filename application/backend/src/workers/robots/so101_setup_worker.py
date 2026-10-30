@@ -14,16 +14,21 @@ FeetechMotorsBus connection (with handshake=False) and never touches the DB.
 
 import asyncio
 import time
+from contextlib import ExitStack
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 from lerobot.motors.feetech.feetech import FeetechMotorsBus
 from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
 from loguru import logger
+from physicalai.robot import device_id_from_serial_port
 from physicalai_so101_plugin.studio_catalog import find_so101_port
 
+from exceptions import RobotDeviceAlreadyOwnedError
 from schemas import SerialPortInfo
 from utils.serial_robot_tools import RobotConnectionManager
+from workers.robot_worker import claim_devices
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState
 
@@ -152,6 +157,8 @@ class SO101SetupWorker(TransportWorker):
         self.phase = SetupPhase.CONNECTING
 
         self.bus: FeetechMotorsBus | None = None
+        # Held while the bus is open, so no session or other wizard opens the same device.
+        self._device_claim = ExitStack()
         self.port: str | None = None  # Resolved device path (e.g. /dev/ttyACM0)
         self.motors = _build_motors()
 
@@ -177,6 +184,8 @@ class SO101SetupWorker(TransportWorker):
     @staticmethod
     def _classify_error(exc: Exception) -> str:
         """Map an exception to a frontend-friendly error code."""
+        if isinstance(exc, RobotDeviceAlreadyOwnedError):
+            return exc.error_code
         if isinstance(exc, PermissionError):
             return "permission_denied"
         if isinstance(exc, ConnectionError):
@@ -259,6 +268,9 @@ class SO101SetupWorker(TransportWorker):
         self.port = port
         logger.info(f"Setup worker: connecting to {port} (serial={self.serial_port.serial_number})")
 
+        self._device_claim.enter_context(
+            claim_devices(f"studio-setup-{uuid4().hex}", (device_id_from_serial_port(port),))
+        )
         self.bus = FeetechMotorsBus(port=port, motors=self.motors)
         try:
             async with self._bus_lock:
@@ -861,3 +873,4 @@ class SO101SetupWorker(TransportWorker):
                 except Exception:
                     logger.debug("Failed to close motor bus port", exc_info=True)
             self.bus = None
+        self._device_claim.close()

@@ -1,29 +1,26 @@
-"""Read-only joint observation stream.
+"""Read-only joint observation stream for the robot detail page and form.
 
-The robot detail page displays live joint positions and never sends actions.
-Attaching a ``SharedRobot`` subscriber is enough: it joins the existing owner
-when a runtime session is already driving the arm, and it never takes an
-``rt-`` session lock.
+An observe-only ``RobotWorker`` reads the robot into a one-robot store and this
+socket streams it. It never sends an action. A robot something else holds (a
+session or a calibration) is refused with ``robot_device_already_owned``.
 """
 
-import asyncio
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
-import anyio
 from fastapi import APIRouter, Depends, Query, WebSocket, status
 from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
-from physicalai.robot import RobotError, SharedRobot
 
-from api.dependencies import RobotClientFactoryDep, get_robot_service
+from api.dependencies import RobotClientFactoryDep, RuntimeSessionRegistryDep, get_robot_service
 from exceptions import BaseException as AppBaseException
-from robots.shared_robot_errors import translate_robot_error
-from runtime.contract import ErrorEvent, ObservationEvent
-from runtime.features import observation_to_dict
+from runtime_session.store import STATE, Store
+from schemas.robot_stream import ErrorEvent, ObservationEvent
 from services import RobotService
-from workers.base import run_at_frequency
+from workers.base import WorkerStartupError
+from workers.rate import Rate
+from workers.robot_worker import RobotRecipe, RobotWorker, claim_robot
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
@@ -31,8 +28,9 @@ router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Ro
 def _error_payload(exc: BaseException) -> dict[str, str]:
     if isinstance(exc, AppBaseException):
         return ErrorEvent(message=exc.message, error_code=exc.error_code).model_dump()
+    message = exc.reason if isinstance(exc, WorkerStartupError) else str(exc)
     return ErrorEvent(
-        message=str(exc) or "Failed to connect to the robot.",
+        message=message or "Failed to connect to the robot.",
         error_code="robot_connection_failed",
     ).model_dump()
 
@@ -49,33 +47,23 @@ async def _send_error_and_close(websocket: WebSocket, exc: BaseException) -> Non
         logger.error("Could not close observation websocket after exception: {}", close_exc)
 
 
-async def _disconnect(shared_robot: SharedRobot | None) -> None:
-    if shared_robot is None:
-        return
-    # Shield so a cancelled websocket task still drops the subscriber. Starlette
-    # cancels the ASGI task on client close; an unshielded await in ``finally``
-    # would skip disconnect and leak the SharedRobot attach.
-    with anyio.CancelScope(shield=True):
-        try:
-            await asyncio.to_thread(shared_robot.disconnect)
-        except Exception as exc:
-            logger.warning("SharedRobot disconnect failed: {}", exc)
-
-
-async def _stream_joint_observations(websocket: WebSocket, shared_robot: SharedRobot, fps: int) -> None:
+async def _stream_joint_observations(websocket: WebSocket, store: Store, worker: RobotWorker, fps: int) -> None:
     """Emit observation frames at ``fps``, with one connected-state after the first read."""
     sent_ready = False
+    sent_at: float | None = None
+    rate = Rate(fps, name="robot-observations")
     while True:
-        async with run_at_frequency(fps):
-            observation = await asyncio.to_thread(shared_robot.get_observation)
-            data = observation_to_dict(
-                shared_robot.joint_names,
-                observation,
-            )
+        if not worker.is_alive():
+            raise RuntimeError(worker.failure or "The robot worker stopped.")
+        sample = store.read(STATE)
+        if sample is not None and sample.timestamp != sent_at:
             if not sent_ready:
                 await websocket.send_json({"event": "state", "data": {"connected": True}})
                 sent_ready = True
+            data = dict(zip(sample.names, map(float, sample.value), strict=True))
             await websocket.send_json(ObservationEvent(data=data).model_dump(mode="json"))
+            sent_at = sample.timestamp
+        await rate.sleep()
 
 
 @router.get(
@@ -100,23 +88,24 @@ async def robot_observations_websocket(
     robot_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot_client_factory: RobotClientFactoryDep,
+    registry: RuntimeSessionRegistryDep,
     fps: Annotated[int, Query(ge=1)] = 30,
 ) -> None:
-    """Stream named joint positions from a read-only SharedRobot attach."""
+    """Stream named joint positions from an observe-only robot worker."""
     await websocket.accept()
-    shared_robot: SharedRobot | None = None
-    robot_name: str | None = None
     try:
         robot = await robot_service.get_robot_by_id(project_id, robot_id)
-        robot_name = robot.name
-        shared_robot, _definition = await robot_client_factory.build_shared_robot(robot)
-        await asyncio.to_thread(shared_robot.connect)
-        await _stream_joint_observations(websocket, shared_robot, fps)
+        registry.require_robot_free(robot.id, robot.name)
+        driver, _definition = await robot_client_factory.build_robot_driver(robot, robot_client_factory)
+        recipe = RobotRecipe.from_driver(robot.id, driver)
+        with claim_robot(recipe):
+            store = Store.create(recipe.spec, uuid4().hex)
+            try:
+                async with RobotWorker(recipe, store.name, store.spec, hz=fps, observe_only=True) as worker:
+                    await _stream_joint_observations(websocket, store, worker, fps)
+            finally:
+                store.unlink()
     except WebSocketDisconnect:
         pass
-    except RobotError as exc:
-        await _send_error_and_close(websocket, translate_robot_error(exc, robot_name=robot_name))
     except Exception as exc:
         await _send_error_and_close(websocket, exc)
-    finally:
-        await _disconnect(shared_robot)

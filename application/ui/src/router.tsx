@@ -97,9 +97,14 @@ export const router = createBrowserRouter([
                     },
                 ],
             },
+            // Session workspaces take the whole window, outside the project layout.
             {
                 path: paths.project.datasets.record.pattern,
                 element: <RecordingPage />,
+            },
+            {
+                path: paths.project.models.inference.pattern,
+                element: <Inference />,
             },
             {
                 path: paths.project.index.pattern,
@@ -141,16 +146,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: paths.project.models.index.pattern,
-                        children: [
-                            {
-                                index: true,
-                                element: <Models />,
-                            },
-                            {
-                                path: paths.project.models.inference.pattern,
-                                element: <Inference />,
-                            },
-                        ],
+                        element: <Models />,
                     },
                     {
                         // robots

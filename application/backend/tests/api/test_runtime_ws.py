@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import asyncio
+import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,177 +12,260 @@ from fastapi.testclient import TestClient
 from api.dependencies import (
     get_camera_claim_registry,
     get_camera_service,
+    get_dataset_service,
     get_project_service,
     get_robot_client_factory,
     get_robot_service,
+    get_runtime_session_registry,
 )
-from exceptions import ResourceNotFoundError, ResourceType
+from api.runtime_ws import observation_message
 from main import app
-from schemas.project_camera import CameraAdapter
-from services.camera_claims import CameraClaim, CameraClaimRegistry
+from schemas.runtime_session import ObservationFrame, ObservationMessage
+from tests.runtime_session.fixtures import FOLLOWER_ID, LEADER_ID, make_environment
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 PROJECT_ID = uuid4()
-ROBOT_ID = uuid4()
-CAMERA_ID = uuid4()
-FOREIGN_CAMERA_ID = uuid4()
+ENVIRONMENT = make_environment()
 
 
-class _StubRobot:
-    def __init__(self) -> None:
-        self.id = ROBOT_ID
-        self.name = "Khaos"
+def _draft() -> dict:
+    return {
+        "name": "Bench",
+        "robots": [{"robot_id": str(FOLLOWER_ID), "tele_operator": {"type": "robot", "robot_id": str(LEADER_ID)}}],
+        "cameras": [{"camera_id": str(ENVIRONMENT.cameras[0].id)}],
+    }
 
 
-class _StubProject:
-    def __init__(self) -> None:
-        self.id = PROJECT_ID
-        self.name = "Alpha"
-
-
-class _StubRobotService:
-    async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> _StubRobot:
-        assert project_id == PROJECT_ID
-        assert robot_id == ROBOT_ID
-        return _StubRobot()
-
-
-class _StubProjectService:
-    async def get_project_by_id(self, project_id: UUID) -> _StubProject:
-        assert project_id == PROJECT_ID
-        return _StubProject()
-
-
-class _StubCameraService:
-    def __init__(self, camera: object | None = None) -> None:
-        self.lookups: list[tuple[UUID, UUID]] = []
-        self._camera = camera
-
-    async def get_camera_by_id(self, project_id: UUID, camera_id: UUID) -> object:
-        self.lookups.append((project_id, camera_id))
-        if self._camera is None:
-            raise ResourceNotFoundError(ResourceType.CAMERA, str(camera_id))
-        return self._camera
-
-
-def _camera() -> object:
-    return CameraAdapter.validate_python(
+@pytest.fixture
+def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[TestClient]:
+    rows = {FOLLOWER_ID: ENVIRONMENT.robots[0].robot, LEADER_ID: ENVIRONMENT.robots[0].tele_operator.robot}
+    robots = SimpleNamespace(get_robot_by_id=AsyncMock(side_effect=lambda _project, robot_id: rows[robot_id]))
+    cameras = SimpleNamespace(get_camera_by_id=AsyncMock(return_value=ENVIRONMENT.cameras[0]))
+    projects = SimpleNamespace(get_project_by_id=AsyncMock(return_value=SimpleNamespace(name="Alpha")))
+    app.dependency_overrides.update(
         {
-            "id": str(CAMERA_ID),
-            "driver": "usb_camera",
-            "name": "front",
-            "fingerprint": {"serial": "cam-front"},
-            "hardware_name": None,
-            "payload": {"width": 640, "height": 480, "fps": 30},
+            get_project_service: lambda: projects,
+            get_robot_service: lambda: robots,
+            get_camera_service: lambda: cameras,
+            get_robot_client_factory: lambda: robot_factory,
+            get_runtime_session_registry: lambda: registry,
+            get_camera_claim_registry: lambda: camera_claims,
         }
     )
-
-
-@pytest.fixture
-def claims() -> CameraClaimRegistry:
-    return CameraClaimRegistry()
-
-
-@pytest.fixture
-def camera_service() -> _StubCameraService:
-    return _StubCameraService()
-
-
-@pytest.fixture
-def client(
-    mock_robot_client_factory,
-    camera_service: _StubCameraService,
-    claims: CameraClaimRegistry,
-) -> Iterator[TestClient]:
-    app.dependency_overrides[get_robot_service] = lambda: _StubRobotService()
-    app.dependency_overrides[get_camera_service] = lambda: camera_service
-    app.dependency_overrides[get_robot_client_factory] = lambda: mock_robot_client_factory
-    app.dependency_overrides[get_project_service] = lambda: _StubProjectService()
-    app.dependency_overrides[get_camera_claim_registry] = lambda: claims
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
 
 
-def test_runtime_ws_handshake_resolves_cameras_against_the_project(
-    client: TestClient, camera_service: _StubCameraService
-) -> None:
-    url = f"/api/projects/{PROJECT_ID}/runtime/ws"
+def _url() -> str:
+    return f"/api/projects/{PROJECT_ID}/runtime/ws?hz=30"
+
+
+def _receive_until(websocket, predicate, limit: int = 200) -> dict:
+    for _ in range(limit):
+        message = websocket.receive()
+        if "text" in message and predicate(parsed := json.loads(message["text"])):
+            return parsed
+    raise AssertionError("message never arrived")
+
+
+class _Socket:
+    """Send commands and read acks, keeping the latest state meanwhile.
+
+    The session publishes its state as soon as it changes, so a state can arrive
+    before the ack of the command that changed it.
+    """
+
+    def __init__(self, websocket) -> None:
+        self.websocket = websocket
+        self.state: dict = {}
+
+    def receive_until(self, predicate, limit: int = 300) -> dict:
+        for _ in range(limit):
+            message = self.websocket.receive()
+            if "text" not in message:
+                continue
+            parsed = json.loads(message["text"])
+            if parsed["type"] == "state":
+                self.state = parsed["data"]
+            if predicate(parsed):
+                return parsed
+        raise AssertionError("message never arrived")
+
+    def ack(self, command: dict) -> dict:
+        self.websocket.send_json({**command, "request_id": command["command"]})
+        return self.receive_until(lambda m: m["type"] == "ack" and m["request_id"] == command["command"])
+
+    def until_state(self, predicate) -> dict:
+        if not (self.state and predicate(self.state)):
+            self.receive_until(lambda m: m["type"] == "state" and predicate(m["data"]))
+        return self.state
+
+
+def _parse_observation(data: bytes) -> tuple[dict, dict[str, bytes]]:
+    length = int.from_bytes(data[:4], "big")
+    header = json.loads(data[4 : 4 + length])
+    frames, offset = {}, 4 + length
+    for frame in header["frames"]:
+        frames[frame["key"]] = data[offset : offset + frame["size"]]
+        offset += frame["size"]
+    return header, frames
+
+
+def test_observation_message_layout() -> None:
+    header = ObservationMessage(
+        timestamp=2.0, state={"a.pos": 1.0}, action=None, frames=[ObservationFrame(key="cam 0", timestamp=2.0, size=4)]
+    )
+    parsed, frames = _parse_observation(observation_message(header, [b"jpeg"]))
+    assert parsed == header.model_dump(mode="json")
+    assert frames == {"cam 0": b"jpeg"}
+
+
+def test_load_stream_and_unload(client: TestClient, registry) -> None:
+    with client.websocket_connect(_url()) as websocket:
+        first = websocket.receive_json()
+        assert first["type"] == "state" and first["data"]["environment"] is None
+        socket = _Socket(websocket)
+
+        ack = socket.ack({"command": "load_environment", "environment": _draft()})
+        assert ack == {"type": "ack", "request_id": "load_environment", "ok": True, "error": None, "result": None}
+        state = socket.until_state(lambda data: data["environment"] is not None)
+        assert state["environment"]["joint_names"] == ["shoulder_pan.pos", "gripper.pos"]
+        assert [s.info().environment_name for s in registry.sessions()] == ["Bench"]
+
+        for _ in range(200):
+            message = websocket.receive()
+            if message.get("bytes"):
+                observation, frames = _parse_observation(message["bytes"])
+                if frames:
+                    break
+        else:
+            raise AssertionError("no observation with a camera frame")
+        assert observation["state"] == {"shoulder_pan.pos": 1.0, "gripper.pos": 2.0}
+        assert observation["action"] == {"shoulder_pan.pos": 1.0, "gripper.pos": 2.0}
+        assert set(frames) == {"cam 0"}
+        assert frames["cam 0"].startswith(b"\xff\xd8")  # a JPEG
+
+        assert socket.ack({"command": "unload_environment"})["ok"]
+    assert registry.sessions() == []
+    assert registry.holder_of_robot(FOLLOWER_ID) is None
+
+
+def test_bad_commands_get_a_failed_ack(client: TestClient) -> None:
+    with client.websocket_connect(_url()) as websocket:
+        websocket.receive_json()
+        websocket.send_json({"command": "fly", "request_id": "7"})
+        ack = websocket.receive_json()
+        assert ack["request_id"] == "7" and not ack["ok"] and ack["error"]["error_code"] == "command_unavailable"
+        websocket.send_json({"command": "set_control", "request_id": "8"})  # missing its control
+        ack = websocket.receive_json()
+        assert ack["request_id"] == "8" and ack["error"]["error_code"] == "invalid_command"
+        websocket.send_text("not json")
+        assert websocket.receive_json()["error"]["error_code"] == "invalid_command"
+
+
+def test_sessions_socket_pushes_changes_and_stop_closes_the_session(client: TestClient) -> None:
+    with client.websocket_connect("/api/runtime/sessions/ws") as sessions:
+        assert sessions.receive_json() == {"sessions": []}
+        with client.websocket_connect(_url()) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"command": "load_environment", "request_id": "1", "environment": _draft()})
+            assert _receive_until(websocket, lambda m: m["type"] == "ack")["ok"]
+
+            listed = sessions.receive_json()["sessions"]
+            while not listed or listed[0]["environment_name"] is None:  # opened, then loaded
+                listed = sessions.receive_json()["sessions"]
+            [session] = listed
+            assert session["environment_name"] == "Bench"
+            assert set(session["robot_ids"]) == {str(FOLLOWER_ID), str(LEADER_ID)}
+
+            with client.websocket_connect(f"/api/projects/{PROJECT_ID}/robots/{FOLLOWER_ID}/observations/ws") as form:
+                refused = form.receive_json()
+            assert refused["error_code"] == "device_in_use"
+            assert "Bench" in refused["message"]
+            assert client.delete(f"/api/projects/{PROJECT_ID}/robots/{FOLLOWER_ID}").status_code == 423
+
+            assert client.post(f"/api/runtime/sessions/{session['session_id']}/stop").status_code == 204
+            closed = _receive_until(websocket, lambda m: m["type"] == "error")
+            assert closed["error_code"] == "session_closed" and not closed["session_alive"]
+        while sessions.receive_json()["sessions"]:
+            pass
+    assert client.post("/api/runtime/sessions/nope/stop").status_code == 404
+
+
+def test_set_control_is_acked_and_reported_in_state(client: TestClient) -> None:
+    with client.websocket_connect(_url()) as websocket:
+        websocket.receive_json()
+        socket = _Socket(websocket)
+        refused = socket.ack({"command": "set_control", "control": {"type": "teleop"}})
+        assert refused["error"]["error_code"] == "no_environment"
+
+        assert socket.ack({"command": "load_environment", "environment": _draft()})["ok"]
+        assert socket.ack({"command": "set_control", "control": {"type": "teleop", "hz": 50}})["ok"]
+        state = socket.until_state(lambda data: data["control"] is not None)
+        assert state["control"] == {"type": "teleop", "hz": 50.0, "grace_s": 3.0, "slowdown": None}  # the defaults
+
+        assert socket.ack({"command": "set_control", "control": None})["ok"]
+        assert socket.until_state(lambda data: data["control"] is None)["control"] is None
+
+
+def test_recording_commands_over_the_socket(client: TestClient) -> None:
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from schemas.dataset import Dataset
+    from tests.workers.fake_dataset import FakeDatasetWorker
+
+    ours = Dataset(id=uuid4(), name="Blocks", default_task="pick", project_id=PROJECT_ID, environment_id=uuid4())
+    theirs = Dataset(id=uuid4(), name="Other", default_task="pick", project_id=uuid4(), environment_id=uuid4())
+    Path(ours.path).mkdir(parents=True)
+    datasets = {ours.id: ours, theirs.id: theirs}
+    app.dependency_overrides[get_dataset_service] = lambda: SimpleNamespace(
+        get_dataset_by_id=AsyncMock(side_effect=lambda dataset_id: datasets[dataset_id])
+    )
 
     with (
-        patch("api.runtime_ws.RuntimeSessionOwner") as owner_cls,
-        patch("api.runtime_ws.build_runtime_config") as build,
-        client.websocket_connect(url) as websocket,
+        patch("runtime_session.dataset.DatasetWorker", FakeDatasetWorker),
+        client.websocket_connect(_url()) as websocket,
     ):
-        websocket.send_json(
-            {
-                "follower_id": str(ROBOT_ID),
-                "camera_ids": [str(FOREIGN_CAMERA_ID)],
-            }
-        )
-        payload = websocket.receive_json()
+        websocket.receive_json()
+        socket = _Socket(websocket)
+        assert socket.ack({"command": "load_environment", "environment": _draft()})["ok"]
+        unavailable = socket.ack({"command": "start_episode", "task": "pick"})
+        assert unavailable["error"]["error_code"] == "command_unavailable"
+        refused = socket.ack({"command": "load_dataset", "dataset_id": str(theirs.id)})
+        assert refused["error"]["error_code"] == "Dataset_not_found"  # as the REST API reports it
 
-    assert payload["event"] == "error"
-    assert payload["error_code"] == "Camera_not_found"
-    assert camera_service.lookups == [(PROJECT_ID, FOREIGN_CAMERA_ID)]
-    build.assert_not_called()
-    owner_cls.assert_not_called()
-
-
-def test_a_failed_connect_releases_the_claim(mock_robot_client_factory, claims: CameraClaimRegistry) -> None:
-    camera = _camera()
-    camera_service = _StubCameraService(camera)
-    app.dependency_overrides[get_robot_service] = lambda: _StubRobotService()
-    app.dependency_overrides[get_camera_service] = lambda: camera_service
-    app.dependency_overrides[get_robot_client_factory] = lambda: mock_robot_client_factory
-    app.dependency_overrides[get_project_service] = lambda: _StubProjectService()
-    app.dependency_overrides[get_camera_claim_registry] = lambda: claims
-    try:
-        test_client = TestClient(app)
-        url = f"/api/projects/{PROJECT_ID}/runtime/ws"
-        with (
-            patch("api.runtime_ws.build_runtime_config", return_value={"init_args": {}}),
-            patch("api.runtime_ws.RuntimeSessionOwner") as owner_cls,
-            patch("api.runtime_ws.RuntimeSessionClient"),
-            test_client.websocket_connect(url) as websocket,
-        ):
-            owner = owner_cls.return_value
-            owner.connect.side_effect = RuntimeError("spawn failed")
-            owner.is_alive.return_value = False
-            websocket.send_json({"follower_id": str(ROBOT_ID), "camera_ids": [str(CAMERA_ID)]})
-            payload = websocket.receive_json()
-    finally:
-        app.dependency_overrides.clear()
-
-    assert payload["event"] == "error"
-    assert claims.holder_of({"serial": "cam-front"}) is None
-
-
-def test_waiter_releases_when_the_owner_dies() -> None:
-    from api.runtime_ws import _release_claims_when_dead
-
-    claims = CameraClaimRegistry()
-    generation = claims.claim(
-        [
-            CameraClaim(
-                fingerprint={"serial": "cam-front"},
-                settings=(640, 480, 30),
-                holder="rt-a",
-                project_id=PROJECT_ID,
-                project_name="Alpha",
+        assert socket.ack({"command": "load_dataset", "dataset_id": str(ours.id)})["ok"]
+        assert socket.ack({"command": "start_episode", "task": "pick"})["ok"]
+        assert socket.ack({"command": "save_episode"})["ok"]
+        # The worker publishes its new status; the session shows it.
+        state = socket.until_state(lambda data: (data["dataset"] or {}).get("episodes_recorded") == 1)
+        assert not state["dataset"]["is_recording"]
+        failed = socket.ack({"command": "save_episode"})
+        assert failed["error"]["error_code"] == "no_episode"
+        assert "No episode" in failed["error"]["message"]
+        # Swapping to an environment the dataset does not fit is refused with what it would unload.
+        Path(ours.path, "meta").mkdir()
+        Path(ours.path, "meta", "info.json").write_text(
+            json.dumps(
+                {
+                    "fps": 30,
+                    "features": {
+                        "observation.state": {"shape": [2], "names": ["shoulder_pan.pos", "gripper.pos"]},
+                        "action": {"shape": [2], "names": ["shoulder_pan.pos", "gripper.pos"]},
+                        "observation.images.cam 0": {"shape": [120, 160, 3]},
+                    },
+                }
             )
-        ]
-    )
-    owner = MagicMock()
-    owner.is_alive.side_effect = [True, False]
-
-    async def _run() -> None:
-        with patch("api.runtime_ws._CLAIM_POLL_INTERVAL_S", 0):
-            await _release_claims_when_dead(owner, claims, "rt-a", generation)
-
-    asyncio.run(_run())
-
-    assert claims.holder_of({"serial": "cam-front"}) is None
+        )
+        no_cameras = {**_draft(), "cameras": []}
+        refused = socket.ack({"command": "load_environment", "environment": no_cameras})
+        assert refused["error"]["error_code"] == "incompatible_parts"
+        assert refused["error"]["parts"][0]["part"] == "dataset"
+        swapped = socket.ack({"command": "load_environment", "environment": no_cameras, "unload_incompatible": True})
+        assert swapped["ok"]
+        assert socket.until_state(lambda data: data["dataset"] is None)["environment"]["cameras"] == []

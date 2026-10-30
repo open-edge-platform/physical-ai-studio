@@ -49,7 +49,7 @@ async def test_runtime_config_download_is_yaml_attachment(mocker) -> None:
     environment_service = SimpleNamespace(get_environment_by_id=mocker.AsyncMock(return_value=environment))
     document = Config(
         "physicalai.runtime.RobotRuntime",
-        {"robot": {"class_path": "tests.runtime.fakes.FakeRobot", "init_args": {}}, "fps": 30.0},
+        {"robot": {"class_path": "physicalai.robot.so101.SO101", "init_args": {}}, "fps": 30.0},
     ).to_dict()
     build = mocker.patch("api.environments.build_runtime_config", return_value=document)
 

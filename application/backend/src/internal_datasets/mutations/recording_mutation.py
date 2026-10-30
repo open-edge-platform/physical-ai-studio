@@ -39,7 +39,13 @@ class RecordingMutation:
     def teardown(self) -> None:
         """If mutation exists apply and then remove cache."""
         logger.debug(f"Teardown recording mutation. Has mutation {self.has_mutation}")
-        self.cache_dataset.finalize()
+        try:
+            self.cache_dataset.finalize()
+        except Exception:
+            # The cache is left as it is: it holds every episode of this recording, none copied back yet.
+            cache = getattr(self.cache_dataset, "path", "the cache")
+            logger.error(f"Could not finalize the recording; its episodes are still in {cache}")
+            raise
         if self.has_mutation:
             self.source_dataset.overwrite(self.cache_dataset)
         self.cache_dataset.delete()

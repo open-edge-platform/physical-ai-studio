@@ -16,4 +16,4 @@ def test_worker_log_info_references_existing_worker_classes() -> None:
         module = import_module(worker_modules[worker_name])
         worker_class = getattr(module, worker_name)
 
-        assert worker_name == worker_class.ROLE
+        assert worker_name == worker_class.__name__

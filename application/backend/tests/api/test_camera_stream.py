@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -32,14 +32,14 @@ def _client(claims: CameraClaimRegistry) -> TestClient:
     return TestClient(app)
 
 
-def test_stream_endpoint_passes_is_locked_for_a_claimed_fingerprint() -> None:
+def test_stream_refuses_a_camera_a_session_holds() -> None:
     claims = CameraClaimRegistry()
     claims.claim(
         [
             CameraClaim(
                 fingerprint={"serial": "cam-front"},
                 settings=(640, 480, 30),
-                holder="rt-a",
+                holder="session-a",
                 project_id=uuid4(),
                 project_name="Alpha",
             )
@@ -47,30 +47,27 @@ def test_stream_endpoint_passes_is_locked_for_a_claimed_fingerprint() -> None:
     )
     client = _client(claims)
     try:
-        with (
-            patch("api.camera.CameraWorker") as worker_cls,
-            patch("utils.jpeg.encode_jpeg_rgb", return_value=b"jpeg"),
-        ):
-            worker = worker_cls.return_value
-            worker.get_frame.side_effect = WebSocketDisconnect()
-            with client.websocket_connect(f"/api/cameras/ws?camera={quote(_camera_query())}"):
-                pass
-            assert worker_cls.call_args.kwargs["is_locked"] is True
+        with patch("api.camera.build_shared_camera") as build:
+            with client.websocket_connect(f"/api/cameras/ws?camera={quote(_camera_query())}") as websocket:
+                error = websocket.receive_json()
+            build.assert_not_called()
+        assert error["error_code"] == "device_in_use"
+        assert "Alpha" in error["message"]
     finally:
         app.dependency_overrides.clear()
 
 
-def test_stream_endpoint_is_unlocked_when_the_camera_is_unclaimed() -> None:
+def test_stream_endpoint_overwrites_settings_of_an_unclaimed_camera() -> None:
     client = _client(CameraClaimRegistry())
     try:
         with (
-            patch("api.camera.CameraWorker") as worker_cls,
+            patch("api.camera.build_shared_camera") as build,
+            patch("api.camera.Rate") as rate_cls,
             patch("utils.jpeg.encode_jpeg_rgb", return_value=b"jpeg"),
         ):
-            worker = worker_cls.return_value
-            worker.get_frame.side_effect = WebSocketDisconnect()
+            rate_cls.return_value.sleep = AsyncMock(side_effect=WebSocketDisconnect())
             with client.websocket_connect(f"/api/cameras/ws?camera={quote(_camera_query())}"):
                 pass
-            assert worker_cls.call_args.kwargs["is_locked"] is False
+            assert build.call_args.kwargs["overwrite_settings"] is True
     finally:
         app.dependency_overrides.clear()

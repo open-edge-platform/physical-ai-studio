@@ -27,7 +27,7 @@ from services.event_processor import EventType
 from services.job_service import JobService
 from services.staged_archive import cleanup_staged_archive
 from settings import get_settings
-from workers.base import BaseProcessWorker
+from workers.base import ProcessWorker
 
 if TYPE_CHECKING:
     import multiprocessing as mp
@@ -36,16 +36,20 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 
-class DatasetImportWorker(BaseProcessWorker):
-    ROLE = "DatasetImportWorker"
-
+class DatasetImportWorker(ProcessWorker[None]):
     def __init__(self, job_id: UUID, stop_event: EventClass, event_queue: mp.Queue):
-        super().__init__(stop_event=stop_event)
+        # Not a daemon, as before: an import may start processes of its own.
+        super().__init__(name=f"DatasetImportWorker-{job_id}", daemon=False)
         self.job_id = job_id
+        self.shutdown_event = stop_event
         self.queue = event_queue
         self.adapters: list[DatasetImportAdapter] = get_registered_dataset_import_adapters()
 
-    async def run_loop(self) -> None:
+    def should_stop(self) -> bool:
+        """Stop on the worker's own stop or the scheduler's shutdown."""
+        return super().should_stop() or self.shutdown_event.is_set()
+
+    async def run_loop(self, context: None = None) -> None:  # noqa: ARG002
         """Execute one claimed import step, then exit (including before user review)."""
         if self.should_stop():
             return
