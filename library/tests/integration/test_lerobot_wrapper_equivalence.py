@@ -8,10 +8,10 @@ Lightning Trainer produces equivalent loss trajectories, gradients, and final
 weights compared to running native LeRobot training with the same data and
 config.
 
-Lightning's internal bookkeeping introduces small float32 rounding differences
-(~1e-6/step) that accumulate across steps; tier tolerances are calibrated from
-measured drift rather than set to bit-exactness. See per-test docstrings for
-the empirical justification of each tolerance.
+Replay uses Lightning's optimizer-group order for gradient clipping rather than
+the registration order used by LeRobot's CLI: changing the reduction order can
+introduce float32 roundoff. Tolerances allow small accumulated floating-point
+drift across steps.
 
 Tests are structured in four tiers:
     1. Fast-dev-run: Single step, verifies loss matches native (all policies).
@@ -376,10 +376,40 @@ def _replay_batches_on_native(
         native_loss = native_output[0] if isinstance(native_output, tuple) else native_output
         native_loss.backward()
         if grad_clip_norm is not None:
-            torch.nn.utils.clip_grad_norm_(native.parameters(), grad_clip_norm)
+            # Match Lightning's reduction order, including ACT's separate backbone group.
+            torch.nn.utils.clip_grad_norm_(
+                (parameter for group in native_optimizer.param_groups for parameter in group["params"]),
+                grad_clip_norm,
+            )
         native_optimizer.step()
         native_losses.append(float(native_loss.item()))
     return native_losses
+
+
+def test_native_replay_clips_in_optimizer_group_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use Lightning's parameter order even when optimizer groups reorder the model."""
+    native = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD([{"params": [native.bias]}, {"params": [native.weight]}], lr=0.1)
+    clip_grad_norm = torch.nn.utils.clip_grad_norm_
+    clipped_parameters: list[torch.Tensor] = []
+
+    def capture_clip(parameters: Any, max_norm: float) -> torch.Tensor:
+        parameters = list(parameters)
+        clipped_parameters.extend(parameters)
+        return clip_grad_norm(parameters, max_norm)
+
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", capture_clip)
+    losses = _replay_batches_on_native(
+        native,
+        optimizer,
+        [({"input": torch.ones(1, 1)}, 0.0)] * 2,
+        lambda batch: batch["input"],
+        base_seed=303,
+        grad_clip_norm=1.0,
+    )
+
+    assert len(losses) == 2
+    assert [id(parameter) for parameter in clipped_parameters] == [id(native.bias), id(native.weight)] * 2
 
 
 def _run_trainer_capture_and_native_replay(
@@ -393,7 +423,8 @@ def _run_trainer_capture_and_native_replay(
     device = get_device()
     use_autocast = policy_name in _VLA_POLICIES
 
-    # 1. Create wrapper and snapshot initial weights on CPU.
+    # 1. Create wrapper and snapshot initial weights on CPU, independent of test order.
+    torch.manual_seed(base_seed)
     policy_kwargs = _get_policy_kwargs(policy_name)
     wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
     initial_state_dict = {
@@ -596,14 +627,9 @@ class TestWeightEquivalenceAfterTraining:
     def test_final_weights_match(self, ten_step_equivalence: Any) -> None:
         """Per-parameter weight match after 10 trainer steps.
 
-        Tolerance: ``rtol=atol=5e-5``. Justification: per-step fp32 rounding
-        in Lightning's optimizer/scaler path is ~1.5e-6; 10 steps accumulates
-        to ~1.5e-5 worst-case absolute drift on dense ResNet weights (measured
-        on ACT). ``5e-5`` gives ~3x headroom over the empirical max while
-        still catching any *new* drift source (e.g. an optimizer-state bug
-        that diverges after the first step). Tier-1/2 loss checks use ``1e-5``
-        because direct forward avoids accumulator paths; this tier exercises
-        the full optimizer cycle and warrants the slightly looser bound.
+        Keep ``rtol=atol=5e-5`` for accumulated float32 drift over ten
+        optimizer steps. Loss and first-step gradient checks retain their
+        stricter ``1e-5`` bounds.
         """
         _, _, wrapper_params, native_params = ten_step_equivalence
         assert set(wrapper_params) == set(native_params)
