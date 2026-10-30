@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import torch
+from lerobot.datasets import video_utils
 from lerobot.scripts.augment_dataset_quantile_stats import compute_quantile_stats_for_dataset
 
 if TYPE_CHECKING:
@@ -32,6 +33,18 @@ def has_quantile_stats(dataset: LeRobotDataset) -> bool:
     return any("q01" in feature_stats or "q99" in feature_stats for feature_stats in dataset.meta.stats.values())
 
 
+def _clear_lerobot_video_decoder_cache() -> None:
+    """Close video decoders opened in this process via LeRobot's global cache.
+
+    Cached decoders keep their file handle open. Forked ``DataLoader`` workers
+    inherit that handle and share its file offset, so concurrent decoding in
+    several workers corrupts reads ("Could not push packet to decoder").
+    """
+    cache = getattr(video_utils, "_default_decoder_cache", None)
+    if cache is not None:
+        cache.clear()
+
+
 def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
     """Compute q01/q99 quantile stats in-place for a ``LeRobotDataset``.
 
@@ -42,6 +55,9 @@ def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
     Only injects the ``q01`` and ``q99`` keys into ``dataset.meta.stats``;
     existing keys (mean, std, min, max) are left untouched.
 
+    LeRobot's global video decoder cache is cleared afterwards so that
+    ``DataLoader`` workers forked later do not inherit open decoders.
+
     Args:
         dataset: A ``LeRobotDataset`` instance.  Its ``meta.stats`` is
             modified in-place.
@@ -51,7 +67,10 @@ def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
         dataset.num_episodes,
     )
 
-    new_stats = compute_quantile_stats_for_dataset(dataset)
+    try:
+        new_stats = compute_quantile_stats_for_dataset(dataset)
+    finally:
+        _clear_lerobot_video_decoder_cache()
 
     # Inject only q01/q99 into existing meta.stats
     for key, feat_stats in new_stats.items():
