@@ -14,6 +14,32 @@ The library is standalone, while the application (backend + frontend) provides a
 
 Each project has its own virtual environment, dependencies, and setup instructions.
 
+### Testing Local Runtime and Plugin Changes
+
+When developing a robot or camera plugin, use `uv run --with-editable` to test your local checkout in Studio without changing either project's `pyproject.toml` or reverting dependency settings before a PR.
+
+From the repository root, start the backend with temporary overrides for the Runtime and the plugin you are developing. For example, to test the first-party SO101 plugin:
+
+```bash
+cd application/backend
+PHYSICALAI_CHECKOUT=/absolute/path/to/physicalai
+
+uv run --frozen --extra xpu \
+  --with-editable "$PHYSICALAI_CHECKOUT" \
+  --with-editable "$PHYSICALAI_CHECKOUT/packages/physicalai-so101-plugin" \
+  physicalai-studio serve
+```
+
+- Replace `xpu` with `cpu` or `cuda` for your hardware, and replace the plugin path as needed.
+- Editable packages use your local Python source changes; restart the backend to load changes unless your development server reloads them automatically.
+- Overrides apply only to that invocation and are not saved to dependency manifests or lockfiles. `--frozen` prevents updating `uv.lock`; the existing lockfile must already be suitable for the base Studio environment.
+- Studio's backend and its editable `physicalai-train` dependency share one environment, so you do not need to override Runtime sources in `library/pyproject.toml` too.
+- Include the same override flags when running backend tests. When running commands separately from `library/`, pass the Runtime override there as well.
+
+Run Studio without the `--with-editable` flags to use its declared dependencies again. Temporary overrides are useful for development, but you must still verify that the published Runtime and plugin versions satisfy the project's dependency requirements before merging.
+
+See uv's [per-invocation dependency documentation](https://docs.astral.sh/uv/concepts/projects/run/#requesting-additional-dependencies) for details.
+
 ## Code Quality
 
 We use [prek](https://prek.j178.dev/) (Rust-based pre-commit) for code quality hooks.
