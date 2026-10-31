@@ -1,25 +1,17 @@
-"""SO101 Setup Worker — websocket-driven state machine for robot setup.
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 
-Guides the user through:
-  1. Voltage check — verify power source matches leader/follower selection
-  2. Motor probe — check all 6 motors are present with correct model numbers
-  3. Motor setup — if motors are missing, guide per-motor ID assignment (reimplements
-     lerobot's interactive setup_motors without input() calls)
-  4. Calibration — homing offsets + range-of-motion recording (reimplements lerobot's
-     interactive calibrate without input() calls)
-
-All steps are driven by websocket commands from the frontend. The worker holds its own
-FeetechMotorsBus connection (with handshake=False) and never touches the DB.
-"""
+"""SO101 wizard orchestration; the first-party setup session owns hardware I/O."""
 
 import asyncio
 import time
+from collections.abc import Callable, Iterable, Mapping
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeVar
 
-from lerobot.motors.feetech.feetech import FeetechMotorsBus
-from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
 from loguru import logger
+from physicalai_so101_plugin import SO101Calibration, SO101SetupSession
+from physicalai_so101_plugin.constants import STS3215_MODEL_NUMBER
 from physicalai_so101_plugin.studio_catalog import find_so101_port
 
 from schemas import SerialPortInfo
@@ -27,63 +19,19 @@ from utils.serial_robot_tools import RobotConnectionManager
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState
 
-# ---------------------------------------------------------------------------
-# Constants (shared with cli_robot_setup.py)
-# ---------------------------------------------------------------------------
-
-STS3215_MODEL_NUMBER = 777
-VOLTAGE_THRESHOLD_RAW = 70  # 7.0V in register units (0.1V per unit)
+VOLTAGE_THRESHOLD_RAW = 70
 VOLTAGE_UNIT = 0.1
-FPS = 30  # Streaming rate for position reads (calibration + 3D preview)
-
-MOTOR_NAMES = [
-    "shoulder_pan",
-    "shoulder_lift",
-    "elbow_flex",
-    "wrist_flex",
-    "wrist_roll",
-    "gripper",
-]
-
-
-def _build_motors() -> dict[str, Motor]:
-    """Build the motor dict for an SO101 arm (shared leader/follower layout)."""
-    body = MotorNormMode.RANGE_M100_100
-    grip = MotorNormMode.RANGE_0_100
-    return {
-        "shoulder_pan": Motor(1, "sts3215", body),
-        "shoulder_lift": Motor(2, "sts3215", body),
-        "elbow_flex": Motor(3, "sts3215", body),
-        "wrist_flex": Motor(4, "sts3215", body),
-        "wrist_roll": Motor(5, "sts3215", body),
-        "gripper": Motor(6, "sts3215", grip),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Setup phases
-# ---------------------------------------------------------------------------
+FPS = 30
+T = TypeVar("T")
 
 
 class SetupPhase(StrEnum):
-    """Phases of the setup wizard state machine.
-
-    The broadcast loop uses this to decide what to stream:
-      - CALIBRATION_INSTRUCTIONS / CALIBRATION_HOMING → raw positions
-        (``normalize=False``) with change detection (skip unchanged frames)
-      - CALIBRATION_RECORDING → raw positions (``normalize=False``) AND
-        track per-motor min/max for range-of-motion calibration
-      - VERIFICATION → normalized positions (``normalize=True``)
-      - Everything else → no streaming (idle sleep)
-
-    During CALIBRATION_RECORDING the broadcast loop additionally tracks
-    per-motor min/max values for range-of-motion calibration.
-    """
+    """Existing websocket phase values, unchanged by the hardware migration."""
 
     CONNECTING = "connecting"
     VOLTAGE_CHECK = "voltage_check"
     MOTOR_PROBE = "motor_probe"
-    MOTOR_SETUP = "motor_setup"  # Only entered if motors are missing
+    MOTOR_SETUP = "motor_setup"
     CALIBRATION_INSTRUCTIONS = "calibration_instructions"
     CALIBRATION_HOMING = "calibration_homing"
     CALIBRATION_RECORDING = "calibration_recording"
@@ -91,51 +39,13 @@ class SetupPhase(StrEnum):
     VERIFICATION = "verification"
 
 
-# ---------------------------------------------------------------------------
-# Worker
-# ---------------------------------------------------------------------------
-
-
 class SO101SetupWorker(TransportWorker):
-    """Websocket worker that drives the SO101 setup wizard.
+    """Hold one setup session; preserve the wizard's commands and event schemas.
 
-    Architecture mirrors ``RobotWorker``: two concurrent asyncio tasks —
-    a *broadcast loop* that reads the motor bus and pushes events to the
-    client, and a *command loop* that receives commands from the client.
-
-    Streaming behaviour is controlled entirely by ``self.phase``:
-
-      - ``CALIBRATION_INSTRUCTIONS`` / ``CALIBRATION_HOMING`` → stream
-        raw positions (``normalize=False``) with change detection.
-      - ``CALIBRATION_RECORDING`` → stream raw positions AND track
-        per-motor min/max for range-of-motion calibration.
-      - ``VERIFICATION`` → stream normalized positions
-        (``normalize=True``), sending ``state_was_updated`` events that
-        match the format used by the standard ``RobotWorker`` broadcast.
-      - All other phases → no streaming (the loop idles).
-
-    Commands:
-        {"command": "ping"}
-        {"command": "start_motor_setup"}
-        {"command": "motor_connected", "motor": "shoulder_pan"}
-        {"command": "finish_motor_setup"}
-        {"command": "enter_calibration"}
-        {"command": "start_homing"}
-        {"command": "start_recording"}
-        {"command": "stop_recording"}
-        {"command": "enter_verification"}
-        {"command": "re_probe"}
-
-    Events sent to client:
-        {"event": "status", "state": ..., "phase": ..., "message": ...}
-        {"event": "voltage_result", ...}
-        {"event": "motor_probe_result", ...}
-        {"event": "motor_setup_progress", ...}
-        {"event": "homing_result", ...}
-        {"event": "positions", ...}
-        {"event": "state_was_updated", "state": {...}}
-        {"event": "calibration_result", ...}
-        {"event": "error", "message": ..., "error_code": ...}
+    The asyncio lock protects state transitions and accepted recording samples.
+    Shielded, explicitly retained thread tasks keep cancellation from releasing
+    a logical transaction while serial writes continue in another thread. The
+    session's internal RLock independently protects synchronous consumers.
     """
 
     def __init__(
@@ -146,718 +56,481 @@ class SO101SetupWorker(TransportWorker):
         robot_manager: RobotConnectionManager,
     ) -> None:
         super().__init__(transport)
-        self.robot_type = robot_type  # "SO101_Follower" or "SO101_Leader"
+        self.robot_type = robot_type
         self.serial_port = serial_port
         self.robot_manager = robot_manager
         self.phase = SetupPhase.CONNECTING
-
-        self.bus: FeetechMotorsBus | None = None
-        self.port: str | None = None  # Resolved device path (e.g. /dev/ttyACM0)
-        self.motors = _build_motors()
-
-        # Serialize all bus I/O — the Feetech SDK has no internal locking,
-        # so concurrent asyncio.to_thread(bus.*) calls from the broadcast
-        # loop and command handlers would collide on the serial port,
-        # causing "[TxRxResult] Port is in use!" errors.
-        self._bus_lock = asyncio.Lock()
-
-        # Results accumulated during the flow
+        self.setup_session: SO101SetupSession | None = None
+        self.port: str | None = None
+        self._operation_lock = asyncio.Lock()
+        self._inflight: asyncio.Task | None = None
+        self._generation = 0
+        self._last_raw: dict[str, int] | None = None
+        self._verification_ready = True  # An untouched EEPROM can be inspected/loaded for the skip path.
         self.voltage_result: dict[str, Any] | None = None
         self.probe_result: dict[str, Any] | None = None
         self.homing_offsets: dict[str, int] | None = None
-
-        # Range recording state (used by broadcast loop during CALIBRATION_RECORDING)
         self._range_mins: dict[str, int] = {}
         self._range_maxes: dict[str, int] = {}
 
-    # ------------------------------------------------------------------
-    # Helpers — bus / homing guard
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _classify_error(exc: Exception) -> str:
-        """Map an exception to a frontend-friendly error code."""
         if isinstance(exc, PermissionError):
             return "permission_denied"
         if isinstance(exc, ConnectionError):
             return "device_not_found"
         return "connection_failed"
 
-    def _require_bus(self) -> FeetechMotorsBus:
-        """Return the motor bus, raising if not connected."""
-        if self.bus is None:
-            raise RuntimeError("Motor bus is not connected")
-        return self.bus
+    def _require_setup_session(self) -> SO101SetupSession:
+        if self.setup_session is None:
+            raise ConnectionError("SO101 setup session is not connected")
+        return self.setup_session
 
-    def _require_homing_offsets(self) -> dict[str, int]:
-        """Return homing offsets, raising if not yet computed."""
-        if self.homing_offsets is None:
-            raise RuntimeError("Homing offsets have not been computed yet")
-        return self.homing_offsets
+    def _set_phase(self, phase: SetupPhase) -> None:
+        self.phase = phase
+        self._generation += 1
+        self._last_raw = None
 
-    # ------------------------------------------------------------------
-    # Main run loop
-    # ------------------------------------------------------------------
+    def _require_phase(self, *phases: SetupPhase) -> None:
+        if self.phase not in phases:
+            raise ValueError(f"Command is unavailable during {self.phase.value}")
+
+    async def _hardware_call(self, operation: Callable[..., T], *args: Any, cleanup: bool = False, **kwargs: Any) -> T:
+        """Call only inside the operation lock; drain threads before cancellation.
+
+        A timeout or repeated cancellation must never authorize another I/O
+        submission, including disconnect, while this thread is still active.
+        """
+        if self._stop_requested and not cleanup:
+            raise asyncio.CancelledError
+        if self._inflight is not None:
+            raise RuntimeError("SO101 hardware transaction already in progress")
+        task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        self._inflight = task
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            # Retrieve thread failures even when cancellation takes precedence.
+            if not task.cancelled():
+                task.exception()
+            raise
+        finally:
+            self._inflight = None
 
     async def run(self) -> None:
-        """Main worker lifecycle.
-
-        Connects to the motor bus, runs initial diagnostics (voltage +
-        motor probe), then starts two concurrent tasks:
-          - ``_broadcast_loop`` — reads the bus and pushes events
-          - ``_command_loop`` — receives and dispatches frontend commands
-        """
+        """Connect, diagnose, handle commands/streaming, then drain and close."""
         try:
             await self.transport.connect()
             self.state = WorkerState.RUNNING
-
-            # Phase 1: Connect to the bus
-            await self._connect_bus()
-
-            # Phase 2: Voltage check (automatic)
-            await self._run_voltage_check()
-
-            # Phase 3: Motor probe (automatic)
-            await self._run_motor_probe()
-
-            # Two concurrent tasks — mirrors RobotWorker architecture
-            await self.run_concurrent(
-                asyncio.create_task(self._broadcast_loop()),
-                asyncio.create_task(self._command_loop()),
-            )
-
-        except Exception as e:
+            async with self._operation_lock:
+                await self._connect_setup_session()
+                await self._run_voltage_check()
+                await self._run_motor_probe()
+            await self._run_loops()
+        except Exception as exc:
             self.state = WorkerState.ERROR
-            self.error_message = str(e)
-            logger.exception(f"Setup worker error: {e}")
-
-            await self._send_event(
-                "error",
-                message=str(e),
-                error_code=SO101SetupWorker._classify_error(e),
-                port=self.port,
-            )
+            self.error_message = str(exc)
+            logger.exception("SO101 setup worker failed")
+            try:
+                await self._send_event("error", message=str(exc), error_code=self._classify_error(exc), port=self.port)
+            except Exception:
+                logger.debug("Could not report SO101 setup failure")
         finally:
+            self._stop_requested = True
+            self._generation += 1
+            # Keep finalization alive even if the websocket owner cancels again.
+            cleanup_task = asyncio.create_task(self._finalize())
+            while not cleanup_task.done():
+                try:
+                    await asyncio.shield(cleanup_task)
+                except asyncio.CancelledError:
+                    continue
+            cleanup_task.result()
+
+    async def _run_loops(self) -> None:
+        # Base run_concurrent uses a 2s cancellation timeout. Setup transactions
+        # can legitimately take longer; drain our tasks instead of timing out.
+        tasks = [asyncio.create_task(self._broadcast_loop()), asyncio.create_task(self._command_loop())]
+        try:
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
+        finally:
+            self._stop_requested = True
+            self._generation += 1
+            for task in tasks:
+                task.cancel()
+            drain = asyncio.gather(*tasks, return_exceptions=True)
+            while not drain.done():
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    continue
+
+    async def _finalize(self) -> None:
+        try:
             await self._cleanup()
+        finally:
             await self.shutdown()
 
-    # ------------------------------------------------------------------
-    # Phase: Connect
-    # ------------------------------------------------------------------
-
-    async def _connect_bus(self) -> None:
-        """Resolve the device path and open the motor bus."""
-        self.phase = SetupPhase.CONNECTING
+    async def _connect_setup_session(self) -> None:
+        self._set_phase(SetupPhase.CONNECTING)
         await self._send_phase_status("Resolving connection port...")
-
         port = await find_so101_port(self.robot_manager, self.serial_port)
         if port is None:
             if self.serial_port.serial_number:
                 raise ConnectionError(f"No USB device found with serial number '{self.serial_port.serial_number}'")
             raise ConnectionError(f"No USB device found at '{self.serial_port.connection_string or ''}'")
-
         self.port = port
-        logger.info(f"Setup worker: connecting to {port} (serial={self.serial_port.serial_number})")
-
-        self.bus = FeetechMotorsBus(port=port, motors=self.motors)
+        role = "follower" if self.robot_type == "SO101_Follower" else "leader"
+        self.setup_session = SO101SetupSession(port, role=role)
         try:
-            async with self._bus_lock:
-                await asyncio.to_thread(self.bus.connect, handshake=False)
-        except PermissionError as e:
+            await self._hardware_call(self.setup_session.connect)
+        except PermissionError as exc:
             raise PermissionError(
-                f"Permission denied for port {port}. "
-                f"Fix with: sudo chmod 666 {port} — "
-                f"or add your user to the dialout group: sudo usermod -aG dialout $USER"
-            ) from e
-        except OSError as e:
-            raise ConnectionError(f"Could not open port {port}: {e}") from e
-
+                f"Permission denied for port {port}. Add your user to the dialout group: sudo usermod -aG dialout $USER"
+            ) from exc
+        except OSError as exc:
+            raise ConnectionError(f"Could not open port {port}: {exc}") from exc
         await self._send_phase_status(f"Connected to {port}")
 
-    # ------------------------------------------------------------------
-    # Phase: Voltage check
-    # ------------------------------------------------------------------
-
     async def _run_voltage_check(self) -> None:
-        """Read voltage from motors and check against expected power source."""
-        self.phase = SetupPhase.VOLTAGE_CHECK
+        self._set_phase(SetupPhase.VOLTAGE_CHECK)
         await self._send_phase_status("Checking supply voltage...")
-
-        bus = self._require_bus()
-
+        session = self._require_setup_session()
         readings = []
-        for name, motor in bus.motors.items():
-            raw: int | None = None
+        values: list[int] = []
+        for name, servo_id in session.servo_ids.items():
+            raw = None
             try:
-                async with self._bus_lock:
-                    raw = int(await asyncio.to_thread(bus.read, "Present_Voltage", name, normalize=False))
+                raw = await self._hardware_call(session.read_voltage, name)
+                values.append(raw)
             except Exception:
-                logger.debug(f"Failed to read voltage for motor '{name}'", exc_info=True)
-            readings.append({"name": name, "motor_id": motor.id, "raw": raw})
-
-        # Compute average
-        raw_values = [int(r["raw"]) for r in readings if isinstance(r.get("raw"), int)]
-        avg_raw = sum(raw_values) / len(raw_values) if raw_values else None
-        avg_voltage = avg_raw * VOLTAGE_UNIT if avg_raw is not None else None
-
-        is_follower = self.robot_type == "SO101_Follower"
+                logger.debug("Could not read SO101 voltage for {}", name)
+            readings.append({"name": name, "motor_id": servo_id, "raw": raw})
+        avg_raw = sum(values) / len(values) if values else None
+        follower = self.robot_type == "SO101_Follower"
+        voltage_ok = True
         if avg_raw is not None:
-            voltage_ok = avg_raw >= VOLTAGE_THRESHOLD_RAW if is_follower else avg_raw < VOLTAGE_THRESHOLD_RAW
-        else:
-            voltage_ok = True  # Can't determine — don't block
-
-        expected_source = "external power supply (>= 7V)" if is_follower else "USB only (< 7V)"
-
+            voltage_ok = avg_raw >= VOLTAGE_THRESHOLD_RAW if follower else avg_raw < VOLTAGE_THRESHOLD_RAW
         self.voltage_result = {
             "event": "voltage_result",
             "readings": readings,
-            "avg_voltage": avg_voltage,
+            "avg_voltage": None if avg_raw is None else avg_raw * VOLTAGE_UNIT,
             "voltage_ok": voltage_ok,
-            "expected_source": expected_source,
+            "expected_source": "external power supply (>= 7V)" if follower else "USB only (< 7V)",
             "robot_type": self.robot_type,
         }
-
         await self.transport.send_json(self.voltage_result)
 
-    # ------------------------------------------------------------------
-    # Phase: Motor probe
-    # ------------------------------------------------------------------
-
     async def _run_motor_probe(self) -> None:
-        """Ping each expected motor and report status."""
-        self.phase = SetupPhase.MOTOR_PROBE
+        self._set_phase(SetupPhase.MOTOR_PROBE)
         await self._send_phase_status("Probing motors...")
-
-        bus = self._require_bus()
-
-        motors_found = []
-        for name, motor in bus.motors.items():
-            async with self._bus_lock:
-                model_nb = await asyncio.to_thread(bus.ping, motor.id)
-            found = model_nb is not None
-            model_correct = model_nb == STS3215_MODEL_NUMBER if found else False
-            motors_found.append(
+        session = self._require_setup_session()
+        motors = []
+        for name, servo_id in session.servo_ids.items():
+            model = await self._hardware_call(session.ping, name)
+            motors.append(
                 {
                     "name": name,
-                    "motor_id": motor.id,
-                    "found": found,
-                    "model_number": model_nb,
-                    "model_correct": model_correct,
+                    "motor_id": servo_id,
+                    "found": model is not None,
+                    "model_number": model,
+                    "model_correct": model == STS3215_MODEL_NUMBER,
                 }
             )
-
-        all_ok = all(m["found"] and m["model_correct"] for m in motors_found)
-        found_count = sum(1 for m in motors_found if m["found"] and m["model_correct"])
-
-        # Also check if already calibrated
+        all_ok = all(motor["found"] and motor["model_correct"] for motor in motors)
         calibration_status = None
         if all_ok:
-            calibration_status = await self._check_calibration()
-
+            # Connecting intentionally does no writes. Release even a follower
+            # left holding position by a previous deployment before manual setup.
+            await self._hardware_call(session.disable_torque)
+            try:
+                calibration_status = await self._check_calibration()
+            except (ValueError, ConnectionError, RuntimeError) as exc:
+                # Invalid preexisting EEPROM must not prevent corrective homing.
+                logger.warning("SO101 EEPROM calibration could not be inspected: {}", exc)
         self.probe_result = {
             "event": "motor_probe_result",
-            "motors": motors_found,
+            "motors": motors,
             "all_motors_ok": all_ok,
-            "found_count": found_count,
-            "total_count": len(self.motors),
+            "found_count": sum(1 for motor in motors if motor["found"] and motor["model_correct"]),
+            "total_count": len(session.servo_ids),
             "calibration": calibration_status,
         }
-
         await self.transport.send_json(self.probe_result)
 
     async def _check_calibration(self) -> dict[str, Any]:
-        """Check calibration state of all motors from EEPROM."""
-        bus = self._require_bus()
-
-        async with self._bus_lock:
-            cal = await asyncio.to_thread(bus.read_calibration)
-        motors_cal = {}
-        all_calibrated = True
-        for name, mc in cal.items():
-            is_default = mc.homing_offset == 0 and mc.range_min == 0 and mc.range_max == 4095
-            motors_cal[name] = {
-                "homing_offset": mc.homing_offset,
-                "range_min": mc.range_min,
-                "range_max": mc.range_max,
-                "is_calibrated": not is_default,
+        calibration = await self._hardware_call(self._require_setup_session().read_calibration)
+        motors = {}
+        for name, cal in calibration.joints.items():
+            default = cal.homing_offset == 0 and cal.range_min == 0 and cal.range_max == 4095
+            motors[name] = {
+                "homing_offset": cal.homing_offset,
+                "range_min": cal.range_min,
+                "range_max": cal.range_max,
+                "is_calibrated": not default,
             }
-            if is_default:
-                all_calibrated = False
+        return {"motors": motors, "all_calibrated": all(motor["is_calibrated"] for motor in motors.values())}
 
-        return {
-            "motors": motors_cal,
-            "all_calibrated": all_calibrated,
-        }
+    async def _reset_calibration_flow(self) -> None:
+        self._verification_ready = False
+        self.homing_offsets = None
+        self._range_mins = {}
+        self._range_maxes = {}
+        await self._hardware_call(self._require_setup_session().clear_calibration)
 
-    # ------------------------------------------------------------------
-    # Phase: Motor setup (per-motor ID assignment)
-    # ------------------------------------------------------------------
-
-    async def _handle_motor_setup(self, motor_name: str) -> None:
-        """Set up a single motor — user has connected only this motor.
-
-        Reimplements lerobot's setup_motor() without input() calls.
-        The frontend tells us which motor the user connected via command.
-        """
-        bus = self._require_bus()
-
+    async def _handle_motor_setup(self, name: str) -> None:
+        self._require_phase(SetupPhase.MOTOR_SETUP)
+        session = self._require_setup_session()
+        if name not in session.servo_ids:
+            raise ValueError(f"Unknown motor: {name}")
         await self._send_event(
-            "motor_setup_progress",
-            motor=motor_name,
-            status="scanning",
-            message=f"Scanning for motor '{motor_name}'...",
+            "motor_setup_progress", motor=name, status="scanning", message=f"Scanning for motor '{name}'..."
         )
-
         try:
-            # Use the bus's setup_motor method which handles scanning + ID/baudrate assignment
-            async with self._bus_lock:
-                await asyncio.to_thread(bus.setup_motor, motor_name)
-
+            await self._hardware_call(session.setup_motor, name)
+        except Exception as exc:
+            await self._send_event("motor_setup_progress", motor=name, status="error", message=str(exc))
+        else:
             await self._send_event(
                 "motor_setup_progress",
-                motor=motor_name,
+                motor=name,
                 status="success",
-                message=f"Motor '{motor_name}' configured as ID {bus.motors[motor_name].id}",
+                message=f"Motor '{name}' configured as ID {session.servo_ids[name]}",
             )
-        except Exception as e:
-            logger.error(f"Motor setup failed for {motor_name}: {e}")
-            await self._send_event(
-                "motor_setup_progress",
-                motor=motor_name,
-                status="error",
-                message=str(e),
-            )
-
-    # ------------------------------------------------------------------
-    # Phase: Calibration — enter (disable torque so user can move arm)
-    # ------------------------------------------------------------------
 
     async def _enter_calibration(self) -> None:
-        """Enter calibration phase, disabling torque so the user can move the arm.
+        self._require_phase(
+            SetupPhase.MOTOR_PROBE,
+            SetupPhase.CALIBRATION_INSTRUCTIONS,
+            SetupPhase.CALIBRATION_HOMING,
+            SetupPhase.CALIBRATION_RECORDING,
+            SetupPhase.CONFIGURE,
+            SetupPhase.VERIFICATION,
+        )
+        self._require_good_probe()
+        await self._reset_calibration_flow()
+        await self._hardware_call(self._require_setup_session().disable_torque)
+        self._set_phase(SetupPhase.CALIBRATION_INSTRUCTIONS)
+        await self._send_phase_status("Torque disabled — support the arm while moving it freely.")
 
-        On a follower robot the servos actively hold position (torque enabled
-        from a previous session or from the motor-probe phase).  Torque must
-        be disabled *before* the user is asked to centre the arm, otherwise
-        the joints cannot be moved by hand.
-        """
-        bus = self._require_bus()
-
-        async with self._bus_lock:
-            await asyncio.to_thread(bus.disable_torque)
-
-        self.phase = SetupPhase.CALIBRATION_INSTRUCTIONS
-        await self._send_phase_status("Torque disabled — you can now move the arm freely.")
-
-    # ------------------------------------------------------------------
-    # Phase: Calibration — homing offsets
-    # ------------------------------------------------------------------
+    def _require_good_probe(self) -> None:
+        if self.probe_result is None or not self.probe_result["all_motors_ok"]:
+            raise ValueError("Probe all six STS3215 motors successfully before calibration or verification")
 
     async def _handle_start_homing(self) -> None:
-        """User has centered the robot — compute and write homing offsets.
-
-        Reimplements lerobot's set_half_turn_homings().
-        """
-        self.phase = SetupPhase.CALIBRATION_HOMING
+        self._require_phase(SetupPhase.CALIBRATION_INSTRUCTIONS, SetupPhase.CALIBRATION_HOMING)
+        await self._reset_calibration_flow()
+        self._set_phase(SetupPhase.CALIBRATION_HOMING)
         await self._send_phase_status("Applying homing offsets...")
+        try:
+            offsets = await self._hardware_call(self._require_setup_session().set_half_turn_homings)
+        except Exception:
+            self._set_phase(SetupPhase.CALIBRATION_INSTRUCTIONS)
+            raise
+        self.homing_offsets = dict(offsets)
+        await self._send_event("homing_result", offsets=dict(offsets))
 
-        bus = self._require_bus()
-
-        # Ensure torque is off and set operating mode
-        async with self._bus_lock:
-            await asyncio.to_thread(bus.disable_torque)
-            for motor in bus.motors:
-                await asyncio.to_thread(
-                    bus.write,
-                    "Operating_Mode",
-                    motor,
-                    0,  # Position mode
-                )
-
-            # Apply homing offsets — narrow from dict[NameOrID, Value] to dict[str, int]
-            raw_offsets = await asyncio.to_thread(bus.set_half_turn_homings)
-        self.homing_offsets = {str(k): int(v) for k, v in raw_offsets.items()}
-
-        result = {
-            "event": "homing_result",
-            "offsets": {name: int(offset) for name, offset in self.homing_offsets.items()},
-        }
-        await self.transport.send_json(result)
-
-    # ------------------------------------------------------------------
-    # Phase: Calibration — range-of-motion recording
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _recording_sample(positions: Mapping[str, int | float], names: Iterable[str]) -> dict[str, int]:
+        if set(positions) != set(names):
+            raise ValueError("Recording sample is missing expected joints")
+        if any(type(value) is not int or not 0 <= value <= 4095 for value in positions.values()):
+            raise ValueError("Invalid encoder sample during recording; positions must be integers in 0..4095")
+        return {name: int(value) for name, value in positions.items()}
 
     async def _handle_start_recording(self) -> None:
-        """Start recording range-of-motion.
-
-        Reads the current positions to initialise min/max, then
-        transitions to ``CALIBRATION_RECORDING``.  The broadcast loop
-        picks up from here — it streams positions AND tracks min/max.
-        """
+        self._require_phase(SetupPhase.CALIBRATION_HOMING, SetupPhase.CALIBRATION_RECORDING)
+        if self.homing_offsets is None:
+            raise ValueError("Apply homing offsets before recording")
         if self.phase == SetupPhase.CALIBRATION_RECORDING:
             return
-        bus = self._require_bus()
-
+        session = self._require_setup_session()
+        await self._hardware_call(session.disable_torque)
+        positions = await self._hardware_call(session.read_positions, normalized=False)
+        sample = self._recording_sample(positions, session.servo_ids)
+        self._range_mins, self._range_maxes = dict(sample), dict(sample)
+        self._set_phase(SetupPhase.CALIBRATION_RECORDING)
         await self._send_phase_status("Recording range of motion...")
 
-        # Read initial positions to seed min/max
-        async with self._bus_lock:
-            start_positions = await asyncio.to_thread(
-                bus.sync_read, "Present_Position", list(bus.motors), normalize=False
-            )
-
-        self._range_mins = {m: int(v) for m, v in start_positions.items()}
-        self._range_maxes = {m: int(v) for m, v in start_positions.items()}
-
-        # The broadcast loop will start tracking min/max on next iteration
-        self.phase = SetupPhase.CALIBRATION_RECORDING
-
     async def _handle_stop_recording(self) -> None:
-        """Stop recording and write calibration to motor EEPROM.
-
-        Transitions the phase to ``CONFIGURE`` so the broadcast loop
-        stops streaming.  Because the command handler and broadcast loop
-        share ``_bus_lock``, the lock acquisition here guarantees no bus
-        reads are in flight when we start writing calibration.
-        """
-        # Transition phase — broadcast loop will idle on next iteration
-        self.phase = SetupPhase.CONFIGURE
-
-        bus = self._require_bus()
-        homing_offsets = self._require_homing_offsets()
-
-        # Validate that min != max for all motors
-        same_min_max = [m for m in bus.motors if self._range_mins.get(m, 0) == self._range_maxes.get(m, 0)]
-        if same_min_max:
-            await self._send_event(
-                "error",
-                message=f"Some motors have the same min and max values: {same_min_max}. "
-                "Please move all joints through their full range.",
-                error_code="command_error",
+        self._require_phase(SetupPhase.CALIBRATION_RECORDING)
+        if self.homing_offsets is None or not self._range_mins or not self._range_maxes:
+            raise ValueError("Start a homed range recording before stopping it")
+        session = self._require_setup_session()
+        # Copies freeze the accepted samples under the SAME lock as streaming.
+        mins, maxes, offsets = dict(self._range_mins), dict(self._range_maxes), dict(self.homing_offsets)
+        self._recording_sample(mins, session.servo_ids)
+        self._recording_sample(maxes, session.servo_ids)
+        invalid = [name for name in session.servo_ids if mins[name] >= maxes[name]]
+        if invalid:
+            raise ValueError(
+                f"Some motors have the same or invalid min/max values: {invalid}. "
+                "Move all joints through their full range."
             )
-            return
-
-        # Build calibration dict and write to motor EEPROM
-        calibration: dict[str, MotorCalibration] = {}
-        for motor_name, motor_obj in bus.motors.items():
-            calibration[motor_name] = MotorCalibration(
-                id=motor_obj.id,
-                drive_mode=0,
-                homing_offset=homing_offsets[motor_name],
-                range_min=self._range_mins[motor_name],
-                range_max=self._range_maxes[motor_name],
-            )
-
-        async with self._bus_lock:
-            await asyncio.to_thread(bus.write_calibration, calibration)
-
-        # Now configure the motors (return delay, acceleration, PID, etc.)
-        await self._configure_motors()
-
-        await self._send_phase_status("Calibration complete")
-
-        # Send the final calibration data back
-        await self.transport.send_json(
+        calibration = SO101Calibration.from_dict(
             {
-                "event": "calibration_result",
-                "calibration": {
-                    name: {
-                        "id": cal.id,
-                        "drive_mode": cal.drive_mode,
-                        "homing_offset": cal.homing_offset,
-                        "range_min": cal.range_min,
-                        "range_max": cal.range_max,
-                    }
-                    for name, cal in calibration.items()
-                },
+                name: {
+                    "id": servo_id,
+                    "drive_mode": 0,
+                    "homing_offset": offsets[name],
+                    "range_min": mins[name],
+                    "range_max": maxes[name],
+                }
+                for name, servo_id in session.servo_ids.items()
             }
         )
-
-        # Transition to verification — broadcast loop auto-starts
-        # normalized streaming on the next iteration.
+        self._set_phase(SetupPhase.CONFIGURE)
+        try:
+            await self._hardware_call(session.write_calibration, calibration)
+            await self._send_phase_status("Configuring motors...")
+            await self._hardware_call(session.configure_motors)
+        except Exception:
+            # Configuration can fail after a successful EEPROM write. Do not
+            # allow an explicit enter_verification to bypass that failed step.
+            await self._hardware_call(session.clear_calibration)
+            self._set_phase(SetupPhase.CALIBRATION_RECORDING)
+            raise
+        await self._send_phase_status("Calibration complete")
+        self._verification_ready = True
+        await self._send_event("calibration_result", calibration=calibration.to_dict())
         await self._enter_verification()
 
     async def _enter_verification(self) -> None:
-        """Enter VERIFICATION phase, ensuring calibration is loaded on the bus.
-
-        If the user went through the full calibration flow, the bus
-        already has ``bus.calibration`` populated from ``write_calibration``.
-        If the user skipped calibration (robot was already calibrated from
-        a prior session), we load it from motor EEPROM.
-        """
-        bus = self._require_bus()
-
-        if not bus.calibration:
-            logger.info("Loading calibration from motor EEPROM for verification streaming")
-            async with self._bus_lock:
-                cal = await asyncio.to_thread(bus.read_calibration)
-            bus.calibration = cal
-
-            # Send calibration_result so the frontend has calibration data
-            # for the save flow, even when calibration was skipped.
-            await self.transport.send_json(
-                {
-                    "event": "calibration_result",
-                    "calibration": {
-                        name: {
-                            "id": mc.id,
-                            "drive_mode": mc.drive_mode,
-                            "homing_offset": mc.homing_offset,
-                            "range_min": mc.range_min,
-                            "range_max": mc.range_max,
-                        }
-                        for name, mc in cal.items()
-                    },
-                }
-            )
-
-        self.phase = SetupPhase.VERIFICATION
-
-    # ------------------------------------------------------------------
-    # Configure motors (PID, acceleration, operating mode)
-    # ------------------------------------------------------------------
-
-    async def _configure_motors(self) -> None:
-        """Apply motor configuration — reimplements SO101Follower.configure()."""
-        await self._send_phase_status("Configuring motors...")
-
-        bus = self._require_bus()
-
-        async with self._bus_lock:
-            # Disable torque for configuration
-            await asyncio.to_thread(bus.disable_torque)
-
-            # Configure bus-level settings (return delay, acceleration)
-            await asyncio.to_thread(bus.configure_motors)
-
-            # Per-motor PID and operating mode
-            is_follower = self.robot_type == "SO101_Follower"
-            for motor in bus.motors:
-                await asyncio.to_thread(bus.write, "Operating_Mode", motor, 0)  # Position mode
-                if is_follower:
-                    await asyncio.to_thread(bus.write, "P_Coefficient", motor, 16)
-                    await asyncio.to_thread(bus.write, "I_Coefficient", motor, 0)
-                    await asyncio.to_thread(bus.write, "D_Coefficient", motor, 32)
-
-                    if motor == "gripper":
-                        await asyncio.to_thread(bus.write, "Max_Torque_Limit", motor, 500)
-                        await asyncio.to_thread(bus.write, "Protection_Current", motor, 250)
-                        await asyncio.to_thread(bus.write, "Overload_Torque", motor, 25)
-
-    # ------------------------------------------------------------------
-    # Broadcast loop — phase-driven streaming
-    # ------------------------------------------------------------------
+        self._require_phase(SetupPhase.MOTOR_PROBE, SetupPhase.CONFIGURE, SetupPhase.VERIFICATION)
+        self._require_good_probe()
+        if not self._verification_ready:
+            raise ValueError("Complete homing, range recording and configuration before verification")
+        session = self._require_setup_session()
+        await self._hardware_call(session.disable_torque)
+        if session.calibration is None:
+            calibration = await self._hardware_call(session.read_calibration)
+            await self._hardware_call(session.load_calibration, calibration)
+            await self._send_event("calibration_result", calibration=calibration.to_dict())
+        self._set_phase(SetupPhase.VERIFICATION)
 
     async def _broadcast_loop(self) -> None:
-        """Read the motor bus and push events to the client.
+        while not self._stop_requested:
+            start = time.perf_counter()
+            try:
+                await self._broadcast_tick()
+            except Exception as exc:
+                logger.warning("SO101 setup streaming failed: {}", exc)
+                await self._send_event("error", message=str(exc), error_code="command_error")
+            await asyncio.sleep(max(0.001, 1.0 / FPS - (time.perf_counter() - start)))
 
-        Behaviour depends on the current phase:
-
-          - ``CALIBRATION_INSTRUCTIONS`` / ``CALIBRATION_HOMING`` — stream
-            raw positions so the user can see live joint values (while
-            centering or while instructions are displayed).
-          - ``CALIBRATION_RECORDING`` — stream raw positions AND track
-            per-motor min/max for range-of-motion calibration.
-          - ``VERIFICATION`` — stream normalized positions using the
-            same ``state_was_updated`` event format as ``RobotWorker``.
-          - All other phases — idle (no bus reads).
-        """
-        read_interval = 1.0 / FPS
-
-        # Tracks last-sent raw positions so we can skip unchanged frames
-        # during CALIBRATION_HOMING.  Mutable list-of-one so
-        # _broadcast_raw_positions can update it.
-        last_raw: list[dict[str, int] | None] = [None]
-
-        try:
-            while not self._stop_requested:
-                start_time = time.perf_counter()
-
-                try:
-                    await self._broadcast_tick(last_raw)
-                except Exception as e:
-                    logger.warning(f"Broadcast loop error: {e}")
-
-                elapsed = time.perf_counter() - start_time
-                await asyncio.sleep(max(0.001, read_interval - elapsed))
-        except asyncio.CancelledError:
-            pass
-
-    async def _broadcast_tick(self, last_raw: list[dict[str, int] | None]) -> None:
-        """Single iteration of the broadcast loop, dispatched by phase."""
-        match self.phase:
-            case SetupPhase.CALIBRATION_INSTRUCTIONS | SetupPhase.CALIBRATION_HOMING:
-                await self._broadcast_raw_positions(last_raw, track_range=False)
-
-            case SetupPhase.CALIBRATION_RECORDING:
-                await self._broadcast_raw_positions(last_raw, track_range=True)
-
-            case SetupPhase.VERIFICATION:
-                await self._broadcast_normalized_positions()
-
-            case _:
-                # No streaming needed — the sleep in _broadcast_loop
-                # keeps us from busy-spinning.
-                pass
-
-    async def _broadcast_raw_positions(self, last_raw: list[dict[str, int] | None], *, track_range: bool) -> None:
-        """Read raw positions and send a ``positions`` event.
-
-        When *track_range* is True (``CALIBRATION_RECORDING``), also
-        updates ``_range_mins`` / ``_range_maxes`` and includes min/max
-        in the event payload.
-
-        *last_raw* is a mutable single-element list so the caller's
-        reference is updated in place (used for change-detection).
-        """
-        bus = self._require_bus()
-
-        async with self._bus_lock:
-            positions = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=False)
-
-        current = {name: int(val) for name, val in positions.items()}
-
-        if track_range:
-            for motor, pos in current.items():
-                self._range_mins[motor] = min(self._range_mins[motor], pos)
-                self._range_maxes[motor] = max(self._range_maxes[motor], pos)
-
-            await self.transport.send_json(
-                {
-                    "event": "positions",
-                    "motors": {
-                        name: {
-                            "position": pos,
-                            "min": self._range_mins[name],
-                            "max": self._range_maxes[name],
-                        }
-                        for name, pos in current.items()
-                    },
+    async def _broadcast_tick(self) -> None:
+        phase, generation = self.phase, self._generation
+        streaming = {
+            SetupPhase.CALIBRATION_INSTRUCTIONS,
+            SetupPhase.CALIBRATION_HOMING,
+            SetupPhase.CALIBRATION_RECORDING,
+            SetupPhase.VERIFICATION,
+        }
+        if phase not in streaming:
+            return
+        payload = None
+        async with self._operation_lock:
+            if self._stop_requested or (phase, generation) != (self.phase, self._generation):
+                return
+            session = self._require_setup_session()
+            positions = await self._hardware_call(session.read_positions, normalized=phase == SetupPhase.VERIFICATION)
+            if self._stop_requested or generation != self._generation:
+                return
+            if phase == SetupPhase.VERIFICATION:
+                payload = {
+                    "event": "state_was_updated",
+                    "state": {f"{name}.pos": float(value) for name, value in positions.items()},
                 }
-            )
-        elif current != last_raw[0]:
-            # Only send when values changed (avoid flooding during idle centering)
-            await self.transport.send_json(
-                {
-                    "event": "positions",
-                    "motors": {name: {"position": val} for name, val in current.items()},
-                }
-            )
-
-        last_raw[0] = current
-
-    async def _broadcast_normalized_positions(self) -> None:
-        """Read normalized positions and send a ``state_was_updated`` event.
-
-        Uses the same event format as ``RobotWorker._broadcast_loop`` so
-        the frontend can reuse its joint-sync logic.
-        """
-        bus = self._require_bus()
-
-        async with self._bus_lock:
-            state = await asyncio.to_thread(bus.sync_read, "Present_Position", list(bus.motors), normalize=True)
-
-        await self.transport.send_json(
-            {
-                "event": "state_was_updated",
-                "state": {f"{name}.pos": float(val) for name, val in state.items()},
-            }
-        )
-
-    # ------------------------------------------------------------------
-    # Command loop
-    # ------------------------------------------------------------------
+            else:
+                current = {name: int(value) for name, value in positions.items()}
+                if phase == SetupPhase.CALIBRATION_RECORDING:
+                    current = self._recording_sample(positions, session.servo_ids)
+                    for name, position in current.items():
+                        self._range_mins[name] = min(self._range_mins[name], position)
+                        self._range_maxes[name] = max(self._range_maxes[name], position)
+                    payload = {
+                        "event": "positions",
+                        "motors": {
+                            name: {"position": position, "min": self._range_mins[name], "max": self._range_maxes[name]}
+                            for name, position in current.items()
+                        },
+                    }
+                elif current != self._last_raw:
+                    payload = {
+                        "event": "positions",
+                        "motors": {name: {"position": value} for name, value in current.items()},
+                    }
+                self._last_raw = current
+        if payload is not None and not self._stop_requested and generation == self._generation:
+            await self.transport.send_json(payload)
 
     async def _command_loop(self) -> None:
-        """Wait for and handle commands from the frontend."""
-        try:
-            while not self._stop_requested:
-                data = await self.transport.receive_command()
-                if data is None:
-                    continue
+        while not self._stop_requested:
+            data = await self.transport.receive_command()
+            if data is None:
+                continue
+            try:
+                await self._dispatch_command(data.get("command", ""), data)
+            except Exception as exc:
+                logger.exception("SO101 setup command failed")
+                await self._send_event("error", message=str(exc), error_code="command_error")
 
-                command = data.get("command", "")
-                logger.debug(f"Setup worker received command: {command}")
-
-                try:
-                    await self._dispatch_command(command, data)
-                except Exception as e:
-                    logger.exception(f"Error handling command '{command}': {e}")
-                    await self._send_event("error", message=str(e), error_code="command_error")
-        except asyncio.CancelledError:
-            pass
-
-    async def _dispatch_command(self, command: str, data: dict[str, Any]) -> None:  # noqa: PLR0912
-        """Dispatch a single command received from the frontend."""
-        match command:
-            case "ping":
-                await self.transport.send_json({"event": "pong"})
-
-            case "start_motor_setup":
-                self.phase = SetupPhase.MOTOR_SETUP
-                await self._send_phase_status("Motor setup mode — connect motors one at a time.")
-
-            case "motor_connected":
-                motor_name = data.get("motor", "")
-                if motor_name not in self.motors:
-                    await self._send_event("error", message=f"Unknown motor: {motor_name}", error_code="command_error")
-                else:
-                    await self._handle_motor_setup(motor_name)
-
-            case "finish_motor_setup":
-                # Re-run motor probe after setup
-                await self._run_motor_probe()
-
-            case "enter_calibration":
-                await self._enter_calibration()
-
-            case "start_homing":
-                await self._handle_start_homing()
-
-            case "start_recording":
-                await self._handle_start_recording()
-
-            case "stop_recording":
-                await self._handle_stop_recording()
-
-            case "enter_verification":
-                await self._enter_verification()
-
-            case "re_probe":
-                await self._run_voltage_check()
-                await self._run_motor_probe()
-
-            case _:
-                await self._send_event("error", message=f"Unknown command: {command}", error_code="command_error")
-
-    # ------------------------------------------------------------------
-    # Event helpers
-    # ------------------------------------------------------------------
+    async def _dispatch_command(self, command: str, data: dict[str, Any]) -> None:
+        if command == "ping":
+            await self._send_event("pong")
+            return
+        async with self._operation_lock:
+            if self._stop_requested:
+                return
+            match command:
+                case "start_motor_setup":
+                    self._set_phase(SetupPhase.MOTOR_SETUP)
+                    self.probe_result = None
+                    await self._reset_calibration_flow()
+                    await self._send_phase_status("Motor setup mode — connect motors one at a time.")
+                case "motor_connected":
+                    await self._handle_motor_setup(data.get("motor", ""))
+                case "finish_motor_setup":
+                    self._require_phase(SetupPhase.MOTOR_SETUP)
+                    await self._run_motor_probe()
+                case "enter_calibration":
+                    await self._enter_calibration()
+                case "start_homing":
+                    await self._handle_start_homing()
+                case "start_recording":
+                    await self._handle_start_recording()
+                case "stop_recording":
+                    await self._handle_stop_recording()
+                case "enter_verification":
+                    await self._enter_verification()
+                case "re_probe":
+                    await self._run_voltage_check()
+                    await self._run_motor_probe()
+                case _:
+                    raise ValueError(f"Unknown command: {command}")
 
     async def _send_phase_status(self, message: str) -> None:
-        """Send a status event with current phase info."""
-        await self.transport.send_json(
-            {
-                "event": "status",
-                "state": self.state.value,
-                "phase": self.phase.value,
-                "message": message,
-            }
-        )
+        await self._send_event("status", state=self.state.value, phase=self.phase.value, message=message)
 
     async def _send_event(self, event: str, **kwargs: Any) -> None:
-        """Send a named event with arbitrary payload."""
         await self.transport.send_json({"event": event, **kwargs})
 
     async def _cleanup(self) -> None:
-        """Disconnect the motor bus."""
-        if self.bus is not None:
-            try:
-                async with self._bus_lock:
-                    await asyncio.to_thread(self.bus.disconnect)
-            except Exception:
+        self._stop_requested = True
+        self._generation += 1
+        async with self._operation_lock:
+            session = self.setup_session
+            if session is not None:
                 try:
-                    self.bus.port_handler.closePort()
-                except Exception:
-                    logger.debug("Failed to close motor bus port", exc_info=True)
-            self.bus = None
+                    await self._hardware_call(session.disconnect, cleanup=True)
+                finally:
+                    self.setup_session = None
