@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from loguru import logger
 from physicalai.robot import (
+    RobotCalibrationError,
     RobotDeviceAlreadyOwned,
     RobotError,
     RobotNameConflict,
@@ -13,6 +14,7 @@ from physicalai.robot import (
 
 from exceptions import BaseException as AppBaseException
 from exceptions import (
+    RobotCalibrationRequiredError,
     RobotDeviceAlreadyOwnedError,
     RobotNameConflictError,
     RobotProtocolMismatchError,
@@ -31,8 +33,11 @@ def translate_robot_error(
     ``RobotDeviceAlreadyOwned.device_ids`` from physicalai, and ``robot_name`` from
     the Studio connect context. Library messages are never parsed or forwarded.
     """
-    if isinstance(exc, AppBaseException):
+    if isinstance(exc, AppBaseException) or not isinstance(exc, RobotError):
         return exc
+
+    if isinstance(exc, RobotCalibrationError):
+        return RobotCalibrationRequiredError(reason=exc.reason, calibration_path=exc.calibration_path)
 
     if isinstance(exc, RobotDeviceAlreadyOwned):
         device_ids = tuple(exc.device_ids or ())
@@ -48,9 +53,7 @@ def translate_robot_error(
 
     if isinstance(exc, RobotTransportError):
         logger.warning("Unmapped SharedRobot transport failure (phase={!r}): {}", exc.phase, exc)
-    elif isinstance(exc, RobotError):
-        logger.warning("Unmapped robot error: {}", exc)
     else:
-        return exc
+        logger.warning("Unmapped robot error: {}", exc)
 
     return SharedRobotTransportError()

@@ -374,6 +374,35 @@ def _format_camera_keys(keys: list[str]) -> str:
     return ", ".join(f"`{key}`" for key in keys)
 
 
+class RobotCalibrationRequiredError(BaseException):
+    """Raised when robot calibration needs operator attention before connection."""
+
+    def __init__(self, *, reason: str, calibration_path: str | None = None) -> None:
+        if reason == "missing":
+            message = (
+                "Robot calibration file not found. "
+                "Set Calibration directory to the folder containing this robot's calibration file, "
+                "or calibrate it in a terminal, then reconnect."
+            )
+        elif reason == "invalid":
+            message = (
+                "Robot calibration file is invalid or empty. "
+                "Verify or regenerate calibration in a terminal, then reconnect."
+            )
+        else:
+            message = (
+                "Saved calibration does not match the robot's motor settings. "
+                "Verify or reapply calibration in a terminal, then reconnect."
+            )
+        if calibration_path:
+            message = f"{message} Calibration file: {calibration_path}"
+        super().__init__(
+            message=message,
+            error_code="robot_calibration_required",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
 class SharedRobotTransportError(BaseException):
     """Raised when SharedRobot transport fails (spawn, handshake, or wire)."""
 
