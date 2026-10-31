@@ -12,7 +12,7 @@ dependencies = [
   "fastapi[standard]<1",
   "physicalai[capture, transport]~=0.3.0",
   "eclipse-zenoh==1.9.0",
-  "msgpack==1.2.1",
+  "msgpack==1.2.3",
   "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
