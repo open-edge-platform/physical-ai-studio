@@ -36,6 +36,7 @@ test('AWS setup requires a named profile and explains backend configuration', as
     await expect(configure.getByRole('button', { name: 'Next' })).toBeDisabled();
     await expect(configure.getByRole('heading')).toHaveCount(1);
     await expect(configure.getByRole('button', { name: /AWS profile/ })).toHaveCount(0);
+    await configure.getByRole('textbox', { name: 'Name' }).fill('AWS Provider');
     await configure
         .getByRole('textbox', { name: 'S3 configuration file URI' })
         .fill('s3://your-bucket/studio-config.json');

@@ -1,37 +1,22 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |-
   Creates AWS Batch resources for Physical AI Studio training jobs.
+  Supported regions: us-east-1 (N. Virginia), us-west-2 (Oregon), and eu-central-1 (Frankfurt).
+  Switch the AWS Console to one of the supported regions before creating this stack.
   Compute environments scale to zero when no jobs are running.
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          default: Deployment region
-        Parameters:
-          - DeploymentRegion
-      - Label:
           default: Job limits
         Parameters:
           - JobTimeoutSeconds
     ParameterLabels:
-      DeploymentRegion:
-        default: Target AWS Region
       JobTimeoutSeconds:
         default: Maximum job duration (seconds)
 
 Parameters:
-  DeploymentRegion:
-    Type: String
-    Default: us-east-1
-    AllowedValues:
-      - us-east-1
-      - us-west-2
-      - eu-central-1
-    Description: >-
-      AWS Region where this stack is deployed. Switch the AWS Console region to match this
-      selection before creating the stack (defaults to us-east-1).
-
   JobTimeoutSeconds:
     Type: Number
     Default: 86400
@@ -60,11 +45,15 @@ Rules:
   SupportedRegion:
     Assertions:
       - Assert:
-          Fn::Equals:
-            - Ref: DeploymentRegion
+          Fn::Contains:
+            - - us-east-1
+              - us-west-2
+              - eu-central-1
             - Ref: AWS::Region
         AssertDescription: >-
-          Selected DeploymentRegion must match the current AWS Console region (AWS::Region).
+          Unsupported AWS Region. Switch the region selector in the top-right corner of the AWS
+          Console to one of the supported regions: us-east-1 (N. Virginia), us-west-2 (Oregon),
+          or eu-central-1 (Frankfurt), then retry creating the stack.
 
 Resources:
   TrainerVpc:
@@ -286,7 +275,9 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: logs:GetLogEvents
-                Resource: !GetAtt TrainerLogGroup.Arn
+                Resource:
+                  - !GetAtt TrainerLogGroup.Arn
+                  - !Sub ${TrainerLogGroup.Arn}:*
 
   BatchJobRole:
     Type: AWS::IAM::Role
@@ -368,7 +359,7 @@ Resources:
         DesiredvCpus: 0
         MaxvCpus: 8
         InstanceTypes:
-          - !FindInMap [RegionInstanceTypes, !Ref DeploymentRegion, Small]
+          - !FindInMap [RegionInstanceTypes, !Ref AWS::Region, Small]
         Ec2Configuration:
           - ImageType: ECS_AL2023_NVIDIA
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
@@ -396,7 +387,7 @@ Resources:
         DesiredvCpus: 0
         MaxvCpus: 8
         InstanceTypes:
-          - !FindInMap [RegionInstanceTypes, !Ref DeploymentRegion, Medium]
+          - !FindInMap [RegionInstanceTypes, !Ref AWS::Region, Medium]
         Ec2Configuration:
           - ImageType: ECS_AL2023_NVIDIA
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
@@ -424,7 +415,7 @@ Resources:
         DesiredvCpus: 0
         MaxvCpus: 32
         InstanceTypes:
-          - !FindInMap [RegionInstanceTypes, !Ref DeploymentRegion, Large]
+          - !FindInMap [RegionInstanceTypes, !Ref AWS::Region, Large]
         Ec2Configuration:
           - ImageType: ECS_AL2023_NVIDIA
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
@@ -470,7 +461,6 @@ Resources:
   TrainerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /physicalai/${AWS::StackName}/trainer
       RetentionInDays: 14
 
   # S3 contract between Studio and the one-shot trainer container. Studio
@@ -534,7 +524,7 @@ Resources:
           - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
         LinuxParameters:
-          SharedMemorySize: 8192
+          SharedMemorySize: 16384
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
@@ -544,7 +534,7 @@ Resources:
           - Type: VCPU
             Value: "8"
           - Type: MEMORY
-            Value: "30000"
+            Value: "60000"
           - Type: GPU
             Value: "1"
         LogConfiguration:
@@ -692,7 +682,7 @@ Resources:
       BucketName: !Ref JobsBucket
       Configuration:
         schema_version: 1
-        region: !Ref DeploymentRegion
+        region: !Ref AWS::Region
         studio_role_arn: !GetAtt StudioRole.Arn
         bucket: !Ref JobsBucket
         targets:

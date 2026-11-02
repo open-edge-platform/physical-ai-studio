@@ -52,7 +52,8 @@ class StatusReporter:
 
     def report(self, progress: int, message: str | None, extra_info: dict[str, Any] | None) -> None:
         """``ProgressFn``-compatible callback for ``run_training_job``."""
-        self._write(TrainerJobStatus.RUNNING, progress, message, extra_info, force=False)
+        cadence_event = bool(extra_info and ("global_step" in extra_info or "val_event" in extra_info))
+        self._write(TrainerJobStatus.RUNNING, progress, message, extra_info, force=cadence_event)
 
     def finish(self, status: TrainerJobStatus, *, progress: int, message: str | None = None) -> None:
         self._write(status, progress, message, None, force=True)

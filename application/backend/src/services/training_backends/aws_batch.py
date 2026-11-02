@@ -19,6 +19,7 @@ from services.aws_auth_service import authentication_issue
 from services.aws_batch import POLICY_INSTANCE_TYPES, _make_session
 from services.dataset_download_service import DatasetDownloadService
 from services.staged_archive import cleanup_staged_archive
+from services.training_backends._log_format import render_progress_log
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
 from services.training_backends.local import build_spec, resolve_hf_token
 from settings import get_settings
@@ -48,6 +49,7 @@ class AwsBatchTrainingBackend:
         self._task_warning_shown = False
         self._authentication_issue: AwsAuthenticationIssue | None = None
         self._progress = 0
+        self._last_progress_log: str | None = None
 
     async def _with_authentication(
         self, context: TrainingContext, operation: Callable[[], T], *, phase: str, stopping: bool = False
@@ -240,6 +242,11 @@ class AwsBatchTrainingBackend:
             extra_info = dict(status.extra_info or {}) if status else {}
             extra_info["aws_batch"] = details
             context.progress(progress, message=message, extra_info=extra_info)
+            if status and status.extra_info:
+                progress_line = render_progress_log(status.extra_info)
+                if progress_line is not None and progress_line != self._last_progress_log:
+                    logger.info(progress_line)
+                    self._last_progress_log = progress_line
             phase = (job["status"], details["phase"])
             if phase != last_phase:
                 logger.info("{} (job {})", message, job_id)
