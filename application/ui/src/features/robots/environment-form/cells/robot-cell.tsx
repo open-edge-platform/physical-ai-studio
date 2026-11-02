@@ -28,7 +28,7 @@ const AvailableRobotCell = ({
         leaderId,
         cameraIds
     );
-    useSynchronizeModelJoints(joints, robot.type);
+    useSynchronizeModelJoints(joints, robot);
 
     const canTeleoperate = state.has_leader;
 

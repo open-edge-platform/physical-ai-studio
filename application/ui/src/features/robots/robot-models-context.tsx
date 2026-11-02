@@ -6,12 +6,31 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
 import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
-import { SchemaRobotType } from './robot-types';
+import { SchemaRobot, SchemaRobotType } from './robot-types';
+
+export type RobotModelConfig = Pick<SchemaRobot, 'type'> & Partial<Pick<SchemaRobot, 'payload'>>;
+
+const isNormalizedSO101Robot = (robot?: RobotModelConfig) => {
+    if (robot === undefined) {
+        return false;
+    }
+
+    if (!(robot?.type === 'SO101_Follower' || robot?.type === 'SO101_Leader')) {
+        return false;
+    }
+
+    if (robot.payload && 'unit' in robot.payload && robot.payload.unit !== 'degrees') {
+        return false;
+    }
+
+    return true;
+};
 
 export const mapJointToURDFJoint = (
     joint: { name: string; value: number },
     model: URDFRobot,
-    jointMap: Record<string, string[]>
+    jointMap: Record<string, string[]>,
+    robot?: RobotModelConfig
 ) => {
     if (!joint.name.endsWith('.pos')) {
         return;
@@ -25,6 +44,15 @@ export const mapJointToURDFJoint = (
         }
 
         const isRevolute = modelJoint.jointType === 'revolute';
+
+        if (isRevolute && isNormalizedSO101Robot(robot)) {
+            // SO101 body joints use [-100, 100], while the gripper uses [0, 100].
+            const fraction = joint.name === 'gripper.pos' ? joint.value / 100 : (joint.value + 100) / 200;
+            const { lower, upper } = modelJoint.limit;
+            const value = THREE.MathUtils.lerp(lower, upper, THREE.MathUtils.clamp(fraction, 0, 1));
+            model.setJointValue(modelJointName, value);
+            return;
+        }
 
         model.setJointValue(modelJointName, isRevolute ? degToRad(joint.value) : joint.value);
     });

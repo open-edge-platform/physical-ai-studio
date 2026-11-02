@@ -4,8 +4,7 @@ import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
 import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
-import { mapJointToURDFJoint, useLoadModelQuery } from './robot-models-context';
-import { SchemaRobotType } from './robot-types';
+import { mapJointToURDFJoint, RobotModelConfig, useLoadModelQuery } from './robot-models-context';
 
 type JointsState = Array<{
     name: string;
@@ -21,19 +20,19 @@ const getNewJointState = (newJoints: Record<string, number>) => {
     });
 };
 
-export const useSynchronizeModelJoints = (joints: JointsState, robotType: SchemaRobotType) => {
-    const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
+export const useSynchronizeModelJoints = (joints: JointsState, robot: RobotModelConfig) => {
+    const { data: definition } = useRobotCatalogDefinitionQuery(robot.type);
     const jointMap = definition.joint_map;
 
-    const { data: model } = useLoadModelQuery(robotType);
+    const { data: model } = useLoadModelQuery(robot.type);
 
     useEffect(() => {
         if (!model) return;
 
         joints.forEach((joint) => {
-            mapJointToURDFJoint(joint, model, jointMap);
+            mapJointToURDFJoint(joint, model, jointMap, robot);
         });
-    }, [model, joints, jointMap]);
+    }, [model, joints, jointMap, robot]);
 };
 
 // Mirrors runtime.contract.FollowerSource. Inference uses 'policy'.
