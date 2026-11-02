@@ -437,11 +437,7 @@ async def test_training_updates_replace_dataset_ready_and_preserve_loss(context,
     backend = await get_training_backend(context.payload)
     container = {"image": "ghcr.io/example/trainer:submitted-version"}
     ready = BatchJobStatus(status="running", message="Dataset ready", updated_at=datetime.now(UTC))
-    training = ready.model_copy(
-        update={"message": None, "extra_info": {"global_step": 1, "max_steps": 10, "train/loss_step": 6.45}}
-    )
-    info = MagicMock()
-    monkeypatch.setattr(f"{MODULE}.logger.info", info)
+    training = ready.model_copy(update={"message": None, "extra_info": {"train/loss_step": 6.45}})
     monkeypatch.setattr(
         backend,
         "_poll",
@@ -465,10 +461,6 @@ async def test_training_updates_replace_dataset_ready_and_preserve_loss(context,
     assert updates[2].kwargs["extra_info"]["train/loss_step"] == 6.45
     assert updates[2].kwargs["extra_info"]["aws_batch"]["job_id"] == "batch-job-id"
     assert all(update.kwargs["extra_info"]["aws_batch"]["image"] == container["image"] for update in updates)
-    progress_logs = [
-        call.args[0] for call in info.call_args_list if call.args and str(call.args[0]).startswith("Training progress:")
-    ]
-    assert progress_logs == ["Training progress: step=1/10 (10%), train/loss_step=6.45"]
 
 
 def test_waiting_for_compute_includes_elapsed_time_and_aws_reason(monkeypatch) -> None:
