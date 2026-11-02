@@ -423,6 +423,7 @@ def test_train_export_and_run_in_simulation(
             for key in metadata["features"]
             if key.startswith("observation.images.")
         ],
+        camera_map=json.loads(os.environ.get("SIM_E2E_CAMERA_MAP", "{}")),
     )
     quality_ok = mean_score > controls["off"]
     result = {

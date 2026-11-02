@@ -70,7 +70,7 @@ def test_tick_metrics_do_not_poll_http(monkeypatch):
             SimpleNamespace(
                 action_sent=np.ones(6),
                 robot_state=SimpleNamespace(joint_positions=np.full(6, position)),
-                camera_frames={"wrist": SimpleNamespace(timestamp=float(position))},
+                camera_frames={"wrist": SimpleNamespace(timestamp=float(position), data=np.full((2, 2, 3), position))},
             )
         )
     monitor.on_inference(SimpleNamespace(latency_s=0.02))
@@ -431,16 +431,19 @@ def test_timing_includes_delay_before_first_action():
         {"real_time_factor": 1.0, "camera_fps": {"overview": 30, "wrist": 15}},
         {"real_time_factor": 1.0, "camera_fps": {"overview": 30, "wrist": None}},
         {"real_time_factor": 1.0, "camera_fps": {}},
+        {"real_time_factor": 1.0, "camera_fps": {"overview": 30}},
         {},
     ],
 )
-def test_timing_gate_keeps_earlier_violations_after_recovery(timing):
+def test_timing_gate_keeps_earlier_violations_after_recovery(timing, monkeypatch):
     monitor = controls.EpisodeMonitor("http://localhost", snapshot(), threading.Event(), 1)
     monitor.started_at = 0
     monitor.ticks = [(index + 1) / 30 for index in range(300)]
     monitor.frame_times = {camera: set(range(300)) for camera in ("overview", "wrist")}
     monitor.frame_updates = dict.fromkeys(monitor.frame_times, 10.0)
     monitor.frame_max_gaps = dict.fromkeys(monitor.frame_times, 1 / 30)
+    monitor.changed_cameras.update(monitor.frame_times)
+    monkeypatch.setattr(controls.time, "monotonic", lambda: 10.0)
     for _ in range(100):
         monitor.observe({**snapshot(), "timing": timing})
     monitor.observe(snapshot(1))
@@ -459,16 +462,23 @@ def test_timing_gate_rejects_slow_control_loop(control_hz):
 
 def test_timing_gate_requires_trials_and_simulator_measurements():
     assert not controls.timing_passes([], 30, ["overview"])
-    trial = {"control_hz": 30, "camera_hz": {"overview": 30}, "camera_max_gap_s": {"overview": 0.04}}
+    trial = {
+        "control_hz": 30,
+        "camera_hz": {"overview": 30},
+        "camera_max_gap_s": {"overview": 0.04},
+        "changed_cameras": ["overview"],
+    }
     assert not controls.timing_passes([{**trial, "simulator_timing_samples": []}], 30, ["overview"])
     assert not controls.timing_passes([trial], 30, [])
 
 
-@pytest.mark.parametrize("case", ["healthy", "frozen", "missing", "slow", "recovered", "stopped"])
+@pytest.mark.parametrize(
+    "case", ["healthy", "frozen", "missing", "slow", "recovered", "stopped", "stale_pixels", "static_start"]
+)
 def test_timing_gate_requires_progress_from_every_runtime_camera(monkeypatch, case):
     monitor = controls.EpisodeMonitor("http://localhost", snapshot(), threading.Event(), 10)
     monitor.started_at = 0.0
-    clock = iter((index + 1) / 30 for index in range(300))
+    clock = iter([(index + 1) / 30 for index in range(300)] + [10.0])
     monkeypatch.setattr(controls.time, "monotonic", lambda: next(clock))
     for index in range(300):
         wrist = index
@@ -480,7 +490,11 @@ def test_timing_gate_requires_progress_from_every_runtime_camera(monkeypatch, ca
             wrist = 29
         elif case == "stopped":
             wrist = min(index, 29)
-        frames = {"overview": SimpleNamespace(timestamp=index), "wrist": SimpleNamespace(timestamp=wrist)}
+        pixels = 0 if case == "stale_pixels" or (case == "static_start" and index < 150) else wrist
+        frames = {
+            "overview": SimpleNamespace(timestamp=index, data=np.full((2, 2, 3), index)),
+            "wrist": SimpleNamespace(timestamp=wrist, data=np.full((2, 2, 3), pixels)),
+        }
         if case == "missing":
             del frames["wrist"]
         monitor.on_tick(
@@ -494,10 +508,60 @@ def test_timing_gate_requires_progress_from_every_runtime_camera(monkeypatch, ca
     result = monitor.result(42)
     assert result["control_hz"] == 30
     assert result["simulator_timing"]["camera_fps"]["wrist"] == 30
-    assert controls.timing_passes([result], 30, ["overview", "wrist"]) == (case == "healthy")
+    assert controls.timing_passes([result], 30, ["overview", "wrist"]) == (case in {"healthy", "static_start"})
     if case == "recovered":
         assert result["camera_hz"]["wrist"] >= 24
         assert result["camera_max_gap_s"]["wrist"] > 0.25
+
+
+@pytest.mark.parametrize("completion,passed", [(10.0, True), (10.5, False), (15.0, False)])
+def test_timing_windows_include_a_stall_after_the_last_tick(monkeypatch, completion, passed):
+    monitor = controls.EpisodeMonitor("http://localhost", snapshot(), threading.Event(), 20)
+    monitor.started_at = 0.0
+    monitor.ticks = [(index + 1) / 30 for index in range(300)]
+    monitor.frame_times = {camera: set(range(300)) for camera in ("overview", "wrist")}
+    monitor.frame_updates = dict.fromkeys(monitor.frame_times, 10.0)
+    monitor.frame_max_gaps = dict.fromkeys(monitor.frame_times, 1 / 30)
+    monitor.changed_cameras.update(monitor.frame_times)
+    monkeypatch.setattr(controls.time, "monotonic", lambda: completion)
+    monitor.observe(snapshot(1))
+    result = monitor.result(42)
+    assert result["control_hz"] == 300 / completion
+    assert result["camera_hz"]["wrist"] == 300 / completion
+    assert result["camera_max_gap_s"]["wrist"] == max(1 / 30, completion - 10)
+    assert controls.timing_passes([result], 30, ["overview", "wrist"]) == passed
+
+
+@pytest.mark.parametrize(
+    "rates,passed", [({"front": 30, "hand": 30}, True), ({"front": 30}, False), ({"front": 30, "wrist": 30}, False)]
+)
+def test_timing_requires_every_mapped_simulator_camera(rates, passed):
+    cameras = ["overview", "wrist"]
+    trial = {
+        "control_hz": 30,
+        "camera_hz": dict.fromkeys(cameras, 30),
+        "camera_max_gap_s": dict.fromkeys(cameras, 0.04),
+        "changed_cameras": cameras,
+        "simulator_timing_samples": [{"real_time_factor": 1, "camera_fps": rates}],
+    }
+    assert controls.timing_passes([trial], 30, cameras, {"overview": "front", "wrist": "hand"}) == passed
+
+
+def test_content_evidence_owns_shared_camera_pixels():
+    monitor = controls.EpisodeMonitor("http://localhost", snapshot(), threading.Event(), 10)
+    pixels = np.zeros((2, 2, 3), dtype=np.uint8)
+    event = SimpleNamespace(
+        action_sent=np.ones(6),
+        robot_state=SimpleNamespace(joint_positions=np.zeros(6)),
+        camera_frames={"wrist": SimpleNamespace(timestamp=0, data=pixels)},
+    )
+    monitor.on_tick(event)
+    assert not np.shares_memory(monitor.initial_images["wrist"], pixels)
+    pixels[:] = 1
+    event.camera_frames["wrist"].timestamp = 1
+    monitor.on_tick(event)
+    assert monitor.changed_cameras == {"wrist"}
+    assert "wrist" not in monitor.initial_images
 
 
 def test_video_requests_require_encoder(tmp_path, monkeypatch):
@@ -659,7 +723,11 @@ def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
     assert workflow["permissions"] == {"contents": "read"}
     assert set(workflow["jobs"]) == {"simulation"}
     job = workflow["jobs"]["simulation"]
-    assert job["timeout-minutes"] == "390"
+    assert int(job["timeout-minutes"]) >= 30 + 360 + 60
+    assert [step["uses"] for step in job["steps"] if step.get("uses", "").startswith("$/")] == [
+        "$/.github/actions/simulation-environment",
+        "$/.github/actions/start-simulator",
+    ]
     steps = job["steps"]
     controls_step = next(step for step in steps if step.get("name") == "Verify seeded expert and no-action episodes")
     training_step = next(

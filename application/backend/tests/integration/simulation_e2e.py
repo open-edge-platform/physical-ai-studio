@@ -86,8 +86,9 @@ def score(episodes: list[dict]) -> float:
     return sum(e["correct"] for e in episodes) / total
 
 
-def timing_passes(trials: list[dict], fps: float, cameras: list[str]) -> bool:
+def timing_passes(trials: list[dict], fps: float, cameras: list[str], camera_map: dict[str, str] | None = None) -> bool:
     """Require control throughput and valid simulator timing throughout every scored trial."""
+    simulator_cameras = [(camera_map or {}).get(camera, camera) for camera in cameras]
     return (
         bool(trials)
         and bool(cameras)
@@ -97,13 +98,15 @@ def timing_passes(trials: list[dict], fps: float, cameras: list[str]) -> bool:
             and all(
                 trial["camera_hz"].get(camera, 0) >= fps * 0.8
                 and trial["camera_max_gap_s"].get(camera, float("inf")) <= 0.25
+                and camera in trial["changed_cameras"]
                 for camera in cameras
             )
             and bool(trial["simulator_timing_samples"])
             and all(
                 0.9 <= (timing.get("real_time_factor") or 0) <= 1.1
-                and bool(timing.get("camera_fps"))
-                and all((rate or 0) >= fps * 0.8 for rate in timing["camera_fps"].values())
+                and all(
+                    ((timing.get("camera_fps") or {}).get(camera) or 0) >= fps * 0.8 for camera in simulator_cameras
+                )
                 for timing in trial["simulator_timing_samples"]
             )
             for trial in trials
@@ -122,6 +125,7 @@ class EpisodeMonitor:
         self.error: Exception | None = None
         self.recording = True
         self.started_at: float | None = None
+        self.completed_at: float | None = None
         self.actions_sent = 0
         self.max_joint_change = 0.0
         self.initial_joints: np.ndarray | None = None
@@ -130,6 +134,8 @@ class EpisodeMonitor:
         self.frame_times: dict[str, set[float]] = {}
         self.frame_updates: dict[str, float] = {}
         self.frame_max_gaps: dict[str, float] = {}
+        self.initial_images: dict[str, np.ndarray] = {}
+        self.changed_cameras: set[str] = set()
         self.snapshot = before
         self.timing_samples: list[dict] = []
         self.finished = threading.Event()
@@ -149,6 +155,7 @@ class EpisodeMonitor:
             episode = snapshot["episode"]["last_episode"]
             if sum(episode[k] for k in ("correct", "wrong", "missed")) != self.items:
                 raise AssertionError("Incomplete episode item accounting")
+            self.completed_at = time.monotonic()
             self.episodes.append(episode)
             self.stop.set()
         self.count = count
@@ -187,6 +194,8 @@ class EpisodeMonitor:
         if not self.recording:
             self.stop.set()  # A paused one-tick warmup must not enter scored metrics.
             return
+        if self.completed_at is not None:
+            return
         self.ticks.append(time.monotonic())
         self.actions_sent += int(event.action_sent is not None)
         joints = np.asarray(event.robot_state.joint_positions)
@@ -194,6 +203,13 @@ class EpisodeMonitor:
             self.initial_joints = joints.copy()
         self.max_joint_change = max(self.max_joint_change, float(np.max(np.abs(joints - self.initial_joints))))
         for key, frame in event.camera_frames.items():
+            # Conveyor views must change during an episode; static streaks are not dropped frames.
+            if key not in self.changed_cameras:
+                if key not in self.initial_images:
+                    self.initial_images[key] = frame.data.copy()
+                elif not np.array_equal(self.initial_images[key], frame.data):
+                    self.changed_cameras.add(key)
+                    del self.initial_images[key]
             timestamps = self.frame_times.setdefault(key, set())
             if frame.timestamp not in timestamps:
                 previous = self.frame_updates.get(
@@ -218,9 +234,9 @@ class EpisodeMonitor:
             raise AssertionError("Trial must score exactly one completed episode")
 
     def result(self, seed: int) -> dict:
-        elapsed = (
-            self.ticks[-1] - (self.started_at if self.started_at is not None else self.ticks[0]) if self.ticks else 0
-        )
+        assert self.completed_at is not None, "Timing requires a completed episode"
+        start = self.started_at if self.started_at is not None else (self.ticks[0] if self.ticks else self.completed_at)
+        elapsed = self.completed_at - start
         return {
             "seed": seed,
             "score": score(self.episodes),
@@ -236,9 +252,10 @@ class EpisodeMonitor:
             else None,
             "inference_p95_s": float(np.percentile(self.latencies, 95)) if self.latencies else None,
             "unique_camera_frames": {key: len(times) for key, times in self.frame_times.items()},
+            "changed_cameras": sorted(self.changed_cameras),
             "camera_hz": {key: len(times) / elapsed if elapsed else 0 for key, times in self.frame_times.items()},
             "camera_max_gap_s": {
-                key: max(self.frame_max_gaps[key], self.ticks[-1] - updated)
+                key: max(self.frame_max_gaps[key], self.completed_at - updated)
                 for key, updated in self.frame_updates.items()
             },
             "simulator_timing": self.snapshot.get("timing", {}),

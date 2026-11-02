@@ -16,7 +16,7 @@ The test uses the real FastAPI lifecycle, isolated SQLite database, scheduler, a
 
 A completed training job or moving arm is not a task-quality pass. The fresh model must score strictly above the no-action control. This is a minimum regression signal, not production qualification.
 
-Controls have a 30-minute CI deadline; training-to-inference has six hours. API training polling defaults to five hours (`SIM_E2E_JOB_TIMEOUT_SECONDS`). Timeouts fail rather than reducing epochs, cropping the dataset, or reporting incomplete work as a pass.
+Controls have a 30-minute CI deadline; training-to-inference has six hours. The job allows 7.5 hours in total, reserving an additional hour for setup, simulator cleanup, and artifact uploads. The self-hosted runner must support GitHub's self-repository action syntax (`$/...`, runner 2.336.0 or newer). API training polling defaults to five hours (`SIM_E2E_JOB_TIMEOUT_SECONDS`). Timeouts fail rather than reducing epochs, cropping the dataset, or reporting incomplete work as a pass.
 
 ## Rollout contracts
 
@@ -24,9 +24,9 @@ The recording contains overview/wrist cameras and six-dimensional state/actions 
 
 Trials pause during setup, seed/reset, verify queued commands have taken effect, warm up Runtime, then reseed/reset before scoring. Episode auto-reset must stay enabled while scoring: disabling it pauses the conveyor. Stop on the first completed episode and account for all ten items. Score is `correct / (correct + wrong + missed)`.
 
-Control frequency and every expected camera's observed distinct-frame frequency must reach 80% of target (24 Hz). Camera update gaps must not exceed 0.25 seconds, including startup and the last tick. Every simulator timing sample must also meet camera-rate and real-time-factor (0.9–1.1) limits; a healthy final sample cannot hide an earlier slowdown. HTTP health polling stays off the control thread.
+Control frequency and every expected camera's observed distinct-frame frequency must reach 80% of target (24 Hz). Camera update gaps must not exceed 0.25 seconds, from startup through observed episode completion, not just the last Runtime tick. Every simulator timing sample must report every expected camera (using `SIM_E2E_CAMERA_MAP` when configured) and meet camera-rate and real-time-factor (0.9–1.1) limits; a healthy final sample cannot hide an earlier slowdown. HTTP health polling stays off the control thread.
 
-Use the application's `SharedCamera` recipe, not direct buffered `IPCamera.read_latest()` calls: a newly assigned timestamp can hide an old image. The camera-freshness integration test encodes a frame counter into a local MJPEG stream and checks actual image age after a consumer pause. Separate regressions cover frozen/stopped cameras and an ended video feed.
+Use the application's `SharedCamera` recipe, not direct buffered `IPCamera.read_latest()` calls: a newly assigned timestamp can hide an old image. The camera-freshness integration test encodes a frame counter into a local MJPEG stream and checks actual image age after a consumer pause. For this moving conveyor fixture, every expected view must also change from its initial scored pixels at least once. This rejects an entirely frozen view even when capture assigns new timestamps. The comparison owns its initial pixels because camera buffers may be reused. Pixel changes are not treated as frame-rate measurements: legitimate stationary streaks are allowed, and this whole-trial content check does not rule out every intermittent freeze or replay. Separate regressions cover identical pixels with increasing timestamps, frozen/stopped cameras, a stall after the last tick, and an ended video feed.
 
 Record a side-by-side video across all rollout episodes, including failing-score runs. Encoding must finish cleanly and full FFmpeg decoding must succeed. Either input ending must stop the composite rather than repeat a frozen view. Decoded duration and frame count must cover the rollout at its target FPS, with one second of timestamp/flush tolerance.
 
