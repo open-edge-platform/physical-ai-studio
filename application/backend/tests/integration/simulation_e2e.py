@@ -17,7 +17,8 @@ import numpy as np
 if TYPE_CHECKING:
     from pathlib import Path
 
-RUNTIME_REVISION = "1cc910b451508ce40cd7319ece2a29283fadfcfb"
+RUNTIME_REVISION = "b4cc2cf569c24f92424001dde7aca4081096ebd1"
+MUJOCO_REVISION = "1cc910b451508ce40cd7319ece2a29283fadfcfb"
 DATASET = {
     "repo_id": "Albertvh97/conveyor-sort-sim-demos-100-episodes",
     "revision": "17db8f758b32141d795a71a064cfa9f5c6341b5b",
@@ -248,10 +249,10 @@ class EpisodeMonitor:
 def attest_runtime() -> dict:
     """Fail before expensive work if installed VCS dependencies differ from the pins."""
     commits = {}
-    for name in ("physicalai", "physicalai-mujoco-plugin"):
+    for name, revision in (("physicalai", RUNTIME_REVISION), ("physicalai-mujoco-plugin", MUJOCO_REVISION)):
         direct_url = json.loads(distribution(name).read_text("direct_url.json") or "{}")
         commit = direct_url.get("vcs_info", {}).get("commit_id")
-        if commit != RUNTIME_REVISION:
+        if commit != revision:
             raise RuntimeError(f"Installed {name} does not match the pinned Runtime revision")
         commits[name] = commit
     return commits

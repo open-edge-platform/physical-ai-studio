@@ -1,20 +1,37 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |-
-  Creates AWS Batch resources for Physical AI Studio training jobs in us-east-1 (N. Virginia).
+  Creates AWS Batch resources for Physical AI Studio training jobs.
   Compute environments scale to zero when no jobs are running.
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
+          default: Deployment region
+        Parameters:
+          - DeploymentRegion
+      - Label:
           default: Job limits
         Parameters:
           - JobTimeoutSeconds
     ParameterLabels:
+      DeploymentRegion:
+        default: Target AWS Region
       JobTimeoutSeconds:
         default: Maximum job duration (seconds)
 
 Parameters:
+  DeploymentRegion:
+    Type: String
+    Default: us-east-1
+    AllowedValues:
+      - us-east-1
+      - us-west-2
+      - eu-central-1
+    Description: >-
+      AWS Region where this stack is deployed. Switch the AWS Console region to match this
+      selection before creating the stack (defaults to us-east-1).
+
   JobTimeoutSeconds:
     Type: Number
     Default: 86400
@@ -24,14 +41,30 @@ Parameters:
       AWS Batch terminates a job that runs longer than this (default 24 hours), so a hung
       run cannot accrue charges indefinitely.
 
+Mappings:
+  RegionInstanceTypes:
+    us-east-1:
+      Small: g4dn.2xlarge
+      Medium: g6e.2xlarge
+      Large: g7e.8xlarge
+    us-west-2:
+      Small: g4dn.2xlarge
+      Medium: g6e.2xlarge
+      Large: g7e.8xlarge
+    eu-central-1:
+      Small: g4dn.2xlarge
+      Medium: g6e.2xlarge
+      Large: g7e.8xlarge
+
 Rules:
   SupportedRegion:
     Assertions:
       - Assert:
           Fn::Equals:
+            - Ref: DeploymentRegion
             - Ref: AWS::Region
-            - us-east-1
-        AssertDescription: Deploy this stack in us-east-1 (N. Virginia).
+        AssertDescription: >-
+          Selected DeploymentRegion must match the current AWS Console region (AWS::Region).
 
 Resources:
   TrainerVpc:
@@ -57,7 +90,7 @@ Resources:
       InternetGatewayId: !Ref TrainerInternetGateway
       VpcId: !Ref TrainerVpc
 
-  TrainerSubnet:
+  TrainerSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select
@@ -68,7 +101,33 @@ Resources:
       VpcId: !Ref TrainerVpc
       Tags:
         - Key: Name
-          Value: !Sub ${AWS::StackName}-subnet
+          Value: !Sub ${AWS::StackName}-subnet-a
+
+  TrainerSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ""
+      CidrBlock: 10.43.2.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet-b
+
+  TrainerSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 2
+        - !GetAZs ""
+      CidrBlock: 10.43.3.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet-c
 
   TrainerRouteTable:
     Type: AWS::EC2::RouteTable
@@ -86,11 +145,23 @@ Resources:
       GatewayId: !Ref TrainerInternetGateway
       RouteTableId: !Ref TrainerRouteTable
 
-  TrainerSubnetRouteTableAssociation:
+  TrainerSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref TrainerRouteTable
-      SubnetId: !Ref TrainerSubnet
+      SubnetId: !Ref TrainerSubnetA
+
+  TrainerSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref TrainerRouteTable
+      SubnetId: !Ref TrainerSubnetB
+
+  TrainerSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref TrainerRouteTable
+      SubnetId: !Ref TrainerSubnetC
 
   TrainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -297,7 +368,7 @@ Resources:
         DesiredvCpus: 0
         MaxvCpus: 8
         InstanceTypes:
-          - g4dn.2xlarge
+          - !FindInMap [RegionInstanceTypes, !Ref DeploymentRegion, Small]
         Ec2Configuration:
           - ImageType: ECS_AL2023_NVIDIA
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
@@ -307,7 +378,9 @@ Resources:
         SecurityGroupIds:
           - !Ref TrainerSecurityGroup
         Subnets:
-          - !Ref TrainerSubnet
+          - !Ref TrainerSubnetA
+          - !Ref TrainerSubnetB
+          - !Ref TrainerSubnetC
         Tags:
           Name: !Sub ${AWS::StackName}-g4dn
 
@@ -323,7 +396,7 @@ Resources:
         DesiredvCpus: 0
         MaxvCpus: 8
         InstanceTypes:
-          - g6e.2xlarge
+          - !FindInMap [RegionInstanceTypes, !Ref DeploymentRegion, Medium]
         Ec2Configuration:
           - ImageType: ECS_AL2023_NVIDIA
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
@@ -333,7 +406,9 @@ Resources:
         SecurityGroupIds:
           - !Ref TrainerSecurityGroup
         Subnets:
-          - !Ref TrainerSubnet
+          - !Ref TrainerSubnetA
+          - !Ref TrainerSubnetB
+          - !Ref TrainerSubnetC
         Tags:
           Name: !Sub ${AWS::StackName}-g6e
 
@@ -349,7 +424,7 @@ Resources:
         DesiredvCpus: 0
         MaxvCpus: 32
         InstanceTypes:
-          - g7e.8xlarge
+          - !FindInMap [RegionInstanceTypes, !Ref DeploymentRegion, Large]
         Ec2Configuration:
           - ImageType: ECS_AL2023_NVIDIA
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
@@ -359,7 +434,9 @@ Resources:
         SecurityGroupIds:
           - !Ref TrainerSecurityGroup
         Subnets:
-          - !Ref TrainerSubnet
+          - !Ref TrainerSubnetA
+          - !Ref TrainerSubnetB
+          - !Ref TrainerSubnetC
         Tags:
           Name: !Sub ${AWS::StackName}-g7e
 
@@ -418,6 +495,8 @@ Resources:
           - physicalai-trainer-batch
           - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
+        LinuxParameters:
+          SharedMemorySize: 8192
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
@@ -425,9 +504,9 @@ Resources:
             Value: !Ref JobsBucket
         ResourceRequirements:
           - Type: VCPU
-            Value: "4"
+            Value: "8"
           - Type: MEMORY
-            Value: "14000"
+            Value: "30000"
           - Type: GPU
             Value: "1"
         LogConfiguration:
@@ -454,6 +533,8 @@ Resources:
           - physicalai-trainer-batch
           - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
+        LinuxParameters:
+          SharedMemorySize: 8192
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
@@ -490,6 +571,8 @@ Resources:
           - physicalai-trainer-batch
           - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
+        LinuxParameters:
+          SharedMemorySize: 32768
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
@@ -609,7 +692,7 @@ Resources:
       BucketName: !Ref JobsBucket
       Configuration:
         schema_version: 1
-        region: !Ref AWS::Region
+        region: !Ref DeploymentRegion
         studio_role_arn: !GetAtt StudioRole.Arn
         bucket: !Ref JobsBucket
         targets:

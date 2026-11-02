@@ -614,7 +614,9 @@ def test_lockfiles_resolve_the_configured_runtime_and_plugin_pin():
             expected = config["tool"]["uv"]["sources"][name]["rev"]
             package = next(package for package in lock["package"] if package["name"] == name)
             assert package["source"]["git"].endswith(f"#{expected}")
-            assert expected == controls.RUNTIME_REVISION
+            assert expected == (
+                controls.MUJOCO_REVISION if name == "physicalai-mujoco-plugin" else controls.RUNTIME_REVISION
+            )
 
 
 def test_runtime_attestation_rejects_mixed_pins(monkeypatch):

@@ -18,17 +18,18 @@ def _template() -> dict:
     return yaml.load(path.read_text(), Loader=yaml.BaseLoader)
 
 
-def _resolved_configuration(template: dict) -> dict:
+def _resolved_configuration(template: dict, region: str = "us-east-1") -> dict:
     references = {
-        "AWS::Region": "us-east-1",
+        "AWS::Region": region,
+        "DeploymentRegion": region,
         "StudioRole.Arn": "arn:aws:iam::123456789012:role/studio",
         "JobsBucket": "jobs-bucket",
     }
     for name, resource in template["Resources"].items():
         if resource["Type"] == "AWS::Batch::JobQueue":
-            references[name] = f"arn:aws:batch:us-east-1:123456789012:job-queue/{name}"
+            references[name] = f"arn:aws:batch:{region}:123456789012:job-queue/{name}"
         elif resource["Type"] == "AWS::Batch::JobDefinition":
-            references[name] = f"arn:aws:batch:us-east-1:123456789012:job-definition/{name}:1"
+            references[name] = f"arn:aws:batch:{region}:123456789012:job-definition/{name}:1"
     configuration = template["Resources"]["EmptyJobsBucket"]["Properties"]["Configuration"]
     return {
         "schema_version": int(configuration["schema_version"]),
@@ -40,14 +41,22 @@ def _resolved_configuration(template: dict) -> dict:
     }
 
 
-def test_template_configuration_matches_resource_schema() -> None:
+@pytest.mark.parametrize("region", ["us-east-1", "us-west-2", "eu-central-1"])
+def test_template_configuration_matches_resource_schema(region: str) -> None:
     template = _template()
-    parsed = AwsBatchResourceConfiguration.model_validate(_resolved_configuration(template))
+    parsed = AwsBatchResourceConfiguration.model_validate(_resolved_configuration(template, region=region))
     assert set(parsed.targets) == {"g4dn.2xlarge", "g6e.2xlarge", "g7e.8xlarge"}
-    assert parsed.region == "us-east-1"
-    assert template["Rules"]["SupportedRegion"]["Assertions"][0]["Assert"] == {
-        "Fn::Equals": [{"Ref": "AWS::Region"}, "us-east-1"]
-    }
+    assert parsed.region == region
+    deployment_region = template["Parameters"]["DeploymentRegion"]
+    assert deployment_region["Default"] == "us-east-1"
+    assert deployment_region["AllowedValues"] == ["us-east-1", "us-west-2", "eu-central-1"]
+    assertions = template["Rules"]["SupportedRegion"]["Assertions"]
+    assert assertions == [
+        {
+            "Assert": {"Fn::Equals": [{"Ref": "DeploymentRegion"}, {"Ref": "AWS::Region"}]},
+            "AssertDescription": "Selected DeploymentRegion must match the current AWS Console region (AWS::Region).",
+        }
+    ]
     assert parsed.studio_role_arn == "arn:aws:iam::123456789012:role/studio"
     assert set(template["Outputs"]) == {"ConfigurationUri"}
 
@@ -119,19 +128,44 @@ def test_job_prefix_parameter_reaches_trainer(definition: str, prefix: str, tmp_
 
 def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
     template = _template()
-    assert set(template["Parameters"]) == {"JobTimeoutSeconds"}
-    assert "Mappings" not in template
+    assert set(template["Parameters"]) == {"DeploymentRegion", "JobTimeoutSeconds"}
+    expected_region_mapping = {
+        "Small": "g4dn.2xlarge",
+        "Medium": "g6e.2xlarge",
+        "Large": "g7e.8xlarge",
+    }
+    assert template["Mappings"] == {
+        "RegionInstanceTypes": {
+            "us-east-1": expected_region_mapping,
+            "us-west-2": expected_region_mapping,
+            "eu-central-1": expected_region_mapping,
+        }
+    }
+    expected_subnets = ["TrainerSubnetA", "TrainerSubnetB", "TrainerSubnetC"]
+    for index, subnet_name in enumerate(expected_subnets):
+        subnet = template["Resources"][subnet_name]["Properties"]
+        assert subnet["AvailabilityZone"] == [str(index), ""]
+        assert subnet["MapPublicIpOnLaunch"] == "true"
+    for compute_env, size_key in [
+        ("G4dnComputeEnvironment", "Small"),
+        ("G6eComputeEnvironment", "Medium"),
+        ("G7eComputeEnvironment", "Large"),
+    ]:
+        compute_resources = template["Resources"][compute_env]["Properties"]["ComputeResources"]
+        assert compute_resources["InstanceTypes"] == [["RegionInstanceTypes", "DeploymentRegion", size_key]]
+        assert compute_resources["Subnets"] == expected_subnets
     assert template["Resources"]["TrainerLogGroup"]["Properties"]["RetentionInDays"] == "14"
-    for definition, vcpus, memory in [
-        ("G4dnJobDefinition", "4", "14000"),
-        ("G6eJobDefinition", "8", "30000"),
-        ("G7eJobDefinition", "16", "240000"),
+    for definition, vcpus, memory, shm_size in [
+        ("G4dnJobDefinition", "8", "30000", "8192"),
+        ("G6eJobDefinition", "8", "30000", "8192"),
+        ("G7eJobDefinition", "16", "240000", "32768"),
     ]:
         properties = template["Resources"][definition]["Properties"]
         assert properties["Timeout"] == {"AttemptDurationSeconds": "JobTimeoutSeconds"}
         assert "PlatformCapabilities" not in properties
         assert "RetryStrategy" not in properties
         container = properties["ContainerProperties"]
+        assert container["LinuxParameters"] == {"SharedMemorySize": shm_size}
         assert {entry["Name"] for entry in container["Environment"]} == {
             "PHYSICALAI_BATCH_PROVIDER",
             "PHYSICALAI_BATCH_BUCKET",

@@ -35,6 +35,7 @@ from openvino.preprocess import PrePostProcessor
 from physicalai.data.observation import IMAGES, STATE, TASK
 from physicalai.inference.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.policies import XR0
+from physicalai.policies.xr0 import XR0Config
 from physicalai.policies.xr0.pretrained_utils import extract_xr0_dataset_stats
 
 # ---------------------------------------------------------------------------
@@ -59,14 +60,9 @@ _SEED = 42
 # compile's first inference reproducible, so the parity comparison is stable.
 _OV_RANDOM_UNIFORM_GLOBAL_SEED = 42
 _OV_RANDOM_UNIFORM_OP_SEED = 7
-# Floating dtype for BOTH the eager reference policy and the exported IR. Running
-# both backends in fp32 isolates the intrinsic OpenVINO-vs-PyTorch kernel gap
-# from the bf16 rounding: if the eager-vs-OV diff collapses well under tolerance
-# in fp32, the residual bf16 diff is confirmed as accumulation/kernel epsilon
-# rather than an algorithmic export mismatch.
+# Trace the export model in BF16; XR0 rewrites the ONNX graph to FP16 for
+# OpenVINO. Compare against an eager BF16 reference using identical noise.
 _POLICY_DTYPE = "float32"
-# In fp32 the OpenVINO action matches the eager action to a tight kernel epsilon;
-# treat anything under this as a match.
 _MAX_ABS_DIFF_TOLERANCE = 0.05
 _MIN_COSINE_SIMILARITY = 0.99
 
@@ -81,12 +77,13 @@ def _build_dataset_stats() -> dict[str, Any]:
 
     The checkpoint only carries action normalization stats, so the observation
     schema (state + two camera views) is added so ``sample_input`` and the
-    preprocessor have everything they need.
+    preprocessor have everything they need. The published per-timestep action
+    stats are expanded to the policy's chunk length.
 
     Returns:
         The dataset stats dict augmented with the observation schema.
     """
-    stats = extract_xr0_dataset_stats(_CHECKPOINT) or {}
+    stats = extract_xr0_dataset_stats(_CHECKPOINT, chunk_size=XR0Config().chunk_size) or {}
     stats["observation.state"] = {"name": "state", "type": "STATE", "shape": (8,)}
     stats["observation.images.base"] = {"name": "images.base", "type": "VISUAL", "shape": (3, 256, 256)}
     stats["observation.images.wrist_left"] = {
