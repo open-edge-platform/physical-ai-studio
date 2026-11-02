@@ -1,6 +1,8 @@
+import datetime
 from collections.abc import Callable
 from uuid import UUID
 
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from db.schema import JobDB
@@ -8,7 +10,8 @@ from repositories.base import BaseRepository
 from repositories.mappers import JobMapper
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import TrainJobPayload
+from schemas.dataset_import_job import ImportStep
+from schemas.job import TrainingTarget, TrainJobPayload
 
 
 class JobRepository(BaseRepository):
@@ -24,8 +27,8 @@ class JobRepository(BaseRepository):
         return JobMapper.from_schema
 
     async def is_job_duplicate(self, project_id: UUID, payload: TrainJobPayload) -> bool:
-        # Convert payload to dict for comparison
-        payload_dict = payload.model_dump()
+        # Match the JSON representation stored by JobMapper, including UUID values.
+        payload_dict = payload.model_dump(mode="json")
 
         # Check for jobs with same payload that are not completed
         existing_job = await self.get_one(
@@ -44,4 +47,81 @@ class JobRepository(BaseRepository):
             extra_filters={"type": job_type, "status": JobStatus.PENDING},
             order_by=self.schema.created_at,
             ascending=True,
+        )
+
+    async def get_pending_jobs_by_type(self, job_type: JobType) -> list[Job]:
+        """Return pending jobs in submission order."""
+        return await self.get_all(
+            extra_filters={"type": job_type, "status": JobStatus.PENDING},
+            order_by=self.schema.created_at,
+            ascending=True,
+        )
+
+    async def transition_pending_train_job(self, job_id: UUID, status: JobStatus) -> Job | None:
+        """Atomically claim or cancel a queued training job, never overwrite another state."""
+        if status not in {JobStatus.RUNNING, JobStatus.CANCELED}:
+            raise ValueError("Queued training jobs can only be claimed or canceled")
+        now = datetime.datetime.now(tz=datetime.UTC)
+        values: dict = {"status": status}
+        if status == JobStatus.RUNNING:
+            values.update(start_time=func.coalesce(JobDB.start_time, now), message="Preparing training")
+        else:
+            values.update(end_time=now, message="Training canceled")
+        query = update(JobDB).where(
+            JobDB.id == str(job_id), JobDB.type == JobType.TRAINING, JobDB.status == JobStatus.PENDING
+        )
+        if status == JobStatus.CANCELED:
+            # Requeued remote executions must be canceled by a reattached worker.
+            query = query.where(
+                or_(
+                    func.json_extract(JobDB.payload, "$.training_target").is_distinct_from(TrainingTarget.REMOTE.value),
+                    func.json_extract(JobDB.payload, "$.remote_job_id").is_(None),
+                )
+            )
+        result = await self.db.execute(query.values(**values).returning(JobDB.id))
+        changed_id = result.scalar_one_or_none()
+        await self.db.commit()
+        return await self.get_by_id(changed_id) if changed_id is not None else None
+
+    async def claim_pending_dataset_import_job(self) -> Job | None:
+        pending_steps = [
+            ImportStep.QUEUED_FOR_DETECTION.value,
+            ImportStep.QUEUED_FOR_IMPORT.value,
+        ]
+
+        query = (
+            select(JobDB.id)
+            .where(
+                JobDB.type == JobType.DATASET_IMPORT,
+                JobDB.status == JobStatus.PENDING,
+                func.json_extract(JobDB.payload, "$.step").in_(pending_steps),
+            )
+            .order_by(JobDB.created_at.asc())
+            .limit(1)
+        )
+        result = await self.db.execute(query)
+        job_id = result.scalar_one_or_none()
+        if job_id is None:
+            return None
+
+        claim = (
+            update(JobDB)
+            .where(
+                JobDB.id == job_id,
+                JobDB.status == JobStatus.PENDING,
+                func.json_extract(JobDB.payload, "$.step").in_(pending_steps),
+            )
+            .values(
+                status=JobStatus.RUNNING,
+                start_time=datetime.datetime.now(tz=datetime.UTC),
+            )
+        )
+        await self.db.execute(claim)
+        await self.db.commit()
+
+        return await self.get_by_id(job_id)
+
+    async def get_jobs_by_type(self, project_id: UUID, job_type: JobType) -> list[Job]:
+        return await self.get_all(
+            extra_filters={"project_id": self._id_to_str(project_id), "type": job_type},
         )

@@ -25,6 +25,7 @@ class ProjectMapper(IBaseMapper):
                 "id": model.id,
                 "name": model.name,
                 "updated_at": model.updated_at,
+                "created_at": model.created_at,
                 "datasets": [DatasetMapper.from_schema(dataset) for dataset in model.datasets],
             }
         )

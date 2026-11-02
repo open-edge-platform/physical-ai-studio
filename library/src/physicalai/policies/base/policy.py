@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 import lightning as L  # noqa: N812
 
@@ -20,34 +20,6 @@ if TYPE_CHECKING:
     from physicalai.gyms import Gym
 
     from .model import Model
-
-
-@runtime_checkable
-class PolicyLike(Protocol):
-    """Protocol for policy-like objects that can be used for inference.
-
-    This protocol defines the minimal interface required for evaluation
-    and benchmarking. Both `Policy` (PyTorch/Lightning) and `InferenceModel`
-    (exported models) satisfy this protocol.
-
-    The protocol enables using exported models for benchmarking production
-    performance without requiring the full PyTorch training infrastructure.
-    """
-
-    def select_action(self, observation: Observation) -> torch.Tensor:
-        """Select action for given observation.
-
-        Args:
-            observation: Robot observation (images, states, etc.)
-
-        Returns:
-            Action tensor to execute.
-        """
-        ...
-
-    def reset(self) -> None:
-        """Reset policy state for new episode."""
-        ...
 
 
 class Policy(L.LightningModule, ABC):
@@ -199,11 +171,11 @@ class Policy(L.LightningModule, ABC):
         """
         # Handle (B, T, D) -> split along T dimension
         if actions.dim() == 3:  # noqa: PLR2004
-            # Transpose to (T, B, D), then extend queue
-            self._action_queue.extend(actions.transpose(0, 1))
+            # Transpose to (T, B, D), then truncate to _n_action_steps and extend queue
+            self._action_queue.extend(actions.transpose(0, 1)[: self._n_action_steps])
         else:
-            # Already (T, D), just extend
-            self._action_queue.extend(actions)
+            # Already (T, D), truncate to _n_action_steps and extend
+            self._action_queue.extend(actions[: self._n_action_steps])
         return self._action_queue.popleft()
 
     def _get_queued_action(self) -> torch.Tensor | None:
@@ -272,7 +244,7 @@ class Policy(L.LightningModule, ABC):
             return loss
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Subclasses must override this to define how validation loss is computed.

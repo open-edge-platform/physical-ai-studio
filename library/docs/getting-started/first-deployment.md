@@ -53,7 +53,7 @@ policy_export/
 from physicalai.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 ```
 
 The same code works regardless of which backend you exported to.
@@ -66,7 +66,7 @@ The same code works regardless of which backend you exported to.
 from physicalai.inference import InferenceModel
 
 # Load model
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 
 # Initialize environment (your robot or simulation)
 obs, info = env.reset()
@@ -94,7 +94,7 @@ from physicalai.inference import InferenceModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 
 try:
     obs, info = env.reset()
@@ -152,7 +152,7 @@ You don't need to manage this—just call `select_action()` every step.
 First inference is slower due to compilation:
 
 ```python test="skip" reason="requires exported model and environment"
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 
 # Warm-up with dummy observation
 dummy_obs = get_dummy_observation()  # Match your observation format
@@ -166,24 +166,31 @@ obs, _ = env.reset()
 
 ### Measure Latency
 
+`InferenceLatencyBenchmark` handles warm-up, iteration/time budgets, and summary
+statistics:
+
 ```python test="skip" reason="requires exported model"
-import time
+from physicalai.benchmark.performance import InferenceLatencyBenchmark
+from physicalai.inference import InferenceModel
 
-policy = InferenceModel.load("./policy_export")
-obs = get_observation()
+policy = InferenceModel("./policy_export")
 
-# Warm-up
-_ = policy.select_action(obs)
-policy.reset()
+benchmark = InferenceLatencyBenchmark(max_iters=100, warmup_iters=5, max_duration=60000)
 
-# Benchmark
-n_iterations = 100
-start = time.time()
-for _ in range(n_iterations):
-    _ = policy.select_action(obs)
-elapsed = time.time() - start
+# Inputs default to random samples derived from the model's input features
+metrics = benchmark.run(policy)
 
-print(f"Latency: {elapsed / n_iterations * 1000:.2f} ms per action")
+print(f"Median latency: {metrics['median_iter_time'] * 1000:.2f} ms per action chunk")
+```
+
+Returned metrics are in seconds: `avg_warmup_iter_time`, `num_iters`,
+`min_iter_time`, `max_iter_time`, `mean_iter_time`, `median_iter_time`, and
+`std_iter_time`.
+
+To benchmark with real observations, pass any iterable of input dicts:
+
+```python test="skip" reason="requires exported model and environment"
+metrics = benchmark.run(policy, inputs=(get_observation() for _ in range(105)))
 ```
 
 ### Tips

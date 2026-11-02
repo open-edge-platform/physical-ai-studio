@@ -5,7 +5,7 @@ import { Button, Heading, IllustratedMessage, View } from '@geti-ui/ui';
 import { AlertCircle as NotFound } from '@geti-ui/ui/icons';
 import { isRouteErrorResponse, useRouteError } from 'react-router';
 
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { redirectTo } from '../../routes/utils';
 
 const useErrorMessage = () => {
@@ -39,6 +39,10 @@ const useErrorMessage = () => {
 
     if (error instanceof TypeError) {
         return error.message;
+    }
+
+    if (typeof error === 'object' && error != null && 'detail' in error && typeof error.detail === 'string') {
+        return error.detail;
     }
 
     return 'An unknown error occurred';

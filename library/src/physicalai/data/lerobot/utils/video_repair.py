@@ -103,21 +103,32 @@ def find_videos_with_corrupt_frame(dataset: LeRobotDataset, frame_index: int) ->
         msg = "lerobot is required but is not available"
         raise ImportError(msg)
 
-    item = dataset.hf_dataset[frame_index]
-    episode_index = item["episode_index"].item()
-    corrupt_videos = []
-
     if len(dataset.meta.video_keys) == 0:
         msg = "No video data present in dataset"
         raise RuntimeError(msg)
 
-    current_timestamp = item["timestamp"].item()
-    query_timestamps = dataset._get_query_timestamps(current_timestamp, None)  # noqa: SLF001
+    # In recent lerobot versions the video-decoding helpers live on a DatasetReader
+    # rather than on LeRobotDataset itself. Use the reader so detection matches the
+    # exact decode path (including per-episode timestamp offsets) used during training.
+    reader = dataset._ensure_reader()  # noqa: SLF001
+    if reader.hf_dataset is None:
+        reader.load_and_activate()
 
+    if reader.hf_dataset is None:
+        msg = "Failed to load dataset for video repair"
+        raise RuntimeError(msg)
+
+    item = reader.hf_dataset[frame_index]
+    episode_index = item["episode_index"].item()
+    current_timestamp = item["timestamp"].item()
+
+    query_timestamps = reader._get_query_timestamps(current_timestamp, None)  # noqa: SLF001
+
+    corrupt_videos = []
     for video_key, query_timestamp in query_timestamps.items():
         video_path = dataset.root / dataset.meta.get_video_file_path(episode_index, video_key)
         try:
-            decode_video_frames(video_path, query_timestamp, dataset.tolerance_s, dataset.video_backend)
+            reader._query_videos({video_key: query_timestamp}, episode_index)  # noqa: SLF001
         except Exception:  # noqa: BLE001
             corrupt_videos.append(video_path)
 

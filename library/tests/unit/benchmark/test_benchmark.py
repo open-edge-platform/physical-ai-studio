@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from physicalai.benchmark import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
-from physicalai.policies.base import PolicyLike
+from physicalai.benchmark.gyms import Benchmark, BenchmarkResults, LiberoBenchmark, PushTBenchmark, TaskResult
+from physicalai.benchmark.gyms.robocasa.robocasa import RoboCasaBenchmark
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ class TestBenchmark:
 
     def test_evaluate(self, mock_gym, eval_result):
         benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
-        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
+        with patch("physicalai.benchmark.gyms.benchmark.evaluate_policy", return_value=eval_result):
             results = benchmark.evaluate(MagicMock())
         assert results.n_tasks == 1 and results.overall_success_rate == 80.0
 
@@ -107,54 +107,95 @@ class TestLiberoBenchmark:
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
 
 
-class TestPolicyLikeProtocol:
-    """Tests for PolicyLike protocol compatibility."""
+class TestRoboCasaBenchmark:
+    @pytest.fixture(autouse=True)
+    def _require_robocasa(self) -> None:
+        pytest.importorskip("robocasa")
+        pytest.importorskip("robosuite")
 
-    def test_policy_like_protocol_with_mock(self):
-        """Test that mock objects satisfying PolicyLike work with benchmark."""
+    def test_robocasa_benchmark_default_construction(self):
+        b = RoboCasaBenchmark()
+        assert b.task == "atomic_seen"
+        assert b.num_episodes == 20
+        assert len(b.gyms) == 18
+        assert b.max_steps is None
 
-        class MockInferenceModel:
-            """Mock class mimicking InferenceModel interface."""
+    def test_robocasa_benchmark_empty_task_raises(self):
+        with pytest.raises(ValueError, match="at least one RoboCasa task name"):
+            RoboCasaBenchmark(task="")
 
-            def __init__(self):
-                self.policy_name = "mock_inference_model"
+    def test_robocasa_benchmark_max_steps_defaults_to_none(self):
+        """Benchmark-level max_steps stays None; each gym resolves its own task horizon."""
+        for group in (
+            "atomic_seen",
+            "composite_seen",
+            "composite_unseen",
+            "pretrain50",
+            "pretrain100",
+            "pretrain200",
+            "pretrain300",
+        ):
+            b = RoboCasaBenchmark(task=group)
+            assert b.max_steps is None, f"group={group}"
 
-            def select_action(self, observation):
-                """Return dummy action tensor."""
-                return torch.zeros(1, 7)
+    def test_robocasa_benchmark_gyms_resolve_per_task_horizon(self):
+        """Atomic tasks have varying registry horizons, not a single flat cap."""
+        b = RoboCasaBenchmark(task="atomic_seen")
+        horizons = {gym.get_max_episode_steps() for gym in b.gyms}
+        assert len(horizons) > 1
 
-            def reset(self):
-                """Reset internal state."""
-                pass
+    def test_robocasa_benchmark_repr_includes_task(self):
+        b = RoboCasaBenchmark()
+        r = repr(b)
+        assert r.startswith("RoboCasaBenchmark(")
+        assert "task='atomic_seen'" in r
+        assert "max_steps=None" in r
 
-        model = MockInferenceModel()
-        assert isinstance(model, PolicyLike), "Mock should satisfy PolicyLike protocol"
+    def test_robocasa_benchmark_sets_task_id_on_gyms(self):
+        b = RoboCasaBenchmark()
+        gym = b.gyms[0]
+        assert gym.task_id == gym.task
+        assert gym.task_suite_name == "atomic_seen"
 
-    def test_benchmark_accepts_policy_like(self, mock_gym, eval_result):
-        """Test that Benchmark.evaluate accepts PolicyLike objects."""
 
-        class MockInferenceModel:
-            def __init__(self):
-                self.policy_name = "test_model"
+class TestWrapPolicy:
+    """Tests for _wrap_policy with InferenceModel input."""
 
-            def select_action(self, observation):
-                return torch.zeros(1, 7)
+    def test_wraps_inference_model_into_policy(self):
+        """Test that _wrap_policy wraps an InferenceModel into a Policy-compatible object."""
+        import numpy as np
 
-            def reset(self):
-                pass
+        from physicalai.benchmark.gyms.benchmark import _wrap_policy
+        from physicalai.inference.model import InferenceModel
+        from physicalai.policies.base import Policy
 
-        model = MockInferenceModel()
-        benchmark = Benchmark(gyms=[mock_gym], num_episodes=5, max_steps=100)
+        mock_model = MagicMock(spec=InferenceModel)
+        mock_model.policy_name = "test_policy"
+        mock_model.select_action.return_value = np.array([1.0, 2.0, 3.0])
 
-        with patch("physicalai.benchmark.benchmark.evaluate_policy", return_value=eval_result):
-            results = benchmark.evaluate(model)
+        wrapped = _wrap_policy(mock_model)
 
-        assert results.n_tasks == 1
-        assert results.overall_success_rate == 80.0
+        assert isinstance(wrapped, Policy)
+        assert wrapped.name == "test_policy"
+
+        obs = MagicMock()
+        np_obs = MagicMock()
+        np_obs.to_dict.return_value = {"image": np.zeros((3, 224, 224))}
+        obs.to_numpy.return_value = np_obs
+
+        action = wrapped.select_action(obs)
+
+        mock_model.select_action.assert_called_once()
+        assert isinstance(action, torch.Tensor)
+        assert torch.equal(action, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64))
+
+
+class TestPolicyNameExtraction:
+    """Tests for policy name extraction."""
 
     def test_policy_name_extraction_from_inference_model(self):
         """Test that _get_policy_name extracts policy_name from InferenceModel-like objects."""
-        from physicalai.benchmark.benchmark import _get_policy_name
+        from physicalai.benchmark.gyms.benchmark import _get_policy_name
 
         class MockInferenceModel:
             def __init__(self):

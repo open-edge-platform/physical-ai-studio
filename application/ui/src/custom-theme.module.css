@@ -1,0 +1,13 @@
+.theme {
+    --spectrum-global-color-gray-50: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 8%) !important;
+    --spectrum-global-color-gray-75: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 11%) !important;
+    --spectrum-global-color-gray-100: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 13%) !important;
+    --spectrum-global-color-gray-200: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 17%) !important;
+    --spectrum-global-color-gray-300: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 22%) !important;
+    --spectrum-global-color-gray-400: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 28%) !important;
+    --spectrum-global-color-gray-500: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 36%) !important;
+    --spectrum-global-color-gray-600: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 48%) !important;
+    --spectrum-global-color-gray-700: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 65%) !important;
+    --spectrum-global-color-gray-800: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 85%) !important;
+    --spectrum-global-color-gray-900: #fff;
+}

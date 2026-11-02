@@ -1,0 +1,50 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Training backends selected by each submitted training job.
+
+`TrainingBackend` abstracts where training runs. `LocalTrainingBackend` trains
+in-process with torch/Lightning; `RemoteTrainingBackend` offloads to a trainer
+service. The active backend is selected per job from its persisted execution
+target.
+"""
+
+from schemas.job import RemoteTrainJobPayload, TrainJobPayload
+from services.training_backends.base import (
+    ProgressReporter,
+    TrainingBackend,
+    TrainingCanceledError,
+    TrainingContext,
+    TrainingSuspendedError,
+)
+
+
+async def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
+    """Return the backend selected by a job's persisted execution target."""
+    if isinstance(payload, RemoteTrainJobPayload):
+        if payload.remote_trainer_url is None:
+            raise ValueError("Remote training job is missing its pinned trainer URL")
+        if payload.remote_trainer_url.startswith("aws-batch://"):
+            from services.aws_batch import aws_batch_connection_from_url
+            from services.training_backends.aws_batch import AwsBatchTrainingBackend
+
+            return AwsBatchTrainingBackend(aws_batch_connection_from_url(payload.remote_trainer_url))
+        from services.training_backends.remote import RemoteTrainingBackend
+
+        return RemoteTrainingBackend(
+            payload.remote_trainer_url, trainer_name=payload.remote_trainer_name, device=payload.device
+        )
+
+    from services.training_backends.local import LocalTrainingBackend
+
+    return LocalTrainingBackend()
+
+
+__all__ = [
+    "ProgressReporter",
+    "TrainingBackend",
+    "TrainingCanceledError",
+    "TrainingContext",
+    "TrainingSuspendedError",
+    "get_training_backend",
+]

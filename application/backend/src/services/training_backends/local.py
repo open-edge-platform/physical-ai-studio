@@ -1,0 +1,152 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""In-process training backend using torch/Lightning.
+
+This is an adapter, not a training implementation: it maps a `TrainingContext`
+onto a `training.TrainingJobSpec` and hands it to `training.run_training_job`,
+the same runner the trainer service uses. Keeping the training logic in one
+place is what stops the local and remote paths from drifting apart.
+
+Imports of `physicalai`, torch, and Lightning are deferred to call time so this
+module can be imported in environments without the `[train]` extra installed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from loguru import logger
+from pydantic import SecretStr
+
+from services.training_backends._log_format import render_progress_log
+from settings import get_settings
+
+if TYPE_CHECKING:
+    from physicalai.train.callbacks import ReportFn
+
+    from services.training_backends.base import TrainingContext
+    from training import TrainingJobSpec
+
+
+class LocalTrainingBackend:
+    """Train in the worker process with Lightning."""
+
+    async def train(self, context: TrainingContext) -> None:
+        """Run Lightning training, save, and export into the model directory."""
+        from training import RunOptions, run_training_job
+
+        if context.snapshot is None:
+            raise ValueError("Local training requires a dataset snapshot")
+
+        spec = build_spec(context)
+        spec.run_options = RunOptions(
+            resume_from=_resume_checkpoint(context),
+            hf_token=resolve_hf_token(),
+        )
+        await asyncio.to_thread(
+            run_training_job,
+            spec,
+            dataset_root=context.snapshot.path,
+            output_dir=context.output_dir,
+            cache_dir=context.cache_dir,
+            report=self._reporter(context),
+            should_stop=context.should_stop,
+        )
+
+    @staticmethod
+    def _reporter(context: TrainingContext) -> ReportFn:
+        """Wrap the job reporter for `run_training_job`'s telemetry sink.
+
+        Mirrors loggable telemetry to the job log using the shared renderer, so
+        local runs produce the same log lines as remote ones, and caps running
+        progress at 99 because the worker writes 100 on completion.
+        """
+        reporter = context.progress
+
+        def report(progress: int, message: str | None, extra_info: dict) -> None:
+            line = render_progress_log(extra_info)
+            if line is not None:
+                logger.info(line)
+            reporter(min(99, progress), message=message, extra_info=extra_info)
+
+        return report
+
+
+def resolve_hf_token() -> SecretStr | None:
+    """Return the configured Hugging Face token, falling back to the legacy env var.
+
+    Shared by the local backend (set directly into `RunOptions`), the
+    remote/SSH backends (sent to the trainer at job submission time; see
+    `services.training_backends.remote.RemoteTrainingBackend.submit_job`), and
+    `api.policies.check_huggingface_access`, so every caller resolves the same
+    token the same way.
+    """
+    hf_token = get_settings().huggingface.hf_token
+    # Fallback to Environment Variable based hf token if settings hasn't been set
+    if (hf_token is None or not hf_token.get_secret_value()) and (legacy_hf_token := os.environ.get("HF_TOKEN", "")):
+        hf_token = SecretStr(legacy_hf_token)
+    return hf_token
+
+
+def build_spec(context: TrainingContext) -> TrainingJobSpec:
+    """Translate a job's payload into the shared training spec.
+
+    Shared with the remote backend, which sends the same spec over the wire, so
+    both paths train from one set of defaults instead of two.
+
+    Args:
+        context: The training job to describe.
+
+    Returns:
+        The spec describing what to train.
+    """
+    from training import TrainingJobSpec
+
+    payload = context.payload
+    device = payload.device
+    return TrainingJobSpec(
+        # A resumed run's architecture is dictated by the base model's checkpoint.
+        policy=(context.base_model or context.model).policy,
+        # SnapFlow distillation epochs are additive: the trainer's epoch budget
+        # is the teacher run plus the distillation phase, not carved out of it.
+        max_epochs=payload.total_epochs,
+        batch_size=payload.batch_size,
+        num_workers=payload.num_workers,
+        val_split=payload.val_split,
+        precision=str(payload.precision),
+        compile_model=payload.compile_model,
+        augment_images=payload.augment_images,
+        auto_scale_batch_size=payload.auto_scale_batch_size,
+        lora_enabled=payload.lora_enabled,
+        lora_rank=payload.lora_rank,
+        lora_alpha=payload.lora_alpha,
+        lora_dropout=payload.lora_dropout,
+        lora_use_dora=payload.lora_use_dora,
+        snapflow_start_epoch=payload.snapflow_start_epoch,
+        device_type=str(device.type) if device else None,
+        device_index=device.index if device else None,
+        image_key_reorder_map=payload.image_key_reorder_map,
+        num_cameras=payload.num_cameras,
+        export_backends=(
+            [str(backend) for backend in payload.export_backends] if payload.export_backends is not None else None
+        ),
+    )
+
+
+def _resume_checkpoint(context: TrainingContext) -> Path | None:
+    """Return the base model's checkpoint to resume from, if the job has one.
+
+    Deliberately always the plain checkpoint, never the SnapFlow one: SnapFlow
+    permanently freezes the VLM backbone and switches to 1-step sampling once
+    activated, baked into the checkpoint's hparams. Resuming from it would
+    silently carry that into a run that never asked for SnapFlow.
+    """
+    from training.job import CHECKPOINT_NAME
+
+    if context.base_model is None:
+        return None
+    return Path(context.base_model.path) / CHECKPOINT_NAME

@@ -1,6 +1,7 @@
 import { Content, Flex, Heading, IllustratedMessage, Text, View } from '@geti-ui/ui';
 
 import { CameraFeed } from '../../cameras/camera-feed';
+import { fingerprintKey } from '../../cameras/fingerprint';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { isValid, useCameraForm } from './provider';
 
@@ -36,21 +37,10 @@ export const Preview = () => {
 
     // Make sure we completely refresh the camera preview when changing camera or resolution
     // eslint-disable-next-line max-len
-    const key = `${camera.driver}-${camera.fingerprint}-${camera.payload?.fps}-${camera.payload?.height}-${camera.payload?.width}`;
+    const key = `${camera.driver}-${fingerprintKey(camera.fingerprint)}-${camera.payload?.fps}-${camera.payload?.height}-${camera.payload?.width}`;
 
     return (
-        <View
-            backgroundColor={'gray-200'}
-            height={'100%'}
-            padding='size-200'
-            UNSAFE_style={{
-                borderRadius: 'var(--spectrum-alias-border-radius-regular)',
-                borderColor: 'var(--spectrum-global-color-gray-700)',
-                borderWidth: '1px',
-                borderStyle: 'dashed',
-            }}
-            position={'relative'}
-        >
+        <View height={'100%'} position={'relative'}>
             {isValid(camera) ? <CameraFeed key={key} camera={camera} /> : <EmptyPreview />}
         </View>
     );

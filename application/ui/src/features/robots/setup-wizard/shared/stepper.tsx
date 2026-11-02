@@ -1,6 +1,6 @@
 import { Text } from '@geti-ui/ui';
 
-import classes from './setup-wizard.module.scss';
+import classes from './setup-wizard.module.css';
 
 // ---------------------------------------------------------------------------
 // Generic stepper — accepts data via props so it can be used by any wizard

@@ -1,178 +1,75 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for inference adapters."""
+"""Unit tests for inference adapters contributed by ``physicalai-train``.
 
+Covers the ``torch`` and ``executorch`` adapters that this distribution
+registers via the ``physicalai.inference.adapters`` entry-point group.
+
+Tests for the core ``onnx`` and ``openvino`` adapters live in
+``physicalai/tests/unit/inference/test_adapters.py``.
+"""
+
+import json
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import torch
 
-from physicalai.data.observation import Observation
+from physicalai.data.observation import PREV_CHUNK_LEFT_OVER, Observation
 from physicalai.export.backends import TorchExportParameters
 from physicalai.export.mixin_policy import ExportBackend
-from physicalai.inference.adapters import (
-    ExecuTorchAdapter,
-    ONNXAdapter,
-    OpenVINOAdapter,
-    RuntimeAdapter,
-    TorchAdapter,
-    get_adapter,
-)
+from physicalai.inference.adapters import get_adapter
+from physicalai.inference.adapters.executorch import ExecuTorchAdapter
+from physicalai.inference.adapters.pytorch import TorchAdapter
+from physicalai.policies.mixins.rtc import RTCPolicyMixin
 
 
 class TestGetAdapter:
-    """Test adapter factory function."""
+    """Test adapter factory function for adapters contributed here."""
 
     @pytest.mark.parametrize("backend_type", [ExportBackend, str])
-    @pytest.mark.parametrize(
-        ("backend_name", "expected_type"),
-        [
-            ("openvino", OpenVINOAdapter),
-            ("onnx", ONNXAdapter),
-            ("torch", TorchAdapter),
-        ],
-    )
-    def test_get_adapter(
-        self,
-        backend_type: type,
-        backend_name: str,
-        expected_type: type[RuntimeAdapter],
-    ) -> None:
-        """Test get_adapter returns correct type for both enum and string inputs."""
-        backend = backend_type(backend_name) if backend_type == ExportBackend else backend_name
+    def test_get_torch_adapter(self, backend_type: type) -> None:
+        """Test get_adapter returns TorchAdapter for both enum and string inputs."""
+        backend = backend_type("torch") if backend_type == ExportBackend else "torch"
         adapter = get_adapter(backend)
-        assert isinstance(adapter, expected_type)
-
-    def test_invalid_backend(self) -> None:
-        """Test invalid backend raises ValueError."""
-        with pytest.raises(ValueError, match="is not a valid ExportBackend"):
-            get_adapter("invalid_backend")
-
-
-class TestOpenVINOAdapter:
-    """Test OpenVINO inference adapter."""
-
-    def test_lifecycle(self, tmp_path: Path) -> None:
-        """Test complete adapter lifecycle: init, load, predict."""
-        # Setup
-        model_path = tmp_path / "model.xml"
-        model_path.touch()
-        (tmp_path / "model.bin").touch()
-
-        mock_model = MagicMock()
-        mock_compiled_model = MagicMock()
-        mock_input, mock_output = Mock(), Mock()
-        mock_input.any_name, mock_output.any_name = "input", "output"
-        mock_model.inputs = [mock_input]
-        mock_compiled_model.outputs = [mock_output]
-        mock_compiled_model.return_value = [np.array([[1.0, 2.0]])]
-
-        mock_ov = MagicMock()
-        mock_ov.Core.return_value.read_model.return_value = mock_model
-        mock_ov.Core.return_value.compile_model.return_value = mock_compiled_model
-
-        # Test init, load, and predict
-        with patch.dict("sys.modules", {"openvino": mock_ov}):
-            adapter = OpenVINOAdapter(device="CPU")
-            assert adapter.device == "CPU"
-            assert "CPU" in repr(adapter)
-
-            adapter.load(model_path)
-            assert adapter.input_names == ["input"]
-            assert adapter.output_names == ["output"]
-
-            outputs = adapter.predict({"input": np.array([[1.0, 2.0]])})
-            assert "output" in outputs and isinstance(outputs["output"], np.ndarray)
-
-    def test_error_cases(self, tmp_path: Path) -> None:
-        """Test error handling for file not found, missing dependency, and predict without load."""
-        adapter = OpenVINOAdapter()
-
-        with pytest.raises(FileNotFoundError, match="Model file not found"):
-            adapter.load(Path("/nonexistent/model.xml"))
-
-        with pytest.raises(RuntimeError, match="Model not loaded"):
-            adapter.predict({"input": np.array([1.0])})
-
-        model_path = tmp_path / "model.xml"
-        model_path.touch()
-        with patch.dict("sys.modules", {"openvino": None}):
-            with pytest.raises(ImportError, match="OpenVINO is not installed"):
-                adapter.load(model_path)
-
-
-class TestONNXAdapter:
-    """Test ONNX Runtime inference adapter."""
-
-    @pytest.mark.parametrize(
-        ("device", "expected_providers"),
-        [
-            ("cpu", ["CPUExecutionProvider"]),
-            ("cuda", ["CUDAExecutionProvider", "CPUExecutionProvider"]),
-            ("tensorrt", ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]),
-        ],
-    )
-    def test_provider_selection(self, device: str, expected_providers: list[str]) -> None:
-        """Test execution provider selection by device."""
-        assert ONNXAdapter(device=device)._get_providers() == expected_providers
-
-    def test_lifecycle(self, tmp_path: Path) -> None:
-        """Test complete adapter lifecycle."""
-        model_path = tmp_path / "model.onnx"
-        model_path.touch()
-
-        mock_session = MagicMock()
-        mock_input, mock_output = Mock(), Mock()
-        mock_input.name, mock_output.name = "input", "output"
-        mock_session.get_inputs.return_value, mock_session.get_outputs.return_value = [mock_input], [mock_output]
-        mock_session.run.return_value = [np.array([[1.0, 2.0]])]
-
-        mock_ort = MagicMock()
-        mock_ort.InferenceSession.return_value = mock_session
-
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort}):
-            adapter = ONNXAdapter(device="cpu")
-            adapter.load(model_path)
-            assert adapter.input_names == ["input"] and adapter.output_names == ["output"]
-
-            outputs = adapter.predict({"input": np.array([[1.0]])})
-            assert "output" in outputs
-
-    def test_error_cases(self, tmp_path: Path) -> None:
-        """Test error handling."""
-        adapter = ONNXAdapter()
-
-        with pytest.raises(FileNotFoundError):
-            adapter.load(Path("/nonexistent/model.onnx"))
-
-        with pytest.raises(RuntimeError, match="Model not loaded"):
-            adapter.predict({"input": np.array([1.0])})
-
-        model_path = tmp_path / "model.onnx"
-        model_path.touch()
-        with patch.dict("sys.modules", {"onnxruntime": None}):
-            with pytest.raises(ImportError, match="ONNX Runtime is not installed"):
-                adapter.load(model_path)
+        assert isinstance(adapter, TorchAdapter)
 
 
 class TestTorchAdapter:
     """Test Torch inference adapter."""
 
     @staticmethod
-    def _write_policy_metadata(tmp_path: Path) -> Path:
+    def _write_policy_manifest(tmp_path: Path, input_feature_names: list[str] | None = None) -> Path:
         model_path = tmp_path / "model.pt"
-        metadata_path = tmp_path / "metadata.yaml"
+        manifest_path = tmp_path / "manifest.json"
         model_path.touch()
-        with metadata_path.open("w") as f:
-            f.write("policy_class: physicalai.policies.act.ACT\n")
+        manifest = {
+            "format": "policy_package",
+            "version": "1.0",
+            "policy": {
+                "name": "act",
+                "source": {"class_path": "physicalai.policies.act.ACT"},
+            },
+            "model": {
+                "input_features": [
+                    {
+                        "class_path": "physicalai.inference.data.features.InferenceFeature",
+                        "init_args": {"name": name},
+                    }
+                    for name in input_feature_names or []
+                ],
+            },
+        }
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
         return model_path
 
     def test_lifecycle(self, tmp_path: Path) -> None:
         """Test complete adapter lifecycle: init, load, predict with numpy inputs."""
-        model_path = self._write_policy_metadata(tmp_path)
+        model_path = self._write_policy_manifest(tmp_path)
 
         mock_model = MagicMock()
         # Policy forward returns a tensor (action output)
@@ -183,7 +80,7 @@ class TestTorchAdapter:
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
-            assert adapter.device == torch.device("cpu")
+            assert adapter.device == "cpu"
             assert "cpu" in repr(adapter)
 
             adapter.load(model_path)
@@ -203,7 +100,7 @@ class TestTorchAdapter:
 
     def test_predict_with_nested_images(self, tmp_path: Path) -> None:
         """Test predict with multi-camera images (dict of numpy arrays)."""
-        model_path = self._write_policy_metadata(tmp_path)
+        model_path = self._write_policy_manifest(tmp_path)
 
         mock_model = MagicMock()
         mock_model.return_value = torch.tensor([[0.1, 0.2]])
@@ -229,7 +126,7 @@ class TestTorchAdapter:
 
     def test_load_with_missing_sample_input_keeps_empty_input_names(self, tmp_path: Path) -> None:
         """Test missing sample_input still keeps empty input_names for torch adapter."""
-        model_path = self._write_policy_metadata(tmp_path)
+        model_path = self._write_policy_manifest(tmp_path)
 
         mock_model = MagicMock()
         mock_model.return_value = torch.tensor([[0.1, 0.2]])
@@ -272,20 +169,49 @@ class TestTorchAdapter:
 
     def test_load_failure(self, tmp_path: Path) -> None:
         """Test error handling when torch.load fails."""
-        model_path = self._write_policy_metadata(tmp_path)
+        model_path = self._write_policy_manifest(tmp_path)
 
         with patch("physicalai.policies.act.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
             adapter = TorchAdapter()
             with pytest.raises(RuntimeError, match="Failed to load"):
                 adapter.load(model_path)
 
+    def test_load_rejects_non_policy_class(self, tmp_path: Path) -> None:
+        """Test adapter rejects metadata without checkpoint-loading interface."""
+        model_path = self._write_policy_manifest(tmp_path)
+        manifest_path = tmp_path / "manifest.json"
+        with manifest_path.open() as f:
+            manifest = json.load(f)
+        manifest["policy"]["source"]["class_path"] = "builtins.dict"
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
+
+        adapter = TorchAdapter()
+        with pytest.raises(RuntimeError, match="does not define callable load_from_checkpoint"):
+            adapter.load(model_path)
+
+    def test_load_accepts_class_with_checkpoint_loader(self, tmp_path: Path) -> None:
+        """Test interface validation accepts classes with load_from_checkpoint."""
+        model_path = self._write_policy_manifest(tmp_path)
+
+        mock_model = MagicMock()
+        mock_model.return_value = torch.tensor([[1.0, 2.0]])
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
+
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+            adapter = TorchAdapter()
+            adapter.load(model_path)
+            assert adapter.output_names == ["action"]
+
     def test_device_selection(self) -> None:
         """Test device selection for Torch adapter."""
         adapter_cpu = TorchAdapter(device="cpu")
-        assert adapter_cpu.device == torch.device("cpu")
+        assert adapter_cpu.device == "cpu"
 
         adapter_cuda = TorchAdapter(device="cuda")
-        assert adapter_cuda.device == torch.device("cuda")
+        assert adapter_cuda.device == "cuda"
 
     def test_input_output_names_before_load(self) -> None:
         """Test input/output names return empty lists before model is loaded."""
@@ -295,86 +221,21 @@ class TestTorchAdapter:
         assert adapter.input_names == []
         assert adapter.output_names == []
 
+    def test_compile_model_passed_to_load_from_checkpoint(self, tmp_path: Path) -> None:
+        """Test compile_model flag is forwarded to load_from_checkpoint()."""
+        model_path = self._write_policy_manifest(tmp_path)
 
-class TestRuntimeAdapter:
-    """Test RuntimeAdapter base class."""
+        mock_model = MagicMock()
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
-    @pytest.fixture
-    def concrete_adapter_class(self):
-        """Fixture providing a concrete adapter implementation for testing."""
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model) as mock_load:
+            adapter = TorchAdapter(device="cpu", compile_model=True)
+            assert adapter.compile_model is True
 
-        class ConcreteAdapter(RuntimeAdapter):
-            """Minimal concrete implementation for testing base class."""
-
-            def load(self, model_path: Path) -> None:
-                self.model = MagicMock()  # type: ignore[assignment]
-
-            def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-                return {"output": np.array([1.0])}
-
-            @property
-            def input_names(self) -> list[str]:
-                return ["input"]
-
-            @property
-            def output_names(self) -> list[str]:
-                return ["output"]
-
-        return ConcreteAdapter
-
-    def test_base_init(self, concrete_adapter_class) -> None:
-        """Test base adapter initialization with device and kwargs."""
-        adapter = concrete_adapter_class(device="cpu", custom_param="value")
-        assert adapter.device == "cpu"
-        assert adapter.config == {"custom_param": "value"}
-        assert adapter.model is None
-
-    def test_base_repr(self, concrete_adapter_class) -> None:
-        """Test base adapter string representation."""
-        adapter = concrete_adapter_class(device="gpu")
-        assert "ConcreteAdapter" in repr(adapter)
-        assert "gpu" in repr(adapter)
-
-    def test_abstract_methods_required(self) -> None:
-        """Test that abstract methods must be implemented."""
-        with pytest.raises(TypeError):
-            RuntimeAdapter()  # type: ignore[abstract]
-
-
-class TestDefaultDevice:
-    """Test default_device() method for all adapters."""
-
-    def test_runtime_adapter_default_device(self) -> None:
-        """Test RuntimeAdapter base class default_device returns 'cpu'."""
-
-        class ConcreteAdapter(RuntimeAdapter):
-            def load(self, model_path: Path) -> None:
-                pass
-
-            def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-                return {"output": np.array([1.0])}
-
-            @property
-            def input_names(self) -> list[str]:
-                return ["input"]
-
-            @property
-            def output_names(self) -> list[str]:
-                return ["output"]
-
-        adapter = ConcreteAdapter()
-        assert adapter.default_device() == "cpu"
-
-    def test_onnx_adapter_default_device(self) -> None:
-        """Test ONNXAdapter default_device returns a string."""
-        adapter = ONNXAdapter()
-        result = adapter.default_device()
-        assert isinstance(result, str)
-
-    def test_openvino_adapter_default_device(self) -> None:
-        """Test OpenVINOAdapter default_device returns 'CPU'."""
-        adapter = OpenVINOAdapter()
-        assert adapter.default_device() == "CPU"
+            adapter.load(model_path)
+            assert mock_load.call_args.kwargs["compile_model"] is True
 
 
 class TestExecuTorchAdapter:
@@ -403,12 +264,12 @@ class TestExecuTorchAdapter:
         return mock_et_runtime, mock_runtime_instance, mock_program, mock_method
 
     def test_load_happy_path(self, tmp_path: Path) -> None:
-        """Test successful load with metadata."""
+        """Test successful load with manifest."""
         model_path = tmp_path / "model.pte"
         model_path.touch()
 
-        metadata_path = tmp_path / "metadata.yaml"
-        metadata_path.write_text("input_names: [state, action]\noutput_names: [prediction]\n")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text('{"input_names": ["state", "action"], "output_names": ["prediction"]}')
 
         mock_et_runtime, _, _, _ = self._build_executorch_mocks()
 
@@ -440,8 +301,8 @@ class TestExecuTorchAdapter:
         model_path = tmp_path / "model.pte"
         model_path.touch()
 
-        metadata_path = tmp_path / "metadata.yaml"
-        metadata_path.write_text("input_names: [state]\noutput_names: [action]\n")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text('{"input_names": ["state"], "output_names": ["action"]}')
 
         mock_et_runtime, _, _, mock_method = self._build_executorch_mocks()
         mock_method.execute.return_value = [torch.tensor([[1.0, 2.0]])]

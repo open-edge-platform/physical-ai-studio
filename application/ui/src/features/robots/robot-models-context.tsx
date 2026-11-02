@@ -1,21 +1,33 @@
-import { createContext, ReactNode, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
-import { useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import * as THREE from 'three';
+import { degToRad } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
-import { SchemaRobotType } from '../../api/openapi-spec';
+import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
+import { SchemaRobotType } from './robot-types';
 
-// ---------------------------------------------------------------------------
-// Path resolution
-// ---------------------------------------------------------------------------
-
-/** Resolve a `SchemaRobotType` to its URDF asset path. */
-export const urdfPathForType = (robotType: SchemaRobotType): string => {
-    if (robotType !== undefined && robotType.toLowerCase().includes('trossen')) {
-        return '/widowx/urdf/generated/wxai/wxai_follower.urdf';
+export const mapJointToURDFJoint = (
+    joint: { name: string; value: number },
+    model: URDFRobot,
+    jointMap: Record<string, string[]>
+) => {
+    if (!joint.name.endsWith('.pos')) {
+        return;
     }
-    return '/SO101/so101_new_calib.urdf';
+    const modelJoints = jointMap[joint.name] ?? [];
+
+    modelJoints.forEach((modelJointName) => {
+        const modelJoint = model.joints[modelJointName];
+        if (!modelJoint) {
+            return;
+        }
+
+        const isRevolute = modelJoint.jointType === 'revolute';
+
+        model.setJointValue(modelJointName, isRevolute ? degToRad(joint.value) : joint.value);
+    });
 };
 
 /**
@@ -37,7 +49,7 @@ type RobotModelsContextValue = null | {
      * to iterate (e.g. animations). Prefer `getModel` / `hasModel` instead.
      */
     models: ModelsMap;
-    /** @internal — used only by `useLoadModelMutation`. */
+    /** @internal — used only by `useLoadModelQuery`. */
     setModel: (path: string, model: URDFRobot) => void;
 };
 
@@ -77,57 +89,64 @@ export const useRobotModels = () => {
     return useContext(RobotModelsContext)!;
 };
 
-export const useLoadModelMutation = () => {
-    const { setModel } = useRobotModels();
+export const useLoadModelQuery = (robotType: SchemaRobotType) => {
+    const { getModel, setModel } = useRobotModels();
 
-    // Track the path being loaded so onSuccess can key it correctly.
-    // We use a ref because the mutationFn arg isn't available in onSuccess
-    // when using useMutation (variables are on the mutation object, but
-    // onSuccess receives (data, variables, context)).
-    const pathRef = useRef<string>('');
+    const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
+    const path = definition.urdf_path;
+    const packageMap = definition.package_map ?? {};
 
-    return useMutation({
-        mutationFn: async (path: string) => {
-            pathRef.current = path;
+    const cachedModel = path == null ? undefined : getModel(path);
 
-            // Use a custom LoadingManager so the promise only resolves after
-            // all STL meshes have finished loading — not just after the URDF
-            // XML is parsed.  URDFLoader.load() calls onComplete as soon as
-            // parse() returns, but STL files are fetched asynchronously via
-            // the manager.  By resolving on manager.onLoad we guarantee the
-            // model's mesh children exist in the scene graph.
-            const manager = new THREE.LoadingManager();
-            const loader = new URDFLoader(manager);
-
-            loader.packages = {
-                trossen_arm_description: '/widowx',
-            };
-
-            return new Promise<URDFRobot>((resolve, reject) => {
-                let model: URDFRobot | null = null;
-
-                manager.onLoad = () => {
-                    if (model) {
-                        resolve(model);
-                    }
-                };
-                manager.onError = (url) => {
-                    reject(new Error(`Failed to load: ${url}`));
-                };
-
-                loader.load(
-                    path,
-                    (result) => {
-                        model = result;
-                    },
-                    undefined,
-                    reject
-                );
-            });
+    const query = useQuery({
+        queryKey: ['robotModel', robotType, path],
+        queryFn: () => {
+            if (path == null) {
+                return undefined;
+            }
+            return cachedModel ?? loadURDFModel(packageMap, path);
         },
-        onSuccess: async (model) => {
-            setModel(pathRef.current, model);
-        },
-        meta: { skipInvalidation: true },
+        initialData: cachedModel,
+        staleTime: Infinity,
+        gcTime: 1000 * 60 * 30,
+        enabled: path != null && !cachedModel,
+    });
+
+    useEffect(() => {
+        if (path != null && query.data && getModel(path) !== query.data) {
+            setModel(path, query.data);
+        }
+    }, [getModel, path, query.data, setModel]);
+
+    return query;
+};
+
+const loadURDFModel = async (packages: Record<string, string>, path: string): Promise<URDFRobot> => {
+    // Use a custom LoadingManager so the promise only resolves after all STL
+    // meshes have finished loading, not just after the URDF XML is parsed.
+    const manager = new THREE.LoadingManager();
+    const loader = new URDFLoader(manager);
+    loader.packages = packages;
+
+    return new Promise<URDFRobot>((resolve, reject) => {
+        let model: URDFRobot | null = null;
+
+        manager.onLoad = () => {
+            if (model) {
+                resolve(model);
+            }
+        };
+        manager.onError = (url) => {
+            reject(new Error(`Failed to load: ${url}`));
+        };
+
+        loader.load(
+            path,
+            (result) => {
+                model = result;
+            },
+            undefined,
+            reject
+        );
     });
 };

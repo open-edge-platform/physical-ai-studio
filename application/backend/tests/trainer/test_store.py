@@ -1,0 +1,177 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Tests for the SQLite-backed job store."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from pydantic import SecretStr
+
+from trainer.schemas import TrainerJobStatus
+from trainer.store import JobStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from trainer.schemas import SubmitJobRequest
+
+
+def test_create_starts_awaiting_dataset(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """A job is not queued until its dataset upload lands."""
+    store = JobStore(db_path)
+
+    job_id = store.create(sample_request)
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.AWAITING_DATASET
+    assert state.progress == 0
+    # Not dispatchable while awaiting its dataset.
+    assert store.queued() == []
+
+
+def test_mark_dataset_ready_queues_job(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    store.mark_dataset_ready(job_id)
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.QUEUED
+    assert store.queued() == [job_id]
+
+
+def test_reset_orphans_fails_awaiting_dataset_jobs(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """A restart abandons uploads in flight; those jobs cannot recover."""
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    store.reset_orphans()
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.FAILED
+
+
+def test_get_request_round_trips(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    restored = store.get_request(job_id)
+
+    assert restored is not None
+    assert restored.spec == sample_request.spec
+
+
+def test_queued_is_fifo(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    first = store.create(sample_request)
+    second = store.create(sample_request)
+    store.mark_dataset_ready(first)
+    store.mark_dataset_ready(second)
+
+    assert store.queued() == [first, second]
+
+
+def test_update_progress_and_status(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    store.update(job_id, status=TrainerJobStatus.RUNNING, progress=55, message="halfway")
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.RUNNING
+    assert state.progress == 55
+    assert state.message == "halfway"
+
+
+def test_progress_is_clamped(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    store.update(job_id, progress=250)
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.progress == 100
+
+
+def test_artifact_only_returned_when_set(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    assert store.get_artifact(job_id) is None
+
+    store.update(job_id, artifact="/models/job.zip")
+    assert store.get_artifact(job_id) == "/models/job.zip"
+
+
+def test_reset_orphans_fails_running_jobs(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.update(job_id, status=TrainerJobStatus.RUNNING)
+
+    store.reset_orphans()
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.FAILED
+
+
+def test_get_unknown_job_returns_none(db_path: Path) -> None:
+    store = JobStore(db_path)
+    assert store.get("does-not-exist") is None
+
+
+def test_stashed_secret_is_never_persisted_to_disk(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """The HF token lives only in the store's in-memory cache, never in the SQLite row."""
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    with db_path.open("rb") as db_file:
+        raw = db_file.read()
+
+    assert b"hf-secret" not in raw
+    assert store.take_secret(job_id).get_secret_value() == "hf-secret"
+
+
+def test_take_secret_removes_it(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """A secret is used at most once: a second take returns nothing."""
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    assert store.take_secret(job_id) is not None
+    assert store.take_secret(job_id) is None
+
+
+def test_stash_secret_ignores_none(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, None)
+
+    assert store.take_secret(job_id) is None
+
+
+def test_discard_secret_drops_it_without_returning(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    store.discard_secret(job_id)
+
+    assert store.take_secret(job_id) is None
+
+
+def test_delete_discards_any_cached_secret(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    store.delete(job_id)
+
+    assert store.take_secret(job_id) is None

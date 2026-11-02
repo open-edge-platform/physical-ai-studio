@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: INP001
-"""Benchmark training optimizations across all policies: precision and torch.compile.
+"""Benchmark training optimizations for selected policies: precision and torch.compile.
 
 Runs 4 configurations per policy on a local dataset and reports time-per-step
 (excluding warmup), peak GPU memory, and total wall-clock time for each.
@@ -9,9 +9,7 @@ Runs 4 configurations per policy on a local dataset and reports time-per-step
 Policies tested:
   - ACT:     Pure float32, no pretrained VLM — full benefit from bf16-mixed.
   - SmolVLA: VLM backbone loaded in bfloat16 by default; expert head is float32.
-  - Pi0:     Entire model defaults to bfloat16 (config dtype="bfloat16").
-  - Pi0.5:   Defaults to float32 (config dtype="float32"), opt-in bfloat16.
-  - Groot:   Uses torch.autocast with use_bf16=True by default.
+  - Pi0.5:   Native flow-matching VLA.
 
 Configurations per policy:
   1. precision=32,        compile=False  (baseline)
@@ -60,14 +58,14 @@ logger = logging.getLogger(__name__)
 DATASET_PATH = Path.home() / ".cache" / "physicalai" / "datasets" / "pick_and_place"
 REPO_ID = "local"  # arbitrary — not used for local loading
 
-AVAILABLE_POLICIES = ("act", "smolvla", "pi0", "pi05", "groot")
+AVAILABLE_POLICIES = ("act", "smolvla", "pi05")
 
 
 def create_policy(name: str, *, compile_model: bool) -> Policy:
     """Create a policy instance by name with compile settings.
 
     Args:
-        name: Policy name (act, smolvla, pi0, pi05, groot).
+        name: Policy name (act, smolvla, pi05).
         compile_model: Whether to enable torch.compile.
 
     Returns:
@@ -86,20 +84,10 @@ def create_policy(name: str, *, compile_model: bool) -> Policy:
 
         return SmolVLA(compile_model=compile_model)
 
-    if name == "pi0":
-        from physicalai.policies import Pi0  # noqa: PLC0415
-
-        return Pi0(compile_model=compile_model)
-
     if name == "pi05":
         from physicalai.policies import Pi05  # noqa: PLC0415
 
         return Pi05(compile_model=compile_model)
-
-    if name == "groot":
-        from physicalai.policies import Groot  # noqa: PLC0415
-
-        return Groot(compile_model=compile_model)
 
     msg = f"Unknown policy: {name}. Available: {AVAILABLE_POLICIES}"
     raise ValueError(msg)
@@ -123,21 +111,21 @@ class BenchmarkResult:
 
     @property
     def steady_time_per_step_ms(self) -> float:
-        """Return the mean steady-state step time in milliseconds."""
+        """The mean steady-state step time in milliseconds."""
         if not self.steady_step_times:
             return 0.0
         return statistics.mean(self.steady_step_times) * 1000
 
     @property
     def steady_median_ms(self) -> float:
-        """Return the median steady-state step time in milliseconds."""
+        """The median steady-state step time in milliseconds."""
         if not self.steady_step_times:
             return 0.0
         return statistics.median(self.steady_step_times) * 1000
 
     @property
     def total_steps(self) -> int:
-        """Return the total number of steps (warmup + steady)."""
+        """The total number of steps (warmup + steady)."""
         return self.warmup_steps + self.steady_steps
 
     def to_dict(self) -> dict[str, Any]:
@@ -190,12 +178,12 @@ class TimingCallback(Callback):
 
     @property
     def warmup_times(self) -> list[float]:
-        """Return step times recorded during the warmup phase."""
+        """Step times recorded during the warmup phase."""
         return self.step_times[: self.warmup_steps]
 
     @property
     def steady_times(self) -> list[float]:
-        """Return step times recorded after the warmup phase."""
+        """Step times recorded after the warmup phase."""
         return self.step_times[self.warmup_steps :]
 
 

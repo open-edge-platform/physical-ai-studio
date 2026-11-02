@@ -20,7 +20,7 @@ import { Copy, Filter } from '@geti-ui/ui/icons';
 
 import { LOG_LEVEL_COLORS, LOG_LEVELS, type LogFilters as LogFiltersType, type LogLevelName } from './log-types';
 
-import styles from './log-viewer.module.scss';
+import styles from './log-viewer.module.css';
 
 const LevelCheckboxItem = ({
     level,
@@ -179,7 +179,12 @@ export const LogFilters = ({
                     onClearAll={handleClearAll}
                 />
 
-                <Checkbox isSelected={autoScroll} onChange={onAutoScrollChange} UNSAFE_className={styles.autoScroll}>
+                <Checkbox
+                    isEmphasized
+                    isSelected={autoScroll}
+                    onChange={onAutoScrollChange}
+                    UNSAFE_className={styles.autoScroll}
+                >
                     Auto-scroll
                 </Checkbox>
 

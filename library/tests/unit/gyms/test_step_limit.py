@@ -67,3 +67,36 @@ class TestStepLimit:
         assert base.sample_action().shape == env.sample_action().shape
 
         env.close()
+
+    def test_reset_forwards_episode_index(self):
+        """Wrapper forwards episode_index to the underlying env.reset."""
+        import torch
+
+        from physicalai.data import Observation
+
+        class _SpyGym:
+            def __init__(self):
+                self.reset_calls = []
+
+            def reset(self, *, seed=None, episode_index=0, **_kwargs):
+                self.reset_calls.append({"seed": seed, "episode_index": episode_index})
+                return Observation(state=torch.zeros(1, 4)), {}
+
+            def step(self, action):
+                obs = Observation(state=torch.zeros(1, 4))
+                return obs, 0.0, False, False, {}
+
+            def sample_action(self):
+                return torch.zeros(1, 2)
+
+            def close(self):
+                pass
+
+        spy = _SpyGym()
+        env = with_step_limit(spy, max_steps=5)
+        env.step_count = 4  # non-zero to verify reset clears it
+
+        env.reset(episode_index=5)
+
+        assert spy.reset_calls == [{"seed": None, "episode_index": 5}]
+        assert env.step_count == 0

@@ -1,4 +1,4 @@
-import { fromOpenApi } from '@mswjs/source/open-api';
+import { fromOpenApi } from '@msw/source/open-api';
 import { createOpenApiHttp, OpenApiHttpHandlers } from 'openapi-msw';
 
 import { paths } from './openapi-spec';
@@ -8,8 +8,7 @@ const handlers = await fromOpenApi(JSON.stringify(spec).replace(/}:/g, '}//:'));
 
 const getOpenApiHttp = (): OpenApiHttpHandlers<paths> => {
     const http = createOpenApiHttp<paths>({
-        baseUrl: 'http://localhost:7860',
-        //baseUrl: process.env.PUBLIC_API_BASE_URL ?? 'http://localhost:7860',
+        baseUrl: process.env.PUBLIC_API_BASE_URL ?? 'http://localhost:7860',
     });
 
     return {

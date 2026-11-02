@@ -1,0 +1,14 @@
+.heading {
+    font-size: 72px;
+    display: inline;
+    text-align: center;
+    line-height: 1.1;
+}
+
+.notBold {
+    font-weight: 100;
+}
+
+.emphasizedHeading {
+    color: var(--energy-blue);
+}

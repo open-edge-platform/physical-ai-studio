@@ -27,6 +27,16 @@ backend/src/
 └── workers/      # Background task workers
 ```
 
+`core/scheduler.py` polls SQLite in a backend thread and starts a short-lived
+process for each runnable training job or dataset-import step. Idle Studio
+instances do not run training or import workers. Local training runs one job at
+a time; remote training reserves each trainer/GPU target independently. One
+import can run alongside training, and no import worker stays alive while
+waiting for user review. The scheduler reaps completed processes, reconciles
+abandoned jobs, and stops active workers during application shutdown. Per-job
+multiprocessing events handle cancellation without a manager process. Shutdown
+keeps the API event loop free to drain worker events while joining processes.
+
 ## Setup
 
 ### Prerequisites
@@ -36,9 +46,15 @@ backend/src/
 
 ### Install Dependencies
 
+Choose the torch variant that matches your hardware:
+
 ```bash
 cd application/backend
-uv sync
+
+# Choose one matching your hardware:
+uv sync --extra cpu     # CPU only
+# uv sync --extra cuda  # NVIDIA GPU (CUDA)
+# uv sync --extra xpu   # Intel GPU (XPU)
 ```
 
 This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
@@ -55,20 +71,45 @@ Please check out [this document](docs/video_hardware_acceleration_intel.md) for 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Run server
+# Run server (local training by default)
+uv run physicalai-studio serve
+
+# Equivalent thin wrapper
 ./run.sh
 ```
 
-Server starts at `http://localhost:8000`
+Server starts at `http://localhost:7860` by default.
 
-### Seed Database (Development)
+To change the host/port:
 
 ```bash
-# Seed with sample data and pre-trained model
-SEED_DB=true ./run.sh
+# Option A: CLI flags
+uv run physicalai-studio serve --host 127.0.0.1 --port 8000
+
+# Option B: environment variables
+HOST=127.0.0.1
+PORT=8000
 ```
 
-**Note**: Ensure model artifacts are uploaded before seeding.
+### Remote Training
+
+The `serve` process supports local and remote training at the same time. Configure
+remote trainer URLs in the Studio UI, then choose the execution target when you
+submit a training job. `run.sh` is a thin wrapper around the CLI.
+
+To run training on a separate, GPU-enabled machine, deploy and configure a
+Physical AI Trainer service from
+[`docs/remote-trainer.md`](docs/remote-trainer.md), then register its URL
+as a remote trainer in the Studio UI. The backend sends dataset snapshots to
+the service, monitors the training job, and imports the resulting model.
+
+Alternatively, register an SSH training target. Studio manages a persistent
+trainer container on the GPU server and reaches it through a standing SSH
+tunnel. SSH targets are available when Studio is bound to localhost; they are
+unavailable on network-exposed deployments because the Studio API has no
+authentication. See
+[`docs/explanation/ssh-remote-trainer.md`](docs/explanation/ssh-remote-trainer.md)
+before registering one.
 
 ### Database Migrations
 
@@ -87,30 +128,27 @@ uv run alembic downgrade -1
 
 ```bash
 # Initialize database
-uv run src/cli.py init-db
+uv run physicalai-studio db init
 
-# Seed database with sample data
-uv run src/cli.py seed --with-model=True
+# Run migrations
+uv run physicalai-studio db migrate
 ```
 
 ## API Documentation
 
 Once the server is running:
 
-- **Interactive API Docs** - http://localhost:8000/docs (Swagger UI)
-- **Alternative Docs** - http://localhost:8000/redoc (ReDoc)
-- **OpenAPI Schema** - http://localhost:8000/openapi.json
+- **Interactive API Docs** - http://localhost:7860/docs (Swagger UI)
+- **Alternative Docs** - http://localhost:7860/redoc (ReDoc)
+- **OpenAPI Schema** - http://localhost:7860/api/openapi.json
 
 ## Configuration
 
 Configuration via environment variables (see `src/settings.py`):
 
-| Variable       | Description              | Default                               |
-| -------------- | ------------------------ | ------------------------------------- |
-| `DATABASE_URL` | SQLite database path     | `sqlite+aiosqlite:///./physicalai.db` |
-| `CORS_ORIGINS` | Allowed CORS origins     | `["http://localhost:3000"]`           |
-| `LOG_LEVEL`    | Logging level            | `INFO`                                |
-| `SEED_DB`      | Seed database on startup | `false`                               |
+| Variable      | Description                                                                                                  | Default                                                                                                 |
+|---------------|--------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `STORAGE_DIR` | Root directory for persistent artifacts (`datasets/`, `models/`, `snapshots/`, `robots/`, `cache/`, `logs/`) | Linux: `${XDG_DATA_HOME:-~/.local/share}/physicalai`; macOS: `~/Library/Application Support/physicalai` |
 
 Create `.env` file in backend directory for local overrides.
 
@@ -150,25 +188,20 @@ uv run pyrefly check -c pyproject.toml
 
 ## Troubleshooting
 
-### Database Locked Error
+### Data/Storage Migration Behavior
 
-SQLite doesn't handle high concurrency well. For production, use PostgreSQL:
+On startup (`./run.sh`), the backend runs migration checks before Alembic:
 
-```bash
-export DATABASE_URL="postgresql+asyncpg://user:pass@localhost/physicalai"
-```
+- Storage migration: old `~/.cache/physicalai` -> `STORAGE_DIR`
+- Database migration: old `data/physicalai.db`, Docker legacy `/app/data/physicalai.db`, or a legacy `$DATA_DIR/physicalai.db` -> `$STORAGE_DIR/data/physicalai.db`
+
+In interactive terminals, users are prompted for confirmation when a migration is needed.
 
 ### Camera Not Detected
 
 - **RealSense**: Install [librealsense](https://github.com/IntelRealSense/librealsense)
 - **GenICam**: Install vendor-specific SDKs
 - **USB**: Check permissions (`sudo usermod -a -G video $USER`)
-
-### WebRTC Connection Issues
-
-- Ensure firewall allows UDP traffic
-- Check browser console for ICE candidate errors
-- Verify STUN/TURN server configuration
 
 ## See Also
 

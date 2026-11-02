@@ -1,24 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import useWebSocket from 'react-use-websocket';
-import { degToRad } from 'three/src/math/MathUtils.js';
 
 import { fetchClient } from '../../api/client';
-import { useRobotModels } from './robot-models-context';
+import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
+import { mapJointToURDFJoint, useLoadModelQuery } from './robot-models-context';
+import { SchemaRobotType } from './robot-types';
 
 type JointsState = Array<{
     name: string;
     value: number;
 }>;
 
-type StateWasUpdatedEvent = {
-    name: 'state_was_updated';
-    is_controlled: boolean;
-    // [joint_name]: robot state in degrees
-    state: Record<string, number>;
-};
-
-const getNewJointState = (newJoints: StateWasUpdatedEvent['state']) => {
+const getNewJointState = (newJoints: Record<string, number>) => {
     return Object.keys(newJoints).map((joint_name) => {
         return {
             name: joint_name,
@@ -27,65 +21,169 @@ const getNewJointState = (newJoints: StateWasUpdatedEvent['state']) => {
     });
 };
 
-export const useSynchronizeModelJoints = (joints: JointsState, urdfPath: string) => {
-    const { getModel } = useRobotModels();
-    const model = getModel(urdfPath);
+export const useSynchronizeModelJoints = (joints: JointsState, robotType: SchemaRobotType) => {
+    const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
+    const jointMap = definition.joint_map;
 
-    function removeSuffix(str: string, suffix: string): string {
-        return str.endsWith(suffix) ? str.slice(0, -suffix.length) : str;
-    }
+    const { data: model } = useLoadModelQuery(robotType);
 
     useEffect(() => {
         if (!model) return;
 
         joints.forEach((joint) => {
-            const name = removeSuffix(joint.name, '.pos');
-
-            if (name === 'gripper' && model.robotName == 'wxai') {
-                model.setJointValue('left_carriage_joint', joint.value); // meters
-                return;
-            }
-
-            if (model.joints[name]) {
-                model.setJointValue(name, degToRad(joint.value));
-            }
+            mapJointToURDFJoint(joint, model, jointMap);
         });
-    }, [model, joints]);
+    }, [model, joints, jointMap]);
 };
 
-export const useJointState = (project_id: string, robot_id: string) => {
+// Mirrors runtime.contract.FollowerSource. Inference uses 'policy'.
+export type FollowerSource = 'hold' | 'teleop' | 'policy';
+
+const RECOVERABLE_ERROR_CODES = new Set(['leader_connection_lost']);
+const EMPTY_CAMERA_IDS: string[] = [];
+
+export const isRecoverableRobotControlError = (errorCode: unknown): errorCode is string =>
+    typeof errorCode === 'string' && RECOVERABLE_ERROR_CODES.has(errorCode);
+
+interface RobotControlState {
+    connected: boolean;
+    follower_source: FollowerSource;
+    has_leader: boolean;
+}
+
+// Compose from a typed project path so this does not depend on regenerating OpenAPI.
+// follower_id must be in the URL: react-use-websocket share:true keys by URL.
+export const runtimeSocketUrl = (project_id: string, follower_id: string): string =>
+    `${fetchClient.PATH('/api/projects/{project_id}', {
+        params: { path: { project_id } },
+    })}/runtime/ws?follower_id=${encodeURIComponent(follower_id)}`;
+
+export const useJointState = (
+    project_id: string,
+    follower_id: string,
+    leader_id?: string,
+    camera_ids: string[] = EMPTY_CAMERA_IDS
+) => {
     const [joints, setJoints] = useState<JointsState>([]);
+    const [state, setState] = useState<RobotControlState>({
+        connected: false,
+        follower_source: 'hold',
+        has_leader: false,
+    });
+    const [error, setError] = useState<string | null>(null);
+    const [errorCode, setErrorCode] = useState<string | null>(null);
+    const [warning, setWarning] = useState<string | null>(null);
+    const [socketEnabled, setSocketEnabled] = useState(true);
+    const hasFatalError = useRef(false);
+    const restartRequested = useRef(false);
+    const socketEnabledRef = useRef(true);
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
         try {
             const payload = JSON.parse(event.data);
 
-            if (payload['event'] === 'state_was_updated') {
-                const newJoints = getNewJointState(payload['state']);
+            if (payload['event'] === 'observation') {
+                const newJoints = getNewJointState(payload['data']);
                 setJoints(newJoints);
+            } else if (payload['event'] === 'state') {
+                setState(payload['data']);
+                setError(null);
+                setErrorCode(null);
+                setWarning(null);
+                hasFatalError.current = false;
+            } else if (payload['event'] === 'error') {
+                if (isRecoverableRobotControlError(payload.error_code)) {
+                    setWarning(
+                        typeof payload.message === 'string'
+                            ? payload.message
+                            : 'The robot session entered a safe state.'
+                    );
+                    return;
+                }
+                hasFatalError.current = true;
+                setError(typeof payload.message === 'string' ? payload.message : 'Failed to connect to the robot.');
+                setErrorCode(typeof payload.error_code === 'string' ? payload.error_code : 'robot_connection_failed');
             }
-        } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
+        } catch (parseError) {
+            console.error('Failed to parse WebSocket message:', parseError);
         }
     }, []);
 
     const socket = useWebSocket(
-        fetchClient.PATH('/api/projects/{project_id}/robots/{robot_id}/ws', {
-            params: { path: { project_id, robot_id } },
-        }),
+        runtimeSocketUrl(project_id, follower_id),
         {
-            queryParams: {
-                fps: 30,
-            },
             share: true,
-            shouldReconnect: () => true,
+            shouldReconnect: () => !hasFatalError.current,
             reconnectAttempts: 5,
             reconnectInterval: 3000,
+            onOpen: () => {
+                socketEnabledRef.current = true;
+                if (hasFatalError.current) {
+                    return;
+                }
+                setError(null);
+                setErrorCode(null);
+                setWarning(null);
+                const shouldRestart = restartRequested.current;
+                restartRequested.current = false;
+                socket.sendJsonMessage({
+                    follower_id,
+                    leader_id,
+                    camera_ids,
+                    ...(shouldRestart ? { restart: true } : {}),
+                });
+            },
             onMessage: handleMessage,
-            onError: (error) => console.error('WebSocket error:', error),
-            onClose: () => console.info('WebSocket closed'),
-        }
+            onError: (wsError) => console.error('WebSocket error:', wsError),
+            onClose: (event) => {
+                if (!socketEnabledRef.current || restartRequested.current) {
+                    return;
+                }
+                if (!hasFatalError.current && event.code !== 1000) {
+                    hasFatalError.current = true;
+                    setError(`Connection closed unexpectedly (code ${event.code})`);
+                    setErrorCode('connection_closed');
+                }
+            },
+        },
+        socketEnabled
     );
 
-    return { joints, socket };
+    useEffect(() => {
+        if (!socketEnabled) {
+            setSocketEnabled(true);
+        }
+    }, [socketEnabled]);
+
+    const setFollowerSourceRequest = (value: FollowerSource) => {
+        socket.sendJsonMessage({
+            event: 'set_follower_source',
+            data: { follower_source: value },
+        });
+    };
+
+    const disconnect = () => {
+        socket.sendJsonMessage({ event: 'disconnect' });
+    };
+
+    const restart = useCallback(() => {
+        hasFatalError.current = false;
+        restartRequested.current = true;
+        socketEnabledRef.current = false;
+        setError(null);
+        setErrorCode(null);
+        setSocketEnabled(false);
+    }, []);
+
+    return {
+        joints,
+        socket,
+        state,
+        error,
+        errorCode,
+        warning,
+        setFollowerSource: setFollowerSourceRequest,
+        disconnect,
+        restart,
+    };
 };

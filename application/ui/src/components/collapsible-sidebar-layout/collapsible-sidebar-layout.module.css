@@ -1,0 +1,37 @@
+.sidebar {
+    --sidebar-padding-y: var(--spectrum-global-dimension-size-200);
+    --sidebar-padding-x: var(--spectrum-global-dimension-size-400);
+    --sidebar-expanded-width: var(--spectrum-global-dimension-size-6000);
+    --sidebar-collapsed-width: var(--spectrum-global-dimension-size-600);
+    --sidebar-toggle-size: var(--spectrum-global-dimension-size-400);
+
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+    width: var(--sidebar-expanded-width);
+    padding-block-start: var(--sidebar-padding-y);
+    padding-inline: var(--sidebar-padding-x);
+    overflow-x: hidden;
+    background-color: var(--spectrum-global-color-gray-100);
+}
+
+.sidebar[data-collapsed='true'] {
+    --sidebar-padding-x: var(--spectrum-global-dimension-size-100);
+    width: var(--sidebar-collapsed-width);
+    padding-inline: var(--sidebar-padding-x);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .sidebar {
+        transition:
+            width 200ms ease-in-out,
+            padding-inline 200ms ease-in-out;
+    }
+}
+
+.toolbar,
+.content {
+    box-sizing: border-box;
+    width: calc(var(--sidebar-expanded-width) - 2 * var(--sidebar-padding-x));
+    margin-block-start: var(--spectrum-global-dimension-size-200);
+}

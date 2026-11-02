@@ -1,11 +1,11 @@
-from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from schemas.base import UTCDatetime
 from schemas.project_camera import Camera
-from schemas.robot import Robot
+from schemas.robot import ReadableRobot
 
 
 class TeleoperatorRobot(BaseModel):
@@ -48,18 +48,32 @@ class RobotEnvironmentConfiguration(BaseModel):
     )
 
 
+class CameraEnvironmentConfiguration(BaseModel):
+    camera_id: UUID = Field(..., description="ID of the camera in this environment")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
+            }
+        }
+    )
+
+
 class Environment(BaseModel):
     id: Annotated[UUID, Field(description="Unique identifier")]
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable environment name")
     robots: list[RobotEnvironmentConfiguration] = Field(
         default_factory=list,
         description="List of robot configurations in this environment",
     )
-    camera_ids: list[UUID] = Field(default_factory=list, description="List of camera IDs in this environment")
+    cameras: list[CameraEnvironmentConfiguration] = Field(
+        default_factory=list, description="List of camera configurations in this environment"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -79,9 +93,9 @@ class Environment(BaseModel):
                         "tele_operator": {"type": "none"},
                     },
                 ],
-                "camera_ids": [
-                    "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
-                    "d9h6egi0-370f-8e3i-e657-42hhd4ejd897",
+                "cameras": [
+                    {"camera_id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786"},
+                    {"camera_id": "d9h6egi0-370f-8e3i-e657-42hhd4ejd897"},
                 ],
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",
@@ -95,7 +109,7 @@ class TeleoperatorRobotWithRobot(BaseModel):
 
     type: Literal["robot"] = "robot"
     robot_id: UUID = Field(..., description="ID of the robot acting as teleoperator")
-    robot: Robot | None = Field(None, description="Eager-loaded robot object")
+    robot: ReadableRobot | None = Field(None, description="Eager-loaded robot object")
 
 
 class TeleoperatorNoneWithRobot(BaseModel):
@@ -110,7 +124,7 @@ TeleoperatorWithRobot = Annotated[TeleoperatorRobotWithRobot | TeleoperatorNoneW
 class RobotWithTeleoperator(BaseModel):
     """Robot configuration with eager-loaded robot and teleoperator."""
 
-    robot: Robot = Field(..., description="The robot in this environment")
+    robot: ReadableRobot = Field(..., description="The robot in this environment")
     tele_operator: TeleoperatorWithRobot = Field(..., description="Teleoperator configuration with eager-loaded data")
 
     model_config = ConfigDict(
@@ -144,8 +158,8 @@ class EnvironmentWithRelations(BaseModel):
 
     id: Annotated[UUID, Field(description="Unique identifier")]
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable environment name")
     robots: list[RobotWithTeleoperator] = Field(
@@ -183,7 +197,7 @@ class EnvironmentWithRelations(BaseModel):
                     {
                         "id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
                         "name": "front_camera",
-                        "fingerprint": "/dev/video0",
+                        "fingerprint": {"path": "/dev/video0"},
                         "driver": "webcam",
                         "hardware_name": "Camera 1",
                         "resolution_width": 480,

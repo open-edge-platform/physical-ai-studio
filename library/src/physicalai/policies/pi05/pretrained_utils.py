@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from safetensors.torch import load_file
 
 from physicalai.data.observation import ACTION
+from physicalai.policies.utils.features import infer_shape_from_stats
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -155,9 +156,11 @@ def parse_preprocessor_stats(
         # the normalizer actually uses at runtime.
         for feat_name, feat_stats in grouped.items():
             shape = resolve_feature_shape(feat_name, hf_config, feat_stats)
+            ftype = "VISUAL" if "observation.image" in feat_name.lower() else "UNKNOWN"
             entry: dict[str, Any] = {
                 "name": feat_name,
                 "shape": shape,
+                "type": ftype,
             }
             for stat_key in ("mean", "std", "q01", "q99", "min", "max"):
                 if stat_key in feat_stats and isinstance(feat_stats[stat_key], list):
@@ -192,11 +195,19 @@ def parse_config_features(hf_config: dict[str, Any]) -> dict[str, dict[str, Any]
                 continue
             shape = tuple(shape)
             dim = shape[0] if shape else 1
+            ftype = feat_info.get("type")
 
-            if "state" in feat_name.lower() or feat_name == ACTION or "action" in feat_name.lower():
+            if (
+                "state" in feat_name.lower()
+                or feat_name == ACTION
+                or "action" in feat_name.lower()
+                or ftype == "VISUAL"
+                or "image" in feat_name.lower()
+            ):
                 stats[feat_name] = {
                     "name": feat_name,
                     "shape": shape,
+                    "type": ftype,
                     "mean": [0.0] * dim,
                     "std": [1.0] * dim,
                     # Identity-equivalent quantile stats so QUANTILES mode works
@@ -221,13 +232,8 @@ def resolve_feature_shape(feat_name: str, hf_config: dict[str, Any], feat_stats:
             if isinstance(feat_info, dict) and "shape" in feat_info:
                 return tuple(feat_info["shape"])
 
-    # Infer from stats tensor lengths
-    for key in ("mean", "std", "q01", "q99", "min", "max"):
-        val = feat_stats.get(key)
-        if isinstance(val, list):
-            return (len(val),)
-
-    return (1,)
+    # Infer from stats tensor lengths, falling back to a scalar shape.
+    return infer_shape_from_stats(feat_stats) or (1,)
 
 
 def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -246,6 +252,10 @@ def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.
         # Strip "model." prefix — HF checkpoint wraps everything
         # under the policy's `self.model`, but we load into Pi05Model directly.
         new_key = new_key.removeprefix("model.")
+
+        # transformers>=5.15 folded SiglipVisionTransformer into SiglipVisionModel,
+        # dropping the `.vision_model` level that older checkpoints were saved with.
+        new_key = new_key.replace(".vision_tower.vision_model.", ".vision_tower.")
 
         # Skip adaRMS mismatch keys for expert
         if re.match(

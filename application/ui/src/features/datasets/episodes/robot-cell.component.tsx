@@ -1,17 +1,33 @@
+import { useEffect, useState } from 'react';
+
 import { View } from '@geti-ui/ui';
 
-import { RobotViewer } from '../../robots/controller/robot-viewer';
+import { RobotViewer, UnavailableRobotViewer } from '../../robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
+import { isUnavailableRobot } from '../../robots/robot-types';
 import { useEpisodeViewer } from './episode-viewer-provider.component';
 
 const InnerCell = ({ robotId }: { robotId: string }) => {
     const { environment, episode, player } = useEpisodeViewer();
 
-    const frameIndex = Math.floor(player.time * episode.fps);
+    const [frameIndex, setFrameIndex] = useState<number>(0);
+
+    useEffect(() => {
+        if (player.isPlaying || player.isSeeking) {
+            const interval = setInterval(() => {
+                setFrameIndex(Math.floor(player.timeRef.current * episode.fps));
+            }, 1000 / 60);
+            return () => clearInterval(interval);
+        }
+    }, [player, episode]);
 
     const robot = environment.robots?.find((r) => r.robot.id === robotId)?.robot;
     if (robot === undefined) {
         return <></>;
+    }
+
+    if (isUnavailableRobot(robot)) {
+        return <UnavailableRobotViewer robotType={robot.type} />;
     }
 
     return (

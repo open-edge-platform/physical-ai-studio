@@ -1,0 +1,64 @@
+.errorMessage {
+    color: var(--spectrum-global-color-static-red-600);
+}
+
+.helperText {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.modeFields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-global-dimension-size-100);
+    min-height: 300px;
+}
+
+.fieldRow {
+    display: flex;
+    gap: var(--spectrum-global-dimension-size-200);
+}
+
+.fieldRow > * {
+    min-width: 0;
+}
+
+.advancedSettingsToggle,
+.advancedSettingsToggle::marker {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.advancedSettingsToggle {
+    cursor: pointer;
+}
+
+@media (max-width: 360px) {
+    .modeFields {
+        min-height: 0;
+    }
+
+    .fieldRow {
+        flex-direction: column;
+    }
+}
+
+.awsIcon {
+    width: var(--spectrum-global-dimension-size-500);
+    height: auto;
+}
+
+.awsStackLinkContent {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-50);
+}
+
+.awsPrompt {
+    flex-wrap: wrap;
+}
+
+.awsStackLinkContent svg {
+    width: var(--spectrum-global-dimension-size-175);
+    height: var(--spectrum-global-dimension-size-175);
+    flex-shrink: 0;
+}

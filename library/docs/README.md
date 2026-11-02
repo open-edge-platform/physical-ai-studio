@@ -11,6 +11,7 @@ Documentation for the PhysicalAI Python library.
 | [Getting Started](getting-started/) | Installation, quickstart, and first steps |
 | [How-To Guides](how-to/)            | Goal-oriented guides for specific tasks   |
 | [Explanation](explanation/)         | Architecture and design documentation     |
+| [Development](development/)         | Contributor rules for library development |
 
 ## Quick Start
 
@@ -19,11 +20,11 @@ Documentation for the PhysicalAI Python library.
 pip install physicalai-train
 
 # Train
-physicalai fit --config configs/physicalai/act.yaml
+physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
 # Benchmark
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
@@ -31,7 +32,30 @@ physicalai benchmark \
 policy.export("./exports", backend="openvino")
 ```
 
+`physicalai-train` depends on the runtime package, which owns the top-level
+`physicalai` executable. Studio contributes training and benchmark subcommands via
+entry points, so the user-facing commands stay the same.
+
 ## See Also
 
 - **[Library README](../README.md)** - Installation and overview
 - **[Main Repository](../../README.md)** - Project overview
+- **[Library Security Rules](development/security.md)** - Required rules for `library/` changes
+
+## Pyrefly baseline
+
+The library uses a Pyrefly baseline file (`pyrefly-baseline.json`) to track known
+existing type-check errors while still failing on newly introduced issues.
+
+Common commands from the `library/` directory:
+
+```bash
+# Run Pyrefly with the configured baseline
+uv run pyrefly check -c pyproject.toml
+
+# Regenerate/update the baseline after intentional typing changes
+uv run pyrefly check -c pyproject.toml --baseline="pyrefly-baseline.json" --update-baseline
+```
+
+When updating the baseline, include a short note in your PR explaining why the
+baseline changed and which error categories were added or removed.

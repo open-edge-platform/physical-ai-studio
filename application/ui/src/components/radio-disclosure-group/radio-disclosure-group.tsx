@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Radio, RadioGroup, Text, View } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
-import classes from './radio-disclosure-group.module.scss';
+import classes from './radio-disclosure-group.module.css';
 
 export const RadioDisclosure = <ValueType extends string>({
     value,

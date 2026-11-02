@@ -15,7 +15,11 @@ Setup your training pipeline within 5 minutes.
 
 ## Step 1: Train with CLI
 
-Use the CLI if you prefer training via terminal without diving into the code base
+Use the CLI if you prefer training via terminal without diving into the code base.
+The `physicalai` executable comes from the shared runtime host, which loads the
+studio training subcommands via entry points.
+
+Use `physicalai export` after training when you need deployment artifacts.
 
 ```bash
 physicalai fit \

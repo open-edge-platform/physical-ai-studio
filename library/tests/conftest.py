@@ -396,7 +396,7 @@ def dummy_policy():
     so existing tests that pass ``dummy_policy`` directly as a policy still work.
 
     Satisfies:
-    - PolicyLike protocol (select_action, reset) for evaluate_policy / Rollout
+    - Policy interface (select_action, reset) for evaluate_policy / Rollout
     - LightningModule interface (forward, training_step, configure_optimizers) for trainer.fit
     """
     from physicalai.policies.base import Policy

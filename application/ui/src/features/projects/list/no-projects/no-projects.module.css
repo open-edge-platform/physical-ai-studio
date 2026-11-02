@@ -1,0 +1,23 @@
+.backgroundImg {
+    background-image: url('../../../../assets/no-projects-background.webp');
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    filter: brightness(35%);
+}
+
+.createProjectCard {
+    background-color: color-mix(in srgb, var(--spectrum-global-color-gray-100) 70%, transparent);
+}
+
+.createProjectTitle {
+    font-size: var(--spectrum-global-dimension-font-size-900);
+    color: var(--spectrum-global-color-gray-900);
+    font-weight: 500;
+}
+
+.createProjectText {
+    font-size: var(--spectrum-global-dimension-font-size-200);
+    text-align: center;
+    color: var(--spectrum-global-color-gray-700);
+}

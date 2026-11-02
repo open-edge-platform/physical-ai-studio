@@ -7,21 +7,30 @@ on:
 
 permissions: {} # No permissions by default
 
+env:
+  TRAINER_API_PROTOCOL_VERSION: "1"
+
 jobs:
   validate:
     name: Validate RC tag
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 5
     outputs:
       rc_version: "${{ steps.validate.outputs.rc_version }}"
     steps:
+      - &harden-runner
+        name: Harden the runner (audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # Fetch all history and branches for validation
+          fetch-depth: 0 # Fetch all history and tags for validation
 
       - name: Validate RC tag
         id: validate
@@ -39,26 +48,15 @@ jobs:
           # Extract RC number: 0.1.0rc1 -> 1
           RC_NUMBER="${RC_VERSION##*rc}"
 
-          # Extract major.minor for branch validation: 0.1.0 -> 0.1
-          MAJOR_MINOR="${TAG_VERSION%.*}"
-
-          # Construct expected release branch name
-          EXPECTED_BRANCH="release/app-${MAJOR_MINOR}"
-
-          # Read VERSION file
-          FILE_VERSION="$(tr -d '[:space:]' < application/VERSION)"
-
-          # Get the commit SHA that the tag points to
-          TAG_COMMIT="${GITHUB_SHA}"
+          # Read the Studio package version from its project metadata
+          APP_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
 
           echo "::group::Validation parameters"
           echo "Tag: $TAG"
           echo "RC version: $RC_VERSION"
           echo "Tag base version: $TAG_VERSION"
           echo "RC number: $RC_NUMBER"
-          echo "VERSION file: $FILE_VERSION"
-          echo "Expected release branch: $EXPECTED_BRANCH"
-          echo "Tagged commit: $TAG_COMMIT"
+          echo "App version: $APP_VERSION"
           echo "::endgroup::"
 
           # Validate RC number is a positive integer
@@ -68,37 +66,19 @@ jobs:
           fi
           echo "✓ RC number is valid"
 
-          # Validate VERSION file format (semver: major.minor.patch)
-          if ! [[ "$FILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::VERSION file contains invalid semver format: '$FILE_VERSION'"
+          # Validate app version format (semver: major.minor.patch)
+          if ! [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::App version is not valid semver: '$APP_VERSION'"
             exit 1
           fi
-          echo "✓ VERSION file has valid semver format"
+          echo "✓ App version has valid semver format"
 
-          # Validate tag version matches VERSION file
-          if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
-            echo "::error::Tag version '$TAG_VERSION' does not match VERSION file '$FILE_VERSION'"
+          # Validate tag version matches project metadata
+          if [[ "$TAG_VERSION" != "$APP_VERSION" ]]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match Studio app version '$APP_VERSION'"
             exit 1
           fi
-          echo "✓ Tag version matches VERSION file"
-
-          # Validate expected release branch exists
-          if ! git rev-parse --verify "origin/${EXPECTED_BRANCH}" >/dev/null 2>&1; then
-            echo "::error::Release branch '${EXPECTED_BRANCH}' does not exist"
-            echo "::error::Expected to find: origin/${EXPECTED_BRANCH}"
-            echo "::error::Available release branches:"
-            git branch -r | grep "origin/release/app-" || echo "  (none found)"
-            exit 1
-          fi
-          echo "✓ Release branch exists"
-
-          # Validate tagged commit is on the release branch
-          if ! git merge-base --is-ancestor "${TAG_COMMIT}" "origin/${EXPECTED_BRANCH}"; then
-            echo "::error::Tag '${TAG}' (commit ${TAG_COMMIT}) is not on release branch '${EXPECTED_BRANCH}'"
-            echo "::error::RC tags must be created from commits on the corresponding release branch"
-            exit 1
-          fi
-          echo "✓ Tag is correctly assigned to release branch ${EXPECTED_BRANCH}"
+          echo "✓ Tag version matches app version"
 
           # Validate base release exists for patch releases
           PATCH_VERSION="${TAG_VERSION##*.}"
@@ -145,7 +125,7 @@ jobs:
   publish-rc:
     name: Build and push container RC (${{ matrix.device }})
     needs: validate
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # Checkout code
       packages: write # Push images to GHCR
@@ -154,16 +134,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [cpu, xpu, cuda]
+        device: [xpu, cpu, cuda]
 
     steps:
+      - *harden-runner
+
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Log in to Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -171,23 +153,25 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}
+          images: ghcr.io/${{ github.repository_owner }}/physical-ai-studio-${{ matrix.device }}
           tags: |
             type=raw,value=${{ needs.validate.outputs.rc_version }}
 
       - name: Build and push Docker image
-        uses: ./.github/actions/docker-build
+        uses: $/.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
           push: "true"
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           use-cache: "false" # Disable cache for RC builds (security and reproducibility)
+          # RC/release images must always be the redistributable target for CUDA license compliance.
+          enable-compile-model: "false"
 
       - name: Sign Docker image
-        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
         with:
           image-uri: ${{ steps.meta.outputs.tags }}
 
@@ -200,6 +184,106 @@ jobs:
         run: |
           cat >> $GITHUB_STEP_SUMMARY <<EOF
           ## ✅ Release Candidate Container Image Published
+
+          ### Release Candidate Information
+          - **RC Version:** \`${RC_VERSION}\`
+          - **Device:** \`${DEVICE}\`
+          - **Commit:** \`${GITHUB_SHA:0:8}\`
+
+          ### Published Container Image
+          \`\`\`
+          ${IMAGE_TAG}
+          \`\`\`
+
+          ### Pull Container Image
+          \`\`\`bash
+          docker pull ${IMAGE_TAG}
+          \`\`\`
+
+          ### Verify Container Image Signature
+          \`\`\`bash
+          cosign verify ${IMAGE_TAG} \\
+            --certificate-identity-regexp="^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/.+" \\
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
+          \`\`\`
+          EOF
+
+  publish-rc-trainer:
+    name: Build and push trainer container RC (${{ matrix.device }})
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Checkout code
+      packages: write # Push images to GHCR
+      id-token: write # Cosign keyless signing (OIDC)
+
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [cuda, xpu]
+
+    steps:
+      - *harden-runner
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set build metadata
+        id: build-metadata
+        run: |
+          echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
+          echo "library-version=$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build and push trainer RC image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: application/docker/Dockerfile.trainer
+          build-contexts: |
+            libs=library
+          target: physicalai-trainer-${{ matrix.device }}-redistributable
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/physicalai-trainer-${{ matrix.device }}:${{ needs.validate.outputs.rc_version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.rc_version }}
+            org.opencontainers.image.created=${{ steps.build-metadata.outputs.created }}
+            org.open-edge-platform.physicalai.trainer.api-protocol=${{ env.TRAINER_API_PROTOCOL_VERSION }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.build-metadata.outputs.created }}
+            APPLICATION_VERSION=${{ needs.validate.outputs.rc_version }}
+            TRAINER_API_PROTOCOL_VERSION=${{ env.TRAINER_API_PROTOCOL_VERSION }}
+            PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
+
+      - name: Sign trainer image
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
+        with:
+          image-uri: ghcr.io/${{ github.repository_owner }}/physicalai-trainer-${{ matrix.device }}:${{ needs.validate.outputs.rc_version }}
+
+      - name: Output summary
+        env:
+          RC_VERSION: ${{ needs.validate.outputs.rc_version }}
+          DEVICE: ${{ matrix.device }}
+          IMAGE_TAG: ghcr.io/${{ github.repository_owner }}/physicalai-trainer-${{ matrix.device }}:${{ needs.validate.outputs.rc_version }}
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## ✅ Release Candidate Trainer Image Published
 
           ### Release Candidate Information
           - **RC Version:** \`${RC_VERSION}\`

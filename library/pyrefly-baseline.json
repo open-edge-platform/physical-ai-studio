@@ -1,0 +1,1166 @@
+{
+  "errors": [
+    {
+      "column": 40,
+      "path": "src/physicalai/benchmark/gyms/benchmark.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `InferenceModel | Policy` is not assignable to parameter `policy` with type `Policy` in function `_get_policy_name`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/benchmark/gyms/benchmark.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `InferenceModelPolicyWrapper.select_action` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 58,
+      "path": "src/physicalai/data/datamodules.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `dict[Unknown, Tensor]`",
+      "severity": "error"
+    },
+    {
+      "column": 32,
+      "path": "src/physicalai/data/datamodules.py",
+      "name": "bad-assignment",
+      "concise_description": "`GymDataset` is not assignable to attribute `val_dataset` with type `Dataset | None`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "src/physicalai/data/datamodules.py",
+      "name": "bad-assignment",
+      "concise_description": "`GymDataset` is not assignable to attribute `test_dataset` with type `Dataset | None`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/physicalai/data/datamodules.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[@_]` is not assignable to parameter `dataset` with type `Dataset[@_]` in function `torch.utils.data.dataloader.DataLoader.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/physicalai/data/datamodules.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[@_]` is not assignable to parameter `dataset` with type `Dataset[@_]` in function `torch.utils.data.dataloader.DataLoader.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/data/dataset.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `Dataset.__getitem__` overrides parent class `Dataset` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/data/lerobot/datamodule.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `LeRobotDataset | _LeRobotDatasetAdapter` is not assignable to parameter `train_dataset` with type `_LeRobotDatasetAdapter` in function `LeRobotDataModule._ensure_quantile_stats`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/data/lerobot/datamodule.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `LeRobotDataset | _LeRobotDatasetAdapter` is not assignable to parameter `train_dataset` with type `Dataset` in function `physicalai.data.datamodules.DataModule.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/data/lerobot/dataset.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/data/lerobot/dataset.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/data/lerobot/dataset.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/data/lerobot/dataset.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `LeRobotDataset` has no attribute `delta_indices`",
+      "severity": "error"
+    },
+    {
+      "column": 86,
+      "path": "src/physicalai/data/lerobot/utils/quantile_stats.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `values`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "src/physicalai/data/lerobot/utils/quantile_stats.py",
+      "name": "not-iterable",
+      "concise_description": "`not in` is not supported between `str` and `None`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/data/lerobot/utils/quantile_stats.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 50,
+      "path": "src/physicalai/data/lerobot/utils/quantile_stats.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `dict[str, ndarray[Unknown, Unknown]]`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/data/lerobot/utils/video_repair.py",
+      "name": "bad-index",
+      "concise_description": "Cannot index into `VideoDecoder`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/physicalai/data/lerobot/utils/video_repair.py",
+      "name": "bad-index",
+      "concise_description": "Cannot index into `VideoDecoder`",
+      "severity": "error"
+    },
+    {
+      "column": 56,
+      "path": "src/physicalai/data/lerobot/utils/video_repair.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | None` is not assignable to parameter `x` with type `Buffer | SupportsIndex | SupportsInt | SupportsTrunc | str` in function `int.__new__`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/devices/xpu/accelerator.py",
+      "name": "bad-override",
+      "concise_description": "Class member `XPUAccelerator.name` overrides parent class `Accelerator` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/devices/xpu/accelerator.py",
+      "name": "bad-override",
+      "concise_description": "Class member `XPUAccelerator.get_device_stats` overrides parent class `Accelerator` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/eval/rollout/metric.py",
+      "name": "bad-override",
+      "concise_description": "Class member `Rollout.update` overrides parent class `Metric` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `executorch.exir`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `executorch.backends.openvino.partitioner`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `executorch.exir.backend.backend_details`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `verbose` with type `bool | None` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `output_names` with type `Sequence[str] | None` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `opset_version` with type `int | None` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `dynamo` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `external_data` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `report` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `optimize` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `verify` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `profile` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `dump_exported_program` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `artifacts_dir` with type `PathLike[Unknown] | str` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `export_params` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `keep_initializers_as_inputs` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `training` with type `TrainingMode` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `operator_export_type` with type `OperatorExportTypes` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `do_constant_folding` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/export/mixin_policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `autograd_inlining` with type `bool` in function `torch.onnx.export`",
+      "severity": "error"
+    },
+    {
+      "column": 34,
+      "path": "src/physicalai/gyms/gymnasium_gym.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `str | None` is not assignable to parameter `id` with type `EnvSpec | str` in function `gymnasium.envs.registration.make`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/gyms/gymnasium_gym.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[Observation, SupportsFloat | Unknown, bool | Unknown, bool | Unknown, dict[str, Any]]` is not assignable to declared return type `tuple[Observation, SingleOrBatch, SingleOrBatch, SingleOrBatch, dict[str, Any] | list[dict[str, Any]]]`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `libero.libero.benchmark`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `libero.libero`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `libero.libero`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `libero.libero.envs`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `robosuite.utils.transform_utils`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `get_benchmark_dict`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `robots`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `seed`",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `reset`",
+      "severity": "error"
+    },
+    {
+      "column": 23,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `set_init_state`",
+      "severity": "error"
+    },
+    {
+      "column": 32,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `step`",
+      "severity": "error"
+    },
+    {
+      "column": 39,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `step`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `check_success`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `env`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `check_success`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/gyms/libero.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `get_benchmark_dict`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/gyms/pusht.py",
+      "name": "bad-override",
+      "concise_description": "Class member `PushTGym.to_observation` overrides parent class `GymnasiumGym` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/gyms/pusht.py",
+      "name": "bad-override",
+      "concise_description": "Class member `PushTGym.convert_raw_to_observation` overrides parent class `GymnasiumGym` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/gyms/step_limit.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[Observation, SingleOrBatch, SingleOrBatch, bool | list[bool] | ndarray[Unknown, Unknown], dict[str, Any] | list[dict[str, Any]] | ndarray[Unknown, Unknown]]` is not assignable to declared return type `tuple[Observation, SingleOrBatch, SingleOrBatch, SingleOrBatch, dict[str, Any] | list[dict[str, Any]]]`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/inference/adapters/executorch.py",
+      "name": "missing-import",
+      "concise_description": "Cannot find module `executorch.runtime`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[Tensor | Unknown, dict[str, float]]` is not assignable to declared return type `tuple[Tensor, dict[str, Tensor | float]]`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "unbound-name",
+      "concise_description": "`backbone_model` may be uninitialized",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "unbound-name",
+      "concise_description": "`robot_state_embed` may be uninitialized",
+      "severity": "error"
+    },
+    {
+      "column": 42,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `torch._C._VariableFunctions.cat` called with arguments: (list[Tensor | Any] | list[Tensor | Unknown], axis=Literal[1])",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `torch._C._VariableFunctions.cat` called with arguments: (list[Tensor], axis=Literal[1])",
+      "severity": "error"
+    },
+    {
+      "column": 60,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "unexpected-keyword",
+      "concise_description": "Unexpected keyword argument `axis` in function `torch._C._VariableFunctions.stack`",
+      "severity": "error"
+    },
+    {
+      "column": 66,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "unexpected-keyword",
+      "concise_description": "Unexpected keyword argument `axis` in function `torch._C._VariableFunctions.stack`",
+      "severity": "error"
+    },
+    {
+      "column": 18,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Tensor` has no attribute `register_forward_hook`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/act/model.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None], Tensor | None]` is not assignable to declared return type `tuple[Tensor, tuple[Tensor, Tensor], Tensor | None]`",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/act/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `ACT.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/act/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `ACT.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/act/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `ACT.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "src/physicalai/policies/cosmos3/model.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `torch.nn.modules.module.Module.to` called with arguments: (*tuple[object, ...], **dict[str, object])",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Cosmos3OmniPipeline` has no attribute `transformer`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Cosmos3OmniPipeline` has no attribute `vae`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "invalid-inheritance",
+      "concise_description": "Invalid base class: `diffusers.pipelines.cosmos.pipeline_cosmos3_omni.Cosmos3OmniPipeline | diffusers.utils.dummy_torch_and_transformers_objects.Cosmos3OmniPipeline`",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `int | None` is not assignable to parameter `n_action_steps` with type `int` in function `physicalai.policies.base.policy.Policy.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `Cosmos3.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `Cosmos3.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/policies/lerobot/mixin.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `PreTrainedConfig` has no attribute `optimizer_lr`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/policies/lerobot/mixin.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `str` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `lerobot.policies.factory.make_pre_post_processors`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `PreTrainedConfig` has no attribute `optimizer_lr`",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `((...) -> Unknown) | device | dict[Unknown, Unknown] | int | str | None` is not assignable to parameter `map_location` with type `((Storage, str) -> Storage) | device | dict[str, str] | str | None` in function `torch.serialization.load`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `dict[str, dict[str, ndarray[Unknown, Unknown]]] | dict[str, dict[Unknown, Unknown]] | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 89,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `dict[str, dict[str, Tensor]] | dict[str, dict[str, ndarray[Unknown, Unknown]]] | dict[str, dict[Unknown, Unknown]] | Unknown | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy._initialize_policy`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `Optimizer | dict[str, Optimizer]` is not assignable to declared return type `Optimizer`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `LeRobotPolicy.validation_step` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/lerobot/policy.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `PreTrainedConfig | None` is not assignable to declared return type `PreTrainedConfig`",
+      "severity": "error"
+    },
+    {
+      "column": 75,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Tensor | None` is not assignable to parameter `x` with type `Tensor` in function `physicalai.policies.pi05.pi_gemma.layernorm_forward`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `list[Tensor | None]` is not assignable to declared return type `list[Tensor]`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-override",
+      "concise_description": "Class member `PaliGemmaWithExpertModel.train` overrides parent class `Module` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-assignment",
+      "concise_description": "`list[None]` is not assignable to variable `adarms_cond` with type `list[Tensor] | None`",
+      "severity": "error"
+    },
+    {
+      "column": 37,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-assignment",
+      "concise_description": "`list[Tensor]` is not assignable to variable `inputs_embeds` with type `list[FloatTensor] | None`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[FloatTensor]` is not assignable to parameter `inputs_embeds` with type `list[Tensor]` in function `_compute_layer_complete`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Tensor | None` is not assignable to parameter `attention_mask` with type `Tensor` in function `_compute_layer_complete`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `LongTensor | None` is not assignable to parameter `position_ids` with type `Tensor` in function `_compute_layer_complete`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor] | None` is not assignable to parameter `adarms_cond` with type `list[Tensor | None]` in function `_compute_layer_complete`",
+      "severity": "error"
+    },
+    {
+      "column": 54,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[FloatTensor] | Unknown | None` is not assignable to parameter `inputs_embeds` with type `list[Tensor]` in function `compute_final_norms`",
+      "severity": "error"
+    },
+    {
+      "column": 69,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor] | None` is not assignable to parameter `adarms_cond` with type `list[Tensor | None]` in function `compute_final_norms`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 30,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Tensor` is not assignable to parameter `position_ids` with type `LongTensor | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor]` is not assignable to parameter `inputs_embeds` with type `list[FloatTensor] | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor | None]` is not assignable to parameter `adarms_cond` with type `list[Tensor] | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `Tensor | None` is not assignable to declared return type `Tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 77,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor]` is not assignable to parameter `images` with type `Tensor` in function `Pi05Model.embed_prefix`",
+      "severity": "error"
+    },
+    {
+      "column": 85,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor]` is not assignable to parameter `img_masks` with type `Tensor` in function `Pi05Model.embed_prefix`",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Tensor` is not assignable to parameter `position_ids` with type `LongTensor | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor | None]` is not assignable to parameter `inputs_embeds` with type `list[FloatTensor] | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 43,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `DynamicCache | None` is not assignable to parameter `past_key_values` with type `DynamicCache` in function `_clone_kv_cache`",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Tensor` is not assignable to parameter `position_ids` with type `LongTensor | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `DynamicCache` is not assignable to parameter `past_key_values` with type `list[FloatTensor] | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor | None]` is not assignable to parameter `inputs_embeds` with type `list[FloatTensor] | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/policies/pi05/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `list[Tensor | None]` is not assignable to parameter `adarms_cond` with type `list[Tensor] | None` in function `PaliGemmaWithExpertModel.forward`",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `Pi05.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `Pi05.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `Pi05._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 47,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `huggingface_hub.file_download.hf_hub_download` called with arguments: (Path | str, Literal['config.json'], **dict[str, Any])",
+      "severity": "error"
+    },
+    {
+      "column": 48,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `huggingface_hub.file_download.hf_hub_download` called with arguments: (Path | str, Literal['model.safetensors'], **dict[str, Any])",
+      "severity": "error"
+    },
+    {
+      "column": 36,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `huggingface_hub.file_download.hf_hub_download` called with arguments: (Path | str, Literal['policy_preprocessor.json'], **dict[str, Any])",
+      "severity": "error"
+    },
+    {
+      "column": 40,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `huggingface_hub.file_download.hf_hub_download` called with arguments: (Path | str, Unknown, **dict[str, Any])",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/pi05/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `Pi05.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/rldx1/components/action_model/blocks.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[Tensor, Tensor, Tensor | None]` is not assignable to declared return type `tuple[Tensor, Tensor] | tuple[Tensor, Tensor, Tensor]`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/rldx1/components/action_model/blocks.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[Tensor, Tensor | None]` is not assignable to declared return type `Tensor | tuple[Tensor, Tensor]`",
+      "severity": "error"
+    },
+    {
+      "column": 43,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `dtype`",
+      "severity": "error"
+    },
+    {
+      "column": 64,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `device`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `shape`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `dtype`",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `device`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "unsupported-operation",
+      "concise_description": "`*` is not supported between `None` and `Tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "src/physicalai/policies/rldx1/components/backbone/graph_safe_text.py",
+      "name": "not-iterable",
+      "concise_description": "Type `None` is not iterable",
+      "severity": "error"
+    },
+    {
+      "column": 43,
+      "path": "src/physicalai/policies/smolvla/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `None` is not assignable to parameter `object` with type `Tensor` in function `list.append`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/physicalai/policies/smolvla/model.py",
+      "name": "bad-assignment",
+      "concise_description": "`list[Tensor]` is not assignable to variable `inputs_embeds` with type `list[Tensor | None]`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/smolvla/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `SmolVLA.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 40,
+      "path": "src/physicalai/policies/smolvla/preprocessor.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Tensor` is not assignable to parameter `text` with type `list[str] | str` in function `SmolVLAPreprocessor._tokenize`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 55,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 55,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 55,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `dict[str, ParameterDict]` is not assignable to declared return type `dict[str, dict[str, ParameterDict]]`",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `ProgressReportingCallback.on_fit_start` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `ProgressReportingCallback.on_train_batch_end` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `ProgressReportingCallback.on_validation_start` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `ProgressReportingCallback.on_validation_batch_end` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `ProgressReportingCallback.on_validation_epoch_end` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `IterationTimer.on_train_batch_start` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-override-param-name",
+      "concise_description": "Class member `IterationTimer.on_train_batch_end` overrides parent class `Callback` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 53,
+      "path": "src/physicalai/train/callbacks.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `LightningModule` is not assignable to parameter `policy` with type `Policy` in function `physicalai.train.utils.reformat_dataset_to_match_policy`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "src/physicalai/train/utils.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`",
+      "severity": "error"
+    }
+  ]
+}

@@ -1,17 +1,20 @@
 import { Suspense } from 'react';
 
-import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti-ui/ui';
-import { Outlet, redirect } from 'react-router';
-import { createBrowserRouter } from 'react-router-dom';
-import { path } from 'static-path';
+import { Content, Grid, Heading, IllustratedMessage, Loading, minmax, View } from '@geti-ui/ui';
+import { isObject } from 'lodash-es';
+import { createBrowserRouter, Outlet, redirect } from 'react-router';
 
+import { queryClient } from '../src/query-client/query-client';
+import { $api } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
+import { datasetsIndexLoader, recordLastUsedDatasetLoader } from './features/datasets/datasets-index-loader';
+import { paths } from './paths';
+import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { New as CamerasNew } from './routes/cameras/new';
-import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as RecordingPage } from './routes/datasets/record/index';
 import { Edit as EnvironmentEdit } from './routes/environments/edit';
@@ -21,70 +24,22 @@ import { EnvironmentShow } from './routes/environments/show';
 import { Index as Models } from './routes/models/index';
 import { Index as Inference } from './routes/models/inference/index';
 import { OpenApi } from './routes/openapi';
+import { Plugins } from './routes/plugins';
 import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
 import { Edit as RobotEdit } from './routes/robots/edit';
 import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
 import { NewRobotLayout } from './routes/robots/new-layout';
+import { ReBotRSSetup } from './routes/robots/rebot-rs-setup';
 import { Robot } from './routes/robots/robot';
+import { RobotZeroCalibration } from './routes/robots/robot-zero-calibration';
 import { SO101Setup } from './routes/robots/so101-setup';
+import { StarArmSetup } from './routes/robots/stararm-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
+import { Settings } from './routes/settings';
 
-const root = path('/');
-const projects = root.path('/projects');
-const project = root.path('/projects/:project_id');
-const robots = project.path('robots');
-const robot = robots.path(':robot_id');
-const datasets = project.path('/datasets');
-const dataset = datasets.path(':dataset_id');
-const models = project.path('/models');
-const cameras = project.path('cameras');
-const environments = project.path('environments');
-const environment = environments.path(':environment_id');
-
-export const paths = {
-    root,
-    openapi: root.path('/openapi'),
-    projects: {
-        index: projects,
-    },
-    project: {
-        index: project,
-        datasets: {
-            index: datasets,
-            show: dataset,
-            record: dataset.path('record'),
-        },
-        robots: {
-            index: robots,
-            new: robots.path('new'),
-            so101Setup: robots.path('new/so101-setup'),
-            edit: robot.path('edit'),
-            show: robot,
-        },
-        cameras: {
-            index: cameras,
-            webcam: cameras.path('/webcam'),
-            new: cameras.path('/new'),
-            edit: cameras.path(':camera_id/edit'),
-            show: cameras.path(':camera_id'),
-        },
-        environments: {
-            index: environments,
-            new: environments.path('/new'),
-            edit: environments.path(':environment_id/edit'),
-            show: environments.path(':environment_id'),
-            overview: environment,
-            datasets: environment.path('/datasets'),
-            models: environment.path('/models'),
-        },
-        models: {
-            index: models,
-            inference: models.path('/:model_id/inference/:backend'),
-        },
-    },
-};
+export { paths } from './paths';
 
 const EmptySelection = ({ heading, content }: { heading: string; content: string }) => {
     return (
@@ -113,11 +68,32 @@ export const router = createBrowserRouter([
                 },
             },
             {
-                path: paths.projects.index.pattern,
+                element: <AppLayout />,
                 children: [
                     {
-                        index: true,
+                        path: paths.projects.index.pattern,
                         element: <Projects />,
+                    },
+                    {
+                        path: paths.settings.index.pattern,
+                        children: [
+                            {
+                                index: true,
+                                element: <Settings />,
+                            },
+                            {
+                                path: paths.settings.trainingTargets.pattern,
+                                element: <Settings />,
+                            },
+                            {
+                                path: paths.settings.hotkeys.pattern,
+                                element: <Settings />,
+                            },
+                        ],
+                    },
+                    {
+                        path: paths.plugins.index.pattern,
+                        element: <Plugins />,
                     },
                 ],
             },
@@ -148,10 +124,17 @@ export const router = createBrowserRouter([
                         children: [
                             {
                                 index: true,
+                                loader: datasetsIndexLoader,
                                 element: <Datasets />,
                             },
                             {
                                 path: paths.project.datasets.show.pattern,
+                                loader: recordLastUsedDatasetLoader,
+                                element: <Datasets />,
+                            },
+                            {
+                                path: paths.project.datasets.showEpisode.pattern,
+                                loader: recordLastUsedDatasetLoader,
                                 element: <Datasets />,
                             },
                         ],
@@ -174,9 +157,7 @@ export const router = createBrowserRouter([
                         element: (
                             <Grid
                                 areas={['header', 'content']}
-                                UNSAFE_style={{
-                                    gridTemplateRows: 'min-content auto',
-                                }}
+                                rows={['min-content', minmax(0, '1fr')]}
                                 minHeight={0}
                                 height={'100%'}
                             >
@@ -200,6 +181,18 @@ export const router = createBrowserRouter([
                                         path: 'so101-setup',
                                         element: <SO101Setup />,
                                     },
+                                    {
+                                        path: 'rebot-rs-setup',
+                                        element: <ReBotRSSetup />,
+                                    },
+                                    {
+                                        path: 'stararm-setup',
+                                        element: <StarArmSetup />,
+                                    },
+                                    {
+                                        path: 'zero-calibration',
+                                        element: <RobotZeroCalibration />,
+                                    },
                                 ],
                             },
                             {
@@ -221,6 +214,25 @@ export const router = createBrowserRouter([
                                     },
                                     {
                                         path: paths.project.robots.show.pattern,
+                                        loader: async ({ params }) => {
+                                            const { robot_id, project_id } = params;
+
+                                            if (project_id === undefined || robot_id === undefined) {
+                                                return redirect(paths.projects.index({}));
+                                            }
+
+                                            try {
+                                                await queryRobot(project_id, robot_id);
+                                            } catch (error: unknown) {
+                                                if (
+                                                    isObject(error) &&
+                                                    'http_status' in error &&
+                                                    error.http_status === 404
+                                                ) {
+                                                    return redirect(paths.project.robots.index({ project_id }));
+                                                }
+                                            }
+                                        },
                                         element: <Robot />,
                                     },
                                 ],
@@ -250,10 +262,6 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.cameras.show.pattern,
                                         element: <Camera />,
-                                    },
-                                    {
-                                        path: paths.project.cameras.webcam.pattern,
-                                        element: <CameraWebcam />,
                                     },
                                 ],
                             },
@@ -310,3 +318,16 @@ export const router = createBrowserRouter([
         ],
     },
 ]);
+
+function queryRobot(projectId: string, robotId: string) {
+    return queryClient.ensureQueryData(
+        $api.queryOptions('get', '/api/projects/{project_id}/robots/{robot_id}', {
+            params: {
+                path: {
+                    project_id: projectId,
+                    robot_id: robotId,
+                },
+            },
+        })
+    );
+}

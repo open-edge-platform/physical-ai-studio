@@ -12,7 +12,7 @@ jobs:
   pre-approve:
     # Only run in the upstream repository, not in forks
     name: Pre-Approve
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       commit_sha: ${{ steps.capture_sha.outputs.sha }}
     if: ${{
@@ -23,6 +23,16 @@ jobs:
       github.event.sender.login == 'oep-renovate[bot]'
       }}
     steps:
+      - &harden-runner
+        name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
       - name: Capture Commit SHA
         id: capture_sha
         run: |
@@ -47,8 +57,10 @@ jobs:
     environment:
       name: auto-approve
       deployment: false
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
+      - *harden-runner
+
       - name: Debug
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}

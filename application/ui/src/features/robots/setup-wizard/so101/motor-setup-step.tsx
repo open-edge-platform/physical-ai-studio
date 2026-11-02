@@ -6,7 +6,7 @@ import { InlineAlert } from '../shared/inline-alert';
 import { StatusBadge, type StatusBadgeVariant } from '../shared/status-badge';
 import { useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from '../shared/setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.css';
 
 /** The motors in reverse order (gripper first) — matches lerobot's setup flow */
 const MOTOR_SETUP_ORDER = ['gripper', 'wrist_roll', 'wrist_flex', 'elbow_flex', 'shoulder_lift', 'shoulder_pan'];

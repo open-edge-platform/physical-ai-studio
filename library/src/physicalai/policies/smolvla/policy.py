@@ -8,11 +8,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import json
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
+from huggingface_hub import hf_hub_download
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
+from safetensors.torch import load_file
 
-from physicalai.data.observation import ACTION, STATE
+from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -20,21 +28,24 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
-from physicalai.inference.manifest import ComponentSpec
 from physicalai.policies.base import Policy
+from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
-from .model import SmolVLAModel
+from .model import SmolVLAModel, VLAFlowMatching
+from .pretrained_utils import extract_dataset_stats, fix_state_dict_keys
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
 
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
 
+logger = logging.getLogger(__name__)
 
-class SmolVLA(ExportablePolicyMixin, Policy):
+
+class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 
     Lightning wrapper for training and inference with SmolVLA model.
@@ -44,6 +55,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
     - **Eager path**: `SmolVLA.load_from_checkpoint()` - model built immediately
 
     Args:
+        pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
+        dtype : Precision used for model weights. Can be either "bfloat16" or "float32". Default: "bfloat16".
         n_obs_steps: Number of observation steps to use. Default: 1.
         chunk_size: Size of action chunks for prediction. Default: 50.
         n_action_steps: Number of action steps to execute. Default: 50.
@@ -76,7 +89,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         optimizer_weight_decay: Weight decay for optimizer. Default: 1e-10.
         optimizer_grad_clip_norm: Gradient clipping norm value. Default: 10.
         scheduler_warmup_steps: Number of warmup steps for scheduler. Default: 1_000.
-        scheduler_decay_steps: Number of steps between learning rate decays. Default: 30_000.
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``, the horizon
+            follows the trainer's total step budget. Default: None.
         scheduler_decay_lr: Learning rate decay factor. Default: 2.5e-6.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
@@ -93,8 +107,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         >>> action = policy.select_action(obs)
     """
 
+    model: Any
+    _preprocessor: Any
+
     def __init__(  # noqa: PLR0913
         self,
+        # Pretrained model id
+        pretrained_name_or_path: str | Path | None = None,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         # Input / output structure.
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -104,6 +124,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         max_action_dim: int = 32,
         # Image preprocessing
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
+        image_key_reorder_map: dict[str, int] | None = None,
+        num_cameras: int = 0,
         *,
         # Architecture
         tokenizer_max_length: int = 48,
@@ -124,6 +146,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         use_random_input_noise: bool = False,
         # Compilation
         compile_model: bool = False,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
         # Decoding
         num_steps: int = 10,
         # Attention utils
@@ -139,7 +165,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -150,48 +176,86 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         """
         super().__init__(n_action_steps=n_action_steps)
 
-        # Create config from explicit args (policy-level config)
-        self.config = SmolVLAConfig(
-            n_obs_steps=n_obs_steps,
-            chunk_size=chunk_size,
-            n_action_steps=n_action_steps,
-            max_state_dim=max_state_dim,
-            max_action_dim=max_action_dim,
-            resize_imgs_with_padding=resize_imgs_with_padding,
-            tokenizer_max_length=tokenizer_max_length,
-            vlm_model_name=vlm_model_name,
-            load_vlm_weights=load_vlm_weights,
-            add_image_special_tokens=add_image_special_tokens,
-            attention_mode=attention_mode,
-            prefix_length=prefix_length,
-            pad_language_to=pad_language_to,
-            num_expert_layers=num_expert_layers,
-            num_vlm_layers=num_vlm_layers,
-            self_attn_every_n_layers=self_attn_every_n_layers,
-            expert_width_multiplier=expert_width_multiplier,
-            min_period=min_period,
-            max_period=max_period,
-            use_random_input_noise=use_random_input_noise,
-            compile_model=compile_model,
-            num_steps=num_steps,
-            use_cache=use_cache,
-            freeze_vision_encoder=freeze_vision_encoder,
-            train_expert_only=train_expert_only,
-            train_state_proj=train_state_proj,
-            optimizer_lr=optimizer_lr,
-            optimizer_betas=optimizer_betas,
-            optimizer_eps=optimizer_eps,
-            optimizer_weight_decay=optimizer_weight_decay,
-            optimizer_grad_clip_norm=optimizer_grad_clip_norm,
-            scheduler_warmup_steps=scheduler_warmup_steps,
-            scheduler_decay_steps=scheduler_decay_steps,
-            scheduler_decay_lr=scheduler_decay_lr,
-        )
+        weights_file = None
+        if pretrained_name_or_path is not None:
+            self.config, dataset_stats, weights_file = self._from_hf(
+                pretrained_name_or_path,
+                dtype=dtype,
+                tokenizer_max_length=tokenizer_max_length,
+                pad_language_to=pad_language_to,
+                use_random_input_noise=use_random_input_noise,
+                image_key_reorder_map=image_key_reorder_map,
+                num_cameras=num_cameras,
+                compile_model=compile_model,
+                snapflow_enabled=snapflow_enabled,
+                snapflow_alpha=snapflow_alpha,
+                snapflow_lambda=snapflow_lambda,
+                snapflow_num_inference_steps=snapflow_num_inference_steps,
+                num_steps=num_steps,
+                use_cache=use_cache,
+                freeze_vision_encoder=freeze_vision_encoder,
+                train_expert_only=train_expert_only,
+                train_state_proj=train_state_proj,
+                optimizer_lr=optimizer_lr,
+                optimizer_betas=optimizer_betas,
+                optimizer_eps=optimizer_eps,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                scheduler_warmup_steps=scheduler_warmup_steps,
+                scheduler_decay_steps=scheduler_decay_steps,
+                scheduler_decay_lr=scheduler_decay_lr,
+            )
+        else:
+            # Create config from explicit args (policy-level config)
+            self.config = SmolVLAConfig(
+                dtype=dtype,
+                n_obs_steps=n_obs_steps,
+                chunk_size=chunk_size,
+                n_action_steps=n_action_steps,
+                max_state_dim=max_state_dim,
+                max_action_dim=max_action_dim,
+                resize_imgs_with_padding=resize_imgs_with_padding,
+                image_key_reorder_map=image_key_reorder_map or {},
+                num_cameras=num_cameras,
+                tokenizer_max_length=tokenizer_max_length,
+                vlm_model_name=vlm_model_name,
+                load_vlm_weights=load_vlm_weights,
+                add_image_special_tokens=add_image_special_tokens,
+                attention_mode=attention_mode,
+                prefix_length=prefix_length,
+                num_expert_layers=num_expert_layers,
+                num_vlm_layers=num_vlm_layers,
+                self_attn_every_n_layers=self_attn_every_n_layers,
+                expert_width_multiplier=expert_width_multiplier,
+                min_period=min_period,
+                max_period=max_period,
+                use_random_input_noise=use_random_input_noise,
+                compile_model=compile_model,
+                snapflow_enabled=snapflow_enabled,
+                snapflow_alpha=snapflow_alpha,
+                snapflow_lambda=snapflow_lambda,
+                snapflow_num_inference_steps=snapflow_num_inference_steps,
+                num_steps=num_steps,
+                use_cache=use_cache,
+                freeze_vision_encoder=freeze_vision_encoder,
+                train_expert_only=train_expert_only,
+                train_state_proj=train_state_proj,
+                optimizer_lr=optimizer_lr,
+                optimizer_betas=optimizer_betas,
+                optimizer_eps=optimizer_eps,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                scheduler_warmup_steps=scheduler_warmup_steps,
+                scheduler_decay_steps=scheduler_decay_steps,
+                scheduler_decay_lr=scheduler_decay_lr,
+            )
 
         # Save config as hyperparameters for checkpoint restoration
-        self.save_hyperparameters(ignore=["config"])  # Save individual args, not config object
-        # Also save config dict for compatibility
-        self.hparams["config"] = self.config.to_dict()
+        self.save_hyperparameters(
+            ignore=["config", "pretrained_name_or_path", "compile_model"],
+        )
+        # overwrites with resolved self.config values
+        self._set_hparam_keys()
 
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: SmolVLAModel | None = None
@@ -202,13 +266,22 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
-            self._initialize_model(dataset_stats)
+            self._initialize_model(dataset_stats, weights_file)
 
         self._dataset_stats = dataset_stats
+
+    def _set_hparam_keys(self) -> None:
+        """Sync top-level checkpoint hparams from the resolved policy config."""
+        for key, value in self.config.__dict__.items():
+            if key == "compile_model" or key not in self.hparams:
+                continue
+            self.hparams[key] = value
+        self.hparams["config"] = self.config.to_dict()
 
     def _initialize_model(
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+        weights_file: Path | None = None,
     ) -> None:
         """Initialize model and preprocessors.
 
@@ -216,9 +289,11 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         Args:
             dataset_stats: Dataset normalization statistics.
+            weights_file: Optional pretrained weights file.
         """
         self.model = SmolVLAModel(
             dataset_stats,
+            dtype=self.config.dtype,
             chunk_size=self.config.chunk_size,
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -242,9 +317,161 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             use_random_input_noise=self.config.use_random_input_noise,
             tokenizer_max_length=self.config.tokenizer_max_length,
             compile_model=self.config.compile_model,
+            snapflow_enabled=self.config.snapflow_enabled,
+            snapflow_alpha=self.config.snapflow_alpha,
+            snapflow_lambda=self.config.snapflow_lambda,
+            snapflow_num_inference_steps=self.config.snapflow_num_inference_steps,
         )
 
+        if weights_file is not None:
+            original_sd = load_file(str(weights_file))
+
+            fixed_sd = fix_state_dict_keys(original_sd)
+
+            missing, unexpected = self.model.load_state_dict(fixed_sd, strict=False, assign=False)
+            if missing:
+                msg = f"Missing keys when loading pretrained weights: {len(missing)} keys"
+                logger.warning(msg)
+                for k in missing[:10]:
+                    msg = f"  - {k}"
+                    logger.warning(msg)
+            if unexpected:
+                msg = f"Unexpected keys when loading pretrained weights: {len(unexpected)} keys"
+                logger.warning(msg)
+                for k in unexpected[:10]:
+                    msg = f"  - {k}"
+                    logger.warning(msg)
+
+            # Apply dtype/precision
+            self.model._model.to_bfloat16_for_selected_params(self.config.dtype)  # noqa: SLF001
+
+            # Apply requires_grad
+            self.model._model.set_requires_grad()  # noqa: SLF001
+            self.model._model.vlm_with_expert.set_requires_grad()  # noqa: SLF001
+
         self._update_preprocessor_stats(dataset_stats)
+
+        self._dataset_stats = dataset_stats
+
+        # Apply any RTC state requested before the model was built.
+        self._sync_rtc_to_model()
+
+    @staticmethod
+    def _from_hf(  # noqa: PLR0913
+        pretrained_name_or_path: str | Path,
+        *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
+        tokenizer_max_length: int = 48,
+        pad_language_to: str = "max_length",
+        use_random_input_noise: bool = False,
+        image_key_reorder_map: dict[str, int] | None = None,
+        num_cameras: int = 0,
+        compile_model: bool = False,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
+        num_steps: int = 10,
+        use_cache: bool = True,
+        freeze_vision_encoder: bool = True,
+        train_expert_only: bool = True,
+        train_state_proj: bool = True,
+        optimizer_lr: float = 1e-4,
+        optimizer_betas: tuple[float, float] = (0.9, 0.95),
+        optimizer_eps: float = 1e-8,
+        optimizer_weight_decay: float = 1e-10,
+        optimizer_grad_clip_norm: float = 10,
+        scheduler_warmup_steps: int = 1_000,
+        scheduler_decay_steps: int | None = None,
+        scheduler_decay_lr: float = 2.5e-6,
+    ) -> tuple[SmolVLAConfig, dict[str, dict[str, list[float] | str | tuple]] | None, Path | None]:
+        """Template loader for SmolVLA pretrained config/weights from local path or HF Hub.
+
+        This mirrors Pi05's structure and is intentionally incomplete. It resolves
+        files, applies caller overrides to config, and returns placeholders for
+        dataset stats / weight-loading integration.
+
+        Returns:
+            Tuple of (config, dataset_stats, weights_file).
+        """
+        path = Path(pretrained_name_or_path)
+        is_local = path.is_dir()
+
+        if is_local:
+            config_file = path / "config.json"
+            weights_file = path / "model.safetensors"
+            preprocessor_file = path / "policy_preprocessor.json"
+            preprocessor_dir = path
+        else:
+            config_file = Path(hf_hub_download(str(pretrained_name_or_path), "config.json"))  # nosec B615
+            weights_file = Path(hf_hub_download(str(pretrained_name_or_path), "model.safetensors"))  # nosec B615
+            try:
+                preprocessor_file = Path(
+                    hf_hub_download(str(pretrained_name_or_path), "policy_preprocessor.json"),  # nosec B615
+                )
+                preprocessor_dir = preprocessor_file.parent
+
+                # Also download referenced state files
+                with Path(preprocessor_file).open(encoding="utf-8") as f:
+                    preproc_data = json.load(f)
+                for step in preproc_data.get("steps", []):
+                    sf = step.get("state_file")
+                    if sf:
+                        hf_hub_download(str(pretrained_name_or_path), sf)  # nosec B615
+            except Exception:  # noqa: BLE001
+                preprocessor_file = None
+                preprocessor_dir = None
+
+        with Path(config_file).open(encoding="utf-8") as f:
+            hf_config = json.load(f)
+
+        # Apply only safe overrides
+        hf_config["dtype"] = dtype
+        hf_config["tokenizer_max_length"] = tokenizer_max_length
+        hf_config["pad_language_to"] = pad_language_to
+        hf_config["use_random_input_noise"] = use_random_input_noise
+        hf_config["image_key_reorder_map"] = image_key_reorder_map or {}
+        hf_config["num_cameras"] = num_cameras
+        hf_config["compile_model"] = compile_model
+        hf_config["snapflow_enabled"] = snapflow_enabled
+        hf_config["snapflow_alpha"] = snapflow_alpha
+        hf_config["snapflow_lambda"] = snapflow_lambda
+        hf_config["snapflow_num_inference_steps"] = snapflow_num_inference_steps
+        hf_config["num_steps"] = num_steps
+        hf_config["use_cache"] = use_cache
+        hf_config["freeze_vision_encoder"] = freeze_vision_encoder
+        hf_config["train_expert_only"] = train_expert_only
+        hf_config["train_state_proj"] = train_state_proj
+        hf_config["optimizer_lr"] = optimizer_lr
+        hf_config["optimizer_betas"] = optimizer_betas
+        hf_config["optimizer_eps"] = optimizer_eps
+        hf_config["optimizer_weight_decay"] = optimizer_weight_decay
+        hf_config["optimizer_grad_clip_norm"] = optimizer_grad_clip_norm
+        hf_config["scheduler_warmup_steps"] = scheduler_warmup_steps
+        hf_config["scheduler_decay_steps"] = scheduler_decay_steps
+        hf_config["scheduler_decay_lr"] = scheduler_decay_lr
+
+        dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
+
+        # strict=False: ignore legacy config.json keys not present in SmolVLAConfig
+        config = SmolVLAConfig.from_dict(hf_config, strict=False)
+
+        return config, dataset_stats, weights_file
+
+    @staticmethod
+    def _normalize_image_feature_name(name: str) -> str:
+        """Normalize flattened image feature names to camera suffixes.
+
+        Args:
+            name: Image feature name, possibly prefixed.
+
+        Returns:
+            The feature name with any known image prefix removed.
+        """
+        for prefix in ("observation.images.", "images.", f"{IMAGES}."):
+            if name.startswith(prefix):
+                return name[len(prefix) :]
+        return name
 
     def _update_preprocessor_stats(
         self,
@@ -265,10 +492,16 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.resize_imgs_with_padding,
+            image_key_reorder_map=self.config.image_key_reorder_map,
+            num_cameras=self.config.num_cameras,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
             tokenizer_name=self.config.vlm_model_name,
         )
+        self._dataset_stats = dataset_stats
+        self.hparams["dataset_stats"] = dataset_stats
+        if self.model is not None:
+            self.model.set_dataset_stats(dataset_stats)
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
@@ -306,7 +539,42 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         reformat_dataset_to_match_policy(self, datamodule)
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Migrate legacy checkpoints missing target-time MLP parameters.
+
+        Older SmolVLA checkpoints were created before target-time conditioning
+        layers were introduced. Keep strict checkpoint loading enabled by
+        populating any missing target-time parameters from the current model
+        initialization.
+        """
+        super().on_load_checkpoint(checkpoint)
+
+        state_dict = checkpoint.get("state_dict")
+        if not isinstance(state_dict, dict) or self.model is None:
+            return
+
+        defaults = {
+            "model._model.target_time_mlp_in.weight": self.model._model.target_time_mlp_in.weight,  # noqa: SLF001
+            "model._model.target_time_mlp_in.bias": self.model._model.target_time_mlp_in.bias,  # noqa: SLF001
+            "model._model.target_time_mlp_out.weight": self.model._model.target_time_mlp_out.weight,  # noqa: SLF001
+            "model._model.target_time_mlp_out.bias": self.model._model.target_time_mlp_out.bias,  # noqa: SLF001
+        }
+
+        inserted: list[str] = []
+        for key, value in defaults.items():
+            if key in state_dict:
+                continue
+            state_dict[key] = value.detach().clone()
+            inserted.append(key)
+
+        if inserted:
+            logger.warning(
+                "Loaded legacy SmolVLA checkpoint missing %d target-time parameter(s): %s",
+                len(inserted),
+                ", ".join(inserted),
+            )
+
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Forward pass through the model.
 
         Processes the input batch and either trains the model or predicts actions
@@ -343,13 +611,15 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             torch.Tensor: The predicted action chunk after post-processing.
 
         Raises:
-            ValueError: If the model has not been initialized.
+            ValueError: If the model has not been initialized, or if RTC is enabled
+                and the batch carries out-of-range RTC control values.
         """
         if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
             raise ValueError(msg)
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
+        self._validate_rtc_inputs(processed_batch)
         chunk = self.model.predict_action_chunk(processed_batch)
         return self._postprocessor({ACTION: chunk})[ACTION]
 
@@ -371,7 +641,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         return loss
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Delegates to the model's ``compute_val_loss`` without toggling
@@ -395,6 +665,11 @@ class SmolVLA(ExportablePolicyMixin, Policy):
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
+        The cosine decay horizon defaults to the total training step budget
+        (``self.trainer.estimated_stepping_batches``, derived from ``max_steps``
+        or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
+        the end of training. Set ``scheduler_decay_steps`` to override it.
+
         Returns:
             Optimizer configuration dict.
         """
@@ -407,9 +682,13 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             lr=self.config.optimizer_lr,
             weight_decay=self.config.optimizer_weight_decay,
             betas=self.config.optimizer_betas,
+            eps=self.config.optimizer_eps,
         )
 
         num_decay_steps = self.config.scheduler_decay_steps
+        if num_decay_steps is None:
+            num_decay_steps = int(self.trainer.estimated_stepping_batches)
+
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
             peak_lr=self.config.optimizer_lr,
@@ -425,6 +704,26 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 "interval": "step",
             },
         }
+
+    @property
+    def inner_model(self) -> VLAFlowMatching:
+        """The unwrapped SmolVLA flow-matching module.
+
+        Raises:
+            RuntimeError: If accessed before ``setup()`` has initialized the model.
+        """
+        if self.model is None:
+            msg = "inner_model accessed before the model was initialized (setup() has not run yet)."
+            raise RuntimeError(msg)
+        return self.model._model  # noqa: SLF001
+
+    def freeze_vlm(self) -> None:
+        """Freeze the VLM so only the action expert and target-time embedding train."""
+        inner = self.inner_model
+        object.__setattr__(self.config, "train_expert_only", True)  # noqa: PLC2801
+        inner.vlm_with_expert.train_expert_only = True
+        inner.vlm_with_expert.set_requires_grad()
+        self.model.train()
 
     def configure_gradient_clipping(
         self,
@@ -464,6 +763,112 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
     @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
+
+        Returns:
+            A list of feature descriptors matching the model's expected input format,
+            covering the robot state, image observations, the language task, and any
+            real-time chunking control tensors when :attr:`rtc_enabled` is ``True``.
+            Returns ``None`` if the underlying model or dataset stats have not been
+            initialized yet.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        dataset_stats = self._dataset_stats
+        schema: list[InferenceFeature] = []
+
+        num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
+
+        for feature_id, feature in dataset_stats.items():
+            if STATE in feature_id:
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.STATE,
+                        shape=cast("tuple", feature["shape"]),
+                        name=STATE,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+            elif str(FeatureType.VISUAL) in feature["type"]:
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature['name']}"
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=cast("tuple", feature["shape"]),
+                        name=name,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(self.config.tokenizer_max_length,),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+
+        if self.rtc_enabled:
+            action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
+            schema.extend(
+                [
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(self.config.chunk_size, *action_shape),
+                        name=PREV_CHUNK_LEFT_OVER,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name=RTC_INFERENCE_DELAY,
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name=RTC_MAX_GUIDANCE_WEIGHT,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name=RTC_EXECUTION_HORIZON,
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                ],
+            )
+
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's model output for export.
+
+        Returns:
+            A list with a single ``action`` feature of shape
+            ``(chunk_size, *action_dim)``, where ``action_dim`` is the actual
+            action dimension taken from the dataset stats. Returns ``None`` if the
+            underlying model or dataset stats have not been initialized yet.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, *action_shape),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
@@ -481,12 +886,21 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             )
             raise ValueError(msg)
 
+        normalize_stats: dict[str, Any] = {STATE: self._dataset_stats[f"observation.{STATE}"]}
+        if self.rtc_enabled:
+            normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
+
         base_preproc_specs = [
-            ComponentSpec(type="smolvla_resize", image_resolution=self.config.resize_imgs_with_padding),
+            ComponentSpec(
+                type="smolvla_resize",
+                image_resolution=self.config.resize_imgs_with_padding,
+                image_key_reorder_map=self.config.image_key_reorder_map,
+                num_cameras=self.config.num_cameras,
+            ),
             ComponentSpec(type="new_line"),
             ComponentSpec(
                 type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                stats=normalize_stats,
                 mode="mean_std",
             ),
         ]
@@ -497,9 +911,19 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 mode="mean_std",
             ),
         ]
+        torch_postproc_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            chunk_trimmer = ComponentSpec(
+                type="action_chunk_trimmer",
+                n_action_steps=self.config.n_action_steps,
+            )
+            postproc_specs.append(chunk_trimmer)
+            torch_postproc_specs.append(chunk_trimmer)
+
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": [ACTION],
+                "output_names": output_names,
             },
             preprocessors_specs=[
                 *base_preproc_specs,
@@ -514,7 +938,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
+            outputs=output_names,
             compress_to_fp16=False,
             export_tokenizer=True,
             exporter_kwargs={},
@@ -527,6 +951,9 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             ],
             postprocessors_specs=postproc_specs,
         )
-        extra_args["torch"] = TorchExportParameters()
+        extra_args["torch"] = TorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            postprocessors_specs=torch_postproc_specs,
+        )
 
         return extra_args

@@ -6,16 +6,43 @@ import multiprocessing as mp
 import os
 import signal
 import threading
+import time
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
+from multiprocessing import Event
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import AsyncGenerator, Iterable
     from multiprocessing.queues import Queue
-    from multiprocessing.synchronize import Event
+    from multiprocessing.synchronize import Event as EventClass
 
 import loguru
 from loguru import logger
+
+
+@asynccontextmanager
+async def run_at_frequency(frequency: float) -> AsyncGenerator[None]:
+    """Run a function at a specified frequency.
+
+    Note: This is a frequency, not time (1/s vs s).
+    Example:
+
+    fps = 30
+    async with run_at_frequency(fps):
+       get_frame_from_camera()
+    """
+
+    t0 = time.perf_counter()
+    yield
+    target_dt = 1 / frequency
+    elapsed = time.perf_counter() - t0
+    sleep_time = target_dt - elapsed
+    if sleep_time > 0:
+        await asyncio.sleep(sleep_time)
+    else:
+        logger.debug(f"Missed timing on run_at_frequency: {-sleep_time * 1000}ms")
+        await asyncio.sleep(0)
 
 
 def log_threads(log_level="DEBUG") -> None:  # noqa: ANN001
@@ -34,12 +61,17 @@ class StoppableMixin:
 
     def should_stop(self) -> bool:
         """Check if a stop has been requested."""
+        if not hasattr(self, "_interrupt_event"):
+            raise AttributeError("StoppableMixin requires a '_interrupt_event' to be set.")
+
         if not hasattr(self, "_stop_event"):
             raise AttributeError("StoppableMixin requires a '_stop_event' to be set.")
+
         # Stop if parent process died
         parent_process = mp.parent_process()
         parent_died = parent_process is not None and not parent_process.is_alive()
-        return self._stop_event.is_set() or parent_died  # type: ignore
+
+        return self._interrupt_event.is_set() or self._stop_event.is_set() or parent_died  # type: ignore
 
     def stop_aware_sleep(self, seconds: float) -> bool:
         """
@@ -70,12 +102,13 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
     def __init__(
         self,
         *,
-        stop_event: Event,
+        stop_event: EventClass,
         queues_to_cancel: Iterable[Queue] | None = None,
         logger_: loguru.Logger | None = None,
     ) -> None:
         super().__init__()
-        self._stop_event = stop_event
+        self._interrupt_event = stop_event
+        self._stop_event = Event()
         self._parent_pid = os.getpid()
         self._queues_to_cancel = list(queues_to_cancel or [])
 
@@ -161,13 +194,25 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
                     log_threads()
                     logger.info(f"Stopped {self.name}.")
 
+    def stop(self) -> None:
+        timeout = 10
+        self._stop_event.set()
+        if not self.is_alive():
+            return
+        self.join(timeout=timeout)
+        if self.is_alive():
+            logger.warning(f"Process {self.name} did not stop within {timeout}s, terminating")
+            self.terminate()
+            self.join(timeout=2.0)
+
 
 class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
     ROLE: str = "Worker"
 
-    def __init__(self, *, stop_event: Event, daemon: bool = False):
+    def __init__(self, *, stop_event: EventClass, daemon: bool = False):
         super().__init__(daemon=daemon)
-        self._stop_event = stop_event
+        self._interrupt_event = stop_event
+        self._stop_event = Event()
         self.name = f"{self.ROLE}-{os.getpid()}-thread"
         self.loop: asyncio.AbstractEventLoop | None = None
 
@@ -201,3 +246,7 @@ class BaseThreadWorker(threading.Thread, StoppableMixin, abc.ABC):
                     self.loop.close()
                     log_threads()
                     logger.info(f"Stopped {self.name}")
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self.join(timeout=10)

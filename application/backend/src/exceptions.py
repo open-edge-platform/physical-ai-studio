@@ -8,13 +8,14 @@ class ResourceType(StrEnum):
 
     PROJECT = "Project"
     ROBOT = "Robot"
-    ROBOT_CALIBRATION = "Robot calibration"
     CAMERA = "Camera"
     ENVIRONMENT = "Environment"
     DATASET = "Dataset"
     MODEL = "Model"
+    REMOTE_TRAINER = "Remote trainer"
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
+    PLUGIN = "Plugin"
 
 
 class BaseException(Exception):
@@ -26,10 +27,20 @@ class BaseException(Exception):
     :param http_status: int default http status code to return to user
     """
 
-    def __init__(self, message: str, error_code: str, http_status: int) -> None:
+    def __init__(
+        self,
+        message: str,
+        error_code: str,
+        http_status: int,
+        *,
+        phase: str | None = None,
+        details: dict[str, str] | None = None,
+    ) -> None:
         self.message = message
         self.error_code = error_code
         self.http_status = http_status
+        self.phase = phase
+        self.details = details or {}
         super().__init__(message)
 
 
@@ -70,7 +81,21 @@ class ResourceInUseError(BaseException):
         msg = message or f"{resource_type} with ID {resource_id} cannot be deleted because it is in use."
         super().__init__(
             message=msg,
-            error_code=f"{resource_type}_not_found",
+            error_code=f"{resource_type}_in_use",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotPluginUnavailableError(BaseException):
+    """Raised when a robot's catalog plugin is not installed."""
+
+    def __init__(self, robot_name: str, robot_type: str) -> None:
+        super().__init__(
+            message=(
+                f"Robot '{robot_name}' requires unavailable plugin type '{robot_type}'. "
+                "Reinstall the plugin before connecting."
+            ),
+            error_code="robot_plugin_unavailable",
             http_status=http.HTTPStatus.CONFLICT,
         )
 
@@ -102,6 +127,69 @@ class UnsupportedDeviceError(BaseException):
         )
 
 
+class RemoteResumeUnsupportedError(BaseException):
+    """Raised when a job would resume from a base model on a remote trainer.
+
+    Resuming needs the base model's checkpoint, and the trainer protocol has no
+    way to send one: the only upload endpoint takes the dataset. Rejecting the
+    submission is better than accepting it and silently training from scratch.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            message=(
+                "Continuing training from an existing model is only supported on this machine. "
+                "Select local training, or start a new model on the remote trainer."
+            ),
+            error_code="remote_resume_unsupported",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class InvalidJobStateError(BaseException):
+    """Raised when a job action is not valid in the current state."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="invalid_job_state",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class DuplicateImportSourceError(BaseException):
+    """Raised when importing an already imported source UUID."""
+
+    def __init__(self, resource_kind: str, source_uuid: str) -> None:
+        super().__init__(
+            message=f"{resource_kind} with original source UUID `{source_uuid}` was already imported.",
+            error_code="duplicate_import_source",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class ZipBombDetectedError(BaseException):
+    """Raised when an uploaded archive is considered unsafe."""
+
+    def __init__(self, message: str = "Uploaded archive was rejected by zip safety validation") -> None:
+        super().__init__(
+            message=message,
+            error_code="zip_bomb_detected",
+            http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
+
+
+class InvalidArchiveError(BaseException):
+    """Raised when an uploaded archive is invalid or unreadable."""
+
+    def __init__(self, message: str = "Uploaded archive is invalid or unreadable") -> None:
+        super().__init__(
+            message=message,
+            error_code="invalid_archive",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
 class UploadTooLargeError(BaseException):
     """Raised when the HTTP upload exceeds the configured maximum size."""
 
@@ -110,4 +198,400 @@ class UploadTooLargeError(BaseException):
             message=message,
             error_code="upload_too_large",
             http_status=http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
+
+
+class InvalidResourceError(BaseException):
+    """
+    Exception raised when a resource is not what was expected.
+
+    :param resource_name: Name of the resource that was not found
+    """
+
+    def __init__(self, resource_name: str, detail: str) -> None:
+        super().__init__(
+            message=f"{resource_name} invalid resource. {detail}",
+            error_code=f"{resource_name}_invalid_resource",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class InsufficientDiskSpaceError(BaseException):
+    """Raised when there is not enough free disk space to safely store the upload or extraction."""
+
+    def __init__(self, message: str = "Insufficient disk space to process the upload") -> None:
+        super().__init__(
+            message=message,
+            error_code="insufficient_disk_space",
+            http_status=http.HTTPStatus.INSUFFICIENT_STORAGE,
+        )
+
+
+class RecordingLockError(BaseException):
+    """Raised when a camera cannot be modified because it is locked by an active recording session."""
+
+    def __init__(self, message: str = "Camera is in use by an active recording session.") -> None:
+        super().__init__(
+            message=message,
+            error_code="recording_locked",
+            http_status=http.HTTPStatus.LOCKED,
+        )
+
+
+class CameraSettingsConflictError(BaseException):
+    """Raised when a session asks for camera settings that another project has pinned."""
+
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        pinned: tuple[int, int, int],
+        requested: tuple[int, int, int],
+    ) -> None:
+        width, height, fps = pinned
+        req_width, req_height, req_fps = requested
+        super().__init__(
+            message=(
+                f"Camera is already in use by project {project_name!r} at {width}x{height}@{fps}. "
+                f"This session requested {req_width}x{req_height}@{req_fps}."
+            ),
+            error_code="camera_settings_conflict",
+            http_status=http.HTTPStatus.LOCKED,
+        )
+
+
+class RuntimeSessionBusyError(BaseException):
+    """Raised when a live runtime session already holds the robot being asked for."""
+
+    def __init__(self, *, robot_name: str | None = None, pid: int | None = None) -> None:
+        subject = f"Robot {robot_name!r} is" if robot_name else "This robot is"
+        holder = f" (pid {pid})" if pid is not None else ""
+        message = (
+            f"{subject} already in use by a running session{holder}. "
+            "Stop that session, or wait for it to disconnect, then try again."
+        )
+        super().__init__(
+            message=message,
+            error_code="runtime_session_busy",
+            http_status=http.HTTPStatus.LOCKED,
+        )
+
+
+class RobotDeviceAlreadyOwnedError(BaseException):
+    """Raised when a SharedRobot device is already locked under another session name."""
+
+    def __init__(self, *, device_ids: tuple[str, ...] | None = None) -> None:
+        if device_ids:
+            devices = ", ".join(device_ids)
+            message = (
+                f"Device {devices} is already in use by another session. "
+                "Stop the other session or wait for it to disconnect, then try again."
+            )
+        else:
+            message = (
+                "This robot device is already in use by another session. "
+                "Stop the other session or wait for it to disconnect, then try again."
+            )
+        super().__init__(
+            message=message,
+            error_code="robot_device_already_owned",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotNameConflictError(BaseException):
+    """Raised when a SharedRobot name is claimed for different devices."""
+
+    def __init__(self, *, robot_name: str | None = None) -> None:
+        # The transport name is the robot's id, not its display name, so a
+        # conflict means this robot already has a session bound to different
+        # hardware than the one it now resolves to.
+        subject = f"Robot {robot_name!r} is" if robot_name else "This robot is"
+        message = (
+            f"{subject} already running in another session that is bound to a different device. "
+            "Stop that session, or check that this robot still points at the right hardware, then try again."
+        )
+        super().__init__(
+            message=message,
+            error_code="robot_name_conflict",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotProtocolMismatchError(BaseException):
+    """Raised when an existing SharedRobot owner speaks an unsupported protocol version."""
+
+    def __init__(
+        self,
+        message: str = (
+            "An existing robot session uses an incompatible software version. Restart all robot sessions and try again."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_protocol_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class ModelCameraMismatchError(BaseException):
+    """Raised when a model's image inputs do not match the session's cameras."""
+
+    def __init__(self, *, expected: list[str], provided: list[str]) -> None:
+        expected_text = _format_camera_keys(expected)
+        provided_text = _format_camera_keys(provided)
+        message = (
+            f"This model expects camera inputs {expected_text}, but this environment "
+            f"provides {provided_text}. Cameras were probably renamed after the model "
+            "was trained. Rename them back, or retrain."
+        )
+        super().__init__(
+            message=message,
+            error_code="model_camera_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+        self.expected = expected
+        self.provided = provided
+
+
+def _format_camera_keys(keys: list[str]) -> str:
+    if not keys:
+        return "none"
+    return ", ".join(f"`{key}`" for key in keys)
+
+
+class SharedRobotTransportError(BaseException):
+    """Raised when SharedRobot transport fails (spawn, handshake, or wire)."""
+
+    def __init__(
+        self,
+        message: str = "Could not connect to the robot. Check the connection and try again.",
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_transport_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class RobotIdentifyError(BaseException):
+    """Raised when visually identifying a robot fails during joint motion."""
+
+    def __init__(
+        self,
+        message: str = (
+            "Robot identify failed: a joint could not be moved safely. Power-cycle the robot and try again."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_identify_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostAliasNotFoundError(BaseException):
+    """Raised when a server's SSH host alias is absent from the user's SSH config.
+
+    Distinct from a connection failure: nothing was dialed, because there was no
+    host to dial. A wildcard-only match lands here too - a pattern entry is not
+    a usable target.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"SSH host alias '{alias}' was not found in your SSH config. "
+                f"Add a Host entry named '{alias}' to ~/.ssh/config, then try again."
+            ),
+            error_code="ssh_host_alias_not_found",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostKeyUnknownError(BaseException):
+    """Raised when AsyncSSH cannot validate an unknown host key."""
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=f"The host key for '{alias}' could not be validated.",
+            error_code="ssh_host_key_unknown",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostKeyConfirmationRequiredError(BaseException):
+    """Raised when a first-seen SSH host key needs user confirmation."""
+
+    def __init__(self, alias: str, fingerprint: str) -> None:
+        super().__init__(
+            message=f"Confirm the SSH host key fingerprint for '{alias}' before connecting.",
+            error_code="ssh_host_key_confirmation_required",
+            http_status=http.HTTPStatus.PRECONDITION_REQUIRED,
+            details={"fingerprint": fingerprint},
+        )
+
+
+class SshHostKeyMismatchError(BaseException):
+    """Raised when the host key differs from the one in ``known_hosts``.
+
+    Treated as untrusted rather than as a stale entry: this is what a
+    machine-in-the-middle looks like, and it is also what a legitimately
+    rebuilt host looks like. Studio cannot tell them apart, so it refuses.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"The host key for '{alias}' does not match the one in your known_hosts file. "
+                "The server may have been rebuilt, or the connection may be intercepted. "
+                "Verify the new fingerprint out of band before updating known_hosts."
+            ),
+            error_code="ssh_host_key_mismatch",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshAgentRequiredError(BaseException):
+    """Raised when the resolved identity is passphrase-protected and no agent can unlock it.
+
+    Studio never prompts for or stores a passphrase, so an agent is the only way
+    a protected key can be used.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"The SSH key for '{alias}' is passphrase-protected and no SSH agent is available. "
+                f"Start an agent and run `ssh-add`, then try again."
+            ),
+            error_code="ssh_agent_required",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshAuthenticationError(BaseException):
+    """Raised when the server rejected every identity the SSH config offered."""
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"Authentication failed for '{alias}'. Check that `ssh {alias}` works from a terminal, then try again."
+            ),
+            error_code="ssh_authentication_failed",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshConnectionError(BaseException):
+    """Raised when the resolved host could not be reached.
+
+    Carries no underlying exception text: a raw SSH error can contain resolved
+    hostnames and key paths, which must not reach an API response.
+    """
+
+    def __init__(self, alias: str, reason: str | None = None) -> None:
+        detail = f" ({reason})" if reason else ""
+        super().__init__(
+            message=f"Could not connect to '{alias}'{detail}. Verify that the server is reachable.",
+            error_code="ssh_connection_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class TrainerImageResolutionError(BaseException):
+    """Raised when the device-specific `protocol-<N>` trainer image cannot be resolved.
+
+    An image must advertise the required protocol version; no fallback tag
+    is used when the matching image cannot be resolved.
+    """
+
+    def __init__(self, image_ref: str, protocol_version: int, detail: str | None = None) -> None:
+        extra = f" ({detail})" if detail else ""
+        super().__init__(
+            message=(
+                f"Could not resolve trainer image '{image_ref}' for protocol version {protocol_version}{extra}. "
+                f"A matching `protocol-{protocol_version}`-tagged trainer image must be published before this "
+                "job can run."
+            ),
+            error_code="trainer_image_unresolved",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerImageVerificationError(BaseException):
+    """Raised when the resolved trainer image cannot be authenticated."""
+
+    def __init__(self, image_ref: str, reason: str) -> None:
+        super().__init__(
+            message=f"Could not verify the signature of trainer image '{image_ref}': {reason}.",
+            error_code="trainer_image_verification_failed",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerImagePullError(BaseException):
+    """Raised when `docker pull` of the resolved digest failed on the remote host."""
+
+    def __init__(self, image_ref: str, detail: str | None = None) -> None:
+        extra = f": {detail}" if detail else ""
+        super().__init__(
+            message=f"Could not pull trainer image '{image_ref}'{extra}.",
+            error_code="trainer_image_pull_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class TrainerContainerLaunchError(BaseException):
+    """Raised when the trainer container could not be started on the remote host."""
+
+    def __init__(self, server_name: str, detail: str | None = None) -> None:
+        extra = f": {detail}" if detail else ""
+        super().__init__(
+            message=f"Could not start the trainer container on remote server '{server_name}'{extra}.",
+            error_code="trainer_container_launch_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class AwsFeatureDisabledError(BaseException):
+    """Raised when the AWS integration is disabled."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="The AWS provider is disabled. Set AWS_ENABLED=true to enable it.",
+            error_code="aws_feature_unavailable",
+            http_status=http.HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+
+
+class SshFeatureDisabledError(BaseException):
+    """Raised when the SSH remote-trainer feature fails closed on network exposure.
+
+    Carries the evaluated reason (if any) rather than any server/alias detail,
+    since this error can reach an unauthenticated caller.
+    """
+
+    def __init__(self, reason: str | None = None) -> None:
+        detail = f": {reason}" if reason else ""
+        super().__init__(
+            message=f"The SSH remote-trainer feature is not available{detail}.",
+            error_code="ssh_feature_unavailable",
+            http_status=http.HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+
+
+class PluginOperationError(BaseException):
+    """Raised when installing or uninstalling a robot plugin fails.
+
+    The failure originates in the ``uv pip`` subprocess (e.g. an unresolvable
+    install spec or an unavailable index), i.e. an upstream/environment error
+    rather than a bad client request, so it maps to 502.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="plugin_operation_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
         )

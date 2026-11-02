@@ -52,6 +52,7 @@ class StepLimit(Gym):
         self,
         *args: Any,  # noqa: ANN401
         seed: int | None = None,
+        episode_index: int = 0,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Reset the environment and reset the step counter.
@@ -59,13 +60,14 @@ class StepLimit(Gym):
         Args:
             *args: Additional positional arguments.
             seed: Optional RNG seed.
+            episode_index: Index of the episode being reset. Defaults to 0.
             **kwargs: Additional reset kwargs.
 
         Returns:
             A tuple ``(observation, info)``.
         """
         self.step_count = 0
-        return self.gym.reset(*args, seed=seed, **kwargs)
+        return self.gym.reset(*args, seed=seed, episode_index=episode_index, **kwargs)
 
     def step(
         self,
@@ -113,6 +115,10 @@ class StepLimit(Gym):
             The render output from the wrapped environment.
         """
         return self.gym.render(*args, **kwargs)
+
+    def get_max_episode_steps(self) -> int:
+        """Return the configured step limit."""
+        return self.max_steps
 
     def close(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
         """Release environment resources.

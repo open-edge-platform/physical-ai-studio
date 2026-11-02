@@ -1,0 +1,70 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Trainer service configuration."""
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class TrainerSettings(BaseSettings):
+    """Trainer service settings sourced from the environment."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Working directory for snapshots, checkpoints, and model archives.
+    storage_dir: Path = Field(
+        default=Path("~/.local/share/physicalai-trainer").expanduser(), alias="TRAINER_STORAGE_DIR"
+    )
+    # At most one job per GPU; this also caps jobs across different GPUs.
+    max_concurrent_jobs: int = Field(default=8, ge=1, le=128, alias="TRAINER_MAX_CONCURRENT_JOBS")
+    gpu_busy_memory_mb: int = Field(default=512, ge=1, alias="TRAINER_GPU_BUSY_MEMORY_MB")
+
+    # nosec B104 - trainer is intended to be reachable from other machines on a
+    # trusted local network.
+    host: str = Field(default="0.0.0.0", alias="TRAINER_HOST")  # nosec B104 # noqa: S104
+    port: int = Field(default=8001, alias="TRAINER_PORT")
+
+    # HTTP-upload safety limits to prevent disk exhaustion.
+    max_uncompressed_bytes: int = Field(
+        default=200 * 1024 * 1024 * 1024,
+        alias="TRAINER_MAX_UNCOMPRESSED_BYTES",
+    )
+    min_free_bytes: int = Field(
+        default=1 * 1024 * 1024 * 1024,
+        alias="TRAINER_MIN_FREE_BYTES",
+    )
+
+    @property
+    def db_path(self) -> Path:
+        """SQLite file backing the job queue."""
+        return self.storage_dir / "trainer.db"
+
+    @property
+    def datasets_dir(self) -> Path:
+        """Directory holding datasets uploaded over HTTP."""
+        return self.storage_dir / "datasets"
+
+    @property
+    def models_dir(self) -> Path:
+        """Directory holding trained model outputs."""
+        return self.storage_dir / "models"
+
+    @property
+    def archives_dir(self) -> Path:
+        """Directory holding zipped model artifacts for download."""
+        return self.storage_dir / "archives"
+
+
+@lru_cache
+def get_settings() -> TrainerSettings:
+    """Return cached trainer settings."""
+    return TrainerSettings()  # type: ignore[call-arg]

@@ -15,7 +15,8 @@ from sse_starlette import ServerSentEvent
 
 from core.logging.utils import get_job_logs_path
 from schemas.base_job import JobType
-from schemas.job import TrainJobPayload
+from schemas.dataset_import_job import DatasetImportJobPayload
+from schemas.job import TrainJobPayloadAdapter
 from schemas.logs import LogSource
 from services.job_service import JobService
 from settings import Settings
@@ -32,7 +33,8 @@ STATIC_SOURCES: dict[str, StaticLogSource] = {
     "application": StaticLogSource(name="Application", filename="app.log", type="application"),
     "training": StaticLogSource(name="Training", filename="training.log", type="worker"),
     "inference": StaticLogSource(name="Inference", filename="inference.log", type="worker"),
-    "teleoperate": StaticLogSource(name="Teleoperate", filename="teleoperate.log", type="worker"),
+    "robot-control": StaticLogSource(name="Robot Control", filename="robot_control.log", type="worker"),
+    "dataset-import": StaticLogSource(name="Dataset Import", filename="dataset_import.log", type="worker"),
 }
 
 
@@ -90,8 +92,19 @@ class LogService:
 
         for job in jobs:
             if job.type == JobType.TRAINING:
-                payload = TrainJobPayload.model_validate(job.payload)
+                payload = TrainJobPayloadAdapter.validate_python(job.payload)
                 names[str(job.id)] = f"{payload.model_name} ({payload.policy})"
+            elif job.type == JobType.DATASET_IMPORT:
+                payload = DatasetImportJobPayload.model_validate(job.payload)
+                if payload.dataset_name:
+                    display_name = payload.dataset_name
+                elif payload.uploaded_archive_name:
+                    display_name = payload.uploaded_archive_name
+                elif payload.archive_staging_id:
+                    display_name = f"{str(payload.archive_staging_id)[:8]}.zip"
+                else:
+                    display_name = f"dataset-import-{self._short_id(str(job.id))}.zip"
+                names[str(job.id)] = f"Import: {display_name}"
 
         return names
 
@@ -105,7 +118,8 @@ class LogService:
         if not jobs_dir.is_dir():
             return sources
 
-        job_log_paths = sorted(jobs_dir.glob("*.log"))
+        # Match only <uuid>.log files (36-char UUID stem), excluding rotated <uuid>.<timestamp>.log
+        job_log_paths = sorted(p for p in jobs_dir.glob("*.log") if len(p.stem) == 36)
         job_ids = [file_path.stem for file_path in job_log_paths]
         source_name_map = await self._get_job_source_name_map(job_ids)
 
@@ -135,6 +149,23 @@ class LogService:
 
         return sources
 
+    def _get_all_job_log_paths(self, primary_path: Path) -> list[Path]:
+        """Return all log files for a job, including rotated files, sorted chronologically.
+
+        Given a primary path like `jobs/<uuid>.log`, finds all matching files
+        (e.g. `<uuid>.2026-05-20_17-21-37_551390.log`) and returns them sorted
+        with rotated (older) files first, then the primary (active) file last.
+        """
+        jobs_dir = primary_path.parent
+        job_id = primary_path.stem
+        if not jobs_dir.is_dir():
+            return [primary_path]
+
+        # Find rotated files: <uuid>.<timestamp>.log (sorted alphabetically = chronologically)
+        rotated = sorted(jobs_dir.glob(f"{job_id}.*.log"))
+        # Primary file is the active one, append last
+        return [*rotated, primary_path]
+
     async def source_exists(self, path: Path) -> bool:
         """Check whether a source path exists on disk and is non-empty."""
         source_path = anyio.Path(path)
@@ -143,9 +174,26 @@ class LogService:
         return (await source_path.stat()).st_size > 0
 
     async def tail_log_file(self, path: Path) -> AsyncGenerator[ServerSentEvent]:
-        """Async generator that live-tails a log file and yields SSE events."""
+        """Async generator that streams log file contents and yields SSE events.
+
+        For job logs, streams all rotated files first (in chronological order),
+        then live-tails the active log file.
+        """
+        # Determine all files to stream (for jobs this includes rotated logs)
+        is_job_log = path.parent.name == "jobs"
+        paths = self._get_all_job_log_paths(path) if is_job_log else [path]
+
         try:
-            async with await anyio.open_file(path, encoding="utf-8") as f:
+            # Stream completed (rotated) files fully
+            for log_path in paths[:-1]:
+                if log_path.exists():
+                    async with await anyio.open_file(log_path, encoding="utf-8") as f:
+                        async for line in f:
+                            yield ServerSentEvent(data=line.rstrip())
+
+            # Live-tail the active file
+            active_path = paths[-1]
+            async with await anyio.open_file(active_path, encoding="utf-8") as f:
                 while True:
                     line = await f.readline()
                     if not line:

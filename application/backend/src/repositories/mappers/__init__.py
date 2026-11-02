@@ -5,6 +5,7 @@ from .project_camera_mapper import ProjectCameraMapper
 from .project_environment_mapper import ProjectEnvironmentMapper
 from .project_mapper import ProjectMapper
 from .project_robot_mapper import ProjectRobotMapper
+from .remote_trainer_mapper import RemoteTrainerMapper
 from .snapshot_mapper import SnapshotMapper
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "ProjectEnvironmentMapper",
     "ProjectMapper",
     "ProjectRobotMapper",
+    "RemoteTrainerMapper",
     "SnapshotMapper",
 ]

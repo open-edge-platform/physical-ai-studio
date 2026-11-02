@@ -9,6 +9,7 @@ import {
     SchemaUsbCameraInput,
 } from '../../../api/openapi-spec';
 import { SchemaProjectCamera } from '../../../api/types';
+import { fingerprintKey } from '../../cameras/fingerprint';
 import { initialBaslerState, validateBasler } from './drivers/basler';
 import { initialGenicamState, validateGenicam } from './drivers/genicam';
 import { initialIpCamState, validateIpCam } from './drivers/ipcam';
@@ -159,7 +160,10 @@ export const useCameraFormBody = (camera_id: string): SchemaProjectCamera | null
         return null;
     }
 
-    const hardware = availableCamerasQuery.data?.find((h) => h.fingerprint === cameraForm.fingerprint);
+    const cameraFingerprint = fingerprintKey(cameraForm.fingerprint);
+    const hardware = cameraFingerprint
+        ? availableCamerasQuery.data?.find((h) => fingerprintKey(h.fingerprint) === cameraFingerprint)
+        : undefined;
 
     return {
         ...cameraForm,

@@ -15,6 +15,8 @@ export function getClient<Paths extends paths>({ baseUrl }: { baseUrl: string })
     };
 }
 
-export const fetchClient = getClient({ baseUrl: API_BASE_URL });
+export const fetchClient = getClient({
+    baseUrl: (typeof process !== 'undefined' ? process.env.PUBLIC_API_BASE_URL : undefined) ?? API_BASE_URL,
+});
 
 export const $api = createClient(fetchClient);

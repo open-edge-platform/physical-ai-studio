@@ -1,8 +1,10 @@
 import time
 from pathlib import Path
 from shutil import copytree
+from uuid import UUID
 
-from db.engine import get_async_db_session_ctx
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from exceptions import ResourceAlreadyExistsError
 from repositories.snapshot_repo import SnapshotRepository
 from schemas import Dataset, Snapshot
@@ -11,8 +13,11 @@ from schemas import Dataset, Snapshot
 class SnapshotService:
     """Allow for snapshotting of dataset to specific folder."""
 
-    @staticmethod
-    async def create_snapshot_for_dataset(dataset: Dataset, destination: Path) -> Snapshot:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = SnapshotRepository(session)
+
+    async def create_snapshot_for_dataset(self, dataset: Dataset, destination: Path) -> Snapshot:
         if destination.exists():
             raise ResourceAlreadyExistsError("Snapshot", f"Destination directory already exists:{destination}")
 
@@ -20,11 +25,8 @@ class SnapshotService:
             dataset_id=dataset.id,
             path=str(destination),
         )
-        SnapshotService._copy_dataset(Path(dataset.path), destination)
-
-        async with get_async_db_session_ctx() as session:
-            repo = SnapshotRepository(session)
-            await repo.save(snapshot)
+        self._copy_dataset(Path(dataset.path), destination)
+        await self.repo.save(snapshot)
 
         return snapshot
 
@@ -33,5 +35,6 @@ class SnapshotService:
         copytree(source, destination)
 
     @staticmethod
-    def generate_snapshot_folder_name() -> str:
-        return time.strftime("snapshot_%Y-%m-%d_%H-%M-%S")
+    def generate_snapshot_folder_name(job_id: UUID) -> str:
+        """Generate a snapshot folder name unique to the training job."""
+        return f"{time.strftime('snapshot_%Y-%m-%d_%H-%M-%S')}_{job_id}"

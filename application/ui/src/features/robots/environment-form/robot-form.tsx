@@ -5,9 +5,12 @@ import { Add, Close } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
+import { useIsRobotRole } from '../robot-catalog.hooks';
+import { isUnavailableRobot } from '../robot-types';
 import { RobotConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
-import classes from './form.module.scss';
+import addResourceButtonClasses from '../../../components/add-resource-button/add-resource-button.module.css';
+import classes from './form.module.css';
 
 const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemove: () => void }) => {
     const { project_id } = useProjectId();
@@ -21,12 +24,9 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
         return <li>{robot.robot_id} - unknown</li>;
     }
 
-    const leaderRobot = robotsQuery.data.find(
-        ({ id }) => robot.teleoperator.type === 'robot' && robot.teleoperator.robot_id === id
-    );
-    if (leaderRobot === undefined) {
-        return <li>Unknown leader robot</li>;
-    }
+    const teleoperator = robot.teleoperator;
+    const leaderRobot =
+        teleoperator.type === 'robot' ? robotsQuery.data.find(({ id }) => id === teleoperator.robot_id) : undefined;
 
     return (
         <li>
@@ -39,7 +39,9 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
                         </Flex>
                         <Flex gap='size-200'>
                             <span>Tele operator</span>
-                            <span>{leaderRobot.name}</span>
+                            <span>
+                                {teleoperator.type === 'none' ? 'None' : (leaderRobot?.name ?? 'Unknown leader robot')}
+                            </span>
                         </Flex>
                     </Flex>
 
@@ -70,9 +72,14 @@ export const AddRobotForm = ({
     const robotsQuery = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
         params: { path: { project_id } },
     });
+    const { isFollower, isLeader } = useIsRobotRole();
     const environment = useEnvironmentForm();
 
     const availableRobots = robotsQuery.data.filter((robot) => {
+        if (isUnavailableRobot(robot)) {
+            return false;
+        }
+
         return (
             environment.robots.some(({ robot_id, teleoperator }) => {
                 if (robot_id === robot.id) {
@@ -106,19 +113,17 @@ export const AddRobotForm = ({
                     }
                 }}
             >
-                {availableRobots
-                    .filter((robot) => robot.type === 'SO101_Follower' || robot.type === 'Trossen_WidowXAI_Follower')
-                    .map((robot) => {
-                        return (
-                            <Item textValue={robot.name} key={robot.id}>
-                                <Text>{robot.name}</Text>
-                            </Item>
-                        );
-                    })}
+                {availableRobots.filter(isFollower).map((robot) => {
+                    return (
+                        <Item textValue={robot.name} key={robot.id}>
+                            <Text>{robot.name}</Text>
+                        </Item>
+                    );
+                })}
             </Picker>
 
             <Picker
-                label='Robot (Leader)'
+                label='Robot (Leader, optional)'
                 width='100%'
                 selectedKey={selectedTeleoperatorRobotId}
                 onSelectionChange={(key) => {
@@ -127,25 +132,25 @@ export const AddRobotForm = ({
                     }
                 }}
             >
-                {availableRobots
-                    .filter((robot) => robot.type === 'SO101_Leader' || robot.type === 'Trossen_WidowXAI_Leader')
-                    .map((robot) => {
-                        return (
-                            <Item textValue={robot.name} key={robot.id}>
-                                <Text>{robot.name}</Text>
-                            </Item>
-                        );
-                    })}
+                {availableRobots.filter(isLeader).map((robot) => {
+                    return (
+                        <Item textValue={robot.name} key={robot.id}>
+                            <Text>{robot.name}</Text>
+                        </Item>
+                    );
+                })}
             </Picker>
 
             <Flex gap='size-100'>
                 <Button
                     variant='secondary'
                     onPress={() => {
-                        if (selectedRobotId && selectedTeleoperatorRobotId) {
+                        if (selectedRobotId) {
                             onAddRobot({
                                 robot_id: selectedRobotId,
-                                teleoperator: { robot_id: selectedTeleoperatorRobotId, type: 'robot' },
+                                teleoperator: selectedTeleoperatorRobotId
+                                    ? { robot_id: selectedTeleoperatorRobotId, type: 'robot' }
+                                    : { type: 'none' },
                             });
                         }
                     }}
@@ -224,7 +229,7 @@ export const RobotForm = () => {
             ) : environmentForm.robots.length === 0 ? (
                 <Button
                     variant='secondary'
-                    UNSAFE_className={classes.addNewButton}
+                    UNSAFE_className={addResourceButtonClasses.addResourceButton}
                     width='100%'
                     onPress={() => {
                         setIsAdding(true);

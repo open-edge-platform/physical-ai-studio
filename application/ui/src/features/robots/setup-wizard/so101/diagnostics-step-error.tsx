@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 
 import { InlineAlert } from '../shared/inline-alert';
 
-import classes from '../shared/setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.css';
 
 const LEROBOT_DOCS_URL = 'https://huggingface.co/docs/lerobot/so101';
 

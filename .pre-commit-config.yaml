@@ -6,6 +6,7 @@
 # Project-specific hooks are defined in:
 #   - library/.pre-commit-config.yaml
 #   - application/backend/.pre-commit-config.yaml
+#   - application/ui/.pre-commit-config.yaml
 
 default_language_version:
   node: 22.10.0
@@ -18,13 +19,25 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^(\.claude/skills/|\.agents/skills/)
       - id: end-of-file-fixer
+        exclude: ^(\.claude/skills/|\.agents/skills/)
       - id: check-yaml
       - id: check-added-large-files
-        exclude: uv\.lock$
+        # Generated README demo GIFs are intentionally larger than the generic limit.
+        exclude: ^docs/assets/readme/(api-demo|gui-demo)\.gif$|uv\.lock$
       - id: detect-private-key
       - id: check-merge-conflict
       - id: check-case-conflict
+
+  # ========================================================================== #
+  # SECURITY                                                                   #
+  # ========================================================================== #
+  # gitleaks detects secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
 
   # ========================================================================== #
   # DOCUMENTATION FORMATTING (root-level docs)                                 #
@@ -36,3 +49,18 @@ repos:
         types_or: [markdown, yaml, json]
         # Exclude project-specific files that are handled by their own configs
         exclude: ^(library/|application/)
+
+  - repo: local
+    hooks:
+      - id: agent-skills-sync
+        name: sync agent skill adapters
+        entry: python3 .github/scripts/skills/agent_skills.py sync
+        language: system
+        pass_filenames: false
+        files: ^skills/
+      - id: agent-skills-validate
+        name: validate agent skills layout
+        entry: python3 .github/scripts/skills/agent_skills.py validate
+        language: system
+        pass_filenames: false
+        files: ^skills/

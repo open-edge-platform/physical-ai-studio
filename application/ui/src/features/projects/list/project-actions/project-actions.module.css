@@ -1,0 +1,15 @@
+.countMessage {
+    font-size: var(--spectrum-global-dimension-font-size-50);
+}
+
+.sortButton {
+    color: var(--spectrum-global-color-gray-900);
+}
+
+.sortIcon {
+    transition: rotate var(--spectrum-global-animation-duration-100);
+}
+
+.sortIconDown {
+    rotate: 180deg;
+}

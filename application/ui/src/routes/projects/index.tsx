@@ -1,5 +1,5 @@
-import { ProjectList } from '../../features/projects/list/project-list';
+import { Projects } from '../../features/projects/list/projects';
 
 export const Index = () => {
-    return <ProjectList />;
+    return <Projects />;
 };

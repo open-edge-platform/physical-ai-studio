@@ -1,15 +1,15 @@
 import { defineConfig, loadEnv } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
-import { pluginSass } from '@rsbuild/plugin-sass';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
-const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
+const { publicVars, rawPublicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
+const apiProxyTarget = rawPublicVars.PUBLIC_API_PROXY_TARGET ?? 'http://localhost:7860';
 
 export default defineConfig({
     plugins: [
-        pluginReact(),
-
-        pluginSass(),
+        pluginReact({
+            reactCompiler: true,
+        }),
 
         pluginSvgr({
             svgrOptions: {
@@ -33,10 +33,19 @@ export default defineConfig({
     },
     html: {
         title: 'Physical AI Studio',
-        favicon: './src/assets/icons/build-icon.svg',
+        favicon: './src/assets/icons/physicalai-studio-logo.svg',
     },
     tools: {
         rspack: {
+            // Scalar intentionally imports user-provided plugins at runtime. Rspack
+            // cannot statically resolve that expression, but it is not bundled and
+            // does not affect the API reference's normal operation.
+            ignoreWarnings: [
+                {
+                    module: /@scalar[\\/]api-reference[\\/]dist[\\/]standalone[\\/]lib[\\/]load-plugins-from-urls\.js$/,
+                    message: /Critical dependency: the request of a dependency is an expression/,
+                },
+            ],
             watchOptions: {
                 ignored: ['**/src-tauri/**'],
             },
@@ -45,8 +54,7 @@ export default defineConfig({
     server: {
         proxy: {
             '/api': {
-                target: 'http://localhost:7860',
-                //target: 'http://192.168.2.117:7860',
+                target: apiProxyTarget,
                 changeOrigin: true,
                 ws: true,
                 //pathRewrite: { '^/api': '' }, // strip the /api prefix

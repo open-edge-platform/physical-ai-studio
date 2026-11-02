@@ -1,11 +1,12 @@
 import { ReactNode } from 'react';
 
-import { Button, Divider, Flex, Heading, Icon, View } from '@geti-ui/ui';
-import { ChevronLeft } from '@geti-ui/ui/icons';
+import { Divider, Flex, View } from '@geti-ui/ui';
 
+import { FormHeading } from '../../../components/form-heading/form-heading';
 import { RadioDisclosure } from '../../../components/radio-disclosure-group/radio-disclosure-group';
+import { featureFlags } from '../../../config/feature-flags';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { CameraIcon } from './camera-icon';
 import { useAllAvailableCameras } from './components/use-camera-data';
 import { BaslerFormFields } from './drivers/basler';
@@ -21,19 +22,11 @@ const Header = ({ heading }: { heading: ReactNode }) => {
     const { project_id } = useProjectId();
 
     return (
-        <Flex alignItems={'center'} gap='size-200'>
-            <Button
-                href={paths.project.cameras.index({ project_id })}
-                variant='secondary'
-                UNSAFE_style={{ border: 'none' }}
-            >
-                <Icon>
-                    <ChevronLeft color='white' fill='white' />
-                </Icon>
-            </Button>
-
-            <Heading>{heading}</Heading>
-        </Flex>
+        <FormHeading
+            heading={heading}
+            backTo={paths.project.cameras.index({ project_id })}
+            backLabel='Back to cameras'
+        />
     );
 };
 
@@ -77,14 +70,14 @@ const CameraFormFields = () => {
             value: 'genicam' as const,
             icon: <CameraIcon type='genicam' width={'24px'} />,
             content: <GenicamFormFields />,
-            visible: hasDriver('genicam'),
+            visible: false, // Disable Genicam until driver is implemented
         },
         {
             label: 'IP Camera',
             value: 'ipcam' as const,
             icon: <CameraIcon type='ipcam' width={'24px'} />,
             content: <IpCamFormFields />,
-            visible: true, // Always allow IP cameras
+            visible: featureFlags.ipCamera,
         },
     ].filter((item) => item.visible);
 
@@ -117,7 +110,7 @@ const EditCameraFormFields = () => {
 export const CameraForm = ({ isEdit = false }) => {
     return (
         <Flex direction='column' gap='size-200'>
-            <Header heading={isEdit === false ? 'Add new camera' : 'Update camera'} />
+            <Header heading={isEdit === false ? 'Configure new camera' : 'Update camera'} />
 
             <Divider orientation='horizontal' size='S' />
 

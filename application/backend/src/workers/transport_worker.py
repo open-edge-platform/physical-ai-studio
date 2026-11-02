@@ -56,6 +56,8 @@ class WorkerStatus(Generic[ConfigT]):
 class TransportWorker(Generic[ConfigT]):
     """Base class for workers that communicate via a transport."""
 
+    _stop_requested: bool
+
     def __init__(self, transport: WorkerTransport) -> None:
         self.transport = transport
         self.state = WorkerState.INITIALIZING

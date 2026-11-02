@@ -1,0 +1,29 @@
+.viewerPanel {
+    height: 100%;
+    box-sizing: border-box;
+    padding-inline-end: var(--spectrum-global-dimension-size-200);
+    overflow-x: hidden;
+}
+
+.listPanel {
+    height: 100%;
+    box-sizing: border-box;
+    padding-inline-start: var(--spectrum-global-dimension-size-200);
+    display: flex;
+    flex-direction: column;
+}
+
+.separator {
+    width: 1px;
+    background-color: var(--spectrum-global-color-gray-300);
+}
+
+.separator[data-separator='hover'],
+.separator[data-separator='active'],
+.separator[data-separator='focus'] {
+    background-color: var(--energy-blue);
+}
+
+.separator:focus-visible {
+    outline: none;
+}

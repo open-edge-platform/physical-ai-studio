@@ -1,0 +1,80 @@
+# SmolVLA SnapFlow Phase-2 Distillation Configuration
+#
+# Use this config for the second phase of SnapFlow two-phase training when you
+# want two explicit runs — for example to distill from a checkpoint you
+# already have (a published checkpoint, or a phase-1 run from elsewhere).
+#
+# Two-phase recipe (two explicit CLI runs):
+#
+#   # Phase 1 — standard flow-matching training
+#   physicalai fit --config configs/physicalai/smolvla/pusht/default.yaml
+#
+#   # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start
+#   physicalai fit \
+#       --config configs/physicalai/smolvla/pusht/snapflow.yaml \
+#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
+#
+# `--weights_from` loads only the phase-1 state_dict and then re-applies this
+# config's model init_args (train_expert_only, snapflow_enabled, ...) on top of
+# it. It does NOT resume the optimizer, LR schedule, or global step — training
+# starts fresh at step 0 with this file's own trainer.max_steps budget.
+#
+# Do not use `--fit.ckpt_path` for the phase-2 handoff: that performs a full
+# Lightning resume, which restores the phase-1 optimizer state (one param group
+# per trainable phase-1 tensor) into an optimizer built over the frozen-VLM
+# phase-2 model (many fewer trainable tensors) and fails with
+# "loaded state dict contains a parameter group that doesn't match the size of
+# optimizer's group". `--fit.ckpt_path` is only correct for resuming a run
+# that was itself already using this same config (i.e. resuming phase 2 from
+# its own earlier checkpoint).
+#
+# Single-run alternative (recommended):
+#   Add SnapFlowPhaseCallback to trainer.callbacks in
+#   configs/physicalai/smolvla/pusht/default.yaml with a
+#   start_epoch (or start_step) boundary and run a single `physicalai fit`.
+#   See configs/physicalai/pi05/so101/snapflow.yaml for a
+#   worked example.
+#
+# See docs/how-to/training/snapflow_distillation.md.
+# Paper reference: arXiv:2604.05656 (SnapFlow)
+
+model:
+  class_path: physicalai.policies.SmolVLA
+  init_args:
+    # SnapFlow distillation — paper defaults (§3.6 + Appendix J)
+    snapflow_enabled: true
+    snapflow_alpha: 0.5 # FM-loss weight
+    snapflow_lambda: 0.1 # shortcut-loss scale
+    snapflow_num_inference_steps: 1 # 1-NFE inference
+
+    # Freeze VLM; train only action expert + target-time embedding (~10% params)
+    train_expert_only: true
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 64
+    data_format: "physicalai"
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+    image_transforms:
+      class_path: torchvision.transforms.v2.Compose
+      init_args:
+        transforms:
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              contrast:
+                - 0.8
+                - 1.2
+              brightness:
+                - 0.8
+                - 1.2
+
+trainer:
+  max_epochs: 2
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 10

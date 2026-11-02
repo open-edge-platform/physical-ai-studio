@@ -1,0 +1,5 @@
+.tabPanels {
+    margin-top: var(--spectrum-global-dimension-size-100);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}

@@ -1,72 +1,68 @@
-from abc import ABC
-from datetime import datetime
-from enum import StrEnum
-from typing import Annotated, Literal
-from uuid import UUID
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field, TypeAdapter, create_model
 
+from robots.catalog.registry import RobotCatalogRegistry
+from schemas.robot_type import BaseRobot, RobotType
 
-class SerialPortInfo(BaseModel):
-    connection_string: str
-    serial_number: str
-    robot_type: str
+__all__ = [
+    "ReadableRobot",
+    "Robot",
+    "RobotAdapter",
+    "RobotType",
+    "RobotWithConnectionState",
+    "RobotWithConnectionStateAdapter",
+    "UnavailableRobot",
+    "UnavailableRobotWithConnectionState",
+]
 
+# ============================================================================
+# Discriminated union of all robot types — built dynamically from registry
+# ============================================================================
 
-class BaseRobotConfig(BaseModel):
-    type: Literal["follower", "leader"]
-    robot_type: str = Field(description="Robot Type")
-
-
-class LeRobotConfig(BaseRobotConfig):
-    type: Literal["follower", "leader"]
-    robot_type: str = Field(description="Robot Type (e.g. so101)")
-    id: str = Field(description="Robot calibration id")
-    port: str = Field(description="Serial port of robot")
-    serial_number: str = Field(description="Serial ID of device")
-
-
-class NetworkIpRobotConfig(BaseRobotConfig):
-    type: Literal["follower", "leader"]
-    robot_type: str = Field(description="Robot Type (e.g. Trossen WidowX AI)")
-    connection_string: str = Field(description="IP address of robot")
+_registry = RobotCatalogRegistry()
+Robot = _registry.make_robot_type()
+RobotAdapter: TypeAdapter = _registry.get_robot_adapter()
 
 
-class RobotType(StrEnum):
-    SO101_FOLLOWER = "SO101_Follower"
-    SO101_LEADER = "SO101_Leader"
-    TROSSEN_WIDOWXAI_LEADER = "Trossen_WidowXAI_Leader"
-    TROSSEN_WIDOWXAI_FOLLOWER = "Trossen_WidowXAI_Follower"
+class UnavailableRobot(BaseRobot):
+    """A persisted robot whose catalog plugin is not currently installed."""
+
+    type: str
+    payload: dict[str, Any]
+    unavailable: Literal[True] = True
 
 
-class Robot(ABC, BaseModel):
-    id: Annotated[UUID, Field(description="Unique identifier")]
+ReadableRobot = Robot | UnavailableRobot
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
 
-    name: str = Field(..., description="Human-readable robot name")
-    connection_string: str = Field(
-        ..., description="Connection string to device, keep empty to automatically find using serial number"
-    )
-    serial_number: str = Field(..., description="Unique serial number for the robot")
-    type: RobotType = Field(..., description="Type of robot configuration")
-    active_calibration_id: UUID | None = Field(default=None, description="The ID of the active calibration")
+# ============================================================================
+# RobotWithConnectionState variants
+# ============================================================================
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "id": "a5e2cde6-936b-4a9e-a213-08dda0afa453",
-                "name": "Assembly Line Robot 1",
-                "connection_string": "SO101-2024-001",
-                "robot_type": "SO101_Leader",
-                "active_calibration_id": "b7f3d9e2-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
-                "created_at": "2024-01-15T10:30:00Z",
-                "updated_at": "2024-01-15T10:30:00Z",
-            },
-        },
+_ConnectionStatus = Literal["online", "offline", "unknown"]
+
+
+def _build_union(models: list[type]) -> Any:
+    result: Any = models[0]
+    for model in models[1:]:
+        result = result | model
+    return result
+
+
+def _with_connection_status(robot_model: type) -> type:
+    return create_model(
+        f"{robot_model.__name__}WithConnectionState",
+        __base__=robot_model,
+        connection_status=(_ConnectionStatus, "unknown"),
     )
 
 
-class RobotWithConnectionState(Robot):
-    connection_status: Literal["online", "offline", "unknown"] = "unknown"
+_connection_state_models = [_with_connection_status(model) for model in _registry.get_robot_types()]
+_connection_state_union = _build_union(_connection_state_models)
+RobotWithConnectionState: Any = Annotated[_connection_state_union, Field(discriminator="type")]
+RobotWithConnectionStateAdapter: TypeAdapter[Any] = TypeAdapter(RobotWithConnectionState)
+
+
+class UnavailableRobotWithConnectionState(UnavailableRobot):
+    connection_status: Literal["unknown"] = "unknown"

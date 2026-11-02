@@ -6,9 +6,17 @@
 import numpy as np
 import pytest
 import torch
+from lightning_utilities.core.apply_func import apply_to_collection
 
 from physicalai.data.lerobot import FormatConverter
-from physicalai.data.observation import IMAGES, Observation
+from physicalai.data.observation import (
+    IMAGES,
+    PREV_CHUNK_LEFT_OVER,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    Observation,
+)
 
 
 class TestObservationCreation:
@@ -68,12 +76,11 @@ class TestObservationCreation:
         assert obs.frame_index.item() == 10
         assert obs.index.item() == 100
 
-    def test_frozen_dataclass(self):
-        """Test that Observation is immutable."""
+    def test_field_assignment_allowed(self):
+        """Test that Observation fields are mutable."""
         obs = Observation(action=torch.tensor([1.0, 2.0]))
-
-        with pytest.raises(AttributeError):
-            obs.action = torch.tensor([3.0, 4.0])
+        obs.action = torch.tensor([3.0, 4.0])
+        assert torch.equal(obs.action, torch.tensor([3.0, 4.0]))
 
 
 class TestObservationToDict:
@@ -190,7 +197,8 @@ class TestObservationFromDict:
         assert "top" in obs.images
         assert "wrist" in obs.images
 
-    def test_roundtrip_to_dict_from_dict(self):
+    @pytest.mark.parametrize("flatten", [True, False])
+    def test_roundtrip_to_dict_from_dict(self, flatten):
         """Test to_dict → from_dict roundtrip."""
         original = Observation(
             action=torch.tensor([1.0, 2.0]),
@@ -199,12 +207,29 @@ class TestObservationFromDict:
             episode_index=torch.tensor(5),
         )
 
-        obs_dict = original.to_dict()
+        obs_dict = original.to_dict(flatten=flatten)
         restored = Observation.from_dict(obs_dict)
 
         assert torch.equal(restored.action, original.action)
         assert torch.equal(restored.state, original.state)
         assert torch.equal(restored.episode_index, original.episode_index)
+        assert restored.images is not None
+        assert torch.equal(restored.images["top"], original.images["top"])
+
+    def test_from_dict_restores_flattened_image_keys(self):
+        """Test from_dict rebuilds nested image mappings from flattened keys."""
+        top = torch.rand(3, 64, 64)
+        wrist = torch.rand(3, 64, 64)
+
+        obs = Observation.from_dict({
+            "images.top": top,
+            "images.wrist": wrist,
+            "_images_keys": ["images.top", "images.wrist"],
+        })
+
+        assert obs.images is not None
+        assert torch.equal(obs.images["top"], top)
+        assert torch.equal(obs.images["wrist"], wrist)
 
 
 class TestObservationBatching:
@@ -485,6 +510,76 @@ class TestObservationWithOptionalFields:
         assert obs.next_success is True
         assert obs.info["key"] == "value"
         assert obs.extra["custom"] == 123
+
+    def test_observation_with_prev_chunk_left_over(self):
+        """Test observation carries the RTC prev_chunk_left_over field."""
+        prev_chunk = torch.randn(1, 50, 32)
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            prev_chunk_left_over=prev_chunk,
+        )
+
+        assert obs.prev_chunk_left_over is not None
+        assert torch.equal(obs.prev_chunk_left_over, prev_chunk)
+
+    def test_prev_chunk_left_over_roundtrip(self):
+        """Test prev_chunk_left_over survives to_dict → from_dict roundtrip."""
+        prev_chunk = torch.randn(1, 50, 32)
+        original = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            prev_chunk_left_over=prev_chunk,
+        )
+
+        restored = Observation.from_dict(original.to_dict())
+
+        assert restored.prev_chunk_left_over is not None
+        assert torch.equal(restored.prev_chunk_left_over, prev_chunk)
+
+    def test_observation_with_rtc_scheduling_fields(self):
+        """Test observation carries the RTC scheduling fields."""
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            inference_delay=torch.tensor(4),
+            max_guidance_weight=torch.tensor(5.0),
+            execution_horizon=torch.tensor(10),
+        )
+
+        assert torch.equal(obs.inference_delay, torch.tensor(4))
+        assert torch.equal(obs.max_guidance_weight, torch.tensor(5.0))
+        assert torch.equal(obs.execution_horizon, torch.tensor(10))
+
+    def test_rtc_scheduling_fields_roundtrip(self):
+        """Test RTC scheduling fields survive to_dict → from_dict roundtrip."""
+        original = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            inference_delay=torch.tensor(4),
+            max_guidance_weight=torch.tensor(5.0),
+            execution_horizon=torch.tensor(10),
+        )
+
+        data = original.to_dict()
+
+        assert torch.equal(data[RTC_INFERENCE_DELAY], original.inference_delay)
+        assert torch.equal(data[RTC_MAX_GUIDANCE_WEIGHT], original.max_guidance_weight)
+        assert torch.equal(data[RTC_EXECUTION_HORIZON], original.execution_horizon)
+
+        restored = Observation.from_dict(data)
+
+        assert torch.equal(restored.inference_delay, original.inference_delay)
+        assert torch.equal(restored.max_guidance_weight, original.max_guidance_weight)
+        assert torch.equal(restored.execution_horizon, original.execution_horizon)
+
+    def test_rtc_field_constants_match_dataclass_fields(self):
+        """Test RTC constants resolve to field names retained by ``keys()``."""
+        keys = Observation.keys()
+
+        for constant in (
+            PREV_CHUNK_LEFT_OVER,
+            RTC_INFERENCE_DELAY,
+            RTC_MAX_GUIDANCE_WEIGHT,
+            RTC_EXECUTION_HORIZON,
+        ):
+            assert constant in keys
 
 
 class TestObservationDeviceTransfer:
@@ -827,6 +922,34 @@ class TestObservationNumpyTensorConversion:
         obs_torch = obs_np.to_torch()
         assert obs_torch.next_success is True
         assert obs_torch.info["key"] == "value"
+
+
+class TestObservationLightningApplyToCollection:
+    """Regression tests for Lightning apply_to_collection interoperability."""
+
+    def test_apply_to_collection_returns_observation_with_bfloat16_tensors(self):
+        """apply_to_collection should cast tensors to bfloat16 and preserve Observation type."""
+        observation = Observation(
+            action=torch.tensor([[2.0, 4.0]]),
+            state=torch.tensor([[6.0, 8.0]]),
+            images={"top": torch.tensor([[[[10.0, 12.0]]]])},
+            info={"source": "unit-test"},
+        )
+
+        transformed = apply_to_collection(
+            observation,
+            dtype=torch.Tensor,
+            function=lambda tensor: tensor.to(torch.bfloat16),
+        )
+
+        assert isinstance(transformed, Observation)
+        assert transformed.action.dtype == torch.bfloat16
+        assert transformed.state.dtype == torch.bfloat16
+        assert transformed.images["top"].dtype == torch.bfloat16
+        torch.testing.assert_close(transformed.action.float(), torch.tensor([[2.0, 4.0]]))
+        torch.testing.assert_close(transformed.state.float(), torch.tensor([[6.0, 8.0]]))
+        torch.testing.assert_close(transformed.images["top"].float(), torch.tensor([[[[10.0, 12.0]]]]))
+        assert transformed.info == {"source": "unit-test"}
 
 
 class TestObservationIndexing:

@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
+
 import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text } from '@geti-ui/ui';
 
-import { $api } from '../../api/client';
-import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaEpisode } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
@@ -9,16 +10,53 @@ import {
     EpisodeViewerProvider,
     useEpisodeViewer,
 } from '../../features/datasets/episodes/episode-viewer-provider.component';
-import { useProjectId } from '../../features/projects/use-project';
+import { Player } from '../../features/datasets/episodes/use-player';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 
-import classes from './episode-viewer.module.scss';
+import classes from './episode-viewer.module.css';
 
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
     dataset: SchemaDatasetOutput;
+    environment: SchemaEnvironmentWithRelations;
 }
+
+interface LiveEpisodeChartProps {
+    episode: SchemaEpisode;
+    player: Player;
+}
+const LiveEpisodeChart = ({ episode, player }: LiveEpisodeChartProps) => {
+    const [time, setTime] = useState<number>(player.timeRef.current);
+
+    useEffect(() => {
+        setTime(player.timeRef.current);
+        if (player.isPlaying) {
+            const interval = setInterval(() => {
+                setTime(player.timeRef.current);
+            }, 1000 / 60);
+            return () => clearInterval(interval);
+        }
+    }, [player.timeRef, player.state, player.isPlaying]);
+
+    const onSeek = (newTime: number) => {
+        player.seek(newTime);
+        setTime(newTime);
+    };
+
+    return (
+        <EpisodeChart
+            actions={episode.actions}
+            joints={episode.action_keys}
+            fps={episode.fps}
+            time={time}
+            seek={onSeek}
+            isPlaying={player.isPlaying}
+            play={player.play}
+            pause={player.pause}
+        />
+    );
+};
 
 const EpisodeTimelineComponent = () => {
     const { player, episode } = useEpisodeViewer();
@@ -28,34 +66,16 @@ const EpisodeTimelineComponent = () => {
             <Disclosure isQuiet>
                 <DisclosureTitle>Timeline</DisclosureTitle>
                 <DisclosurePanel>
-                    <EpisodeChart
-                        actions={episode.actions}
-                        joints={episode.action_keys}
-                        fps={episode.fps}
-                        time={player.time}
-                        seek={player.seek}
-                        isPlaying={player.isPlaying}
-                        play={player.play}
-                        pause={player.pause}
-                    />
+                    <LiveEpisodeChart episode={episode} player={player} />
                 </DisclosurePanel>
             </Disclosure>
-            <TimelineControls player={player} />
+            {/* We reset the time controls state for the new episode */}
+            <TimelineControls key={episode.episode_index} player={player} />
         </div>
     );
 };
 
-export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
-    const { project_id } = useProjectId();
-
-    const { data: environment } = $api.useSuspenseQuery(
-        'get',
-        '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: { path: { project_id, environment_id: dataset.environment_id } },
-        }
-    );
-
+export const EpisodeViewer = ({ episode, dataset, environment }: EpisodeViewerProps) => {
     return (
         <EpisodeViewerProvider episode={episode} environment={environment}>
             <RobotModelsProvider>
@@ -66,7 +86,12 @@ export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
                         <Text>{episode.tasks.join(', ')}</Text>
                     </Flex>
                     <Flex direction={'row'} flex gap={'size-100'}>
-                        <EpisodeDockView episode={episode} dataset={dataset} environment={environment} />
+                        <EpisodeDockView
+                            key={dataset.id}
+                            episode={episode}
+                            dataset={dataset}
+                            environment={environment}
+                        />
                     </Flex>
                     <EpisodeTimelineComponent />
                 </Flex>

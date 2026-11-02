@@ -17,8 +17,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
-import { useSettings } from '../../components/settings/use-settings';
-import { makeNameSafeForPath } from './record/utils';
 
 interface NewDatasetFormProps {
     project_id: string;
@@ -32,7 +30,6 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     });
     const [name, setName] = useState<string>('');
     const [defaultTask, setDefaultTask] = useState<string>('');
-    const { geti_action_dataset_path } = useSettings();
 
     const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
         params: {
@@ -56,7 +53,6 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                     project_id,
                     environment_id: environmentId,
                     default_task: defaultTask,
-                    path: `${geti_action_dataset_path}/${makeNameSafeForPath(name)}`,
                 },
             });
             onDone(result);
@@ -66,10 +62,11 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     return (
         <Form onSubmit={save} width={'size-6000'} validationBehavior='native'>
             <Dialog>
-                <Heading>Create dataset</Heading>
+                <Heading>Create new dataset</Heading>
                 <Divider />
                 <Content>
                     <Picker
+                        isRequired
                         items={environments}
                         selectedKey={environmentId}
                         label='Environment'
@@ -89,20 +86,18 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
                         onChange={setName}
                     />
 
-                    <TextField
-                        // eslint-disable-next-line jsx-a11y/no-autofocus
-                        autoFocus
-                        width='100%'
-                        label='Task'
-                        value={defaultTask}
-                        onChange={setDefaultTask}
-                    />
+                    <TextField width='100%' label='Task' value={defaultTask} onChange={setDefaultTask} />
                 </Content>
                 <ButtonGroup>
                     <Button variant='secondary' onPress={() => onDone(undefined)}>
                         Cancel
                     </Button>
-                    <Button variant='accent' type='submit' isDisabled={name === ''} isPending={saveMutation.isPending}>
+                    <Button
+                        variant='accent'
+                        type='submit'
+                        isDisabled={name.trim() === '' || environmentId === undefined}
+                        isPending={saveMutation.isPending}
+                    >
                         Save
                     </Button>
                 </ButtonGroup>
@@ -113,7 +108,7 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
 export const NewDatasetLink = ({ project_id }: { project_id: string }) => {
     return (
         <DialogTrigger>
-            <Button variant='accent'>New Dataset</Button>
+            <Button variant='accent'>Create new dataset</Button>
             {(close) => <NewDatasetForm project_id={project_id} onDone={close} />}
         </DialogTrigger>
     );

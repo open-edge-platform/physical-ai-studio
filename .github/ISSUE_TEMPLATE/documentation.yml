@@ -1,51 +1,26 @@
-name: Documentation
-description: Improvements or additions to documentation
-title: "[Docs]: "
-labels: ["documentation"]
+name: Documentation task
+description: Report missing, incorrect, or unclear documentation.
+type: Task
+labels:
+  - Documentation
 body:
-  - type: markdown
+  - type: textarea
+    id: summary
     attributes:
+      label: What should be documented?
+      description: Briefly describe the documentation problem.
+      placeholder: Describe what is missing, incorrect, or unclear.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Documentation details
+      description: Add the location, suggested outcome, or relevant links.
       value: |
-        Help us improve the documentation.
+        ## Location
 
-  - type: dropdown
-    id: type
-    attributes:
-      label: Type
-      description: What kind of documentation change?
-      options:
-        - New documentation
-        - Update existing docs
-        - Fix incorrect information
-        - Improve clarity
-        - Add examples
-        - Other
-    validations:
-      required: true
-
-  - type: textarea
-    id: description
-    attributes:
-      label: Description
-      description: What documentation needs to change?
-      placeholder: |
-        Describe what's missing, incorrect, or unclear.
-    validations:
-      required: true
-
-  - type: input
-    id: location
-    attributes:
-      label: Location
-      description: File path or URL of the documentation
-      placeholder: "docs/developer_guide.md or README.md"
-    validations:
-      required: false
-
-  - type: textarea
-    id: suggestion
-    attributes:
-      label: Suggested Changes
-      description: Your proposed content or improvements
+        ## Suggested outcome
     validations:
       required: false

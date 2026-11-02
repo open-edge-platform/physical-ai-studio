@@ -12,7 +12,7 @@ export const initialIpCamState: DriverFormSchema<'ipcam'> = {
         fps: 30,
         width: 640,
         height: 480,
-        stream_url: '',
+        url: '',
     },
 };
 
@@ -23,7 +23,7 @@ export const validateIpCam = (formData: DriverFormSchema<'ipcam'>): formData is 
         !!formData.payload?.width &&
         !!formData.payload?.height &&
         !!formData.payload?.fps &&
-        !!formData.payload?.stream_url
+        !!formData.payload?.url
     );
 };
 
@@ -37,10 +37,10 @@ export const IpCamFormFields = () => {
                 isRequired
                 label='Stream URL'
                 width='100%'
-                value={formData.fingerprint ?? ''}
+                value={typeof formData.fingerprint?.url === 'string' ? formData.fingerprint.url : ''}
                 onChange={(url) => {
-                    updateField('fingerprint', url);
-                    updatePayload({ stream_url: url });
+                    updateField('fingerprint', { url });
+                    updatePayload({ url });
                 }}
             />
         </Flex>

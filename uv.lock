@@ -1,3 +1,11 @@
 version = 1
 revision = 3
 requires-python = ">=3.13"
+
+[options]
+exclude-newer = "2026-10-09T11:41:49.116337Z"
+exclude-newer-span = "P7D"
+
+[options.exclude-newer-package]
+markupsafe = false
+pyrealsense2 = { timestamp = "2026-10-15T11:41:49.116342Z", span = "P1D" }

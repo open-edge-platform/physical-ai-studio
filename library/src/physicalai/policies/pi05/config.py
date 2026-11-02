@@ -7,7 +7,7 @@ This module provides dataclass configurations for the Pi05 flow matching
 vision-language-action model.
 
 Example (CLI):
-    physicalai fit --config configs/physicalai/pi05.yaml
+    physicalai fit --config configs/physicalai/pi05/aloha/default.yaml
 
 Example (API):
     >>> from physicalai.policies.pi05 import Pi05Config
@@ -17,19 +17,22 @@ Example (API):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from physicalai.config import Config
 
+from physicalai.policies.mixins import SnapFlowConfigMixin
+from physicalai.policies.mixins.peft import PeftConfigMixin
+
 
 @dataclass(frozen=True)
-class Pi05Config(Config):
+class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
     """Configuration for Pi05 flow matching model.
 
     Attributes:
         paligemma_variant: Gemma variant for the VLM backbone. Defaults to "gemma_2b".
         action_expert_variant: Gemma variant for the action expert. Defaults to "gemma_300m".
-        dtype: Precision for model weights. Options: "bfloat16", "float32". Defaults to "float32".
+        dtype: Precision for model weights. Options: "bfloat16", "float32". Defaults to "bfloat16".
         n_obs_steps: Number of observation steps to use. Defaults to 1.
         chunk_size: Number of action steps to predict. Defaults to 50.
         n_action_steps: Number of action steps to execute. Defaults to 50.
@@ -47,9 +50,20 @@ class Pi05Config(Config):
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
         gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
-        compile_mode: Torch compile mode. Defaults to "max-autotune".
+        compile_mode: Torch compile mode. Defaults to "default".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
-        train_expert_only: Whether to train only the action expert. Defaults to True.
+        train_expert_only: Whether to train only the action expert. Defaults to False.
+        lora_*: LoRA/DoRA fine-tuning fields, see
+            ``physicalai.policies.mixins.peft.PeftConfigMixin``. The default LoRA target modules
+            (when ``lora_target_modules`` is ``None``) come from
+            ``Pi05Model.get_default_peft_targets()``: full attention (``q``/``k``/``v``/
+            ``o_proj``) and MLP (``gate``/``up``/``down_proj``) on *both* the action expert
+            and the PaliGemma VLM's language model, plus the action/time projection heads
+            (``action_in_proj``, ``action_out_proj``, ``time_mlp_in``, ``time_mlp_out``).
+            This excludes the SnapFlow-only ``target_time_mlp_*`` heads and the vision
+            tower (SigLIP backbone); pass an explicit ``lora_target_modules`` to target
+            those.
+
         normalization_mode: Normalization method for state/action features.
             ``"QUANTILES"`` maps data to [-1, 1] using the 1st and 99th percentiles,
             which is robust to outliers. ``"MEAN_STD"`` uses zero-mean unit-variance
@@ -61,18 +75,29 @@ class Pi05Config(Config):
         optimizer_weight_decay: Weight decay coefficient. Defaults to 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for clipping. Defaults to 1.0.
         scheduler_warmup_steps: Number of warmup steps. Defaults to 1000.
-        scheduler_decay_steps: Number of cosine decay steps. When ``None``,
-            automatically set to the total training steps via
-            ``trainer.estimated_stepping_batches``. Defaults to 30000
-            (matching lerobot pi05).
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``,
+            the horizon follows the trainer's total step budget
+            (``max_steps``/``max_epochs``). Defaults to None.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to False.
+
+    Note:
+        ``freeze_vision_encoder``/``train_expert_only`` are mutually exclusive with
+        ``lora_enabled=True`` at their non-default values: LoRA injection freezes all base
+        parameters after these flags are applied, so combining them with LoRA raises a
+        ``ValueError`` in ``__post_init__``. Note also that if you bypass this check (e.g.
+        by calling ``freeze_vlm()`` after construction), ``train_expert_only=True`` forces
+        ``paligemma.eval()`` on every subsequent ``train()`` call, which silently disables
+        dropout inside any LoRA adapters injected into the PaliGemma language model.
+
+    See :class:`~physicalai.policies.mixins.SnapFlowConfigMixin` for the
+    inherited ``snapflow_*`` attributes.
     """
 
     paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b"
     action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m"
-    dtype: Literal["bfloat16", "float32"] = "float32"
+    dtype: Literal["bfloat16", "float32"] = "bfloat16"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -100,7 +125,12 @@ class Pi05Config(Config):
     compile_mode: str = "default"
 
     freeze_vision_encoder: bool = False
-    train_expert_only: bool = True
+    train_expert_only: bool = False
+
+    _PEFT_EXCLUSIVE_FLAGS: ClassVar[dict[str, object]] = {
+        "freeze_vision_encoder": False,
+        "train_expert_only": False,
+    }
 
     normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
 
@@ -111,7 +141,7 @@ class Pi05Config(Config):
     optimizer_grad_clip_norm: float = 1.0
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int | None = 30_000
+    scheduler_decay_steps: int | None = None
     scheduler_decay_lr: float = 2.5e-6
 
     use_random_input_noise: bool = True
@@ -137,3 +167,7 @@ class Pi05Config(Config):
         if self.dtype not in {"bfloat16", "float32"}:
             msg = f"Invalid dtype: {self.dtype}"
             raise ValueError(msg)
+
+        self._validate_snapflow()
+
+        super().__post_init__()

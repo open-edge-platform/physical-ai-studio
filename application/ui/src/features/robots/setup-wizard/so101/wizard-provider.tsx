@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
+import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
 import { useProjectId } from '../../../projects/use-project';
 import { useRobotForm } from '../../robot-form/provider';
 import { MotorProbeResult, SetupWebSocketState, useSetupWebSocket } from './use-setup-websocket';
@@ -79,7 +80,7 @@ const SetupActionsContext = createContext<SetupActions | null>(null);
 
 export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
     const { project_id: projectId } = useProjectId();
-    const robotForm = useRobotForm();
+    const { activeType, robotForm } = useRobotForm();
 
     // -----------------------------------------------------------------------
     // Wizard step state
@@ -158,15 +159,21 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
     // -----------------------------------------------------------------------
     // WebSocket hook
     // -----------------------------------------------------------------------
+    const so101Payload: SchemaSo101RobotPayload | null =
+        activeType === 'SO101_Follower' || activeType === 'SO101_Leader'
+            ? (robotForm.payload as SchemaSo101RobotPayload)
+            : null;
+    const serialNumber = so101Payload?.serial_number ?? '';
+    const robotType = activeType;
+    const connectionString = so101Payload?.connection_string ?? '';
 
-    const serialNumber = robotForm.serial_number ?? '';
-    const robotType = robotForm.type ?? '';
-    const wsEnabled = !!serialNumber && !!robotType;
+    const wsEnabled = (!!serialNumber || !!connectionString) && robotType?.startsWith('SO101') === true;
 
     const { state: wsState, commands } = useSetupWebSocket({
         projectId,
-        robotType,
+        robotType: robotType ?? 'SO101_Follower',
         serialNumber,
+        connectionString,
         enabled: wsEnabled,
     });
 
@@ -234,12 +241,16 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
 
 export const useSetupState = () => {
     const ctx = useContext(SetupStateContext);
-    if (ctx === null) throw new Error('useSetupState must be used within SetupWizardProvider');
+    if (ctx === null) {
+        throw new Error('useSetupState must be used within SetupWizardProvider');
+    }
     return ctx;
 };
 
 export const useSetupActions = () => {
     const ctx = useContext(SetupActionsContext);
-    if (ctx === null) throw new Error('useSetupActions must be used within SetupWizardProvider');
+    if (ctx === null) {
+        throw new Error('useSetupActions must be used within SetupWizardProvider');
+    }
     return ctx;
 };

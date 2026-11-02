@@ -2,9 +2,9 @@ import { Button, Flex, View } from '@geti-ui/ui';
 
 import { useProjectId } from '../../features/projects/use-project';
 import { Preview } from '../../features/robots/environment-form/preview';
-import { EnvironmentFormProvider, EnvironmentFormState } from '../../features/robots/environment-form/provider';
+import { EnvironmentForm, EnvironmentFormProvider } from '../../features/robots/environment-form/provider';
 import { useEnvironment } from '../../features/robots/use-environment';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 
 const Header = () => {
     const { project_id } = useProjectId();
@@ -33,13 +33,14 @@ const Header = () => {
 export const EnvironmentShow = () => {
     const environment = useEnvironment();
 
-    const environmentForm: EnvironmentFormState = {
+    const environmentForm: EnvironmentForm = {
         name: environment.name,
-        camera_ids: environment.cameras?.map(({ id }) => id!) ?? [],
+        cameras: environment.cameras?.map(({ id, name }) => ({ camera_id: id!, name: name! })) ?? [],
         robots:
             environment.robots?.map((robot) => {
                 return {
                     robot_id: robot.robot.id,
+                    name: robot.robot.name,
                     teleoperator:
                         robot.tele_operator.type === 'robot'
                             ? {
@@ -52,8 +53,10 @@ export const EnvironmentShow = () => {
     };
     return (
         <EnvironmentFormProvider environment={environmentForm}>
-            <Header />
-            <Preview />
+            <Flex height='100%' direction={'column'}>
+                <Header />
+                <Preview />
+            </Flex>
         </EnvironmentFormProvider>
     );
 };

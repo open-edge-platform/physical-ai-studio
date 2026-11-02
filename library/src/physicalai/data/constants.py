@@ -11,13 +11,15 @@ from physicalai.inference.constants import (
     ACTION,
     IMAGE_MASKS,
     IMAGES,
+    PREV_CHUNK_LEFT_OVER,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
     STATE,
     TASK,
     TOKENIZED_PROMPT,
     TOKENIZED_PROMPT_MASK,
 )
-
-# Core observation fields
 
 # Optional RL & metadata fields
 NEXT_REWARD = "next_reward"
@@ -41,6 +43,10 @@ __all__ = [
     "INFO",
     "NEXT_REWARD",
     "NEXT_SUCCESS",
+    "PREV_CHUNK_LEFT_OVER",
+    "RTC_EXECUTION_HORIZON",
+    "RTC_INFERENCE_DELAY",
+    "RTC_MAX_GUIDANCE_WEIGHT",
     "STATE",
     "TASK",
     "TASK_INDEX",

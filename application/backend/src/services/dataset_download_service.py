@@ -12,7 +12,7 @@ class DatasetDownloadService:
 
         temporary_archive_path = Path(tempfile.gettempdir()) / f"dataset-{uuid4()}.zip"
 
-        with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
             for path in dataset_path.rglob("*"):
                 if path.is_file():
                     archive.write(path, arcname=path.relative_to(dataset_path))

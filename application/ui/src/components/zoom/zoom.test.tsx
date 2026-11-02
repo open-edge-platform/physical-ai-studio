@@ -1,12 +1,12 @@
+import { rs } from '@rstest/core';
 import { render, screen } from '@testing-library/react';
-import { vi } from 'vitest';
 
 import { useContainerSize } from './use-container-size';
 import { ZoomProvider } from './zoom';
 import { ZoomTransform } from './zoom-transform';
 
-vi.mock('./use-container-size', () => ({
-    useContainerSize: vi.fn(),
+rs.mock('./use-container-size', () => ({
+    useContainerSize: rs.fn(),
 }));
 
 describe('Zoom', () => {
@@ -15,7 +15,7 @@ describe('Zoom', () => {
         const contentSize = { width: 300, height: 200 };
         const expectedZoom = { translate: { x: -100, y: 150 }, scale: 0.3 };
 
-        vi.mocked(useContainerSize).mockImplementation(() => screenSize);
+        rs.mocked(useContainerSize).mockImplementation(() => screenSize);
 
         render(
             <ZoomProvider>

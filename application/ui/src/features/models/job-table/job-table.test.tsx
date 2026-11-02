@@ -1,0 +1,546 @@
+import { rs } from '@rstest/core';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { HttpResponse } from 'msw';
+
+import { SchemaTrainJob } from '../../../api/openapi-spec';
+import { http } from '../../../api/utils';
+import { server } from '../../../msw-node-setup';
+import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
+import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
+import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
+import { render } from '../../../test-utils/render';
+import { TrainingRow } from './job-table';
+
+/**
+ * jsdom does not implement `EventSource`, and MSW does not intercept it (no
+ * EventSource interceptor exists in `@mswjs/interceptors`). `JobMetricsContent`
+ * calls the real browser `EventSource` via `fetchSSE`, and it is the default
+ * (and therefore immediately-mounted) tab panel for a job row, so it must be
+ * stubbed here or expanding a job row would throw
+ * `ReferenceError: EventSource is not defined`. The stub resolves the stream
+ * immediately so the async iterator in `fetchSSE` terminates without hanging.
+ */
+class ImmediatelyClosingEventSource extends EventTarget {
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onerror: (() => void) | null = null;
+
+    constructor() {
+        super();
+        queueMicrotask(() => this.onmessage?.({ data: 'DONE' }));
+    }
+
+    close() {}
+}
+
+const localJob: SchemaTrainJob = {
+    id: 'job-1',
+    project_id: 'project-1',
+    progress: 42,
+    status: 'running',
+    message: 'Training',
+    start_time: '2026-07-14T10:00:00Z',
+    end_time: null,
+    created_at: '2026-07-14T09:00:00Z',
+    extra_info: { 'train/loss_step': 0.123456 },
+    type: 'training',
+    issues: [],
+    payload: getMockedTrainJobPayload(),
+};
+
+const remoteTrainer = getMockedRemoteTrainer();
+
+const dataset = getMockedDataset();
+
+const environment = getMockedEnvironment();
+
+const renderTrainingRow = (
+    trainJobOverride: Partial<SchemaTrainJob> = {},
+    { onInterrupt = rs.fn(), onViewLogs = rs.fn() }: { onInterrupt?: () => void; onViewLogs?: () => void } = {}
+) => {
+    const trainJob: SchemaTrainJob = { ...localJob, ...trainJobOverride };
+    return render(<TrainingRow trainJob={trainJob} onInterrupt={onInterrupt} onViewLogs={onViewLogs} />);
+};
+
+describe('TrainingRow', () => {
+    beforeAll(() => {
+        rs.stubGlobal('EventSource', ImmediatelyClosingEventSource);
+    });
+
+    afterAll(() => {
+        rs.unstubAllGlobals();
+    });
+
+    beforeEach(() => {
+        server.use(
+            http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    remote_trainer_id: remoteTrainer.id,
+                    status: 'healthy',
+                    checked_at: '2026-07-16T12:00:00Z',
+                    devices: [],
+                })
+            ),
+            http.get('/api/dataset/{dataset_id}', () => HttpResponse.json(dataset)),
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.json(environment))
+        );
+    });
+
+    it('renders the model name, loss to two decimal places, and the uppercased architecture', () => {
+        renderTrainingRow();
+
+        expect(screen.getByText('pick-and-place')).toBeInTheDocument();
+        expect(screen.getByText('0.12')).toBeInTheDocument();
+        expect(screen.getByText('ACT')).toBeInTheDocument();
+    });
+
+    it('shows "..." when extra_info[\'train/loss_step\'] is missing', () => {
+        renderTrainingRow({ extra_info: null });
+
+        expect(screen.getByText('...')).toBeInTheDocument();
+    });
+
+    it('renders the split status badge and a ProgressBar for a running job', () => {
+        renderTrainingRow({ status: 'running' });
+
+        expect(screen.getByText('running')).toBeInTheDocument();
+        expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    });
+
+    it.each([
+        ['RUNNING', 'Training'],
+        ['STARTING', 'Starting'],
+        ['RUNNABLE', 'Waiting for compute'],
+    ])('shows a concise Batch %s badge with the full status on hover', (state, label) => {
+        const message = `AWS Batch ${state}: Training model · 22m 14s elapsed`;
+        renderTrainingRow({
+            message,
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_url: 'aws-batch://us-east-1/training-jobs',
+            },
+        });
+
+        expect(screen.getByText(label)).toBeInTheDocument();
+        expect(screen.getByText('AWS Batch')).toBeInTheDocument();
+        expect(screen.getByTitle(message)).toBeInTheDocument();
+        expect(screen.queryByText(message)).not.toBeInTheDocument();
+    });
+
+    it('preserves the status message for non-Batch trainers', () => {
+        renderTrainingRow({ message: 'Preparing training data' });
+        expect(screen.getByText('Preparing training data')).toBeInTheDocument();
+    });
+
+    it('keeps a running Batch job visible while authentication is required', () => {
+        renderTrainingRow({
+            status: 'running',
+            issues: [{ id: 'issue-1', title: 'Session expired', detail: 'Renew studio on the backend host.' }],
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_url: 'aws-batch://us-east-1/training-jobs',
+            },
+        });
+        expect(screen.getByText('Session expired')).toBeInTheDocument();
+        expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    });
+
+    it('badges a disconnected remote job without extra text', () => {
+        renderTrainingRow({
+            message: 'Trainer unreachable; waiting to reconnect',
+            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
+        });
+
+        expect(screen.getByText('Connection lost')).toBeInTheDocument();
+        expect(screen.getByText(/Started:/)).toBeInTheDocument();
+        expect(screen.queryByText(/Elapsed:/)).not.toBeInTheDocument();
+        expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    });
+
+    it('does not show a connection warning for a local job', () => {
+        renderTrainingRow({ message: 'Trainer unreachable; waiting to reconnect' });
+
+        expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
+        expect(screen.getByText(/Elapsed:/)).toBeInTheDocument();
+    });
+
+    it('renders no ProgressBar for a non-running job', () => {
+        renderTrainingRow({ status: 'completed', end_time: '2026-07-14T10:30:00Z' });
+
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    });
+
+    it('renders the Dataset name and the Environment name resolved via dataset.environment_id', async () => {
+        renderTrainingRow();
+
+        await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent(dataset.name));
+        await waitFor(() => expect(screen.getByTestId('environment-cell')).toHaveTextContent(environment.name));
+    });
+
+    it('shows the remote_trainer_name in the Trainer column when present', async () => {
+        renderTrainingRow({
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: 'remote-trainer-1',
+                remote_trainer_name: remoteTrainer.name,
+            },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+    });
+
+    it.each(['running', 'completed', 'failed'] as const)('shows the recorded Batch image for a %s job', (status) => {
+        const image = 'ghcr.io/example/physicalai-trainer-cuda:job-version';
+        renderTrainingRow({
+            status,
+            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
+            extra_info: { aws_batch: { image } },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Trainer image: ${image}`);
+    });
+
+    it.each([null, {}, { aws_batch: null }, { aws_batch: { image: 42 } }])(
+        'omits image details when image metadata is unavailable or invalid (%j)',
+        (extra_info) => {
+            renderTrainingRow({ extra_info });
+
+            expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('Trainer image:');
+        }
+    );
+
+    it.each([undefined, 1])(
+        'shows remote trainer and selected GPU when multiple GPUs exist (index %s)',
+        async (index) => {
+            server.use(
+                http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                    HttpResponse.json({
+                        remote_trainer_id: remoteTrainer.id,
+                        status: 'healthy',
+                        checked_at: '2026-07-16T12:00:00Z',
+                        devices: [
+                            { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
+                            { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                        ],
+                    })
+                )
+            );
+            renderTrainingRow({
+                payload: {
+                    ...localJob.payload,
+                    training_target: 'remote',
+                    remote_trainer_id: remoteTrainer.id,
+                    remote_trainer_name: remoteTrainer.name,
+                    ...(index === undefined ? {} : { device: { type: 'cuda', index } }),
+                },
+            });
+
+            const trainerCell = screen.getByTestId('trainer-cell');
+            await waitFor(() => expect(trainerCell).toHaveTextContent(`CUDA ${index ?? 0}`));
+            expect(trainerCell).toHaveTextContent(`Remote · ${remoteTrainer.name}`);
+            await waitFor(() => expect(trainerCell).toHaveTextContent(index === 1 ? 'Large GPU' : 'Small GPU'));
+            expect(
+                screen.queryByText(`Remote · ${remoteTrainer.name}`, { selector: '[title]' })
+            ).not.toBeInTheDocument();
+        }
+    );
+
+    it.each([
+        { scenario: 'offline', healthStatus: 'unreachable', devices: [] },
+        { scenario: 'health request fails', healthStatus: 'error', devices: [] },
+        {
+            scenario: 'single GPU changes',
+            healthStatus: 'healthy',
+            devices: [{ type: 'cuda', index: 0, name: 'Other GPU' }],
+        },
+        {
+            scenario: 'inventory changes',
+            healthStatus: 'healthy',
+            devices: [{ type: 'cuda', index: 2, name: 'New GPU' }],
+        },
+    ] as const)('keeps the selected GPU for a completed job when $scenario', async ({ healthStatus, devices }) => {
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                healthStatus === 'error'
+                    ? HttpResponse.error()
+                    : HttpResponse.json({
+                          remote_trainer_id: remoteTrainer.id,
+                          status: healthStatus,
+                          checked_at: '2026-07-16T12:00:00Z',
+                          devices: [...devices],
+                      })
+            )
+        );
+        renderTrainingRow({
+            status: 'completed',
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                device: { type: 'cuda', index: 1 },
+            },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('CUDA 1'));
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('Other GPU');
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('New GPU');
+    });
+
+    it('shows the remote trainer in the Trainer column for a failed job', async () => {
+        renderTrainingRow({
+            status: 'failed',
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: remoteTrainer.name,
+            },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Remote · ${remoteTrainer.name}`);
+        expect(screen.queryByText(`Remote · ${remoteTrainer.name}`, { selector: '[title]' })).not.toBeInTheDocument();
+    });
+
+    it('does not show an index for a single-GPU remote trainer', async () => {
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    remote_trainer_id: remoteTrainer.id,
+                    status: 'healthy',
+                    checked_at: '2026-07-16T12:00:00Z',
+                    devices: [{ type: 'cuda', index: 0, name: 'Only GPU' }],
+                })
+            )
+        );
+        renderTrainingRow({
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: remoteTrainer.name,
+            },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('CUDA 0');
+    });
+
+    it('falls back to the registered trainer name for older jobs', async () => {
+        renderTrainingRow({
+            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
+        });
+
+        await waitFor(() =>
+            expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Remote · ${remoteTrainer.name}`)
+        );
+    });
+
+    it('shows Local for a local job in the Trainer column', async () => {
+        renderTrainingRow();
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local'));
+    });
+
+    it('shows "-" in the Dataset and Environment cells when those requests fail', async () => {
+        server.use(
+            http.get('/api/dataset/{dataset_id}', () => HttpResponse.error()),
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.error())
+        );
+
+        renderTrainingRow();
+
+        await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent('-'));
+        expect(screen.getByTestId('environment-cell')).toHaveTextContent('-');
+    });
+
+    it('does not display the job detail panel for a failed job', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow({ status: 'failed' });
+
+        expect(screen.queryByRole('button', { name: 'Show details for pick-and-place' })).not.toBeInTheDocument();
+
+        await user.click(screen.getByText('pick-and-place'));
+
+        expect(screen.queryByRole('tab', { name: 'Model Metrics' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: 'Training Datasets' })).not.toBeInTheDocument();
+    });
+
+    it('does not render a LoRA badge when lora_enabled is false', () => {
+        renderTrainingRow();
+
+        expect(screen.queryByText('LoRA')).not.toBeInTheDocument();
+    });
+
+    it('renders a LoRA badge when lora_enabled is true', () => {
+        renderTrainingRow({ payload: { ...localJob.payload, lora_enabled: true, lora_use_dora: false } });
+
+        expect(screen.getByText('LoRA')).toBeInTheDocument();
+    });
+
+    it('renders a DoRA badge when lora_use_dora is true', () => {
+        renderTrainingRow({ payload: { ...localJob.payload, lora_enabled: true, lora_use_dora: true } });
+
+        expect(screen.getByText('DoRA')).toBeInTheDocument();
+    });
+
+    it.each(['running', 'completed', 'failed'] as const)('badges a %s SnapFlow job', (status) => {
+        renderTrainingRow({
+            status,
+            payload: { ...localJob.payload, policy: 'pi05', snapflow_enabled: true },
+        });
+
+        expect(screen.getByText('SnapFlow')).toBeInTheDocument();
+    });
+
+    it('leaves an ordinary flow-matching job unbadged', () => {
+        renderTrainingRow();
+
+        expect(screen.queryByText('SnapFlow')).not.toBeInTheDocument();
+    });
+
+    it('reveals the panel tabs when the row is clicked', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow();
+
+        await user.click(screen.getByText('pick-and-place'));
+
+        expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+        // TODO: Remove the comment once training datasets are supported
+        /*expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();*/
+    });
+
+    // TODO: Unskip this test once training datasets are supported
+    it.skip('does not collapse the row when a tab inside the panel is clicked', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow();
+
+        await user.click(screen.getByText('pick-and-place'));
+        expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+
+        await user.click(screen.getByRole('tab', { name: 'Training Datasets' }));
+
+        expect(screen.getByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+    });
+
+    it('two job rows can be expanded simultaneously', async () => {
+        const user = userEvent.setup();
+        const secondJob: SchemaTrainJob = {
+            ...localJob,
+            id: 'job-2',
+            payload: { ...localJob.payload, model_name: 'stack-blocks' },
+        };
+
+        render(
+            <>
+                <TrainingRow trainJob={localJob} onInterrupt={rs.fn()} onViewLogs={rs.fn()} />
+                <TrainingRow trainJob={secondJob} onInterrupt={rs.fn()} onViewLogs={rs.fn()} />
+            </>
+        );
+
+        await user.click(screen.getByText('pick-and-place'));
+        await user.click(screen.getByText('stack-blocks'));
+
+        expect(await screen.findAllByRole('tab', { name: 'Model Metrics' })).toHaveLength(2);
+    });
+
+    it('shows Logs and Delete in the overflow menu, with Delete disabled unless status is failed', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow({ status: 'running' });
+
+        await user.click(screen.getByRole('button', { name: 'Job options' }));
+
+        expect(screen.getByRole('menuitem', { name: 'Logs' })).toBeInTheDocument();
+        expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
+        expect(screen.getByRole('menuitem', { name: 'Delete' }).closest('[aria-disabled]')).toHaveAttribute(
+            'aria-disabled',
+            'true'
+        );
+    });
+
+    it('enables Delete in the overflow menu when status is failed', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow({ status: 'failed' });
+
+        await user.click(screen.getByRole('button', { name: 'Job options' }));
+
+        expect(screen.getByRole('menuitem', { name: 'Delete' }).closest('[aria-disabled]')).toBeNull();
+    });
+
+    it.each(['running', 'pending'] as const)('allows stopping a %s job', async (status) => {
+        const user = userEvent.setup();
+        const onInterrupt = rs.fn();
+        renderTrainingRow({ status }, { onInterrupt });
+        await user.click(screen.getByRole('button', { name: 'Stop' }));
+        await user.click(screen.getByRole('button', { name: 'Stop' }));
+        expect(onInterrupt).toHaveBeenCalledOnce();
+    });
+
+    it('warns that stopping an unreachable remote job may not stop the remote work', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow({
+            status: 'running',
+            payload: getMockedTrainJobPayload({ training_target: 'remote', remote_trainer_id: remoteTrainer.id }),
+        });
+        await user.click(screen.getByRole('button', { name: 'Stop' }));
+        expect(screen.getByText(/remote work may continue/i)).toBeInTheDocument();
+    });
+
+    it('warns that a pending remote reattachment may already be running', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow({
+            status: 'pending',
+            payload: getMockedTrainJobPayload({
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_job_id: '86cf47a8-7b18-4236-98b4-2980eafcfd2b',
+            }),
+        });
+        await user.click(screen.getByRole('button', { name: 'Stop' }));
+        expect(screen.getByText(/remote work may continue/i)).toBeInTheDocument();
+        expect(screen.queryByText('This job will not start.')).not.toBeInTheDocument();
+    });
+
+    it('renders no Stop button when status is not running', () => {
+        renderTrainingRow({ status: 'completed', end_time: '2026-07-14T10:30:00Z' });
+        expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+    });
+
+    it('names the disclosure button "Show details for {model_name}" and exposes aria-expanded', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow();
+
+        const disclosureButton = screen.getByRole('button', { name: 'Show details for pick-and-place' });
+        expect(disclosureButton).toHaveAttribute('aria-expanded', 'false');
+
+        await user.click(disclosureButton);
+
+        expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+        expect(disclosureButton).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('is expandable via the keyboard', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow();
+
+        await user.tab();
+        expect(screen.getByRole('button', { name: 'Show details for pick-and-place' })).toHaveFocus();
+
+        await user.keyboard('{Enter}');
+
+        expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+    });
+
+    it('renders the ProgressBar outside the detail panel, visible while the row is collapsed', () => {
+        renderTrainingRow({ status: 'running' });
+
+        expect(screen.getByRole('progressbar')).toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: 'Model Metrics' })).not.toBeInTheDocument();
+    });
+});

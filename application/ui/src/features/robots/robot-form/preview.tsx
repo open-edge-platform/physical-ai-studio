@@ -23,22 +23,11 @@ const EmptyPreview = () => {
 };
 
 export const Preview = () => {
-    const form = useRobotForm();
+    const { activeType } = useRobotForm();
 
     return (
-        <View
-            backgroundColor={'gray-200'}
-            height={'100%'}
-            padding='size-200'
-            UNSAFE_style={{
-                borderRadius: 'var(--spectrum-alias-border-radius-regular)',
-                borderColor: 'var(--spectrum-global-color-gray-700)',
-                borderWidth: '1px',
-                borderStyle: 'dashed',
-            }}
-            position={'relative'}
-        >
-            {form.type !== null ? <RobotViewer robot={form} /> : <EmptyPreview />}
+        <View backgroundColor={'gray-200'} height={'100%'}>
+            {activeType != null ? <RobotViewer robot={{ type: activeType }} /> : <EmptyPreview />}
         </View>
     );
 };

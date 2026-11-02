@@ -4,6 +4,7 @@
 interface FetchSSEOptions {
     /** Abort signal used by query cancellation. */
     signal?: AbortSignal;
+    onIssues?: (data: string) => void;
 }
 
 /**
@@ -21,6 +22,9 @@ export function fetchSSE<T = unknown>(url: string, options: FetchSSEOptions = {}
             }
 
             const eventSource = new EventSource(url);
+            eventSource.addEventListener('issues', (event) => {
+                options.onIssues?.((event as MessageEvent<string>).data);
+            });
             let aborted = false;
             let onAbort: (() => void) | undefined;
 

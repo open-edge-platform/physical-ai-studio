@@ -1,48 +1,49 @@
-from unittest.mock import AsyncMock, MagicMock
+# ruff: noqa: E402
+
+import os
+import shutil
+import tempfile
+
+os.environ.setdefault("AWS_ENABLED", "true")
+
+# Isolate the test session from the developer's real Studio storage/database.
+#
+# `db/engine.py` builds its SQLAlchemy engines from `settings.get_settings()` at
+# *module import time*, and the first test module imported anywhere in the
+# session (directly or transitively via `main.app`) freezes that choice for
+# the rest of the process. Setting STORAGE_DIR here - before any other import
+# in this file, and before pytest imports any test module - guarantees every
+# test in the session (including real-DB integration tests) reads and writes
+# under an isolated temp directory instead of the user's `~/.local/share`
+# (or platform equivalent) Studio installation. `setdefault` still lets CI or
+# a developer point STORAGE_DIR at a specific location explicitly.
+_TEST_STORAGE_DIR = os.environ.get("STORAGE_DIR")
+_STORAGE_DIR_CREATED = _TEST_STORAGE_DIR is None
+if _STORAGE_DIR_CREATED:
+    _TEST_STORAGE_DIR = tempfile.mkdtemp(prefix="physicalai-backend-tests-")
+    os.environ["STORAGE_DIR"] = _TEST_STORAGE_DIR
+
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.dataset import Dataset
 from schemas.environment import EnvironmentWithRelations
 from schemas.model import Model
 
 
-@pytest.fixture
-def mock_robot_client():
-    client = MagicMock(spec=RobotClient)
-    client.features.return_value = [
-        "shoulder_pan.pos",
-        "shoulder_lift.pos",
-        "elbow_flex.pos",
-        "wrist_flex.pos",
-        "wrist_roll.pos",
-        "gripper.pos",
-    ]
-    client.connect = AsyncMock()
-    client.disconnect = AsyncMock()
-    client.read_state = AsyncMock(
-        return_value={
-            "state": {
-                "shoulder_pan.pos": -8.705526116578355,
-                "shoulder_lift.pos": -98.16753926701571,
-                "elbow_flex.pos": 95.98393574297188,
-                "wrist_flex.pos": 73.85993485342019,
-                "wrist_roll.pos": -13.84615384615384,
-                "gripper.pos": 26.885644768856448,
-            }
-        }
-    )
-    return client
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Remove test storage when this conftest created it."""
+    if _STORAGE_DIR_CREATED:
+        assert _TEST_STORAGE_DIR is not None
+        shutil.rmtree(_TEST_STORAGE_DIR, ignore_errors=True)
 
 
 @pytest.fixture
-def mock_robot_client_factory(mock_robot_client):
-    factory = MagicMock(spec=RobotClientFactory)
-    factory.build = AsyncMock(return_value=mock_robot_client)
-    return factory
+def mock_robot_client_factory():
+    return MagicMock(spec=RobotClientFactory)
 
 
 @pytest.fixture
@@ -56,9 +57,11 @@ def test_environment():
                     "robot": {
                         "id": "c3f3f886-8813-4b3b-ba48-165cdaa39995",
                         "name": "Khaos",
-                        "connection_string": "",
-                        "serial_number": "5AA9017083",
                         "type": "SO101_Follower",
+                        "payload": {
+                            "connection_string": "",
+                            "serial_number": "5AA9017083",
+                        },
                     },
                     "tele_operator": {"type": "none"},
                 }
@@ -68,7 +71,7 @@ def test_environment():
                     "id": "3ed60255-04ae-407b-8e2c-c3281847a4e0",
                     "driver": "usb_camera",
                     "name": "grabber",
-                    "fingerprint": "/dev/video0:0",
+                    "fingerprint": {"path": "/dev/video0:0"},
                     "hardware_name": None,
                     "payload": {"width": 640, "height": 480, "fps": 30},
                 },
@@ -76,7 +79,7 @@ def test_environment():
                     "id": "4629e172-2aa7-4fde-86b1-e19eb1d210ff",
                     "driver": "usb_camera",
                     "name": "front",
-                    "fingerprint": "/dev/video6:6",
+                    "fingerprint": {"path": "/dev/video6:6"},
                     "hardware_name": None,
                     "payload": {"width": 640, "height": 480, "fps": 30},
                 },
@@ -131,7 +134,6 @@ def test_dataset():
     return Dataset.model_validate(
         {
             "name": "Collect blocks",
-            "path": "/some/path/to/dataset",
             "default_task": "Collect blocks",
             "project_id": "35b48dc9-31df-40be-b295-08ae1d5378b1",
             "environment_id": "7656679b-25fe-4af5-a19d-73e7df16f384",

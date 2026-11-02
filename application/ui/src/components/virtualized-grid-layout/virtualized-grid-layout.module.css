@@ -1,0 +1,12 @@
+.listBox {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+}
+
+.listBox:focus-visible {
+    outline: 2px solid var(--energy-blue);
+    outline-offset: -2px;
+}

@@ -2,13 +2,16 @@
 
 Evaluate trained policies on standardized environments.
 
+The `benchmark` command is a studio entry-point subcommand loaded by the shared
+runtime CLI host, while the user-facing invocation stays `physicalai benchmark ...`.
+
 ## Quick Start
 
 ### CLI
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
@@ -17,7 +20,7 @@ physicalai benchmark \
 ### Python API
 
 ```python test="skip" reason="requires checkpoint and libero"
-from physicalai.benchmark import LiberoBenchmark
+from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("./checkpoints/model.ckpt")
@@ -102,7 +105,7 @@ Use `failures` mode during debugging to save disk space.
 ```yaml
 # configs/benchmark/my_eval.yaml
 benchmark:
-  class_path: physicalai.benchmark.LiberoBenchmark
+    class_path: physicalai.benchmark.gyms.LiberoBenchmark
   init_args:
     task_suite: libero_10
     num_episodes: 20
@@ -154,7 +157,7 @@ AGGREGATE:  75.5% success rate    mean reward: 0.76 ± 0.43
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
@@ -166,7 +169,7 @@ physicalai benchmark \
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_90 \
     --benchmark.num_episodes 50 \
     --benchmark.video_dir ./results/videos \
@@ -179,7 +182,7 @@ physicalai benchmark \
 
 ```bash
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./debug_videos \
     --benchmark.record_mode failures \

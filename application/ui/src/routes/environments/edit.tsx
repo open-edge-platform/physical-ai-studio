@@ -1,31 +1,19 @@
-import { Suspense } from 'react';
-
-import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
-
-import { EnvironmentForm } from '../../features/robots/environment-form/form';
+import { FormPreviewLayout } from '../../components/form-preview-layout';
 import { Preview } from '../../features/robots/environment-form/preview';
 import {
     EnvironmentFormProvider,
     EnvironmentFormState,
     RobotConfiguration,
 } from '../../features/robots/environment-form/provider';
-import { UpdateEnvironmentButton } from '../../features/robots/environment-form/update-environment-button';
+import { UpdateEnvironmentForm } from '../../features/robots/environment-form/update-form';
 import { useEnvironment } from '../../features/robots/use-environment';
-
-const CenteredLoading = () => {
-    return (
-        <Flex width='100%' height='100%' alignItems={'center'} justifyContent={'center'}>
-            <Loading mode='inline' />
-        </Flex>
-    );
-};
 
 export const Edit = () => {
     const environment = useEnvironment();
 
     const environmentForm: EnvironmentFormState = {
         name: environment.name,
-        camera_ids: environment.cameras?.map(({ id }) => id!) ?? [],
+        cameras: environment.cameras?.map(({ id, name }) => ({ camera_id: id!, name: name! })) ?? [],
         robots:
             environment.robots?.map((robot): RobotConfiguration => {
                 return {
@@ -43,16 +31,11 @@ export const Edit = () => {
 
     return (
         <EnvironmentFormProvider environment={environmentForm}>
-            <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
-                <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
-                    <Suspense fallback={<CenteredLoading />}>
-                        <EnvironmentForm heading='Update environment' submitButton={<UpdateEnvironmentButton />} />
-                    </Suspense>
-                </View>
-                <View gridArea='controls' backgroundColor={'gray-50'}>
-                    <Preview />
-                </View>
-            </Grid>
+            <FormPreviewLayout
+                form={<UpdateEnvironmentForm />}
+                preview={<Preview />}
+                previewProps={{ backgroundColor: 'gray-50' }}
+            />
         </EnvironmentFormProvider>
     );
 };

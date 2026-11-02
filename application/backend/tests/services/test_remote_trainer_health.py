@@ -1,0 +1,438 @@
+from __future__ import annotations
+
+import asyncio
+from typing import Self
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import httpx
+import pytest
+from botocore.exceptions import (
+    ClientError,
+    EndpointConnectionError,
+    LoginRefreshRequired,
+    NoCredentialsError,
+    SSOTokenLoadError,
+)
+
+from schemas.remote_trainer import AwsBatchConnection, DirectConnection, RemoteTrainer, SshConnection
+from services import RemoteTrainerService
+
+MODULE = "services.remote_trainer_service"
+
+
+class _Response:
+    def __init__(self, payload: object, error: Exception | None = None) -> None:
+        self._payload = payload
+        self._error = error
+
+    def raise_for_status(self) -> None:
+        if self._error is not None:
+            raise self._error
+
+    def json(self) -> object:
+        return self._payload
+
+
+class _Client:
+    def __init__(self, responses: list[_Response]) -> None:
+        self._responses = iter(responses)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+    async def get(self, _url: str) -> _Response:
+        return next(self._responses)
+
+
+def _trainer() -> RemoteTrainer:
+    return RemoteTrainer(id=uuid4(), name="trainer", connection=DirectConnection(url="https://trainer.test"))
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_starting_while_container_is_launching() -> None:
+    """A trainer whose background container launch is still in progress must
+    report `status='starting'`, not dial a tunnel nothing is listening on yet
+    and read the resulting connection failure as a generic 'unreachable'.
+    """
+    trainer = _trainer()
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value="Pulling trainer image"),
+        patch(f"{MODULE}.httpx.AsyncClient") as async_client,
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "starting"
+    assert result.reason_code == "Pulling trainer image"
+    assert result.devices == []
+    async_client.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_managed_prerequisite_failures() -> None:
+    trainer = _trainer()
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value=None),
+        patch(f"{MODULE}.persistent_trainer.get_launch_failure", return_value="docker_unavailable"),
+        patch(f"{MODULE}.httpx.AsyncClient") as async_client,
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "degraded"
+    assert result.reason_code == "docker_unavailable"
+    async_client.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_starting_within_grace_period_when_unreachable() -> None:
+    """A trainer that isn't actively launching (the phase already cleared) but
+    whose launch attempt began recently still reads as 'starting' rather than
+    'unreachable' - the container may simply not have finished warming up.
+    """
+    trainer = _trainer()
+    client = _Client([_Response({}, httpx.ConnectError("connection refused"))])
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value=None),
+        patch(f"{MODULE}.persistent_trainer.is_within_startup_grace_period", return_value=True) as in_grace,
+        patch(f"{MODULE}.persistent_trainer.mark_reachable") as mark_reachable,
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "starting"
+    in_grace.assert_called_once_with(trainer.id)
+    mark_reachable.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_unreachable_once_the_grace_period_has_elapsed() -> None:
+    """Past the startup grace period, a genuinely unreachable trainer is
+    reported as such - the whole point of the grace period is that it ends.
+    """
+    trainer = _trainer()
+    client = _Client([_Response({}, httpx.ConnectError("connection refused"))])
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value=None),
+        patch(f"{MODULE}.persistent_trainer.is_within_startup_grace_period", return_value=False),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "unreachable"
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_marks_reachable_once_healthy_again() -> None:
+    """A trainer that answers healthy clears its startup grace-period bookkeeping."""
+    trainer = _trainer()
+    client = _Client(
+        [
+            _Response({"status": "healthy"}),
+            _Response([{"type": "cuda", "name": "NVIDIA A100", "memory": None, "index": 0}]),
+            _Response({"total_bytes": 1, "free_bytes": 1}),
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value=None),
+        patch(f"{MODULE}.persistent_trainer.mark_reachable") as mark_reachable,
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "healthy"
+    mark_reachable.assert_called_once_with(trainer.id)
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_healthy_devices() -> None:
+    trainer = _trainer()
+    client = _Client(
+        [
+            _Response({"status": "healthy"}),
+            _Response(
+                [
+                    {"type": "cpu", "name": "CPU", "memory": None, "index": None},
+                    {"type": "npu", "name": "NPU", "memory": 17179869184, "index": 0},
+                    {"type": "xpu", "name": "Intel Arc", "memory": 17179869184, "index": 0},
+                    {"type": "cuda", "name": "NVIDIA A100", "memory": 85899345920, "index": 0},
+                ]
+            ),
+            _Response({"total_bytes": 1_000_000_000_000, "free_bytes": 600_000_000_000}),
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client) as async_client,
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.remote_trainer_id == trainer.id
+    assert result.status == "healthy"
+    assert result.reason_code is None
+    assert [(device.type, device.name, device.index) for device in result.devices] == [
+        ("xpu", "Intel Arc", 0),
+        ("cuda", "NVIDIA A100", 0),
+    ]
+    assert result.storage is not None
+    assert result.storage.total_bytes == 1_000_000_000_000
+    assert result.storage.free_bytes == 600_000_000_000
+    async_client.assert_called_once_with(timeout=httpx.Timeout(5.0), follow_redirects=False, trust_env=False)
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_tolerates_missing_storage_endpoint() -> None:
+    trainer = _trainer()
+    client = _Client(
+        [
+            _Response({"status": "healthy"}),
+            _Response([{"type": "cuda", "name": "NVIDIA A100", "memory": 85899345920, "index": 0}]),
+            _Response({}, httpx.HTTPStatusError("not found", request=None, response=None)),  # type: ignore[arg-type]
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "healthy"
+    assert result.storage is None
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_timeout_without_upstream_details() -> None:
+    trainer = _trainer()
+    client = _Client([_Response({}, httpx.ReadTimeout("timed out"))])
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "unreachable"
+    assert result.reason_code == "timeout"
+    assert result.devices == []
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_requires_an_accelerator_for_studio_managed_trainers() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="managed",
+        connection=SshConnection(ssh_host_alias="gpu-box", ssh_remote_port=8001, ssh_local_port=8001),
+    )
+    client = _Client(
+        [
+            _Response({"status": "healthy"}),
+            _Response([]),
+            _Response({"total_bytes": 1, "free_bytes": 1}),
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "degraded"
+    assert result.reason_code == "container_accelerator_unavailable"
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_probes_aws_batch_without_http() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="batch",
+        connection=AwsBatchConnection(
+            region="eu-west-1",
+            studio_role_arn="arn:aws:iam::123456789012:role/studio",
+            bucket="jobs-bucket",
+            targets={
+                instance_type: {
+                    "queue": f"arn:aws:batch:eu-west-1:123456789012:job-queue/q{index}",
+                    "job_definition": f"arn:aws:batch:eu-west-1:123456789012:job-definition/jd{index}:1",
+                }
+                for index, instance_type in enumerate(["g4dn.xlarge", "p5.4xlarge"], start=1)
+            },
+        ),
+    )
+    batch = MagicMock()
+    batch.describe_job_queues.return_value = {
+        "jobQueues": [{"state": "ENABLED", "status": "VALID"}, {"state": "ENABLED", "status": "VALID"}]
+    }
+    session = MagicMock()
+    session.client.return_value = batch
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient") as http_client,
+        patch("services.aws_batch._make_session", return_value=session),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    http_client.assert_not_called()
+    batch.describe_job_queues.assert_called_once_with(
+        jobQueues=[target.queue for target in trainer.connection.targets.values()]
+    )
+    assert result.status == "healthy"
+    assert result.devices == []
+
+
+@pytest.mark.parametrize(
+    "queues,reason",
+    [([], "resource_missing"), ([{"state": "DISABLED", "status": "VALID"}], "resource_disabled")],
+)
+async def test_check_remote_trainer_reports_unavailable_resources_without_toast_issues(queues, reason) -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="batch",
+        connection=AwsBatchConnection(
+            region="eu-west-1",
+            studio_role_arn="arn:aws:iam::123456789012:role/studio",
+            bucket="jobs-bucket",
+            targets={
+                "g4dn.xlarge": {
+                    "queue": "arn:aws:batch:eu-west-1:123456789012:job-queue/q1",
+                    "job_definition": "arn:aws:batch:eu-west-1:123456789012:job-definition/jd1:1",
+                }
+            },
+        ),
+    )
+    batch = MagicMock()
+    batch.describe_job_queues.return_value = {"jobQueues": queues}
+    session = MagicMock()
+    session.client.return_value = batch
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch("services.aws_batch._make_session", return_value=session),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "degraded"
+    assert result.reason_code == reason
+    assert result.devices == []
+    assert result.issues == []
+
+
+@pytest.mark.parametrize(
+    "error,status,reason",
+    [
+        (LoginRefreshRequired(), "degraded", "authentication_required"),
+        (SSOTokenLoadError(error_msg="expired"), "degraded", "authentication_required"),
+        (NoCredentialsError(), "degraded", "authentication_required"),
+        (ClientError({"Error": {"Code": "ExpiredToken"}}, "AssumeRole"), "degraded", "authentication_required"),
+        (ClientError({"Error": {"Code": "AccessDenied"}}, "AssumeRole"), "degraded", "access_denied"),
+        (
+            EndpointConnectionError(endpoint_url="https://sts.us-east-1.amazonaws.com"),
+            "unreachable",
+            "connection_failed",
+        ),
+        (ClientError({"Error": {"Code": "ServiceUnavailable"}}, "DescribeJobQueues"), "unreachable", "service_error"),
+    ],
+)
+async def test_aws_authentication_failures_are_not_reported_as_network_failures(error, status, reason) -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="AWS Provider",
+        connection=AwsBatchConnection(
+            region="us-east-1",
+            studio_role_arn="arn:aws:iam::123456789012:role/studio",
+            bucket="jobs-bucket",
+            targets={
+                "gpu": {
+                    "queue": "arn:aws:batch:us-east-1:123456789012:job-queue/queue",
+                    "job_definition": "arn:aws:batch:us-east-1:123456789012:job-definition/definition:1",
+                }
+            },
+        ),
+    )
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", AsyncMock(return_value=trainer)),
+        patch("services.aws_batch._make_session", side_effect=error),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+    assert result.status == status
+    assert result.reason_code == reason
+    if reason == "authentication_required":
+        assert result.issues and result.issues[0].id
+    elif status == "unreachable":
+        assert result.issues is None
+    else:
+        assert result.issues == []
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_malformed_devices_as_degraded() -> None:
+    trainer = _trainer()
+    client = _Client([_Response({"status": "healthy"}), _Response({"not": "a list"})])
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "degraded"
+    assert result.reason_code == "invalid_devices_response"
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_coalesces_concurrent_calls() -> None:
+    """Two callers checking the same trainer at once must trigger only one probe."""
+    trainer = _trainer()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    call_count = 0
+
+    class _SlowClient(_Client):
+        async def get(self, _url: str) -> _Response:
+            nonlocal call_count
+            if _url.endswith("/health"):
+                call_count += 1
+                started.set()
+                await release.wait()
+            return await super().get(_url)
+
+    client = _SlowClient(
+        [
+            _Response({"status": "healthy"}),
+            _Response([{"type": "cuda", "name": "NVIDIA A100", "memory": None, "index": 0}]),
+            _Response({"total_bytes": 1, "free_bytes": 1}),
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client) as async_client,
+    ):
+        service_a = RemoteTrainerService(MagicMock())
+        service_b = RemoteTrainerService(MagicMock())
+
+        task_a = asyncio.create_task(service_a.check_remote_trainer(trainer.id))
+        await started.wait()
+        task_b = asyncio.create_task(service_b.check_remote_trainer(trainer.id))
+        release.set()
+
+        result_a, result_b = await asyncio.gather(task_a, task_b)
+
+    assert call_count == 1
+    assert async_client.call_count == 1
+    assert result_a == result_b

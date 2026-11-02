@@ -1,6 +1,6 @@
 # CLI Guide
 
-Train policies using the command-line interface built on PyTorch Lightning CLI.
+Train policies using the shared `physicalai` command and studio's jsonargparse subcommands.
 
 ## Features
 
@@ -9,12 +9,15 @@ Train policies using the command-line interface built on PyTorch Lightning CLI.
 - Dynamic class loading (`class_path` pattern)
 - Full PyTorch Lightning features (callbacks, loggers, distributed training)
 
+The runtime package owns the top-level `physicalai` executable. Studio contributes
+the training subcommands through the `physicalai.cli.subcommands` entry-point group.
+
 ## Basic Usage
 
 ### Train with Config File
 
 ```bash
-physicalai fit --config configs/physicalai/act.yaml
+physicalai fit --config configs/physicalai/act/pusht/default.yaml
 ```
 
 ### Generate Config Template
@@ -117,10 +120,17 @@ physicalai fit \
 
 ```bash
 physicalai fit --config CONFIG_PATH
-physicalai validate --config CONFIG_PATH --ckpt_path CHECKPOINT
-physicalai test --config CONFIG_PATH --ckpt_path CHECKPOINT
-physicalai predict --config CONFIG_PATH --ckpt_path CHECKPOINT
+physicalai fit --config CONFIG_PATH --fit.ckpt_path CHECKPOINT       # resume training
+physicalai validate --config CONFIG_PATH --validate.ckpt_path CHECKPOINT
+physicalai test --config CONFIG_PATH --test.ckpt_path CHECKPOINT
+physicalai predict --config CONFIG_PATH --predict.ckpt_path CHECKPOINT
 ```
+
+Arguments belonging to the `Trainer` method itself (`ckpt_path`, `weights_only`,
+`verbose`) are namespaced under the subcommand name, so they do not collide with
+`--trainer.*` constructor arguments. `physicalai benchmark` and
+`physicalai export` use a bare `--ckpt_path` because they are not
+`Trainer`-backed.
 
 ## Examples
 
@@ -137,7 +147,7 @@ trainer:
 ### Multi-GPU Training
 
 ```bash
-physicalai fit --config configs/physicalai/act.yaml --trainer.strategy=ddp --trainer.devices=4
+physicalai fit --config configs/physicalai/act/pusht/default.yaml --trainer.strategy=ddp --trainer.devices=4
 ```
 
 ### Custom Callbacks
@@ -166,7 +176,7 @@ model:
 ### Validate Before Training
 
 ```bash
-physicalai fit --config configs/physicalai/act.yaml --trainer.fast_dev_run=true
+physicalai fit --config configs/physicalai/act/pusht/default.yaml --trainer.fast_dev_run=true
 ```
 
 ## Tips
@@ -183,7 +193,7 @@ physicalai fit --config configs/physicalai/act.yaml --trainer.fast_dev_run=true
 **Import errors**: Test imports manually:
 
 ```bash
-python -c "from physicalai.policies.pi0.policy import Pi0"
+python -c "from physicalai.policies.pi05.policy import Pi05"
 ```
 
 **Type errors**: Check config matches class signature

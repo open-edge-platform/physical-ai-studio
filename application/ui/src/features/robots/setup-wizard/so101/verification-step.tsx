@@ -6,16 +6,17 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../../api/client';
-import { SchemaCalibration, SchemaRobot } from '../../../../api/openapi-spec';
-import { paths } from '../../../../router';
+import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
+import { paths } from '../../../../paths';
 import { useProjectId } from '../../../projects/use-project';
+import { buildRobotBody } from '../../robot-form/form-data';
 import { useRobotForm } from '../../robot-form/provider';
 import { useRobotModels } from '../../robot-models-context';
+import { SchemaRobotInput } from '../../robot-types';
 import { InlineAlert } from '../shared/inline-alert';
-import { CalibrationResult } from './use-setup-websocket';
 import { useSetupActions, useSetupState } from './wizard-provider';
 
-import classes from '../shared/setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.css';
 
 // ---------------------------------------------------------------------------
 // Hook: sync normalized joint state from the setup websocket to the URDF model
@@ -55,37 +56,6 @@ const useSyncJointState = (jointState: Record<string, number> | null) => {
 };
 
 // ---------------------------------------------------------------------------
-// Helper: build a Calibration body from the websocket calibration_result event
-// ---------------------------------------------------------------------------
-
-function buildCalibrationBody(
-    calibrationResult: CalibrationResult,
-    robotId: string,
-    calibrationId: string
-): SchemaCalibration {
-    const values: SchemaCalibration['values'] = {};
-    for (const [jointName, cal] of Object.entries(calibrationResult.calibration)) {
-        values[jointName] = {
-            id: cal.id,
-            joint_name: jointName,
-            drive_mode: cal.drive_mode,
-            homing_offset: cal.homing_offset,
-            range_min: cal.range_min,
-            range_max: cal.range_max,
-        };
-    }
-
-    return {
-        id: calibrationId,
-        robot_id: robotId,
-        // file_path is set server-side by _save_calibration_to_disk; send a
-        // placeholder since the schema requires it.
-        file_path: '',
-        values,
-    };
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -100,13 +70,17 @@ export const VerificationStep = () => {
     const { project_id } = useProjectId();
     const { goBack } = useSetupActions();
     const { wsState } = useSetupState();
-    const robotForm = useRobotForm();
+    const { activeType, robotForm } = useRobotForm();
 
-    const serialNumber = robotForm.serial_number ?? '';
-    const robotType = robotForm.type ?? '';
+    const so101Payload: SchemaSo101RobotPayload | null =
+        activeType === 'SO101_Follower' || activeType === 'SO101_Leader'
+            ? (robotForm.payload as SchemaSo101RobotPayload)
+            : null;
+    const serialNumber = so101Payload?.serial_number ?? '';
+    const connectionString = so101Payload?.connection_string ?? '';
+    const robotType = activeType;
 
     const [robotId] = useState(() => uuidv4());
-    const [calibrationId] = useState(() => uuidv4());
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -121,32 +95,9 @@ export const VerificationStep = () => {
             ],
         },
     });
-    const saveCalibrationMutation = $api.useMutation(
-        'post',
-        '/api/projects/{project_id}/robots/{robot_id}/calibrations',
-        {
-            meta: {
-                invalidates: [['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }]],
-            },
-        }
-    );
-    const updateRobotMutation = $api.useMutation('put', '/api/projects/{project_id}/robots/{robot_id}', {
-        meta: {
-            invalidates: [['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }]],
-        },
-    });
-
-    const robotBody: SchemaRobot | null =
-        robotForm.type !== null && robotForm.name
-            ? {
-                  id: robotId,
-                  name: robotForm.name,
-                  type: robotForm.type,
-                  connection_string: robotForm.connection_string ?? '',
-                  serial_number: robotForm.serial_number ?? '',
-                  active_calibration_id: null,
-              }
-            : null;
+    const robotBody: SchemaRobotInput | null = activeType?.startsWith('SO101')
+        ? buildRobotBody(robotForm, activeType, robotId)
+        : null;
 
     const hasCalibration = wsState.calibrationResult !== null;
 
@@ -159,32 +110,29 @@ export const VerificationStep = () => {
         setSaveError(null);
 
         try {
-            // 1. Create the robot
+            // Embed calibration in payload if available
+            if (wsState.calibrationResult) {
+                const calibrationPayload: Record<
+                    string,
+                    { id: number; drive_mode: number; homing_offset: number; range_min: number; range_max: number }
+                > = {};
+                for (const [jointName, cal] of Object.entries(wsState.calibrationResult.calibration)) {
+                    calibrationPayload[jointName] = {
+                        id: cal.id,
+                        drive_mode: cal.drive_mode,
+                        homing_offset: cal.homing_offset,
+                        range_min: cal.range_min,
+                        range_max: cal.range_max,
+                    };
+                }
+                (robotBody.payload as Record<string, unknown>).calibration = calibrationPayload;
+            }
+
             const createdRobot = await addRobotMutation.mutateAsync({
                 params: { path: { project_id } },
                 body: robotBody,
             });
 
-            // 2. Save calibration if we have it
-            if (wsState.calibrationResult) {
-                const calibrationBody = buildCalibrationBody(wsState.calibrationResult, createdRobot.id, calibrationId);
-
-                await saveCalibrationMutation.mutateAsync({
-                    params: { path: { project_id, robot_id: createdRobot.id } },
-                    body: calibrationBody,
-                });
-
-                // 3. Update robot with active_calibration_id
-                await updateRobotMutation.mutateAsync({
-                    params: { path: { project_id, robot_id: createdRobot.id } },
-                    body: {
-                        ...createdRobot,
-                        active_calibration_id: calibrationId,
-                    },
-                });
-            }
-
-            // Navigate to the robot page
             navigate(paths.project.robots.show({ project_id, robot_id: createdRobot.id }));
         } catch (err) {
             setSaveError(err instanceof Error ? err.message : 'Failed to save robot');
@@ -215,7 +163,10 @@ export const VerificationStep = () => {
                             <strong>Type:</strong> {robotType}
                         </Text>
                         <Text>
-                            <strong>Serial:</strong> {serialNumber}
+                            <strong>Serial:</strong> {serialNumber || 'Unavailable'}
+                        </Text>
+                        <Text>
+                            <strong>USB Port:</strong> {connectionString || 'Unavailable'}
                         </Text>
                         <Text>
                             <strong>Calibration:</strong>{' '}

@@ -1,0 +1,1192 @@
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { HttpResponse } from 'msw';
+
+import { SchemaModel } from '../../../api/openapi-spec';
+import { http } from '../../../api/utils';
+import { server } from '../../../msw-node-setup';
+import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
+import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
+import { render } from '../../../test-utils/render';
+import { TrainModelDialog } from './train-model-dialog';
+
+const projectId = 'b8b28d4f-e78f-48ad-afb8-03d060178a3c';
+const remoteTrainerId = '16ea95a7-6f49-4c19-b22b-91cf89f8d34b';
+const datasetId = '9f4e20fb-7dd8-4d2c-b207-a6d554311a12';
+
+const remoteTrainer = {
+    id: remoteTrainerId,
+    name: 'managed-trainer',
+    connection_mode: 'direct' as const,
+    url: 'https://trainer.example.test/api',
+    connection: { connection_mode: 'direct' as const, url: 'https://trainer.example.test/api' },
+    created_at: '2026-07-14T12:00:00Z',
+};
+
+const healthyRemoteTrainer = {
+    remote_trainer_id: remoteTrainerId,
+    status: 'healthy' as const,
+    checked_at: '2026-07-16T12:00:00Z',
+    latency_ms: 24,
+    devices: [],
+    reason_code: null,
+};
+
+const baseModel = {
+    id: '9340adfd-9632-4c54-8acd-8304f9dfda91',
+    name: 'Test model',
+    dataset_id: datasetId,
+    policy: 'act',
+} as SchemaModel;
+
+const mockProjectWithRemoteTrainer = () => {
+    server.use(
+        http.get('/api/projects/{project_id}', () =>
+            HttpResponse.json({
+                id: projectId,
+                name: 'Test project',
+                datasets: [
+                    {
+                        id: datasetId,
+                        name: 'Test dataset',
+                        default_task: 'test',
+                        project_id: projectId,
+                        environment_id: 'ad5c311d-bdd7-4a1c-ad27-26c2775901e9',
+                    },
+                ],
+            })
+        ),
+        http.get('/api/system/devices/training', () =>
+            HttpResponse.json({ mode: 'local', remote_available: true, devices: [] })
+        ),
+        http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+        http.get('/api/jobs', () => HttpResponse.json([])),
+        http.get('/api/settings', () =>
+            HttpResponse.json({
+                video_recording: {
+                    preset: null,
+                },
+                trainer: {
+                    request_timeout_s: 30,
+                    download_read_timeout_s: 120,
+                    stream_reconnect_max_s: 900,
+                    stream_reconnect_backoff_max_s: 30,
+                },
+                huggingface: { hf_token: null },
+                ssh: {
+                    connect_timeout_s: 10,
+                    command_timeout_s: 15,
+                    preflight_timeout_s: 30,
+                    image_pull_timeout_s: 1800,
+                    trainer_shm_size_gb: 32,
+                },
+                hotkeys: { bindings: {} },
+            })
+        ),
+        http.get('/api/policies/available', () =>
+            HttpResponse.json([
+                { id: 'act', name: 'ACT', description: 'ACT policy', min_vram: 2 * 1024 ** 3 },
+                { id: 'smolvla', name: 'SmolVLA', description: 'SmolVLA policy', min_vram: 3 * 1024 ** 3 },
+                { id: 'molmoact2', name: 'MolmoAct2', description: 'MolmoAct2 policy', min_vram: 80 * 1024 ** 3 },
+                { id: 'pi05', name: 'Pi0.5', description: 'Pi0.5 policy', min_vram: 40 * 1024 ** 3 },
+                { id: 'rldx1', name: 'RLDX-1', description: 'RLDX-1 policy', min_vram: 40 * 1024 ** 3 },
+                { id: 'xr0', name: 'XR0', description: 'XR0 policy', min_vram: 60 * 1024 ** 3 },
+            ])
+        ),
+        http.get('/api/policies/backends', () =>
+            HttpResponse.json({
+                act: ['torch', 'openvino', 'onnx', 'executorch'],
+                smolvla: ['torch', 'openvino'],
+                pi05: ['torch', 'openvino'],
+                xr0: ['torch', 'openvino'],
+            })
+        ),
+        http.get('/api/dataset/{dataset_id}/episodes', () =>
+            HttpResponse.json([{ episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 }])
+        ),
+        http.get('/api/dataset/{dataset_id}/episodes/{episode_index}', () =>
+            HttpResponse.json({
+                episode_index: 0,
+                length: 100,
+                fps: 30,
+                tasks: ['Test task'],
+                actions: [],
+                action_keys: [],
+                videos: {
+                    'observation.images.top': { start: 0, end: 3, path: 'top.mp4' },
+                    'observation.images.wrist': { start: 0, end: 3, path: 'wrist.mp4' },
+                },
+            })
+        ),
+        http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {
+            const policy = params.policy;
+            return HttpResponse.json({
+                requirements:
+                    policy === 'act'
+                        ? []
+                        : [
+                              {
+                                  repository: 'google/paligemma-3b-pt-224',
+                                  status: 'missing_token',
+                                  required: policy === 'pi05',
+                                  access_url: 'https://huggingface.co/google/paligemma-3b-pt-224',
+                              },
+                          ],
+            });
+        })
+    );
+};
+
+const renderDialog = (props: { baseModel?: SchemaModel } = {}) =>
+    render(<TrainModelDialog {...props} close={() => undefined} />, {
+        route: `/projects/${projectId}/models`,
+        path: '/projects/:project_id/models',
+    });
+
+// Training is submitted from the last wizard step, so a test that wants to press
+// Train has to walk through the steps in between first. How many those are depends
+// on the policy, so walk until Train shows up.
+const goToLastStep = async (user: ReturnType<typeof userEvent.setup>) => {
+    while (screen.queryByRole('button', { name: 'Next' }) !== null) {
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+    }
+};
+
+// SnapFlow is offered on the training parameters step, which SmolVLA reaches
+// through its feature-mapping step. Waiting for each step to render keeps Next
+// from being pressed before the mapping has loaded and enabled it.
+const goToSmolVlaTrainingParameters = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByLabelText(/Gripper/i, { selector: 'button' });
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('slider', { name: /batch size/i });
+};
+
+describe('TrainModelDialog', () => {
+    it('does not submit a remote job when the final health check fails', async () => {
+        const user = userEvent.setup();
+        let healthCheckCount = 0;
+        let jobSubmitted = false;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => {
+                healthCheckCount += 1;
+                return healthCheckCount === 1
+                    ? HttpResponse.json(healthyRemoteTrainer)
+                    : HttpResponse.json({ detail: [] }, { status: 503 });
+            }),
+            http.post('/api/jobs:train', () => {
+                jobSubmitted = true;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+
+        // A new model starts with no dataset selected, and Train is a no-op without one.
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        await screen.findByText('Remote trainer selected');
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(healthCheckCount).toBeGreaterThan(1));
+        expect(jobSubmitted).toBe(false);
+    });
+
+    it('shows the computed training step count for the selected dataset', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/dataset/{dataset_id}/episodes', () =>
+                HttpResponse.json([
+                    { episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 },
+                    { episode_index: 1, tasks: ['Test task'], length: 100, fps: 30 },
+                ])
+            )
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByText('Estimated training steps: 60')).toBeInTheDocument();
+    });
+
+    it('offers remote trainers when training a new model', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+
+        expect(await screen.findByRole('option', { name: remoteTrainer.name })).toBeInTheDocument();
+    });
+
+    it('offers local training only when continuing an existing model', async () => {
+        // The trainer protocol can receive a dataset but not a base checkpoint, so
+        // the backend rejects a remote resume; don't offer what can't be submitted.
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel });
+
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+
+        expect(await screen.findByRole('option', { name: /this machine \(local\)/i })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: remoteTrainer.name })).not.toBeInTheDocument();
+    });
+
+    it('warns when SmolVLA is selected without a Hugging Face token', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        await user.click(await screen.findByLabelText('Select SmolVLA policy'));
+
+        expect(
+            await screen.findByText(/This policy downloads pretrained assets from Hugging Face/i)
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/gated base model/i)).not.toBeInTheDocument();
+    });
+
+    it('blocks Pi0.5 training without a Hugging Face token', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(
+            await screen.findByText(/This policy downloads pretrained assets from Hugging Face/i)
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('offers SnapFlow distillation only for flow-matching policies', async () => {
+        // ACT has no flow-matching sampler to distil, so the backend would
+        // reject the request; don't offer what can't be submitted.
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        // ACT skips feature mapping, so one Next lands on the training parameters.
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /snapflow distillation/i })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(await screen.findByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+
+        expect(await screen.findByRole('checkbox', { name: /snapflow distillation/i })).toBeInTheDocument();
+    });
+
+    it('submits the distillation budget when SnapFlow is enabled', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+        await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({
+            policy: 'smolvla',
+            snapflow_enabled: true,
+            snapflow_distill_epochs: 3,
+        });
+    });
+
+    it('does not ask for distillation when the box is left unchecked', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({ snapflow_enabled: false });
+    });
+
+    it('submits XR0 training parameters without LoRA or SnapFlow controls', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByLabelText('Select XR0 policy'));
+
+        // XR0 reads no fixed camera order, so one Next lands on the training parameters,
+        // which is where the LoRA and SnapFlow controls would be offered.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        expect(screen.queryByText('LoRA fine-tuning')).not.toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /snapflow distillation/i })).not.toBeInTheDocument();
+
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({
+            policy: 'xr0',
+            lora_enabled: false,
+            snapflow_enabled: false,
+        });
+    });
+
+    it('blocks Pi0.5 training when the token lacks gated-model access', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/{policy}/huggingface-access', () =>
+                HttpResponse.json({
+                    requirements: [
+                        {
+                            repository: 'google/paligemma-3b-pt-224',
+                            status: 'denied',
+                            required: true,
+                            access_url: 'https://huggingface.co/google/paligemma-3b-pt-224',
+                        },
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('blocks Pi0.5 training when the Hugging Face access check itself fails', async () => {
+        // Regression test: a failed check (network error, backend 500, ...) must
+        // fail closed for a policy with a required Hub dependency, rather than
+        // silently letting training through only to fail deep into a remote run.
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/{policy}/huggingface-access', () =>
+                HttpResponse.json(
+                    { detail: [{ loc: ['path', 'policy'], msg: 'boom', type: 'value_error' }] },
+                    { status: 500 }
+                )
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(await screen.findByText(/couldn.t verify Hugging Face access/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('shows a status indicator for each run target so its health is clear at a glance', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => HttpResponse.json(healthyRemoteTrainer))
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+
+        // Local always has a status (its device state), remote targets reflect live health.
+        const localOption = await screen.findByRole('option', { name: /this machine \(local\)/i });
+        expect(within(localOption).getByText('CPU only')).toBeInTheDocument();
+
+        const trainerOption = screen.getByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText('Healthy')).toBeInTheDocument());
+    });
+
+    it('lets users pick a remote GPU and sends its index with the job', async () => {
+        const user = userEvent.setup();
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        await user.click(await screen.findByRole('button', { name: /CUDA 0 — Small GPU/i }));
+        expect(screen.queryByRole('option', { name: /Automatic/i })).not.toBeInTheDocument();
+        await user.click(await screen.findByRole('option', { name: /CUDA 1 — Large GPU/i }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
+    });
+
+    it('submits the first free remote GPU without an explicit GPU choice', async () => {
+        const user = userEvent.setup();
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json([
+                    getMockedTrainJob({
+                        payload: getMockedTrainJobPayload({
+                            training_target: 'remote',
+                            remote_trainer_id: remoteTrainerId,
+                            device: { type: 'cuda', index: 0 },
+                        }),
+                    }),
+                ])
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByRole('button', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
+    });
+
+    it('refreshes the automatic GPU choice after the final health check', async () => {
+        const user = userEvent.setup();
+        let finalCheck = false;
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json([
+                    getMockedTrainJob({
+                        payload: getMockedTrainJobPayload({
+                            training_target: 'remote',
+                            remote_trainer_id: remoteTrainerId,
+                            device: { type: 'cuda', index: 1 },
+                        }),
+                    }),
+                ])
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000, busy: finalCheck },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 2, name: 'GPU two', memory: 8_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByRole('button', { name: /CUDA 0 — GPU zero/i })).toBeInTheDocument();
+        await goToLastStep(user);
+        finalCheck = true;
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 2 }));
+    });
+
+    it('marks a GPU used by another trainer busy without any Studio jobs', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () => HttpResponse.json([])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000, busy: true },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 8_000_000_000, busy: false },
+                    ],
+                })
+            )
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText('1/2 GPUs free')).toBeInTheDocument());
+        await user.click(trainerOption);
+        expect(await screen.findByRole('button', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+    });
+
+    it.each([undefined, 0])(
+        'marks a running job’s GPU busy (device index %s) but keeps the other GPU selectable',
+        async (index) => {
+            const user = userEvent.setup();
+            mockProjectWithRemoteTrainer();
+            server.use(
+                http.get('/api/jobs', () =>
+                    HttpResponse.json([
+                        getMockedTrainJob({
+                            payload: getMockedTrainJobPayload({
+                                training_target: 'remote',
+                                remote_trainer_id: remoteTrainerId,
+                                ...(index === undefined ? {} : { device: { type: 'cuda' as const, index } }),
+                            }),
+                        }),
+                    ])
+                ),
+                http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                    HttpResponse.json({
+                        ...healthyRemoteTrainer,
+                        devices: [
+                            { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                            { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                            { type: 'cuda', index: 2, name: 'GPU two', memory: 24_000_000_000 },
+                        ],
+                    })
+                )
+            );
+
+            renderDialog();
+            await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+            const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+            await waitFor(() => expect(within(trainerOption).getByText('2/3 GPUs free')).toBeInTheDocument());
+            expect(trainerOption.querySelectorAll('[class*="StatusLight--"]')).toHaveLength(1);
+            expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(
+                'StatusLight--positive'
+            );
+            await user.click(trainerOption);
+            expect(
+                screen
+                    .getByRole('button', { name: new RegExp(remoteTrainer.name) })
+                    .querySelector('[class*="StatusLight--"]')?.className
+            ).toContain('StatusLight--positive');
+            expect(screen.getByText(/GPU one, .*VRAM/)).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /CUDA 1 — GPU one/i }));
+            const busyGpu = screen.getByRole('option', { name: /CUDA 0 — GPU zero/i });
+            const freeGpu = screen.getByRole('option', { name: /CUDA 1 — GPU one/i });
+            expect(within(busyGpu).getByLabelText('GPU busy; new jobs will wait')).toBeInTheDocument();
+            expect(within(freeGpu).getByLabelText('GPU free')).toBeInTheDocument();
+            expect(screen.queryByText(/· Busy/)).not.toBeInTheDocument();
+            await user.click(busyGpu);
+            expect(screen.getByText(/GPU zero, .*VRAM/)).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /CUDA 0 — GPU zero/i }));
+            await user.click(screen.getByRole('option', { name: /CUDA 1 — GPU one/i }));
+            expect(
+                within(screen.getByRole('button', { name: /CUDA 1 — GPU one/i })).getByRole('status', {
+                    name: 'GPU free',
+                })
+            ).toBeInTheDocument();
+            expect(screen.getByText(/GPU one, .*VRAM/)).toBeInTheDocument();
+        }
+    );
+
+    it.each([
+        { indices: [], status: '2/2 GPUs free', color: 'positive' },
+        { indices: [0, 1], status: '0/2 GPUs free', color: 'yellow' },
+    ])('shows an ordinary run-on indicator with busy GPU indices $indices', async ({ indices, status, color }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json(
+                    indices.map((index) =>
+                        getMockedTrainJob({
+                            id: `job-${index}`,
+                            payload: getMockedTrainJobPayload({
+                                training_target: 'remote',
+                                remote_trainer_id: remoteTrainerId,
+                                device: { type: 'cuda', index },
+                            }),
+                        })
+                    )
+                )
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText(status)).toBeInTheDocument());
+        expect(trainerOption.querySelectorAll('[class*="StatusLight--"]')).toHaveLength(1);
+        expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(`StatusLight--${color}`);
+        if (indices.length === 2) {
+            await user.click(trainerOption);
+            expect(screen.getByRole('button', { name: /CUDA 0 — GPU zero/i })).toBeInTheDocument();
+        }
+    });
+
+    it.each([
+        { busy: false, label: 'Healthy', color: 'positive' },
+        { busy: true, label: 'Training in progress', color: 'yellow' },
+    ])('keeps the ordinary status label for a single GPU (busy: $busy)', async ({ busy, label, color }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json(
+                    busy
+                        ? [
+                              getMockedTrainJob({
+                                  payload: getMockedTrainJobPayload({
+                                      training_target: 'remote',
+                                      remote_trainer_id: remoteTrainerId,
+                                      device: { type: 'cuda', index: 0 },
+                                  }),
+                              }),
+                          ]
+                        : []
+                )
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [{ type: 'cuda', index: 0, name: 'Only GPU', memory: 24_000_000_000 }],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText(label)).toBeInTheDocument());
+        expect(trainerOption).not.toHaveTextContent('/1 GPUs free');
+        expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(`StatusLight--${color}`);
+    });
+
+    it('submits only one job when Train is double-clicked before the request resolves', async () => {
+        // The dialog stays open for a moment after the request settles (the parent
+        // closes it once `close()` runs), so a fast double-click could previously
+        // fire `save()` twice before the button became disabled, submitting two
+        // identical jobs.
+        const user = userEvent.setup();
+        let submitCount = 0;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async () => {
+                submitCount += 1;
+                // Simulate real network/server latency so both clicks land while the
+                // first request is still in flight.
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+
+        const trainButton = screen.getByRole('button', { name: 'Train' });
+
+        // Fire both clicks back-to-back, the way a real double-click would,
+        // instead of awaiting user-event's full interaction between them.
+        void user.click(trainButton);
+        void user.click(trainButton);
+
+        await waitFor(() => expect(trainButton).toBeDisabled());
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        expect(submitCount).toBe(1);
+    });
+
+    it('maps the dataset cameras onto the SmolVLA camera slots in dataset order', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        // The dataset's two cameras fill the first two slots; the third stays empty.
+        expect(await screen.findByLabelText(/Overview/i, { selector: 'button' })).toHaveTextContent('top');
+        expect(screen.getByLabelText(/Gripper/i, { selector: 'button' })).toHaveTextContent('wrist');
+        expect(screen.getByLabelText(/Extra/i, { selector: 'button' })).toHaveTextContent('Empty');
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+    });
+
+    it('blocks the mapping step while a dataset camera fills no slot', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        // Emptying the Gripper slot leaves 'wrist' mapped to nothing at all.
+        await user.click(await screen.findByLabelText(/Gripper/i, { selector: 'button' }));
+        await user.click(await screen.findByRole('option', { name: 'Empty' }));
+
+        expect(await screen.findByText(/wrist is not mapped yet/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('offers only the export formats the policy supports', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToLastStep(user);
+
+        // SmolVLA traces to Torch and OpenVINO only.
+        expect(await screen.findByRole('checkbox', { name: /PyTorch/i })).toBeInTheDocument();
+        expect(screen.getByRole('checkbox', { name: /OpenVINO/i })).toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /ONNX/i })).not.toBeInTheDocument();
+    });
+
+    it('waits for export formats before enabling Train', async () => {
+        const user = userEvent.setup();
+        let releaseFormats!: () => void;
+        const formatsReady = new Promise<void>((resolve) => {
+            releaseFormats = resolve;
+        });
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/backends', async () => {
+                await formatsReady;
+                return HttpResponse.json({ act: ['torch'] });
+            })
+        );
+
+        try {
+            renderDialog();
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+            await goToLastStep(user);
+
+            expect(await screen.findByLabelText('Loading export formats')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+            releaseFormats();
+            expect(await screen.findByRole('checkbox', { name: /PyTorch/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Train' })).toBeEnabled();
+        } finally {
+            releaseFormats();
+        }
+    });
+
+    it('shows a policy export lookup failure instead of claiming the policy has no formats', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(http.get('/api/policies/backends', () => HttpResponse.json({}, { status: 500 })));
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+
+        expect(await screen.findByText('Cannot verify export formats on this training target.')).toBeInTheDocument();
+        expect(screen.queryByText(/has no export formats/i)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
+    it('blocks training when no export format is picked', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+
+        for (const format of [/PyTorch/i, /OpenVINO/i, /ONNX/i, /ExecuTorch/i]) {
+            await user.click(await screen.findByRole('checkbox', { name: format }));
+        }
+
+        expect(await screen.findByText(/at least one export format/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
+    it('submits the camera mapping and the picked export formats', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToLastStep(user);
+        await user.click(await screen.findByRole('checkbox', { name: /PyTorch/i }));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({
+            // Keyed by camera name: the policy reads its images as `images.<name>`,
+            // so the dataset's `observation.images.` prefix must not ride along.
+            image_key_reorder_map: { top: 0, wrist: 1 },
+            num_cameras: 3,
+            export_backends: ['openvino'],
+        });
+    });
+
+    it('sends no camera mapping for a policy without a fixed camera order', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({ image_key_reorder_map: {}, num_cameras: 0 });
+        expect(submitted).toHaveProperty('export_backends', ['torch', 'openvino', 'onnx', 'executorch']);
+    });
+
+    it('skips the camera mapping when retraining, since the checkpoint keeps its own', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog({ baseModel: { ...baseModel, policy: 'smolvla' } });
+        // The dataset is preselected from the base model, but Next stays disabled
+        // until the project has loaded it.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({ image_key_reorder_map: {}, num_cameras: 0 });
+    });
+
+    it('offers only policies available in the backend and blocks an unavailable default', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/available', () =>
+                HttpResponse.json([
+                    { id: 'smolvla', name: 'SmolVLA', description: 'SmolVLA policy', min_vram: 3 * 1024 ** 3 },
+                ])
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        expect(await screen.findByLabelText('Select SmolVLA policy')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Select ACT policy')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+    });
+
+    it('shows policies installed on the selected remote trainer even if absent locally', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/available', ({ request }) =>
+                HttpResponse.json(
+                    new URL(request.url).searchParams.get('remote_trainer_id') === remoteTrainerId
+                        ? [{ id: 'pi05', name: 'Pi0.5', description: 'remote', min_vram: null }]
+                        : [{ id: 'act', name: 'ACT', description: 'local', min_vram: null }]
+                )
+            )
+        );
+        renderDialog();
+        expect(await screen.findByLabelText('Select ACT policy')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Select Pi0.5 policy')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByLabelText('Select Pi0.5 policy')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Select ACT policy')).not.toBeInTheDocument();
+    });
+
+    it('blocks training when policy availability cannot be loaded', async () => {
+        mockProjectWithRemoteTrainer();
+        server.use(http.get('/api/policies/available', () => HttpResponse.json([], { status: 500 })));
+
+        renderDialog();
+        expect(
+            await screen.findByText('Cannot verify policies on this training target. Check its connection.')
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('submits AWS Batch training without an instance or GPU selection', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        const batchTrainer = getMockedRemoteTrainer({
+            id: remoteTrainerId,
+            name: 'AWS Provider',
+            connection_mode: 'aws_batch',
+            url: null,
+            connection: {
+                connection_mode: 'aws_batch',
+                schema_version: 1,
+                profile_name: 'studio',
+                region: 'us-east-1',
+                studio_role_arn: 'arn:aws:iam::123:role/studio',
+                bucket: 'jobs-bucket',
+                targets: {
+                    'g4dn.2xlarge': { queue: 'small', job_definition: 'small' },
+                    'g6e.2xlarge': { queue: 'medium', job_definition: 'medium' },
+                },
+            },
+        });
+        let submitted: Record<string, unknown> | null = null;
+        server.use(
+            http.get('/api/remote-trainers', () => HttpResponse.json([batchTrainer])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', name: 'g4dn.2xlarge', index: 0 },
+                        { type: 'cuda', name: 'g6e.2xlarge', index: 1 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: 'AWS Provider' }));
+        expect(screen.queryByRole('button', { name: /^GPU/ })).not.toBeInTheDocument();
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({
+            training_target: 'remote',
+            remote_trainer_id: remoteTrainerId,
+            policy: 'act',
+            precision: '32-true',
+        });
+        expect(submitted).not.toHaveProperty('device');
+        expect(submitted).not.toHaveProperty('instance_type');
+    });
+
+    it('walks through the wizard steps and back', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        // ACT has no fixed camera order, so Next lands on the training parameters
+        // rather than on a feature-mapping step.
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        // Every step past the first recaps what the setup step settled.
+        expect(screen.getByText('Test dataset')).toBeInTheDocument();
+        expect(screen.getByText('ACT')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        // ACT exports to all four formats, and all of them are picked by default.
+        expect(await screen.findByRole('checkbox', { name: /PyTorch/i })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /ExecuTorch/i })).toBeChecked();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeEnabled();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+    });
+
+    describe('image augmentation', () => {
+        const submitAndCapturePayload = async (toggle: boolean) => {
+            const user = userEvent.setup();
+            let body: Record<string, unknown> | undefined;
+
+            mockProjectWithRemoteTrainer();
+            server.use(
+                http.post('/api/jobs:train', async ({ request }) => {
+                    body = (await request.json()) as Record<string, unknown>;
+                    return HttpResponse.json({}, { status: 201 });
+                })
+            );
+
+            renderDialog();
+
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+            if (toggle) {
+                // The checkbox lives on the training parameters step, one Next away for ACT.
+                await user.click(screen.getByRole('button', { name: 'Next' }));
+                await user.click(await screen.findByRole('checkbox', { name: /augment images/i }));
+            }
+            await goToLastStep(user);
+            await user.click(screen.getByRole('button', { name: 'Train' }));
+
+            await waitFor(() => expect(body).toBeDefined());
+            return body;
+        };
+
+        it('is off unless the user opts in', async () => {
+            expect(await submitAndCapturePayload(false)).toMatchObject({ augment_images: false });
+        });
+
+        it('is submitted when the checkbox is ticked', async () => {
+            expect(await submitAndCapturePayload(true)).toMatchObject({ augment_images: true });
+        });
+    });
+
+    it('hides LoRA fine-tuning controls for a policy without PEFT support', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        // ACT has no PEFT support, so its training parameters step offers no LoRA.
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        expect(screen.queryByText('LoRA fine-tuning')).not.toBeInTheDocument();
+    });
+
+    it('shows LoRA fine-tuning controls for Pi0.5', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        // Pi0.5 is gated behind a Hugging Face token by default, which blocks Next;
+        // this test is about the LoRA controls, not the gate.
+        server.use(
+            http.get('/api/policies/{policy}/huggingface-access', () => HttpResponse.json({ requirements: [] }))
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        // Pi0.5 reads no fixed camera order, so one Next lands on the training parameters.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByText('LoRA fine-tuning')).toBeInTheDocument();
+
+        // Rank/alpha/dropout/DoRA are hidden until LoRA itself is enabled.
+        expect(screen.queryByText('LoRA rank')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: 'LoRA fine-tuning' }));
+        expect(await screen.findByText('LoRA rank')).toBeInTheDocument();
+    });
+});

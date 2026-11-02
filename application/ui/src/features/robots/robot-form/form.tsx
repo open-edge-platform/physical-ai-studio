@@ -1,254 +1,97 @@
 import { useEffect } from 'react';
 
-import {
-    ActionButton,
-    Button,
-    Divider,
-    Flex,
-    Form,
-    Heading,
-    Icon,
-    Item,
-    Picker,
-    Text,
-    TextField,
-    View,
-} from '@geti-ui/ui';
-import { ChevronLeft, Refresh } from '@geti-ui/ui/icons';
+import { Item, Picker, TextField } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
-import { SchemaRobot } from '../../../api/openapi-spec';
+import { FormHeading } from '../../../components/form-heading/form-heading';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
-import { PermissionDeniedError } from '../setup-wizard/so101/diagnostics-step-error';
-import { useRobotForm, useSetRobotForm } from './provider';
-import { SubmitNewRobotButton } from './submit-new-robot-button';
+import { paths } from '../../../paths';
+import { useRobotCatalogQuery } from '../robot-catalog.hooks';
+import { SchemaRobotType } from '../robot-types';
+import { BimanualSO101FormFields } from './catalog/bimanual-so101';
+import { useRobotForm } from './provider';
+import { SchemaForm } from './robot-schema/schema-form';
 
-import classes from './form.module.scss';
-
-const RobotType = () => {
-    const setRobotForm = useSetRobotForm();
-    const robotForm = useRobotForm();
+export const RobotType = () => {
+    const { activeType, name, setName } = useRobotForm();
+    const { setActiveType } = useRobotForm();
+    const catalogQuery = useRobotCatalogQuery();
 
     return (
         <Picker
             isRequired
             label='Robot type'
             width='100%'
-            selectedKey={robotForm.type}
+            selectedKey={activeType}
             onSelectionChange={(selected) => {
-                const newType = selected as typeof robotForm.type;
-
-                const wasSerial = robotForm.type?.toLowerCase().startsWith('so101') ?? false;
-                const isSerial = newType?.toLowerCase().startsWith('so101') ?? false;
-
-                setRobotForm((oldForm) => ({
-                    ...oldForm,
-                    type: newType,
-                    ...(wasSerial !== isSerial
-                        ? {
-                              // Only reset when switching families (SO -> Trossen, etc)
-                              serial_number: '',
-                              connection_string: '',
-                          }
-                        : {}),
-                }));
+                if (selected === null) {
+                    return;
+                }
+                const entry = catalogQuery.data.find(({ type }) => type === selected);
+                setActiveType(selected.toString());
+                if (entry === undefined) {
+                    return;
+                }
+                const previousSuggestedName = catalogQuery.data.find(({ type }) => type === activeType)?.display_name;
+                if (name === '' || name === previousSuggestedName) {
+                    setName(entry.display_name);
+                }
             }}
         >
-            <Item key={'SO101_Follower'}>SO101 Follower</Item>
-            <Item key={'SO101_Leader'}>SO101 Leader</Item>
-            <Item key={'Trossen_WidowXAI_Follower'}>Trossen WidowX AI Follower</Item>
-            <Item key={'Trossen_WidowXAI_Leader'}>Trossen WidowX AI Leader</Item>
+            {catalogQuery.data.map((entry) => (
+                <Item key={entry.type}>{entry.display_name}</Item>
+            ))}
         </Picker>
     );
 };
 
-const RefreshRobotsButton = () => {
-    const { refetch, isFetching } = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');
+export const FormFields = () => {
+    const { activeType, name, setName, nameFieldRef } = useRobotForm();
+    const catalogQuery = useRobotCatalogQuery();
+    const suggestedName = catalogQuery.data.find(({ type }) => type === activeType)?.display_name;
+
+    useEffect(() => {
+        if (name !== '' && name === suggestedName) {
+            nameFieldRef.current?.focus();
+        }
+    }, [name, nameFieldRef, suggestedName]);
 
     return (
-        <ActionButton
-            isDisabled={isFetching}
-            UNSAFE_className={classes.actionButton}
-            onPress={() => {
-                refetch();
-            }}
-        >
-            <Icon>
-                <Refresh />
-            </Icon>
-        </ActionButton>
+        <>
+            <TextField
+                isRequired
+                label='Robot name'
+                width='100%'
+                value={name}
+                onChange={setName}
+                ref={nameFieldRef}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+            />
+            {activeType !== undefined && <SelectedRobotFields activeType={activeType} />}
+        </>
     );
 };
 
-const useIdentifyMutation = () => {
-    return $api.useMutation('post', '/api/hardware/identify', {
-        meta: { skipInvalidation: true },
+const SelectedRobotFields = ({ activeType }: { activeType: string }) => {
+    const schema = useRobotCatalogSchema(activeType);
+    const isBimanualSO101 = activeType === 'BimanualSO101_Follower' || activeType === 'BimanualSO101_Leader';
+    return isBimanualSO101 ? (
+        <BimanualSO101FormFields />
+    ) : (
+        <SchemaForm schema={schema.data as Parameters<typeof SchemaForm>[0]['schema']} />
+    );
+};
+
+const useRobotCatalogSchema = (robotType: SchemaRobotType) => {
+    return $api.useSuspenseQuery('get', '/api/robots/catalog/{robot_type}/schema', {
+        params: { path: { robot_type: robotType } },
     });
 };
 
-const IdentifyRobot = ({ identifyMutation }: { identifyMutation: ReturnType<typeof useIdentifyMutation> }) => {
-    const robotForm = useRobotForm();
-
-    const isDisabled = identifyMutation.isPending || !robotForm.name || !robotForm.type || !robotForm.connection_string;
-
-    const onIdentify = () => {
-        if (isDisabled || robotForm.type === null) {
-            return;
-        }
-
-        const body: SchemaRobot = {
-            id: crypto.randomUUID(), // required by schema, not used by backend
-            name: robotForm.name,
-            type: robotForm.type,
-            connection_string: robotForm.connection_string ?? '',
-            serial_number: robotForm.serial_number ?? '',
-            active_calibration_id: null,
-        };
-
-        identifyMutation.mutate({ body });
-    };
-
-    return (
-        <ActionButton isDisabled={isDisabled} UNSAFE_className={classes.actionButton} onPress={onIdentify}>
-            Identify
-        </ActionButton>
-    );
-};
-
-export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNewRobotButton /> }) => {
+export const RobotFormHeading = ({ heading }: { heading: string }) => {
     const { project_id } = useProjectId();
-
-    const serialDevicesQuery = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');
-
-    const robotForm = useRobotForm();
-    const setRobotForm = useSetRobotForm();
-
-    const identifyMutation = useIdentifyMutation();
-
-    // Since project won't save connection_string for Serial devices;
-    // we need to populate this value; so the identify button works.
-    useEffect(() => {
-        if (!robotForm.serial_number) {
-            return;
-        }
-
-        const device = serialDevicesQuery.data.find((d) => d.serial_number === robotForm.serial_number);
-
-        if (!device) {
-            return;
-        }
-
-        if (robotForm.connection_string !== device.connection_string) {
-            setRobotForm((oldForm) => ({
-                ...oldForm,
-                connection_string: device.connection_string,
-            }));
-        }
-    }, [robotForm.serial_number, serialDevicesQuery.data, robotForm.connection_string, setRobotForm]);
-
     return (
-        <Flex direction='column' gap='size-200'>
-            <Flex alignItems={'center'} gap='size-200'>
-                <Button
-                    href={paths.project.robots.index({ project_id })}
-                    variant='secondary'
-                    UNSAFE_style={{ border: 'none' }}
-                >
-                    <Icon>
-                        <ChevronLeft color='white' fill='white' />
-                    </Icon>
-                </Button>
-
-                <Heading>{heading}</Heading>
-            </Flex>
-            <Divider orientation='horizontal' size='S' />
-            <Form>
-                <Flex direction='column' gap='size-200'>
-                    <Flex direction='column' gap='size-200' width='100%'>
-                        <TextField
-                            isRequired
-                            label='Robot name'
-                            width='100%'
-                            onChange={(name) => {
-                                setRobotForm((oldForm) => ({ ...oldForm, name }));
-                            }}
-                            value={robotForm.name}
-                        />
-
-                        {/* Put robot type first as we can use it to visualize the robot
-                          and determine how to connect with it */}
-                        <RobotType />
-
-                        <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
-                            {robotForm.type?.toLowerCase().startsWith('trossen') ? (
-                                <>
-                                    <TextField
-                                        isRequired
-                                        label='Robot IP address'
-                                        width='100%'
-                                        value={robotForm.connection_string ?? ''}
-                                        onChange={(connection_string) => {
-                                            setRobotForm((oldForm) => ({
-                                                ...oldForm,
-                                                connection_string,
-                                                serial_number: '',
-                                            }));
-                                        }}
-                                        placeholder='192.168.1.2'
-                                    />
-                                    <Flex gap='size-100'>
-                                        <IdentifyRobot identifyMutation={identifyMutation} />
-                                    </Flex>
-                                </>
-                            ) : null}
-                            {robotForm.type?.toLowerCase().startsWith('so101') ? (
-                                <>
-                                    <Picker
-                                        label='Select robot'
-                                        isRequired
-                                        width='100%'
-                                        selectedKey={robotForm.serial_number}
-                                        onSelectionChange={(serial_number) => {
-                                            const device = serialDevicesQuery.data.find(
-                                                (d) => d.serial_number === serial_number
-                                            );
-
-                                            setRobotForm((oldForm) => ({
-                                                ...oldForm,
-                                                serial_number: String(serial_number),
-                                                connection_string: device?.connection_string ?? '',
-                                            }));
-                                        }}
-                                    >
-                                        {serialDevicesQuery.data.map((serial_device) => {
-                                            return (
-                                                <Item
-                                                    key={serial_device.serial_number}
-                                                    textValue={serial_device.serial_number}
-                                                >
-                                                    <Text>{serial_device.serial_number}</Text>
-                                                    <Text slot='description'>{serial_device.connection_string}</Text>
-                                                </Item>
-                                            );
-                                        })}
-                                    </Picker>
-
-                                    <Flex gap='size-100'>
-                                        <RefreshRobotsButton />
-                                        <IdentifyRobot identifyMutation={identifyMutation} />
-                                    </Flex>
-                                </>
-                            ) : null}
-                        </Flex>
-                        {robotForm.type?.toLowerCase().startsWith('so101') && identifyMutation.isError && (
-                            <PermissionDeniedError port={robotForm.connection_string} />
-                        )}
-                    </Flex>
-                    <Divider orientation='horizontal' size='S' />
-                    <View>{submitButton}</View>
-                </Flex>
-            </Form>
-        </Flex>
+        <FormHeading heading={heading} backTo={paths.project.robots.index({ project_id })} backLabel='Back to robots' />
     );
 };

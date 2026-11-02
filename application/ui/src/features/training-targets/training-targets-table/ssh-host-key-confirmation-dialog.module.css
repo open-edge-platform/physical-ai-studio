@@ -1,0 +1,47 @@
+.dialog {
+    overflow: hidden;
+    border: 1px solid var(--spectrum-global-color-gray-500);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}
+
+.heading {
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-125);
+}
+
+.warningIcon {
+    color: var(--spectrum-global-color-static-orange-500);
+}
+
+.identity {
+    display: grid;
+    gap: var(--spectrum-global-dimension-size-75);
+    padding: var(--spectrum-global-dimension-size-200);
+    border: 1px solid var(--spectrum-global-color-gray-400);
+    border-left: var(--spectrum-global-dimension-size-50) solid var(--spectrum-global-color-static-orange-500);
+    background: var(--spectrum-global-color-gray-75);
+}
+
+.label {
+    color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.host,
+.fingerprint {
+    overflow-wrap: anywhere;
+    color: var(--spectrum-global-color-gray-900);
+}
+
+.fingerprint {
+    font-family: monospace;
+    font-size: var(--spectrum-global-dimension-font-size-100);
+}
+
+.actions {
+    padding-top: var(--spectrum-global-dimension-size-150);
+    border-top: 1px solid var(--spectrum-global-color-gray-300);
+}

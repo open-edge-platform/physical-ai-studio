@@ -1,0 +1,13 @@
+script: model_servers/physicalai.py
+port: 8000
+args:
+  policy:
+    class_path: physicalai.inference.InferenceModel
+    init_args:
+      export_dir: pi05_libero_openvino
+      device: auto
+  image_keys:
+    agentview: image
+    wrist: image2
+  state_key: observation.state
+  chunk_size: 10

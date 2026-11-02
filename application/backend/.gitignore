@@ -1,2 +1,6 @@
 data/
 .uv-extra
+
+# Preserve legacy local robot asset caches; plugins package their own assets.
+src/static/robot-assets/*
+!src/static/robot-assets/.gitkeep

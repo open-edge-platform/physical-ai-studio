@@ -1,12 +1,10 @@
 from abc import ABC
-from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from schemas.base import BaseIDModel
+from schemas.base import BaseIDModel, UTCDatetime
 
-# Supported camera drivers (subset of FrameSourceFactory.MediaSource)
 SupportedCameraDriver = Literal[
     "usb_camera",
     "ipcam",
@@ -19,11 +17,14 @@ SupportedCameraDriver = Literal[
 class BaseCamera(BaseIDModel, ABC):
     driver: SupportedCameraDriver
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable camera name")
-    fingerprint: str = Field(..., description="Camera fingerprint/source identifier for FrameSourceFactory")
+    fingerprint: dict[str, Any] | None = Field(
+        ...,
+        description="Backend-specific camera identity from hardware discovery, or null when reselection is required",
+    )
     hardware_name: str | None = Field(..., description="Camera hardware name from discovery")
 
 
@@ -45,9 +46,7 @@ class USBCameraPayload(BaseModel):
 class IPCameraPayload(BaseModel):
     """Configuration for IPCameraCapture."""
 
-    stream_url: str = Field(..., description="RTSP or HTTP stream URL")
-    username: str | None = Field(None, description="Camera login username")
-    password: str | None = Field(None, description="Camera login password")
+    url: str = Field(..., description="RTSP or HTTP stream URL")
     width: int | None = Field(None, ge=160, le=4096, description="Frame width in pixels (if supported)")
     height: int | None = Field(None, ge=120, le=2160, description="Frame height in pixels (if supported)")
     fps: int = Field(25, ge=1, le=60, description="Expected frame rate")
@@ -106,7 +105,7 @@ class USBCamera(BaseCamera):
             "example": {
                 "name": "front_camera",
                 "driver": "usb_camera",
-                "fingerprint": "USB\\VID_1234&PID_5678:0",
+                "fingerprint": {"serial": "12345678AB"},
                 "hardware_name": "Logitech C920 HD Pro Webcam",
                 "payload": {
                     "width": 1920,
@@ -129,12 +128,10 @@ class IPCamera(BaseCamera):
             "example": {
                 "name": "security_camera",
                 "driver": "ipcam",
-                "fingerprint": "rtsp://192.168.1.100:554/stream1",
+                "fingerprint": {"url": "rtsp://192.168.1.100:554/stream1"},
                 "hardware_name": None,
                 "payload": {
-                    "stream_url": "rtsp://192.168.1.100:554/stream1",
-                    "username": "admin",
-                    "password": "password123",
+                    "url": "rtsp://192.168.1.100:554/stream1",
                 },
             }
         }
@@ -152,7 +149,7 @@ class BaslerCamera(BaseCamera):
             "example": {
                 "name": "inspection_camera",
                 "driver": "basler",
-                "fingerprint": "40123456",
+                "fingerprint": {"serial": "40123456"},
                 "hardware_name": "Basler acA1920-40gm",
                 "payload": {
                     "serial_number": "40123456",
@@ -175,7 +172,7 @@ class RealsenseCamera(BaseCamera):
             "example": {
                 "name": "depth_camera",
                 "driver": "realsense",
-                "fingerprint": "123456789",
+                "fingerprint": {"serial": "123456789"},
                 "hardware_name": "Intel RealSense D435",
                 "payload": {
                     "width": 640,
@@ -198,7 +195,7 @@ class GenicamCamera(BaseCamera):
             "example": {
                 "name": "genicam_camera",
                 "driver": "genicam",
-                "fingerprint": "GC123456",
+                "fingerprint": {"serial": "GC123456"},
                 "hardware_name": "Genicam camera",
                 "payload": {
                     "serial_number": "GC123456",

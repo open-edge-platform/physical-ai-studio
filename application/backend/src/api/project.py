@@ -1,12 +1,13 @@
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Response, status
+from lerobot.datasets.io_utils import load_tasks
 
-from api.dependencies import get_model_service, get_project_id, get_project_service
-from internal_datasets.utils import get_internal_dataset
+from api.dependencies import get_model_service, get_project_service, get_project_thumbnail_service
 from schemas import Model, Project
-from services import ModelService, ProjectService
+from services import ModelService, ProjectService, ProjectThumbnailService
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -30,7 +31,7 @@ async def create_project(
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
-    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_id: UUID,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> None:
     """Delete a project."""
@@ -39,7 +40,7 @@ async def delete_project(
 
 @router.get("/{project_id}")
 async def get_project(
-    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_id: UUID,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     """Get project by id."""
@@ -48,7 +49,7 @@ async def get_project(
 
 @router.get("/{project_id}/models")
 async def get_project_models(
-    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_id: UUID,
     model_service: Annotated[ModelService, Depends(get_model_service)],
 ) -> list[Model]:
     """Get all models of a project."""
@@ -57,7 +58,7 @@ async def get_project_models(
 
 @router.get("/{project_id}/tasks")
 async def get_tasks_for_dataset(
-    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_id: UUID,
     project_service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> dict[str, list[str]]:
     """Get all dataset tasks of a project."""
@@ -65,6 +66,30 @@ async def get_tasks_for_dataset(
     res = {}
 
     for dataset in project.datasets:
-        res[dataset.name] = get_internal_dataset(dataset).get_tasks()
+        path = Path(dataset.path)
+        res[dataset.name] = list(load_tasks(path).index) if (path / "meta/info.json").is_file() else []
 
     return res
+
+
+@router.get("/{project_id}/thumbnail")
+async def get_project_thumbnail(
+    project_id: UUID,
+    project_service: Annotated[ProjectService, Depends(get_project_service)],
+    project_thumbnail_service: Annotated[ProjectThumbnailService, Depends(get_project_thumbnail_service)],
+    width: Annotated[int, Query(ge=32, le=1920)] = 156,
+    height: Annotated[int, Query(ge=32, le=1080)] = 156,
+) -> Response:
+    """Get a project thumbnail from the first frame of the first episode in the first dataset."""
+    project = await project_service.get_project_by_id(project_id)
+    thumbnail = project_thumbnail_service.get_thumbnail(project=project, width=width, height=height)
+
+    if thumbnail is None:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+
+    cache_headers = {
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+        "Last-Modified": thumbnail.last_modified,
+    }
+
+    return Response(content=thumbnail.content, media_type="image/png", headers=cache_headers)

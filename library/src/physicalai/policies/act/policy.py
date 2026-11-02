@@ -3,11 +3,20 @@
 
 """Lightning module for ACT policy."""
 
+import copy
+import json
+import logging
+from pathlib import Path
 from typing import Any, cast
 
 import torch
+from huggingface_hub import hf_hub_download
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
+from safetensors.torch import load_file
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
+from physicalai.data.observation import ACTION, IMAGES, STATE
 from physicalai.export.backends import (
     ExecuTorchExportParameters,
     ExportParameters,
@@ -22,6 +31,8 @@ from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
 from physicalai.policies.act.preprocessor import ACTPreprocessor
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
+
+logger = logging.getLogger(__name__)
 
 
 class ACT(ExportablePolicyMixin, Policy):
@@ -62,6 +73,8 @@ class ACT(ExportablePolicyMixin, Policy):
         optimizer_lr: Learning rate for the optimizer.
         optimizer_weight_decay: Weight decay for the optimizer.
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping.
+        use_imagenet_stats: Whether to normalize 3-channel visual observations using ImageNet
+            mean and std instead of empirical dataset statistics.
         dataset_stats: Dataset normalization statistics for eager model initialization
             (used when restoring from a checkpoint).
 
@@ -88,6 +101,7 @@ class ACT(ExportablePolicyMixin, Policy):
 
     def __init__(  # noqa: PLR0913
         self,
+        pretrained_name_or_path: str | Path | None = None,
         n_obs_steps: int = 1,
         chunk_size: int = 100,
         n_action_steps: int = 100,
@@ -95,7 +109,7 @@ class ACT(ExportablePolicyMixin, Policy):
         vision_backbone: str = "resnet18",
         pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1",
         replace_final_stride_with_dilation: bool = False,
-        max_image_size: int = 768,
+        image_size: tuple[int, int] = (384, 384),
         pre_norm: bool = False,
         dim_model: int = 512,
         n_heads: int = 8,
@@ -110,82 +124,197 @@ class ACT(ExportablePolicyMixin, Policy):
         dropout: float = 0.1,
         kl_weight: float = 10.0,
         optimizer_lr: float = 1e-5,
+        optimizer_lr_backbone: float = 1e-5,
         optimizer_weight_decay: float = 1e-4,
         optimizer_grad_clip_norm: float = 10.0,
         compile_model: bool = False,
+        use_imagenet_stats: bool = True,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, Any] | None = None,
     ) -> None:
         """Initialize ACT policy.
 
         Creates ACTConfig from explicit args and saves it as hyperparameters.
+
+        Raises:
+            ValueError: If both ``pretrained_name_or_path`` and ``dataset_stats`` are provided.
         """
         super().__init__(n_action_steps=n_action_steps)
 
-        # Create config from explicit args (policy-level config)
-        self.config = ACTConfig(
-            input_features={},
-            output_features={},
-            n_obs_steps=n_obs_steps,
-            chunk_size=chunk_size,
-            n_action_steps=n_action_steps,
-            vision_backbone=vision_backbone,
-            pretrained_backbone_weights=pretrained_backbone_weights,
-            replace_final_stride_with_dilation=replace_final_stride_with_dilation,
-            max_image_size=max_image_size,
-            pre_norm=pre_norm,
-            dim_model=dim_model,
-            n_heads=n_heads,
-            dim_feedforward=dim_feedforward,
-            feedforward_activation=feedforward_activation,
-            n_encoder_layers=n_encoder_layers,
-            n_decoder_layers=n_decoder_layers,
-            use_vae=use_vae,
-            latent_dim=latent_dim,
-            n_vae_encoder_layers=n_vae_encoder_layers,
-            temporal_ensemble_coeff=temporal_ensemble_coeff,
-            dropout=dropout,
-            kl_weight=kl_weight,
-            optimizer_lr=optimizer_lr,
-            optimizer_weight_decay=optimizer_weight_decay,
-            optimizer_grad_clip_norm=optimizer_grad_clip_norm,
-            compile_model=compile_model,
-        )
+        if pretrained_name_or_path is not None and dataset_stats is not None:
+            msg = "Pass either pretrained_name_or_path or dataset_stats, not both."
+            raise ValueError(msg)
+
+        weights_file = None
+        if pretrained_name_or_path is not None:
+            self.config, dataset_stats, weights_file = self._from_hf(
+                pretrained_name_or_path,
+                optimizer_lr=optimizer_lr,
+                optimizer_lr_backbone=optimizer_lr_backbone,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                compile_model=compile_model,
+            )
+        else:
+            # Create config from explicit args (policy-level config)
+            self.config = ACTConfig(
+                input_features={},
+                output_features={},
+                n_obs_steps=n_obs_steps,
+                chunk_size=chunk_size,
+                n_action_steps=n_action_steps,
+                vision_backbone=vision_backbone,
+                pretrained_backbone_weights=pretrained_backbone_weights,
+                replace_final_stride_with_dilation=replace_final_stride_with_dilation,
+                image_size=image_size,
+                pre_norm=pre_norm,
+                dim_model=dim_model,
+                n_heads=n_heads,
+                dim_feedforward=dim_feedforward,
+                feedforward_activation=feedforward_activation,
+                n_encoder_layers=n_encoder_layers,
+                n_decoder_layers=n_decoder_layers,
+                use_vae=use_vae,
+                latent_dim=latent_dim,
+                n_vae_encoder_layers=n_vae_encoder_layers,
+                temporal_ensemble_coeff=temporal_ensemble_coeff,
+                dropout=dropout,
+                kl_weight=kl_weight,
+                optimizer_lr=optimizer_lr,
+                optimizer_lr_backbone=optimizer_lr_backbone,
+                optimizer_weight_decay=optimizer_weight_decay,
+                optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+                compile_model=compile_model,
+                use_imagenet_stats=use_imagenet_stats,
+            )
 
         # Save config as hyperparameters for checkpoint restoration
-        self.save_hyperparameters(ignore=["config"])  # Save individual args, not config object
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path", "compile_model"])
         # Also save config dict for compatibility
         self.hparams["config"] = self.config.to_dict()
 
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        self._preprocessor = ACTPreprocessor(image_resolution=(self.config.max_image_size, self.config.max_image_size))
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size)
         self._postprocessor = None
 
         # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
-            self._initialize_model(dataset_stats)
+            if self.config.use_imagenet_stats and weights_file is None:
+                dataset_stats = _with_imagenet_stats(dataset_stats)
+            self._initialize_model(dataset_stats, weights_file)
 
         self._dataset_stats = dataset_stats
+
+    def _from_hf(  # noqa: PLR6301
+        self,
+        pretrained_name_or_path: str | Path,
+        *,
+        optimizer_lr: float,
+        optimizer_lr_backbone: float,
+        optimizer_weight_decay: float,
+        optimizer_grad_clip_norm: float,
+        compile_model: bool,
+    ) -> tuple[ACTConfig, dict[str, dict[str, list[float] | str | tuple]], Path]:
+        """Resolve a LeRobot ``ACT`` checkpoint (local dir or HF Hub repo) into config/stats/weights.
+
+        Args:
+            pretrained_name_or_path: HuggingFace repo ID or local directory containing
+                ``config.json`` and ``model.safetensors``.
+            optimizer_lr: Learning rate override for the resolved config.
+            optimizer_lr_backbone: Backbone learning rate override for the resolved config.
+            optimizer_weight_decay: Weight decay override for the resolved config.
+            optimizer_grad_clip_norm: Gradient clip norm override for the resolved config.
+            compile_model: Whether to apply ``torch.compile`` to the resolved model.
+
+        Returns:
+            Tuple of (config, dataset_stats, weights_file) suitable for ``_initialize_model``.
+        """
+        path = Path(pretrained_name_or_path)
+        if path.is_dir():
+            config_file = path / "config.json"
+            weights_file = path / "model.safetensors"
+        else:
+            config_file = Path(hf_hub_download(str(pretrained_name_or_path), "config.json"))  # nosec B615
+            weights_file = Path(hf_hub_download(str(pretrained_name_or_path), "model.safetensors"))  # nosec B615
+
+        with config_file.open(encoding="utf-8") as f:
+            hf_config = json.load(f)
+
+        image_size = None
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] = {}
+        for name, feature in {**hf_config["input_features"], **hf_config["output_features"]}.items():
+            shape = tuple(feature["shape"])
+            ftype = FeatureType(feature["type"])
+            if ftype is FeatureType.VISUAL and image_size is None:
+                image_size = (shape[-2], shape[-1])
+            dataset_stats[name] = {
+                "name": name,
+                "type": ftype,
+                "shape": shape,
+                # Placeholder normalization stats: overwritten below by the checkpoint's own
+                # normalizer buffers once the real state dict is loaded.
+                "mean": [0.0] * shape[0],
+                "std": [1.0] * shape[0],
+            }
+
+        config = ACTConfig(
+            input_features={},
+            output_features={},
+            n_obs_steps=hf_config.get("n_obs_steps", 1),
+            chunk_size=hf_config["chunk_size"],
+            n_action_steps=hf_config["n_action_steps"],
+            vision_backbone=hf_config["vision_backbone"],
+            pretrained_backbone_weights=hf_config["pretrained_backbone_weights"],
+            replace_final_stride_with_dilation=hf_config["replace_final_stride_with_dilation"],
+            image_size=image_size or (384, 384),
+            pre_norm=hf_config["pre_norm"],
+            dim_model=hf_config["dim_model"],
+            n_heads=hf_config["n_heads"],
+            dim_feedforward=hf_config["dim_feedforward"],
+            feedforward_activation=hf_config["feedforward_activation"],
+            n_encoder_layers=hf_config["n_encoder_layers"],
+            n_decoder_layers=hf_config["n_decoder_layers"],
+            use_vae=hf_config["use_vae"],
+            latent_dim=hf_config["latent_dim"],
+            n_vae_encoder_layers=hf_config["n_vae_encoder_layers"],
+            temporal_ensemble_coeff=hf_config["temporal_ensemble_coeff"],
+            dropout=hf_config["dropout"],
+            kl_weight=hf_config["kl_weight"],
+            optimizer_lr=optimizer_lr,
+            optimizer_lr_backbone=optimizer_lr_backbone,
+            optimizer_weight_decay=optimizer_weight_decay,
+            optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+            compile_model=compile_model,
+            use_imagenet_stats=hf_config.get("use_imagenet_stats", True),
+        )
+
+        return config, dataset_stats, weights_file
 
     def _initialize_model(
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]],
+        weights_file: Path | None = None,
     ) -> None:
         """Initialize model and preprocessors.
 
         Called by both lazy (setup) and eager (checkpoint) paths.
 
         Args:
-            env_action_dim: Environment action dimension.
             dataset_stats: Dataset normalization statistics.
+            weights_file: Optional path to a LeRobot ``model.safetensors`` checkpoint to load
+                pretrained weights from, after the model architecture is built.
+
+        Raises:
+            RuntimeError: If unexpected keys are found when loading pretrained weights.
         """
         features: dict[str, Feature] = {}
         for stat in dataset_stats.values():
+            ftype = cast("FeatureType", stat["type"])
             features[str(stat["name"])] = Feature(
                 name=str(stat["name"]),
-                ftype=cast("FeatureType", stat["type"]),
+                ftype=ftype,
                 shape=cast("tuple[int, ...]", stat["shape"]),
                 normalization_data=NormalizationParameters(
                     mean=cast("list[float]", stat["mean"]),
@@ -224,6 +353,21 @@ class ACT(ExportablePolicyMixin, Policy):
             compile_model=self.config.compile_model,
         )
 
+        if weights_file is not None:
+            original_sd = load_file(str(weights_file))
+            image_feature_names = [
+                str(stat["name"]) for stat in dataset_stats.values() if FeatureType(stat["type"]) == FeatureType.VISUAL
+            ]
+            remapped_sd = _remap_lerobot_act_state_dict(original_sd, image_feature_names)
+
+            missing, unexpected = self.model.load_state_dict(remapped_sd, strict=False)
+            if unexpected:
+                msg = f"Unexpected keys when loading pretrained ACT weights: {unexpected}"
+                raise RuntimeError(msg)
+            if missing:
+                msg = f"Missing keys when loading pretrained ACT weights (kept randomly initialized): {missing}"
+                logger.warning(msg)
+
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
 
@@ -251,7 +395,11 @@ class ACT(ExportablePolicyMixin, Policy):
             reformat_dataset_to_match_policy(self, datamodule)
             return
 
-        stats_dict = train_dataset.stats
+        stats_dict = (
+            _with_imagenet_stats(train_dataset.stats)
+            if self.config.use_imagenet_stats
+            else copy.deepcopy(train_dataset.stats)
+        )
 
         self.hparams["dataset_stats"] = stats_dict
 
@@ -283,7 +431,7 @@ class ACT(ExportablePolicyMixin, Policy):
 
     # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Perform forward pass of the ACT policy.
 
         The return value depends on the model's training mode:
@@ -294,7 +442,7 @@ class ACT(ExportablePolicyMixin, Policy):
             batch (Observation): Input batch of observations
 
         Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]: In training mode, returns
                 tuple of (loss, loss_dict). In eval mode, returns action chunk tensor.
 
         Raises:
@@ -311,7 +459,7 @@ class ACT(ExportablePolicyMixin, Policy):
         # During evaluation, return action chunk predictions
         return self.predict_action_chunk(batch)
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Delegates to the model's ``compute_val_loss`` without toggling
@@ -350,16 +498,7 @@ class ACT(ExportablePolicyMixin, Policy):
             msg = "ACT model is not initialized."
             raise RuntimeError(msg)
         loss, loss_dict = self.forward(batch)  # noqa: RUF059
-        self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
-        self.log(
-            "train/loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-            sync_dist=True,
-        )
+        self.log("train/loss", loss, prog_bar=True)
         return {"loss": loss}
 
     def configure_optimizers(self) -> dict[str, Any]:
@@ -368,13 +507,26 @@ class ACT(ExportablePolicyMixin, Policy):
         Returns:
             Optimizer configuration dict.
         """
-        # Get trainable parameters
-        params = [p for p in self.parameters() if p.requires_grad]
+        backbone_params = []
+        other_params = []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if ".backbone." in name:
+                backbone_params.append(param)
+            else:
+                other_params.append(param)
 
-        # Create optimizer (use config values)
+        param_groups: list[dict[str, Any]] = [
+            {"params": other_params, "lr": self.config.optimizer_lr},
+        ]
+        if backbone_params:
+            param_groups.append(
+                {"params": backbone_params, "lr": self.config.optimizer_lr_backbone},
+            )
+
         optimizer = torch.optim.AdamW(
-            params,
-            lr=self.config.optimizer_lr,
+            param_groups,
             weight_decay=self.config.optimizer_weight_decay,
         )
 
@@ -452,25 +604,211 @@ class ACT(ExportablePolicyMixin, Policy):
         ]
 
     @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
+
+        Returns:
+            A list with a ``state`` feature and one or more image features keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns
+            ``None`` if the underlying model has not been initialized yet.
+
+        Raises:
+            RuntimeError: If the robot state or image feature shape is not defined.
+        """
+        if self.model is None:
+            return None
+
+        state_feature = self.model._config.robot_state_feature  # noqa: SLF001
+        if state_feature is None or state_feature.shape is None:
+            msg = "Robot state feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        schema: list[InferenceFeature] = [
+            InferenceFeature(
+                ftype=InferenceFeatureType.STATE,
+                shape=tuple(state_feature.shape),
+                name=STATE,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+        image_features = self.model._config.image_features  # noqa: SLF001
+        if len(image_features) == 1:
+            visual_feature = next(iter(image_features.values()))
+            if visual_feature.shape is None:
+                msg = "Image feature shape is not defined in the model configuration."
+                raise RuntimeError(msg)
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.VISUAL,
+                    shape=tuple(visual_feature.shape),
+                    name=IMAGES,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            )
+        else:
+            for key, visual_feature in image_features.items():
+                if visual_feature.shape is None:
+                    msg = f"Image feature shape for '{key}' is not defined in the model configuration."
+                    raise RuntimeError(msg)
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=tuple(visual_feature.shape),
+                        name=f"{IMAGES}.{key}",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's model output for export.
+
+        Returns:
+            A list with a single ``action`` feature of shape
+            ``(chunk_size, *action_feature.shape)``. Returns ``None`` if the
+            underlying model has not been initialized yet.
+
+        Raises:
+            RuntimeError: If the action feature shape is not defined.
+        """
+        if self.model is None:
+            return None
+
+        action_feature = self.model._config.action_feature  # noqa: SLF001
+        if action_feature is None or action_feature.shape is None:
+            msg = "Action feature is not defined in the model configuration."
+            raise RuntimeError(msg)
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, *tuple(action_feature.shape)),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
         Returns:
             dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
         """
+        postproc_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            postproc_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.config.n_action_steps,
+                ),
+            )
+
+        preproc_specs = [
+            ComponentSpec(
+                type="resize",
+                image_resolution=self.config.image_size,
+                mode="letterbox",
+            ),
+        ]
+
         extra_args: dict[str, ExportParameters] = {}
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": ["action"],
+                "output_names": output_names,
             },
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=["action"],
+            outputs=output_names,
             export_tokenizer=False,
             compress_to_fp16=False,
             exporter_kwargs={},
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
         )
-        extra_args["executorch"] = ExecuTorchExportParameters()
-        extra_args["torch"] = TorchExportParameters()
+        extra_args["executorch"] = ExecuTorchExportParameters(
+            preprocessors_specs=preproc_specs,
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            postprocessors_specs=postproc_specs,
+        )
 
         return extra_args
+
+
+_RGB_CHANNELS = 3
+_IMAGENET_MEAN: list[float] = [0.485, 0.456, 0.406]
+_IMAGENET_STD: list[float] = [0.229, 0.224, 0.225]
+
+# LeRobot's checkpoint state dict uses a flat "model."/"normalize_inputs."/"normalize_targets."/
+# "unnormalize_outputs." prefix scheme, while physicalai's ACTModel nests the core network under
+# "_model." and splits normalization buffers into "_input_normalizer"/"_output_denormalizer" modules.
+_LEROBOT_ACT_PREFIX_MAP = {
+    "model.": "_model.",
+    "normalize_targets.buffer_action": "_input_normalizer.buffer_action",
+    "normalize_inputs.buffer_observation_state": "_input_normalizer.buffer_state",
+    "unnormalize_outputs.buffer_action": "_output_denormalizer.buffer_action",
+}
+
+
+def _remap_lerobot_act_state_dict(
+    state_dict: dict[str, torch.Tensor],
+    image_feature_names: list[str],
+) -> dict[str, torch.Tensor]:
+    """Remap a LeRobot ``ACTPolicy`` checkpoint state dict to physicalai's native ``ACT`` key names.
+
+    Args:
+        state_dict: State dict as loaded from a LeRobot ``model.safetensors`` checkpoint.
+        image_feature_names: Names of the camera/image input features declared in the checkpoint's
+            ``config.json`` (e.g. ``["observation.images.top"]``), used to remap per-camera
+            normalizer buffers. Single-camera checkpoints use the generic ``images`` buffer name;
+            multi-camera checkpoints key the buffer by feature name, matching ``ACTModel``'s layout.
+
+    Returns:
+        A new state dict with keys renamed to match physicalai's native ``ACTModel``/normalizer layout.
+    """
+    single_camera = len(image_feature_names) == 1
+    remapped: dict[str, torch.Tensor] = {}
+    for key, value in state_dict.items():
+        new_key = key
+        for old_prefix, new_prefix in _LEROBOT_ACT_PREFIX_MAP.items():
+            if key.startswith(old_prefix):
+                new_key = new_prefix + key[len(old_prefix) :]
+                break
+        else:
+            image_prefix = "normalize_inputs.buffer_observation_images_"
+            if key.startswith(image_prefix):
+                suffix = key.split(".")[-1]
+                image_key = f"buffer_{IMAGES}" if single_camera else key[len("normalize_inputs.") : -len(f".{suffix}")]
+                new_key = f"_input_normalizer.{image_key}.{suffix}"
+        remapped[new_key] = value
+    return remapped
+
+
+def _with_imagenet_stats(dataset_stats: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Return a copy of ``dataset_stats`` with ImageNet mean/std applied to RGB visual features.
+
+    Args:
+        dataset_stats: Per-feature normalization statistics.
+
+    Returns:
+        A deep copy of ``dataset_stats`` with RGB visual feature stats replaced.
+    """
+    stats = copy.deepcopy(dataset_stats)
+    for stat in stats.values():
+        shape = stat["shape"]
+        if (
+            FeatureType(stat["type"]) == FeatureType.VISUAL
+            and len(shape) >= _RGB_CHANNELS
+            and shape[0] == _RGB_CHANNELS
+        ):
+            stat["mean"], stat["std"] = list(_IMAGENET_MEAN), list(_IMAGENET_STD)
+    return stats

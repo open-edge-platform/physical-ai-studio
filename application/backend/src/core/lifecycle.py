@@ -1,3 +1,6 @@
+import asyncio
+import os
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -5,14 +8,61 @@ from fastapi import FastAPI
 from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
+from core.security import get_ssh_feature_availability
+from db import get_async_db_session_ctx
+from schemas.remote_trainer import SshConnection
+from services import remote_trainer_tunnel_manager
+from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
+from services.health_service import HealthService
+from services.remote_trainer_service import RemoteTrainerService
 from settings import get_settings
+from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.camera_worker_registry import CameraWorkerRegistry
-from workers.model_worker_registry import ModelWorkerRegistry
-from workers.robot_worker_registry import RobotWorkerRegistry
 
 from .scheduler import Scheduler
+
+
+def _restart_argv_candidates() -> list[list[str]]:
+    """Build candidate argv lists for re-executing the current server process."""
+    candidates: list[list[str]] = []
+
+    orig_argv = list(getattr(sys, "orig_argv", []) or [])
+    if orig_argv and orig_argv[0]:
+        candidates.append(orig_argv)
+
+    python_argv = [sys.executable, *sys.argv]
+    if python_argv[0] and python_argv not in candidates:
+        candidates.append(python_argv)
+
+    return candidates
+
+
+def _restart_process() -> None:
+    """Replace this process image after graceful application shutdown."""
+    for argv in _restart_argv_candidates():
+        executable = argv[0]
+        try:
+            if os.path.sep in executable:
+                os.execv(executable, argv)  # noqa: S606  # nosec B606 - re-exec current process
+            else:
+                os.execvp(executable, argv)  # noqa: S606  # nosec B606 - re-execs this process with its own argv, not external input
+        except OSError:
+            logger.exception("Restart exec failed for argv={}", argv)
+
+
+async def _start_remote_trainer_tunnels() -> None:
+    """Best-effort background startup of configured SSH tunnels."""
+    try:
+        async with get_async_db_session_ctx() as session:
+            remote_trainers = await RemoteTrainerService(session).list_remote_trainers()
+        await remote_trainer_tunnel_manager.start_all(remote_trainers)
+        if get_ssh_feature_availability().active:
+            for trainer in remote_trainers:
+                if isinstance(trainer.connection, SshConnection):
+                    RemoteTrainerService._start_persistent_trainer_in_background(trainer, None)
+    except Exception:
+        logger.exception("Failed to start configured remote-trainer SSH tunnels")
 
 
 @asynccontextmanager
@@ -24,24 +74,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     settings = get_settings()
     app.state.settings = settings
+    app.state.health_service = HealthService()
 
-    app.state.camera_registry = CameraWorkerRegistry(
-        max_workers=10,
-        shutdown_timeout_s=10.0,
-    )
-    app.state.robot_registry = RobotWorkerRegistry(
-        max_workers=10,
-        shutdown_timeout_s=10.0,
-    )
+    # Camera settings pinned by live runtime sessions in this API process.
+    # In-memory on purpose: see CameraClaimRegistry. Keyed by fingerprint so
+    # aliased project rows for the same physical device share one pin.
+    app.state.camera_claim_registry = CameraClaimRegistry()
 
-    logger.info("Starting %s application...", settings.app_name)
+    # Fail the SSH remote-trainer feature closed if it is bound to a
+    # non-loopback address: the feature has no authentication model, so a
+    # network-exposed instance would let anyone who can reach the API execute
+    # code as root on every registered server. This never touches local or
+    # direct-URL training - only routes/dependencies gated behind
+    # `require_ssh_feature_active` (see `api.dependencies`) are affected.
+    ssh_feature_availability = get_ssh_feature_availability()
+    app.state.ssh_feature_availability = ssh_feature_availability
+    if ssh_feature_availability.network_exposed:
+        logger.critical(
+            "SSH remote-trainer feature disabled at startup: {}. Bind the backend to a loopback "
+            "address (127.0.0.1 or ::1) to use it.",
+            ssh_feature_availability.reason,
+        )
+
+    logger.info(f"Starting {settings.app_name} application...")
+    ensure_spawn_start_method()
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
 
-    app.state.model_registry = ModelWorkerRegistry(
-        max_workers=1,
-        stop_event=app_scheduler.mp_stop_event,
-    )
     app.state.scheduler = app_scheduler
     app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")
@@ -50,22 +109,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.robot_manager = RobotConnectionManager()
     await app.state.robot_manager.find_robots()
 
+    # Open the standing SSH tunnel for every configured direct trainer that
+    # wants one. Backgrounded: SSH connect attempts can take seconds per
+    # trainer and must not delay the server accepting requests.
+    app.state.remote_trainer_tunnel_startup_task = asyncio.create_task(_start_remote_trainer_tunnels())
+
     yield
 
     # Shutdown
-    logger.info("Shutting down %s application...", settings.app_name)
-
-    camera_registry: CameraWorkerRegistry = app.state.camera_registry
-    await camera_registry.shutdown_all()
-
-    robot_registry: RobotWorkerRegistry = app.state.robot_registry
-    await robot_registry.shutdown_all()
+    logger.info(f"Shutting down {settings.app_name} application...")
+    app.state.remote_trainer_tunnel_startup_task.cancel()
+    await remote_trainer_tunnel_manager.stop_all()
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.
     # Ideally RobotHardwareManager would have a shutdown_all method too.
     # For now, we assume active workers unregistering will trigger releases.
 
-    app_scheduler.shutdown()
+    # Keep draining worker events while shutdown waits for child processes to exit.
+    await asyncio.to_thread(app_scheduler.shutdown)
     app.state.event_processor.shutdown()
     logger.info("Application shutdown completed")
+
+    if app.state.health_service.plugin_restart_required:
+        _restart_process()

@@ -25,7 +25,11 @@ import torch.nn.functional as F  # noqa: N812
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
-from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
+from physicalai.policies.utils.normalization import (
+    FeatureNormalizeTransform,
+    NormalizationType,
+    normalize_rtc_prev_action_chunk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +187,7 @@ class Pi05Preprocessor(torch.nn.Module):
         """
         # Normalize state/action
         batch = self._state_action_normalizer(batch)
+        batch = normalize_rtc_prev_action_chunk(batch, self._state_action_normalizer)
 
         # Extract state after normalization for discretization
         state = batch[STATE]

@@ -1,0 +1,250 @@
+import { ReactNode, Suspense } from 'react';
+
+import { ThemeProvider } from '@geti-ui/ui';
+import { rs } from '@rstest/core';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { HttpResponse } from 'msw';
+import { createMemoryRouter, RouterProvider } from 'react-router';
+
+import { http } from '../../api/utils';
+import { server } from '../../msw-node-setup';
+import { createQueryClient } from '../../query-client/query-client';
+import { render } from '../../test-utils/render';
+import { RobotsList } from './robots-list';
+
+const PROJECT_ID = 'test-project-id';
+const ROBOT_ID = 'robot-id';
+const ROBOTS_PATH = '/api/projects/{project_id}/robots';
+const ONLINE_ROBOTS_PATH = '/api/projects/{project_id}/robots/online';
+
+const so101Robot = {
+    id: ROBOT_ID,
+    name: 'Test SO101',
+    type: 'SO101_Follower' as const,
+    payload: {
+        connection_string: '',
+        serial_number: 'SO101-001',
+        calibration: {
+            shoulder_pan: { id: 1, drive_mode: 0, homing_offset: 10, range_min: -100, range_max: 100 },
+        },
+    },
+};
+
+const renderRobotsList = () =>
+    render(<RobotsList />, {
+        route: `/projects/${PROJECT_ID}/robots`,
+        path: '/projects/:project_id/robots',
+    });
+
+const renderRobotsListAtShowRoute = () => {
+    const queryClient = createQueryClient();
+    const providers = (children: ReactNode) => (
+        <QueryClientProvider client={queryClient}>
+            <ThemeProvider>
+                <Suspense>{children}</Suspense>
+            </ThemeProvider>
+        </QueryClientProvider>
+    );
+    const router = createMemoryRouter(
+        [
+            {
+                path: '/projects/:project_id/robots/:robot_id',
+                element: providers(<RobotsList />),
+            },
+            {
+                path: '/projects/:project_id/robots',
+                element: providers(<div>Robots index</div>),
+            },
+        ],
+        { initialEntries: [`/projects/${PROJECT_ID}/robots/${ROBOT_ID}`], initialIndex: 0 }
+    );
+
+    return rtlRender(<RouterProvider router={router} />);
+};
+
+const openRobotMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    await screen.findByText(so101Robot.name);
+    await user.click(screen.getByRole('button', { name: `Actions for ${so101Robot.name}` }));
+};
+
+describe('RobotsList', () => {
+    afterEach(() => {
+        rs.restoreAllMocks();
+        rs.unstubAllGlobals();
+    });
+
+    it('shows Export calibration for SO101 robots', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () =>
+                HttpResponse.json([
+                    so101Robot,
+                    {
+                        id: 'widowx-id',
+                        name: 'Test WidowX',
+                        type: 'Trossen_WidowXAI_Follower',
+                        payload: { connection_string: '' },
+                    },
+                ])
+            ),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([]))
+        );
+
+        const user = userEvent.setup();
+        renderRobotsList();
+
+        await openRobotMenu(user);
+
+        expect(await screen.findByText('Export calibration', { selector: '[role]' })).toBeEnabled();
+    });
+
+    it('disables Export calibration when no calibration is active', async () => {
+        const noCalRobot = {
+            ...so101Robot,
+            payload: { connection_string: '', serial_number: 'SO101-001' },
+        };
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([noCalRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([]))
+        );
+
+        const user = userEvent.setup();
+        renderRobotsList();
+
+        await openRobotMenu(user);
+
+        const exportCalibration = await screen.findByText('Export calibration', { selector: '[role]' });
+        expect(exportCalibration.closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('downloads the active calibration in import-compatible format', async () => {
+        const NativeURL = URL;
+        const createObjectUrl = rs.fn<(blob: Blob) => string>(() => 'blob:calibration');
+        const revokeObjectUrl = rs.fn();
+        const click = rs.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        rs.stubGlobal(
+            'URL',
+            class extends NativeURL {
+                static createObjectURL = createObjectUrl;
+                static revokeObjectURL = revokeObjectUrl;
+            }
+        );
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([]))
+        );
+
+        const user = userEvent.setup();
+        renderRobotsList();
+
+        await openRobotMenu(user);
+        await user.click(await screen.findByText('Export calibration', { selector: '[role]' }));
+
+        await waitFor(() => expect(createObjectUrl).toHaveBeenCalledOnce());
+
+        const blob = createObjectUrl.mock.calls[0]?.[0];
+        expect(blob).toBeDefined();
+        expect(JSON.parse(await blob.text())).toEqual({
+            shoulder_pan: {
+                id: 1,
+                drive_mode: 0,
+                homing_offset: 10,
+                range_min: -100,
+                range_max: 100,
+            },
+        });
+        expect(click).toHaveBeenCalledOnce();
+        expect(revokeObjectUrl).toHaveBeenCalledWith('blob:calibration');
+    });
+
+    it('shows unavailable robots without treating their status as loading', async () => {
+        const unavailableRobot = {
+            id: 'unavailable-id',
+            name: 'Removed plugin robot',
+            type: 'Removed_Plugin_Robot',
+            payload: { connection_string: '/dev/ttyUSB0' },
+            unavailable: true as const,
+        };
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([unavailableRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () =>
+                HttpResponse.json([{ ...unavailableRobot, connection_status: 'unknown' as const }])
+            )
+        );
+
+        renderRobotsList();
+
+        expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+        expect(screen.getByText(/plugin unavailable/)).toBeInTheDocument();
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    });
+
+    it('navigates to the robots index when the viewed robot is deleted', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.delete('/api/projects/{project_id}/robots/{robot_id}', () => HttpResponse.json(null, { status: 204 }))
+        );
+
+        const user = userEvent.setup();
+
+        renderRobotsListAtShowRoute();
+        await openRobotMenu(user);
+        await user.click(screen.getByRole('menuitemradio', { name: 'Delete' }));
+
+        expect(await screen.findByText('Robots index')).toBeInTheDocument();
+    });
+});
+
+describe('RobotsList runtime sessions', () => {
+    const idleRobot = {
+        id: 'idle-robot-id',
+        name: 'Idle arm',
+        type: 'SO101_Follower' as const,
+        payload: { connection_string: '', serial_number: 'SO101-002' },
+    };
+
+    const busySession = {
+        session_name: `rt-${ROBOT_ID}`,
+        follower_id: ROBOT_ID,
+        status: 'running' as const,
+        pid: 41273,
+        follower_name: so101Robot.name,
+        camera_keys: [],
+        activity: {
+            connected: true,
+            follower_source: 'teleop' as const,
+            is_recording: true,
+            episodes_recorded: 2,
+        },
+        error: null,
+    };
+
+    it('marks only the robot a session is driving', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot, idleRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.get('/api/runtime/sessions', () => HttpResponse.json([busySession]))
+        );
+
+        renderRobotsList();
+
+        // Matching is by rt-<robot id>, so exactly one of the two rows lights up.
+        expect(await screen.findByText(/Session · recording/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Session ·/)).toHaveLength(1);
+    });
+
+    it('marks no robot when nothing is running', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot, idleRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.get('/api/runtime/sessions', () => HttpResponse.json([]))
+        );
+
+        renderRobotsList();
+
+        await screen.findByText(so101Robot.name);
+        expect(screen.queryByText(/Session ·/)).not.toBeInTheDocument();
+    });
+});

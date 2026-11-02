@@ -1,4 +1,5 @@
 """Test gymnasium wrapper."""
+import numpy as np
 import pytest
 import torch
 from physicalai.gyms import GymnasiumGym

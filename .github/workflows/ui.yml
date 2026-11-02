@@ -1,6 +1,9 @@
 name: UI
 permissions: {} # No permissions by default on workflow level
 
+env:
+  UV_EXCLUDE_NEWER: "7 days"
+
 on:
   push:
     branches:
@@ -15,49 +18,84 @@ concurrency:
 jobs:
   check-paths:
     name: Check if workflow should run
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
       contents: read
     steps:
+      - &harden-runner
+        name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            azure.archive.ubuntu.com:80
+            centralus.data.mcr.microsoft.com:443
+            dl.google.com:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            esm.ubuntu.com:443
+            files.pythonhosted.org:443
+            github.com:443
+            github-cloud.githubusercontent.com:443
+            index.crates.io:443
+            nodejs.org:443
+            packages.microsoft.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
+            raw.githubusercontent.com:443
+            registry.npmjs.org:443
+            release-assets.githubusercontent.com:443
+            releases.astral.sh:443
+            static.crates.io:443
+
       - &checkout
         name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Check paths
         id: check_paths
-        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/check-paths@2ed3ce382d1dbd6db52c7c6b93ffdae280a1c06f # check-paths/v0.1.0
         with:
           files_yaml: |
             test:
               - application/ui/**
-              - application/backend/**
-              - .github/**
+              - application/backend/app/**
+              - application/backend/pyproject.toml
+              - application/backend/uv.lock
+              - .github/workflows/ui.yml
+              - '!**/*.md'
+              - '!**/docs/**'
 
   generate-openapi-spec:
     name: Generate OpenAPI Spec
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
+      - *harden-runner
+
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: "./application/backend/.python-version"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: "0.10.4"
 
@@ -75,10 +113,9 @@ jobs:
       - name: Get OpenAPI spec
         working-directory: application/backend
         run: |
-          export PYTHONPATH=.
-          uv run src/cli.py gen-api --target-path openapi-spec.json
+          uv run physicalai-studio gen-api --target-path openapi-spec.json
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: openapi-spec
           path: application/backend/openapi-spec.json
@@ -87,17 +124,26 @@ jobs:
     name: Build UI
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
+      - *harden-runner
+
       - *checkout
 
       - &setup-node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: setup-node
         with:
           node-version-file: application/ui/.nvmrc
+
+      # `min-release-age` in application/ui/.npmrc requires npm >= 11.5.1.
+      # Ensure a compatible npm is available regardless of the default npm
+      # bundled with the pinned Node version.
+      - &setup-compatible-npm
+        name: Ensure npm supports min-release-age
+        run: npm i -g npm@11.14.0 # zizmor: ignore[adhoc-packages]
 
       - &install-dependencies
         name: Install dependencies
@@ -106,7 +152,7 @@ jobs:
 
       - &download-openapi-spec
         name: Download OpenAPI spec artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: openapi-spec
           path: application/ui/src/api
@@ -124,7 +170,7 @@ jobs:
         working-directory: "application/ui"
         run: tar -czf dist.tar.gz dist
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ui-dist
           path: "application/ui/dist.tar.gz"
@@ -133,13 +179,17 @@ jobs:
     name: Eslint checks
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
+      - *harden-runner
+
       - *checkout
 
       - *setup-node
+
+      - *setup-compatible-npm
 
       - *install-dependencies
 
@@ -167,13 +217,17 @@ jobs:
     name: Unit tests
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
+      - *harden-runner
+
       - *checkout
 
       - *setup-node
+
+      - *setup-compatible-npm
 
       - *install-dependencies
 
@@ -193,17 +247,21 @@ jobs:
     permissions:
       contents: read # to checkout code
     timeout-minutes: 60
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.59.1-jammy@sha256:8a0360d39d1973be506dd59002904a774f6d697d4946c94063b3fd006461c8ff
+      image: mcr.microsoft.com/playwright:v1.63.0-jammy@sha256:167d0506cfbe3c294fb214b2d11737326eeee028aa611fa1ba538e5057675847
     steps:
+      - *harden-runner
+
       - *checkout
 
       - *setup-node
 
+      - *setup-compatible-npm
+
       - *install-dependencies
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ui-dist
           path: "application/ui"
@@ -221,7 +279,7 @@ jobs:
         run: npm run test:component -- --project "Component tests"
 
       - name: Upload blob report to GitHub Actions Artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: playwright-report
@@ -237,11 +295,13 @@ jobs:
       - lint
       - unit-tests
       - playwright-tests
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()
     steps:
+      - *harden-runner
+
       - name: Check jobs results
         run: |
           for check in ${CHECKS}; do

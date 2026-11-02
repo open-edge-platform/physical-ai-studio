@@ -29,12 +29,14 @@ class Gym(ABC):
         self,
         *,
         seed: int | None = None,
+        episode_index: int = 0,
         **reset_kwargs: Any,  # noqa: ANN401
     ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Resets the environment.
 
         Args:
             seed: Optional random seed for resetting the environment.
+            episode_index: Index of the episode being reset. Defaults to 0.
             **reset_kwargs: Additional backend-specific reset arguments.
 
         Returns:
@@ -77,6 +79,14 @@ class Gym(ABC):
 
         Returns:
             Any: Rendered output, or None if unsupported.
+        """
+        return None
+
+    def get_max_episode_steps(self) -> int | None:  # noqa: PLR6301
+        """Return this gym's own default step limit, if it has one.
+
+        Returns:
+            int | None: Per-gym default max steps, or None if unspecified.
         """
         return None
 

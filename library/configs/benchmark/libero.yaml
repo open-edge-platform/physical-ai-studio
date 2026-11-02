@@ -37,7 +37,7 @@
 # =============================================================================
 
 benchmark:
-  class_path: physicalai.benchmark.LiberoBenchmark
+  class_path: physicalai.benchmark.gyms.LiberoBenchmark
   init_args:
     # -------------------------------------------------------------------------
     # Task Configuration

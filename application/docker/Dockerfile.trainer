@@ -1,0 +1,462 @@
+# syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+ARG PYTHON_VERSION=3.13
+
+# ===========================================================================
+# LGPL FFmpeg + PyAV builder
+#
+# Builds an LGPL-licensed FFmpeg (no --enable-gpl / --enable-nonfree) with
+# Intel oneVPL/QSV + VAAPI hardware acceleration and permissively licensed
+# software encoders (libvpx, libopenh264, libsvtav1), then compiles a PyAV
+# wheel against it. The stock Debian `ffmpeg` package is GPL-licensed and the
+# PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
+# artifacts. Kept in sync with application/docker/Dockerfile.
+# ===========================================================================
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS ffmpeg-builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Pinned source revisions for reproducible builds.
+ARG LIBVPL_REF=778a66d6c6537f08eabb91955dbbf1bce3812894
+ARG FFMPEG_REF=9dd0fe0225c2c3406ca49430a74c8660b1713889
+ARG OPENH264_REF=e3f5b10438e2bacc155cf54578222bd4236c9f06
+ARG SVTAV1_REF=349f4eb9c369f68d463029d1cd37551c90b7de51
+# Must match the `av` version resolved in application/backend/uv.lock.
+ARG PYAV_VERSION=15.1.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        build-essential \
+        cmake \
+        meson \
+        ninja-build \
+        pkg-config \
+        yasm \
+        nasm \
+        libdrm-dev \
+        libva-dev \
+        libnuma-dev \
+        libvpx-dev \
+        libdav1d-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python packaging tools for building the PyAV wheel.
+RUN python -m pip install --no-cache-dir \
+        "pip==25.*" \
+        "setuptools==75.*" \
+        "wheel==0.45.*" \
+        "Cython==3.0.*"
+
+ENV VPL_INSTALL_DIR=/opt/vpl
+ENV FFMPEG_INSTALL_DIR=/opt/ffmpeg-vpl
+WORKDIR /tmp
+
+# oneVPL dispatcher + headers (enables the *_qsv codecs in FFmpeg).
+RUN git init libvpl \
+    && git -C libvpl remote add origin https://github.com/intel/libvpl.git \
+    && git -C libvpl fetch --depth 1 origin "${LIBVPL_REF}" \
+    && git -C libvpl checkout FETCH_HEAD \
+    && cmake -B libvpl/build -S /tmp/libvpl \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${VPL_INSTALL_DIR}" \
+    && cmake --build libvpl/build -j"$(nproc)" \
+    && cmake --install libvpl/build
+
+# Make the custom libvpl and FFmpeg visible to later build steps.
+ENV PKG_CONFIG_PATH="/opt/vpl/lib/pkgconfig:/opt/vpl/lib64/pkgconfig:/opt/ffmpeg-vpl/lib/pkgconfig:/opt/ffmpeg-vpl/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" \
+    LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:${PATH}"
+
+# Software fallback encoder: OpenH264 (BSD, Cisco).
+RUN git init openh264 \
+    && git -C openh264 remote add origin https://github.com/cisco/openh264.git \
+    && git -C openh264 fetch --depth 1 origin "${OPENH264_REF}" \
+    && git -C openh264 checkout FETCH_HEAD \
+    && make -C openh264 -j"$(nproc)" \
+    && make -C openh264 install \
+    && ldconfig
+
+# Software fallback encoder: SVT-AV1 (BSD).
+RUN git init svtav1 \
+    && git -C svtav1 remote add origin https://gitlab.com/AOMediaCodec/SVT-AV1.git \
+    && git -C svtav1 fetch --depth 1 origin "${SVTAV1_REF}" \
+    && git -C svtav1 checkout FETCH_HEAD \
+    && cmake -B svtav1/build -S /tmp/svtav1 -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build svtav1/build -j"$(nproc)" \
+    && cmake --install svtav1/build \
+    && ldconfig
+
+# FFmpeg — LGPL build: no --enable-gpl and no --enable-nonfree. Every enabled
+# external library (libvpl/MIT, libvpx/BSD, libopenh264/BSD, libsvtav1/BSD,
+# libdav1d/BSD, vaapi/MIT) is LGPL-compatible. libdav1d is the software AV1
+# decoder — FFmpeg's built-in av1 decoder is hwaccel-only and cannot decode
+# AV1 in software, which the training data loader requires.
+RUN git init ffmpeg \
+    && git -C ffmpeg remote add origin https://github.com/FFmpeg/FFmpeg.git \
+    && git -C ffmpeg fetch --depth 1 origin "${FFMPEG_REF}" \
+    && git -C ffmpeg checkout FETCH_HEAD
+
+WORKDIR /tmp/ffmpeg
+RUN ./configure \
+        --prefix="${FFMPEG_INSTALL_DIR}" \
+        --extra-cflags="-I${VPL_INSTALL_DIR}/include" \
+        --extra-ldflags="-L${VPL_INSTALL_DIR}/lib -L${VPL_INSTALL_DIR}/lib64" \
+        --extra-libs="-lpthread -lm" \
+        --enable-libvpl \
+        --enable-vaapi \
+        --enable-shared \
+        --disable-static \
+        --enable-libsvtav1 \
+        --enable-libopenh264 \
+        --enable-libvpx \
+        --enable-libdav1d \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# Fail the build early if QSV encoders or the software AV1 decoder are missing.
+RUN ffmpeg -version \
+    && ffmpeg -hide_banner -encoders | grep qsv \
+    && ffmpeg -hide_banner -h encoder=h264_qsv > /dev/null \
+    && ffmpeg -hide_banner -decoders | grep libdav1d
+
+# Compile the PyAV wheel from source against the custom FFmpeg.
+WORKDIR /build
+RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
+
+SHELL ["/bin/sh", "-c"]
+
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS builder-base
+
+COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+# UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
+# uv embeds an absolute shebang in console-script entry points; if the venv
+# is built at a different path the shebang breaks and the container cannot
+# start.
+ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_PROJECT_ENVIRONMENT=/opt/venv
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        g++ \
+        git \
+        libgl1 \
+        libglib2.0-0 \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Manifests and local path dependencies only: enough for `uv sync` to resolve,
+# without pulling studio source into the builder cache layers.
+COPY --link pyproject.toml uv.lock /app/
+COPY --link application/backend/pyproject.toml application/backend/uv.lock \
+    /app/application/backend/
+COPY --link --from=libs / /app/library
+
+WORKDIR /app/application/backend
+
+FROM builder-base AS builder-cuda
+# --no-install-project installs the dependencies (including physicalai-train)
+# but not the studio package itself: its wheel build requires the compiled UI
+# and robot assets, and the trainer runs from the `trainer`/`training`
+# packages alone.
+RUN --mount=type=cache,id=uv-trainer-cuda,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra cuda
+
+# Remove test-only packages that executorch ships as unconditional runtime
+# dependencies (the cuda extra pulls in physicalai-train[executorch]).
+RUN uv pip uninstall --python /opt/venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
+
+# cuobjdump/nvdisasm are CUDA disassembly/debug tools bundled by Triton's
+# nvidia backend. NVIDIA's EULA does not permit redistributing them, and
+# unlike ptxas they are not needed to JIT-compile or run Triton kernels.
+RUN find /opt/venv -type f \( \
+        -path "*/triton/backends/nvidia/bin/cuobjdump" -o \
+        -path "*/triton/backends/nvidia/bin/nvdisasm" \) \
+    -delete
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg. The venv is
+# copied wholesale into the runtime image, which has no uv/pip, so swap here.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /opt/venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl
+
+FROM builder-cuda AS builder-cuda-redistributable
+RUN set -eu; \
+    CLEANUP_ROOT="$(/opt/venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d \( \
+        -path "*/triton/backends/amd" -o \
+        -path "*/nvidia/cuda_cupti/include" -o \
+        -path "*/nvidia/cudnn/include" \) \
+        -exec rm -rf {} + 2>/dev/null || true; \
+    find "$CLEANUP_ROOT" -type f \( \
+        -path "*/triton/backends/nvidia/bin/ptxas" -o \
+        -path "*/triton/backends/nvidia/bin/ptxas-blackwell" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libcheckpoint.so" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libcupti_static.a" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host.so" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host_static.a" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libnvperf_target.so" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libpcsamplingutil.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libcheckpoint.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libnvperf_host.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libnvperf_target.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" \) \
+        -delete 2>/dev/null || true
+
+FROM builder-base AS builder-xpu
+RUN --mount=type=cache,id=uv-trainer-xpu,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra xpu
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /opt/venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl
+
+FROM builder-xpu AS builder-xpu-redistributable
+RUN set -eu; \
+    CLEANUP_ROOT="$(/opt/venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
+        -exec rm -rf {} + 2>/dev/null || true
+
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS runtime-base
+
+ARG TRAINER_UID=10001
+ARG TRAINER_GID=10001
+RUN groupadd --gid "${TRAINER_GID}" trainer \
+    && useradd --uid "${TRAINER_UID}" --gid "${TRAINER_GID}" --create-home --shell /usr/sbin/nologin trainer \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        g++ \
+        libgl1 \
+        libglib2.0-0 \
+        libvpl2 \
+        libva2 \
+        libva-drm2 \
+        libvpx9 \
+        libnuma1 \
+        libdav1d7 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall -y pip setuptools \
+    && mkdir -p /var/lib/physicalai-trainer \
+    && chown trainer:trainer /var/lib/physicalai-trainer
+
+# Custom LGPL FFmpeg + oneVPL shared libraries and the LGPL FFmpeg CLI binary.
+COPY --link --from=ffmpeg-builder /opt/vpl /opt/vpl
+COPY --link --from=ffmpeg-builder /opt/ffmpeg-vpl /opt/ffmpeg-vpl
+RUN --mount=type=bind,from=ffmpeg-builder,source=/usr/local,target=/tmp/ffmpeg-builder-usr-local,ro \
+    for libdir in /tmp/ffmpeg-builder-usr-local/lib /tmp/ffmpeg-builder-usr-local/lib/x86_64-linux-gnu; do \
+        [ -d "$libdir" ] || continue; \
+        for lib in "$libdir"/libSvtAv1Enc.so* "$libdir"/libopenh264.so*; do \
+            [ -e "$lib" ] || continue; \
+            cp -a "$lib" /usr/local/lib/; \
+        done; \
+    done; \
+    ldconfig -n /usr/local/lib \
+    && ldconfig
+
+ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:/opt/venv/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
+    TMPDIR=/var/lib/physicalai-trainer \
+    HF_HOME=/var/lib/physicalai-trainer/huggingface \
+    TORCH_HOME=/var/lib/physicalai-trainer/torch \
+    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache \
+    HOME=/var/lib/physicalai-trainer \
+    TRITON_CACHE_DIR=/var/lib/physicalai-trainer/cache/triton
+
+# Only the trainer and training packages, never the rest of the backend: no
+# studio API, robots, database, or UI assets reach this image.
+COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/trainer /app/src/trainer
+COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/training /app/src/training
+
+# The venv holds dependencies only (--no-install-project above), so the
+# documented `physicalai-trainer` command is provided here instead of by a
+# console script. Installing the studio package would additionally require its
+# compiled UI and robot assets, which this image deliberately excludes.
+RUN printf '#!/bin/sh\nexec python -m trainer.cli "$@"\n' > /usr/local/bin/physicalai-trainer \
+    && chmod 755 /usr/local/bin/physicalai-trainer \
+    && printf '#!/bin/sh\nexec python -m trainer.batch "$@"\n' > /usr/local/bin/physicalai-trainer-batch \
+    && chmod 755 /usr/local/bin/physicalai-trainer-batch
+
+EXPOSE 8001
+USER trainer
+WORKDIR /var/lib/physicalai-trainer
+# Starts the HTTP service by default. Pass `physicalai-trainer-batch` as the
+# container command to run a single training job and exit instead.
+CMD ["physicalai-trainer"]
+
+FROM runtime-base AS runtime-xpu
+
+# Intel GPU userspace is required in addition to the XPU PyTorch extra. The
+# host remains responsible for the kernel driver and /dev/dri passthrough.
+USER root
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 10 \
+        "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&exact=on&search=0x0C0E6AF955CE463C03FC51574D098D70AFBE5E1F" \
+        | gpg --dearmor -o /etc/apt/keyrings/kobuk-intel.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/kobuk-intel.gpg] https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu noble main" \
+        > /etc/apt/sources.list.d/kobuk-intel.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clinfo \
+        intel-gsc \
+        intel-media-va-driver-non-free \
+        libmfx-gen1 \
+        intel-metrics-discovery \
+        intel-ocloc \
+        intel-opencl-icd \
+        libze-dev \
+        libze-intel-gpu1 \
+        libze1 \
+    && apt-get purge -y gnupg curl \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+SHELL ["/bin/sh", "-c"]
+USER trainer
+FROM runtime-base AS runtime-cuda
+
+# NVIDIA CUDA 12.8 runtime libraries (matches cu128 PyTorch wheels).
+# Requires NVIDIA Container Toolkit on the host for GPU passthrough.
+#
+# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo
+# only has CUDA 13.1 packages (not 12.8).
+
+USER root
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/3bf863cc.pub \
+        | gpg --dearmor -o /etc/apt/keyrings/nvidia-cuda.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/nvidia-cuda.gpg] https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64 /" \
+        > /etc/apt/sources.list.d/nvidia-cuda.list \
+    && printf '[hash_algorithms.sha1]\nsecond_preimage_resistance = "always"\n' > /etc/apt/nvidia-cuda-sequoia-policy.toml \
+    && SEQUOIA_CRYPTO_POLICY=/etc/apt/nvidia-cuda-sequoia-policy.toml apt-get update \
+    && SEQUOIA_CRYPTO_POLICY=/etc/apt/nvidia-cuda-sequoia-policy.toml apt-get install -y --no-install-recommends \
+        cuda-cudart-12-8=12.8.90-1 \
+        libcublas-12-8=12.8.4.1-1 \
+        libcudnn9-cuda-12=9.19.0.56-1 \
+    && apt-get purge -y gnupg curl \
+    && apt-get autoremove -y \
+    && rm -f /etc/apt/nvidia-cuda-sequoia-policy.toml \
+    && rm -rf /var/lib/apt/lists/*
+SHELL ["/bin/sh", "-c"]
+USER trainer
+
+FROM runtime-cuda AS physicalai-trainer-cuda
+ARG GIT_SHA=unknown
+ARG BUILD_DATE=unknown
+ARG APPLICATION_VERSION=unknown
+ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio remote CUDA training service" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.version="${APPLICATION_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="physicalai-trainer-cuda" \
+      org.opencontainers.image.vendor="Open Edge Platform" \
+      org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.device="cuda"
+ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
+    TRAINER_BUILD_DATE="${BUILD_DATE}" \
+    TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
+    TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
+    TRAINER_DEVICE_TYPE=cuda
+COPY --from=builder-cuda --chown=trainer:trainer /opt/venv /opt/venv
+
+RUN /opt/venv/bin/python -c "import av; print('PyAV', av.__version__, av.library_versions)"
+
+FROM runtime-xpu AS physicalai-trainer-xpu
+ARG GIT_SHA=unknown
+ARG BUILD_DATE=unknown
+ARG APPLICATION_VERSION=unknown
+ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio remote Intel XPU training service" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.version="${APPLICATION_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="physicalai-trainer-xpu" \
+      org.opencontainers.image.vendor="Open Edge Platform" \
+      org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.device="xpu"
+ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
+    TRAINER_BUILD_DATE="${BUILD_DATE}" \
+    TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
+    TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
+    TRAINER_DEVICE_TYPE=xpu
+COPY --from=builder-xpu --chown=trainer:trainer /opt/venv /opt/venv
+
+RUN /opt/venv/bin/python -c "import av; print('PyAV', av.__version__, av.library_versions)"
+
+FROM runtime-cuda AS physicalai-trainer-cuda-redistributable
+ARG GIT_SHA=unknown
+ARG BUILD_DATE=unknown
+ARG APPLICATION_VERSION=unknown
+ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio remote CUDA training service" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.version="${APPLICATION_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="physicalai-trainer-cuda-redistributable" \
+      org.opencontainers.image.vendor="Open Edge Platform" \
+      org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.device="cuda"
+ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
+    TRAINER_BUILD_DATE="${BUILD_DATE}" \
+    TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
+    TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
+    TRAINER_DEVICE_TYPE=cuda
+COPY --from=builder-cuda-redistributable --chown=trainer:trainer /opt/venv /opt/venv
+RUN /opt/venv/bin/python -c "import av; print('PyAV', av.__version__, av.library_versions)"
+USER trainer
+FROM runtime-xpu AS physicalai-trainer-xpu-redistributable
+ARG GIT_SHA=unknown
+ARG BUILD_DATE=unknown
+ARG APPLICATION_VERSION=unknown
+ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio remote Intel XPU training service" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.version="${APPLICATION_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="physicalai-trainer-xpu-redistributable" \
+      org.opencontainers.image.vendor="Open Edge Platform" \
+      org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.device="xpu"
+ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
+    TRAINER_BUILD_DATE="${BUILD_DATE}" \
+    TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
+    TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
+    TRAINER_DEVICE_TYPE=xpu
+COPY --from=builder-xpu-redistributable --chown=trainer:trainer /opt/venv /opt/venv
+RUN /opt/venv/bin/python -c "import av; print('PyAV', av.__version__, av.library_versions)"
+USER trainer

@@ -68,6 +68,11 @@ export default [
         },
         rules: {
             ...reactHooks.configs.recommended.rules,
+            // These rules require focused code migrations. Keep them disabled until
+            // the remaining violations have been removed.
+            'react-hooks/immutability': 'off',
+            'react-hooks/refs': 'off',
+            'react-hooks/set-state-in-effect': 'off',
             'react/jsx-props-no-spreading': ['off'],
             'react/no-unknown-property': [
                 'error',

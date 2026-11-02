@@ -5,7 +5,7 @@ import { Flex, Text, Tooltip, TooltipTrigger, View } from '@geti-ui/ui';
 
 import { LOG_LEVEL_COLORS, type LogEntry as LogEntryType, type LogLevelName } from './log-types';
 
-import styles from './log-viewer.module.scss';
+import styles from './log-viewer.module.css';
 
 const LogLevelText = ({ level }: { level: LogLevelName }) => {
     const color = LOG_LEVEL_COLORS[level] ?? LOG_LEVEL_COLORS.INFO;

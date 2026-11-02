@@ -1,0 +1,7 @@
+button.bg-sidebar-b-search:last-of-type {
+    display: none;
+}
+
+.scalar-mcp-layer {
+    display: none !important;
+}

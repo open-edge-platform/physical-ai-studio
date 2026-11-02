@@ -1,74 +1,75 @@
-import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
+import { createContext, ReactNode, RefObject, useContext, useMemo, useRef, useState } from 'react';
 
-import { SchemaRobot, SchemaRobotType } from '../../../api/openapi-spec';
+import { TextFieldRef } from '@geti-ui/ui';
 
-type RobotForm = {
+import type { SchemaRobotInput } from '../robot-types';
+
+export type RobotPayload = Record<string, unknown>;
+export type RobotFormData = { name: string; payload: RobotPayload };
+
+type RobotFormState = {
+    activeType: string | undefined;
     name: string;
-    type: SchemaRobotType;
-    connection_string: string;
-    serial_number: string;
+    payload: RobotPayload;
 };
 
-export type RobotFormState = RobotForm | null;
-
-export const RobotFormContext = createContext<RobotFormState>(null);
-export const SetRobotFormContext = createContext<Dispatch<SetStateAction<RobotForm>> | null>(null);
-
-export const useRobotFormBody = (robot_id: string): SchemaRobot | null => {
-    const robotForm = useRobotForm();
-
-    if (robotForm === undefined) {
-        return null;
-    }
-
-    if (
-        robotForm.type === null ||
-        robotForm.name === null ||
-        (robotForm.connection_string === null && robotForm.serial_number === null)
-    ) {
-        return null;
-    }
-
-    return {
-        id: robot_id,
-        name: robotForm.name,
-        type: robotForm.type,
-        connection_string: robotForm.connection_string ?? '',
-        serial_number: robotForm.serial_number ?? '',
-    };
+type RobotFormContextValue = RobotFormState & {
+    setActiveType: (type: string) => void;
+    setName: (name: string) => void;
+    setPayload: (payload: RobotPayload) => void;
+    updatePayloadField: (field: string, value: unknown) => void;
+    nameFieldRef: RefObject<TextFieldRef | null>;
 };
 
-export const RobotFormProvider = ({ children, robot }: { children: ReactNode; robot?: SchemaRobot }) => {
-    const [value, setValue] = useState<RobotForm>({
+const RobotFormContext = createContext<RobotFormContextValue | null>(null);
+
+export const RobotFormProvider = ({
+    children,
+    robot,
+}: {
+    children: ReactNode;
+    robot?: { type: string; name: string; payload: unknown };
+}) => {
+    const [state, setState] = useState<RobotFormState>(() => ({
+        activeType: robot?.type,
         name: robot?.name ?? '',
-        type: robot?.type ?? 'SO101_Follower',
-        connection_string: robot?.connection_string ?? '',
-        serial_number: robot?.serial_number ?? '',
-    });
+        payload: isPayload(robot?.payload) ? robot.payload : {},
+    }));
 
-    return (
-        <RobotFormContext.Provider value={value}>
-            <SetRobotFormContext.Provider value={setValue}>{children}</SetRobotFormContext.Provider>
-        </RobotFormContext.Provider>
+    const nameFieldRef = useRef<TextFieldRef | null>(null);
+
+    const value = useMemo<RobotFormContextValue>(
+        () => ({
+            ...state,
+            setActiveType: (activeType) => setState((previous) => ({ ...previous, activeType, payload: {} })),
+            setName: (name) => setState((previous) => ({ ...previous, name })),
+            setPayload: (payload) => setState((previous) => ({ ...previous, payload })),
+            updatePayloadField: (field, fieldValue) =>
+                setState((previous) => ({ ...previous, payload: { ...previous.payload, [field]: fieldValue } })),
+            nameFieldRef,
+        }),
+        [nameFieldRef, state]
     );
+
+    return <RobotFormContext.Provider value={value}>{children}</RobotFormContext.Provider>;
 };
+
+const isPayload = (value: unknown): value is RobotPayload =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const useRobotForm = () => {
     const context = useContext(RobotFormContext);
-
     if (context === null) {
         throw new Error('useRobotForm was used outside of RobotFormProvider');
     }
-
-    return context;
+    return { ...context, robotForm: { name: context.name, payload: context.payload } as RobotFormData };
 };
 
-export const useSetRobotForm = () => {
-    const context = useContext(SetRobotFormContext);
-
-    if (context === null) {
-        throw new Error('useSetRobotForm was used outside of RobotFormProvider');
+export const useRobotFormBody = (robot_id: string): SchemaRobotInput | null => {
+    const { activeType, name, payload } = useRobotForm();
+    if (activeType === undefined || name.trim() === '') {
+        return null;
     }
 
-    return context;
+    return { id: robot_id, name, type: activeType, payload } as unknown as SchemaRobotInput;
 };

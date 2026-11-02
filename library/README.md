@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
+  <img src="https://raw.githubusercontent.com/open-edge-platform/physical-ai-studio/main/docs/assets/physical_ai.png" alt="PhysicalAI Library" width="100%">
 </p>
 
 <div align="center">
@@ -29,18 +29,31 @@ PhysicalAI Library is a Python SDK for training, evaluating, and deploying Visio
 - Simple and modular API and CLI for training, inference, and benchmarking.
 - Built on [Lightning](https://www.lightning.ai/) for reduced boilerplate and distributed training support.
 - Export models to [OpenVINO](https://docs.openvino.ai/), ONNX, or Torch formats for accelerated inference.
-- Benchmark policies on standardized environments like LIBERO and PushT.
+- Benchmark policies on standardized environments like LIBERO, PushT, and RoboCasa.
 - Unified inference API across all export backends.
 
 ## Supported Policies
 
-| Policy       | Description                                                 | Paper                                                                          |
-| ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **ACT**      | Action Chunking with Transformers                           | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)                           |
-| **SmolVLA**  | Lightweight vision-language-action model                    | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base)              |
-| **Pi0**      | Physical Intelligence foundation model                      | [Black et al. 2024](https://www.physicalintelligence.company/download/pi0.pdf) |
-| **GR00T N1** | Vision-language grounded policy                             | [Bjork et al. 2025](https://arxiv.org/abs/2503.14734)                          |
-| **Pi0.5**    | Vision-Language-Action Model with Open-World Generalization | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)                          |
+| Policy                                                       | Description                                                   | Paper                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **ACT**                                                      | Action Chunking with Transformers                             | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)              |
+| **Pi0.5**                                                    | Vision-Language-Action Model with Open-World Generalization   | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)             |
+| **SmolVLA**                                                  | Lightweight vision-language-action model                      | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base) |
+| [**MolmoAct2**](src/physicalai/policies/molmoact2/README.md) | Vision-language-action policy from the Allen Institute for AI | [MolmoAct2 2026](https://arxiv.org/abs/2605.02881)                |
+| **RLDX-1**                                                   | RLWRLD multi-embodiment flow-matching VLA                     | [RLWRLD RLDX-1](https://huggingface.co/RLWRLD/RLDX-1-PT)          |
+| **XR0**                                                      | Xiaomi Robotics-0 flow-matching VLA                           | —                                                                 |
+| [**Cosmos3**](docs/explanation/policy/cosmos3.md)            | World Action Model policy                                     | [NVIDIA et al. 2026](https://arxiv.org/abs/2606.02800)            |
+
+<details>
+<summary>List native policies from Python</summary>
+
+```python
+from physicalai.policies import list_physicalai_policies
+
+print(list_physicalai_policies())
+```
+
+</details>
 
 # Installation
 
@@ -75,7 +88,11 @@ cd physical-ai-studio/library
 # Create virtual environment and install
 uv venv
 source .venv/bin/activate
-uv sync --all-extras
+
+# Choose one matching your hardware:
+uv sync --extra cpu --extra all     # CPU
+# uv sync --extra cu128 --extra all # NVIDIA GPU (CUDA)
+# uv sync --extra xpu --extra all   # Intel GPU (XPU)
 ```
 
 </details>
@@ -104,7 +121,7 @@ trainer.fit(model=model, datamodule=datamodule)
 
 ```bash
 # Train with config file
-physicalai fit --config configs/physicalai/act.yaml
+physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
 # Train with CLI arguments
 physicalai fit \
@@ -114,19 +131,21 @@ physicalai fit \
 
 # Override config values
 physicalai fit \
-    --config configs/physicalai/act.yaml \
+    --config configs/physicalai/act/pusht/default.yaml \
     --trainer.max_epochs 200 \
     --data.train_batch_size 64
 ```
 
 # Benchmark
 
-Evaluate trained policies on standardized simulation environments.
+Evaluate trained policies on standardized simulation environments. See the
+[Pi0.5 SnapFlow LIBERO report](docs/explanation/benchmark/snapflow-libero.md)
+for success and per-chunk latency measured against the 10-step teacher.
 
 ## API
 
 ```python test="skip" reason="requires checkpoint and libero"
-from physicalai.benchmark import LiberoBenchmark
+from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.policies import ACT
 
 # Load trained policy (path from training output)
@@ -142,19 +161,29 @@ print(results.summary())
 results.to_json("results.json")
 ```
 
+RoboCasa requires a dedicated virtual environment. Install it with `bash library/scripts/benchmark/install_robocasa.sh`,
+then swap in `RoboCasaBenchmark`:
+
+```python test="skip" reason="requires robocasa dedicated venv"
+from physicalai.benchmark.gyms import RoboCasaBenchmark
+
+benchmark = RoboCasaBenchmark(task="atomic_seen", num_episodes=20)
+results = benchmark.evaluate(policy)
+```
+
 ## CLI
 
 ```bash
 # Basic benchmark
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
 # With video recording
 physicalai benchmark \
-    --benchmark physicalai.benchmark.LiberoBenchmark \
+    --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./videos \
     --benchmark.record_mode failures \
@@ -179,8 +208,11 @@ policy.export("./exports", backend="openvino")
 ## CLI
 
 ```bash
-# CLI coming soon - use Python API for now
-# See API section above for export usage
+physicalai export \
+    --policy physicalai.policies.ACT \
+    --ckpt_path checkpoints/model.ckpt \
+    --backend openvino \
+    --output_dir ./exports
 ```
 
 ### Supported Backends
@@ -201,7 +233,7 @@ Deploy exported models with a unified inference API.
 from physicalai.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
-policy = InferenceModel.load("./exports")
+policy = InferenceModel("./exports")
 
 # Run inference loop
 obs, info = env.reset()
@@ -218,11 +250,18 @@ The inference API is consistent across all export backends, making it easy to sw
 
 # Documentation
 
-- [Getting Started](docs/getting-started/README.md) - Installation, quickstart, first benchmark, first deployment
-- [How-To Guides](docs/how-to/README.md) - Goal-oriented guides for specific tasks
-- [Explanation](docs/explanation/README.md) - Architecture and design documentation
+- [Getting Started](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/getting-started/README.md) - Installation, quickstart, first benchmark, first deployment
+- [How-To Guides](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/how-to/README.md) - Goal-oriented guides for specific tasks
+- [Explanation](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/docs/explanation/README.md) - Architecture and design documentation
 
 # See Also
 
-- [Main Repository](../README.md) - Project overview
-- [Application](../application/) - GUI for data collection and training
+- [Main Repository](https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md) - Project overview
+- [Application](https://github.com/open-edge-platform/physical-ai-studio/tree/main/application) - GUI for data collection and training
+
+## Development Type Checking
+
+```bash
+# From library/
+uv run pyrefly check -c pyproject.toml
+```

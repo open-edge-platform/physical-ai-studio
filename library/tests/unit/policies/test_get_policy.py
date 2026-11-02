@@ -33,10 +33,11 @@ class TestGetPolicy:
         policy = get_policy("act", source="PHYSICALAI")
         assert policy is not None
 
-    def test_unknown_policy_raises_error(self):
-        """Test unknown policy name raises ValueError."""
+    @pytest.mark.parametrize("policy_name", ["nonexistent", "pi0", "groot"])
+    def test_unknown_policy_raises_error(self, policy_name):
+        """Test unsupported first-party policy names raise ValueError."""
         with pytest.raises(ValueError, match="Unknown physicalai policy"):
-            get_policy("nonexistent", source="physicalai")
+            get_policy(policy_name, source="physicalai")
 
     def test_unknown_source_raises_error(self):
         """Test unknown source raises ValueError."""

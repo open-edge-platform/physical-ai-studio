@@ -168,7 +168,8 @@ class TestLiberoGym:
         """Test that observation includes task description from the gym."""
         obs, _ = gym.reset(seed=42)
         assert obs.task is not None
-        assert isinstance(obs.task, str)
+        assert isinstance(obs.task, list)
+        assert all(isinstance(t, str) for t in obs.task)
         assert len(obs.task) > 0
 
     def test_step_observation_includes_task_description(self, gym):
@@ -177,7 +178,8 @@ class TestLiberoGym:
         action = gym.action_space.sample()
         obs, _, _, _, _ = gym.step(action)
         assert obs.task is not None
-        assert isinstance(obs.task, str)
+        assert isinstance(obs.task, list)
+        assert all(isinstance(t, str) for t in obs.task)
         assert len(obs.task) > 0
 
     def test_check_success(self, gym):

@@ -28,8 +28,8 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
-from physicalai.export import ExportableModelMixin
 from physicalai.policies.base import Model
+from physicalai.policies.utils import in_episode_bound, reduce_losses
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class ACT(ExportableModelMixin, Model):
+class ACT(Model):
     """Action Chunking Transformer (ACT) model.
 
     Supports training and inference modes.
@@ -187,7 +187,7 @@ class ACT(ExportableModelMixin, Model):
 
     @property
     def config(self) -> ACTConfig:
-        """Get the ACT model configuration.
+        """The ACT model configuration.
 
         Returns:
             ACTConfig: The configuration of the ACT model.
@@ -198,47 +198,10 @@ class ACT(ExportableModelMixin, Model):
 
         return ACTConfig(**filtered_config_dict)
 
-    @property
-    def sample_input(self) -> dict[str, torch.Tensor]:
-        """Generate a sample input dictionary for the model with random tensors.
-
-        This method creates a dictionary containing sample input tensors that match the expected
-        input format of the model. The tensors are randomly initialized and have shapes derived
-        from the model's configuration.
-
-        Returns:
-            dict[str, torch.Tensor | dict[str, torch.Tensor]]: A dictionary with two keys
-                - 'state': A tensor representing the robot state with shape (1, *state_feature.shape).
-                - 'images': Either a single tensor or a dictionary of tensors representing visual inputs,
-                    depending on the number of image features configured.
-
-        Note:
-            The batch dimension (first dimension) is set to 1 for all tensors.
-            The tensors are created on the same device as the model's parameters.
-
-        Raises:
-            RuntimeError: If input features are not configured.
-        """
-        state_feature = self._config.robot_state_feature
-
-        if state_feature is None:
-            msg = "Robot state feature is not defined in the model configuration."
-            raise RuntimeError(msg)
-
-        device = next(self._model.parameters()).device
-
-        sample_input = {STATE: torch.randn(1, *state_feature.shape, device=device)}
-
-        if len(self._config.image_features) == 1:
-            visual_feature = next(iter(self._config.image_features.values()))
-            sample_input[IMAGES] = torch.randn(1, *visual_feature.shape, device=device)
-        else:
-            for key, visual_feature in self._config.image_features.items():
-                sample_input[IMAGES + "." + key] = torch.randn(1, *visual_feature.shape, device=device)
-
-        return sample_input
-
-    def forward(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
+    def forward(
+        self,
+        batch: dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]] | torch.Tensor:
         """Forward pass through the ACT model.
 
         In training mode, computes loss components including L1 loss and optional KL divergence loss
@@ -251,7 +214,7 @@ class ACT(ExportableModelMixin, Model):
                 - EXTRA: Extra data including action padding mask
 
         Returns:
-            tuple[torch.Tensor, dict[str, float]] | torch.Tensor: In training mode, returns tuple
+            tuple[torch.Tensor, dict[str, torch.Tensor | float]] | torch.Tensor: In training mode, returns tuple
                 of (total_loss, loss_dict) where loss_dict contains 'l1_loss' and optionally 'kld_loss' items.
                 In evaluation mode, returns predicted action tensor from predict_action_chunk().
 
@@ -263,7 +226,7 @@ class ACT(ExportableModelMixin, Model):
             return self.compute_loss(batch)
         return self.predict_action_chunk(batch)
 
-    def compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute training loss (L1 + optional KL divergence).
 
         Args:
@@ -276,16 +239,58 @@ class ACT(ExportableModelMixin, Model):
 
         actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
-        l1_loss = (
-            F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch[EXTRA + ".action_is_pad"].unsqueeze(-1)
-        ).mean()
+        l1_loss = reduce_losses(
+            F.l1_loss(batch[ACTION], actions_hat, reduction="none"),
+            in_episode_bound(batch),
+        )
 
-        loss_dict: dict[str, float] = {"l1_loss": l1_loss.item()}
+        # Detached tensors, not `.item()` floats: see Model.compute_loss docstring.
+        loss_dict: dict[str, torch.Tensor | float] = {"l1_loss": l1_loss.detach()}
         if self._config.use_vae:
             # Calculate Dₖₗ(latent_pdf || standard_normal). Note: After computing the KL-divergence for
             # each dimension independently, we sum over the latent dimension to get the total
             # KL-divergence per batch element, then take the mean over the batch.
             # (See App. B of https://huggingface.co/papers/1312.6114 for more details).
+            mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
+            loss_dict["kld_loss"] = mean_kld.detach()
+            loss = l1_loss + mean_kld * self._config.kl_weight
+        else:
+            loss = l1_loss
+
+        loss_dict["loss"] = loss.detach()
+        return loss, loss_dict
+
+    @torch.no_grad()
+    def compute_val_loss(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
+        """Compute validation loss (L1 + optional KL divergence).
+
+        Temporarily sets the inner model to training mode so the VAE encoder
+        runs and produces latent distribution parameters (mu, log_sigma_x2).
+        The model is restored to eval mode afterwards.  Dropout and batch-norm
+        behaviour during this call will follow training-mode semantics, but
+        gradients are still disabled by the ``@torch.no_grad()`` decorator.
+
+        Args:
+            batch: Preprocessed batch dict.
+
+        Returns:
+            Tuple of (loss tensor, loss dict with ``"l1_loss"`` and optionally ``"kld_loss"``).
+        """
+        batch = self._input_normalizer(batch)
+
+        self._model.train()
+        try:
+            actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
+        finally:
+            self._model.eval()
+
+        l1_loss = reduce_losses(
+            F.l1_loss(batch[ACTION], actions_hat, reduction="none"),
+            in_episode_bound(batch),
+        )
+
+        loss_dict: dict[str, float] = {"l1_loss": l1_loss.item()}
+        if self._config.use_vae:
             mean_kld = (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
             loss_dict["kld_loss"] = mean_kld.item()
             loss = l1_loss + mean_kld * self._config.kl_weight
@@ -351,7 +356,7 @@ class ACT(ExportableModelMixin, Model):
 
     @property
     def reward_delta_indices(self) -> None:
-        """Return reward indices.
+        """Reward indices.
 
         Currently returns `None` as rewards are not implemented.
 
@@ -362,7 +367,7 @@ class ACT(ExportableModelMixin, Model):
 
     @property
     def action_delta_indices(self) -> list[int]:
-        """Get indices of actions relative to the current timestep.
+        """Indices of actions relative to the current timestep.
 
         Returns:
             list[int]: A list of relative action indices.
@@ -371,7 +376,7 @@ class ACT(ExportableModelMixin, Model):
 
     @property
     def observation_delta_indices(self) -> None:
-        """Get indices of observations relative to the current timestep.
+        """Indices of observations relative to the current timestep.
 
         Returns:
             list[int]: A list of relative observation indices.
@@ -1275,7 +1280,7 @@ def _get_activation_fn(activation: str) -> Callable:
             - "gelu": Returns F.gelu function
             - "glu": Returns F.glu function
     Returns:
-        Callable: The corresponding PyTorch activation function.
+        The corresponding PyTorch activation function.
 
     Raises:
         RuntimeError: If the activation function name is not supported.

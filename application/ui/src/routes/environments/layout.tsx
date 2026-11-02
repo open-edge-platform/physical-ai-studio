@@ -1,30 +1,17 @@
-import { Suspense } from 'react';
-
-import {
-    ActionButton,
-    Button,
-    Divider,
-    Flex,
-    Grid,
-    Heading,
-    Icon,
-    Item,
-    Loading,
-    Menu,
-    MenuTrigger,
-    minmax,
-    View,
-} from '@geti-ui/ui';
-import { Add, MoreMenu } from '@geti-ui/ui/icons';
+import { ActionButton, Flex, Grid, Heading, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
+import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
+import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
+import { CollapsibleSidebarLayout } from '../../components/collapsible-sidebar-layout/collapsible-sidebar-layout';
 import { useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 
-import classes from './../../features/robots/robots-list.module.scss';
+import classes from './../../features/robots/robots-list.module.css';
 
 const MenuActions = ({ environment_id }: { environment_id: string }) => {
     const { project_id } = useProjectId();
@@ -40,14 +27,26 @@ const MenuActions = ({ environment_id }: { environment_id: string }) => {
 
     return (
         <MenuTrigger>
-            <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
+            <ActionButton isQuiet>
                 <MoreMenu />
             </ActionButton>
             <Menu
                 selectionMode='single'
                 onAction={(action) => {
                     if (action === 'delete') {
-                        deleteEnvironmentMutation.mutate({ params: { path: { project_id, environment_id } } });
+                        deleteEnvironmentMutation.mutate(
+                            { params: { path: { project_id, environment_id } } },
+                            {
+                                onError: (error) => {
+                                    const message = getApiErrorMessage(error) ?? 'Failed to delete environment.';
+                                    if (isResourceInUseError(error)) {
+                                        toast.info(message);
+                                    } else {
+                                        toast.negative(message);
+                                    }
+                                },
+                            }
+                        );
                     }
                 }}
             >
@@ -100,61 +99,35 @@ export const EnvironmentsList = () => {
     });
 
     return (
-        <Flex direction='column' gap='size-100'>
-            {/* TODO:  */}
-            <View isHidden>
-                <Flex justifyContent={'space-between'} alignItems={'end'}>
-                    <span>Step 3: create an environment</span>
-                    <Button>Next</Button>
-                </Flex>
-                <Divider size='S' marginY='size-200' />
-            </View>
+        <Flex direction='column' gap='size-200'>
+            {environmentsQuery.data.map((environment) => {
+                const to = paths.project.environments.show({ project_id, environment_id: environment.id });
 
-            <Button
-                variant='secondary'
-                href={paths.project.environments.new({ project_id })}
-                UNSAFE_className={classes.addNewRobotButton}
-            >
-                <Icon marginEnd='size-50'>
-                    <Add />
-                </Icon>
-                Configure a new environment
-            </Button>
-
-            <Flex direction='column' gap='size-100'>
-                {environmentsQuery.data.map((environment) => {
-                    const to = paths.project.environments.show({ project_id, environment_id: environment.id });
-
-                    return (
-                        <NavLink key={environment.id} to={to}>
-                            {({ isActive }) => {
-                                return <EnvironmentListItem environment={environment} isActive={isActive} />;
-                            }}
-                        </NavLink>
-                    );
-                })}
-            </Flex>
+                return (
+                    <NavLink key={environment.id} to={to}>
+                        {({ isActive }) => {
+                            return <EnvironmentListItem environment={environment} isActive={isActive} />;
+                        }}
+                    </NavLink>
+                );
+            })}
         </Flex>
     );
 };
 
 export const Layout = () => {
+    const { project_id } = useProjectId();
+
     return (
-        <Grid areas={['environments controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
-            <View gridArea='environments' backgroundColor={'gray-100'} padding='size-400'>
-                <EnvironmentsList />
-            </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0}>
-                <Suspense
-                    fallback={
-                        <Grid width='100%' height='100%'>
-                            <Loading mode='inline' />
-                        </Grid>
-                    }
-                >
-                    <Outlet />
-                </Suspense>
-            </View>
-        </Grid>
+        <CollapsibleSidebarLayout
+            toolbar={
+                <AddResourceButton to={paths.project.environments.new({ project_id })}>
+                    Configure new environment
+                </AddResourceButton>
+            }
+            sidebar={<EnvironmentsList />}
+        >
+            <Outlet />
+        </CollapsibleSidebarLayout>
     );
 };

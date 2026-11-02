@@ -2,16 +2,30 @@ name: PR Title
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
 
 permissions: {} # No permissions by default on workflow level
 
 jobs:
   validate:
     name: Validate PR title
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: read
     steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
       - name: Check PR title
         uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:

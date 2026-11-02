@@ -1,5 +1,6 @@
 import { Item, Picker } from '@geti-ui/ui';
 
+import { CameraFingerprint } from '../../../cameras/fingerprint';
 import { CameraDriver } from '../provider';
 import { useSupportedFormats } from './use-camera-data';
 
@@ -11,7 +12,7 @@ interface Resolution {
 
 interface ResolutionPickerProps {
     driver: CameraDriver;
-    fingerprint: string | undefined;
+    fingerprint: CameraFingerprint | null | undefined;
     selectedResolution: { width: number | undefined; height: number | undefined } | undefined;
     onSelect: (resolution: Resolution) => void;
 }
@@ -24,7 +25,7 @@ export const ResolutionPicker = ({ driver, fingerprint, selectedResolution, onSe
             ? `${selectedResolution.width}_${selectedResolution.height}`
             : undefined;
 
-    const isDisabled = fingerprint === undefined;
+    const isDisabled = !fingerprint;
 
     return (
         <Picker

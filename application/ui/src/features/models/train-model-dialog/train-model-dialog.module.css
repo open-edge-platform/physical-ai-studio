@@ -1,0 +1,51 @@
+.policyGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--spectrum-global-dimension-size-200);
+}
+
+.modelPolicyCard {
+    --spectrum-alias-border-radius-medium: 4px;
+    --spectrum-alias-border-size-thin: 2px;
+    --spectrum-alias-border-color-focus: var(--energy-blue);
+    --spectrum-alias-background-color-default: var(--spectrum-global-color-gray-200);
+    --spectrum-alias-background-color-informative: var(--selection-dark-blue, #0c1e29);
+}
+
+.summaryLabel {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.summaryValue {
+    font-size: 13px;
+}
+
+/* Export format rows: the checkbox sits at the end of the row, with the format
+   itself reading first. Spectrum puts the box before its label, so the row is
+   reversed rather than restructured, which keeps the whole row clickable. */
+.exportFormatOption {
+    display: flex;
+    flex-direction: row-reverse;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: var(--spectrum-global-dimension-size-100) var(--spectrum-global-dimension-size-200);
+    border: 1px solid var(--spectrum-global-color-gray-200);
+    border-radius: 4px;
+    background-color: var(--spectrum-global-color-gray-50);
+    gap: var(--spectrum-global-dimension-size-100) var(--spectrum-global-dimension-size-200);
+}
+
+/* CheckboxGroup lays its children out in an inner element the group's own class
+   never reaches, so the spacing between rows lives on the rows. */
+.exportFormatOption + .exportFormatOption {
+    margin-top: var(--spectrum-global-dimension-size-100);
+}
+
+.exportFormatOption:has(input:checked) {
+    border-color: var(--energy-blue);
+    background-color: var(--spectrum-global-color-gray-75);
+}

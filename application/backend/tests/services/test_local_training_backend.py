@@ -1,0 +1,277 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Tests for the local training backend's spec adapter.
+
+The backend is an adapter over ``training.run_training_job``: what it must get
+right is the spec it builds and the paths it passes, so the runner itself is
+patched out here. Training behaviour is covered by ``training``'s own tests
+instead of being re-asserted through a mock Trainer.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
+import pytest
+from pydantic import SecretStr
+
+from schemas.dataset import Snapshot
+from schemas.job import _DEFAULT_MAX_EPOCHS, LocalTrainJobPayload, TrainingDevice, TrainingPrecision, TrainJobPayload
+from schemas.model import Model
+from services.training_backends.base import TrainingContext
+from services.training_backends.local import LocalTrainingBackend, build_spec
+from training import TrainingJobSpec
+from training.job import CHECKPOINT_NAME
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+LOCAL = "services.training_backends.local"
+
+
+def _payload(**overrides) -> TrainJobPayload:
+    return LocalTrainJobPayload.model_validate(
+        {
+            "project_id": uuid4(),
+            "dataset_id": uuid4(),
+            "policy": "act",
+            "model_name": "m",
+            "max_steps": 100,
+            "batch_size": 8,
+            "num_workers": 0,
+            "auto_scale_batch_size": False,
+            "compile_model": False,
+            "precision": TrainingPrecision.BF16_MIXED,
+        }
+        | overrides
+    )
+
+
+def _model(path: Path, *, policy: str = "act") -> Model:
+    return Model(
+        id=uuid4(),
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        path=str(path),
+        name="m",
+        snapshot_id=uuid4(),
+        policy=policy,
+        properties={},
+        train_job_id=uuid4(),
+        version=1,
+        created_at=None,
+    )
+
+
+def _context(
+    tmp_path: Path,
+    payload: TrainJobPayload,
+    *,
+    base_model: Model | None = None,
+    model_policy: str = "act",
+    model: Model | None = None,
+) -> TrainingContext:
+    model_dir = tmp_path / "models" / str(uuid4())
+    snap_dir = tmp_path / "snap"
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = tmp_path / "cache" / "job"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return TrainingContext(
+        job=MagicMock(),
+        model=model if model is not None else _model(model_dir, policy=model_policy),
+        snapshot=Snapshot(id=uuid4(), dataset_id=uuid4(), path=str(snap_dir)),
+        payload=payload,
+        base_model=base_model,
+        output_dir=model_dir,
+        cache_dir=cache_dir,
+        progress=MagicMock(),
+        should_stop=lambda: False,
+    )
+
+
+class TestBuildSpec:
+    """The payload -> spec translation shared by the local and remote backends."""
+
+    def test_training_parameters_are_forwarded(self, tmp_path):
+        payload = _payload(max_steps=500, batch_size=16, num_workers="auto", val_split=0.2)
+        spec = build_spec(_context(tmp_path, payload))
+
+        assert spec == TrainingJobSpec(
+            policy="act",
+            max_epochs=_DEFAULT_MAX_EPOCHS,
+            batch_size=16,
+            num_workers="auto",
+            val_split=0.2,
+            precision="bf16-mixed",
+        )
+
+    @pytest.mark.parametrize(
+        ("precision", "expected"),
+        [(TrainingPrecision.FP32, "32-true"), (TrainingPrecision.BF16_MIXED, "bf16-mixed")],
+    )
+    def test_precision_is_passed_as_a_lightning_string(self, tmp_path, precision, expected):
+        spec = build_spec(_context(tmp_path, _payload(precision=precision)))
+
+        assert spec.precision == expected
+
+    def test_device_selection_is_forwarded(self, tmp_path):
+        payload = _payload(device=TrainingDevice(type="cuda", index=1))
+        spec = build_spec(_context(tmp_path, payload))
+
+        assert (spec.device_type, spec.device_index) == ("cuda", 1)
+
+    def test_device_is_left_unset_when_the_job_does_not_choose_one(self, tmp_path):
+        spec = build_spec(_context(tmp_path, _payload()))
+
+        assert (spec.device_type, spec.device_index) == (None, None)
+
+    def test_camera_mapping_is_forwarded(self, tmp_path):
+        payload = _payload(
+            policy="smolvla",
+            image_key_reorder_map={"observation.images.top": 0, "observation.images.wrist": 1},
+            num_cameras=3,
+        )
+        spec = build_spec(_context(tmp_path, payload))
+
+        # The payload normalizes a dataset feature key to what the policy matches on.
+        assert spec.image_key_reorder_map == {"images.top": 0, "images.wrist": 1}
+        assert spec.num_cameras == 3
+
+    def test_export_backends_are_forwarded_as_plain_names(self, tmp_path):
+        """The spec is a wire format shared with the trainer service, so no enums ride along."""
+        spec = build_spec(_context(tmp_path, _payload(export_backends=["openvino", "torch"])))
+
+        assert spec.export_backends == ["openvino", "torch"]
+
+    def test_every_supported_format_is_exported_when_none_is_requested(self, tmp_path):
+        spec = build_spec(_context(tmp_path, _payload()))
+
+        assert spec.export_backends is None
+        assert (spec.image_key_reorder_map, spec.num_cameras) == ({}, 0)
+
+    @pytest.mark.parametrize("augment_images", [True, False])
+    def test_image_augmentation_choice_is_forwarded(self, tmp_path, augment_images):
+        spec = build_spec(_context(tmp_path, _payload(augment_images=augment_images)))
+
+        assert spec.augment_images is augment_images
+
+    def test_lora_fields_are_forwarded(self, tmp_path):
+        payload = _payload(
+            policy="pi05",
+            lora_enabled=True,
+            lora_rank=16,
+            lora_alpha=32,
+            lora_dropout=0.1,
+            lora_use_dora=True,
+        )
+        spec = build_spec(_context(tmp_path, payload, model_policy="pi05"))
+
+        assert (spec.lora_enabled, spec.lora_rank, spec.lora_alpha) == (True, 16, 32)
+        assert (spec.lora_dropout, spec.lora_use_dora) == (0.1, True)
+
+    def test_resumed_run_trains_the_base_model_policy(self, tmp_path):
+        """A resumed run's architecture comes from the checkpoint, not the request."""
+        base_model = _model(tmp_path / "base", policy="pi05")
+        context = _context(tmp_path, _payload(base_model_id=base_model.id), base_model=base_model)
+
+        assert build_spec(context).policy == "pi05"
+
+    def test_a_flow_matching_run_carries_no_distillation_boundary(self, tmp_path):
+        assert build_spec(_context(tmp_path, _payload())).snapflow_start_epoch is None
+
+    def test_the_distillation_budget_becomes_an_absolute_phase_boundary(self, tmp_path):
+        """Distillation is additive: the boundary is max_epochs, and the spec's
+        max_epochs grows to include the distillation phase."""
+        payload = _payload(policy="pi05", max_epochs=8, snapflow_enabled=True, snapflow_distill_epochs=3)
+        context = _context(tmp_path, payload, model=_model(tmp_path / "m", policy="pi05"))
+
+        spec = build_spec(context)
+        assert spec.snapflow_start_epoch == 8
+        assert spec.max_epochs == 11
+
+
+class TestLocalTrainingBackend:
+    @pytest.mark.anyio
+    async def test_train_runs_the_shared_job_with_the_jobs_paths(self, tmp_path):
+        context = _context(tmp_path, _payload())
+
+        with patch("training.run_training_job") as mock_run:
+            await LocalTrainingBackend().train(context)
+
+        mock_run.assert_called_once()
+        spec, kwargs = mock_run.call_args.args[0], mock_run.call_args.kwargs
+        assert spec.model_dump(exclude={"run_options"}) == build_spec(context).model_dump(exclude={"run_options"})
+        assert kwargs["dataset_root"] == context.snapshot.path
+        assert kwargs["output_dir"] == context.output_dir
+        assert kwargs["cache_dir"] == context.cache_dir
+        assert spec.run_options.resume_from is None
+
+    @pytest.mark.anyio
+    async def test_train_resumes_from_the_base_models_checkpoint(self, tmp_path):
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        base_model = _model(base_dir, policy="act")
+        context = _context(tmp_path, _payload(base_model_id=base_model.id), base_model=base_model)
+
+        with patch("training.run_training_job") as mock_run:
+            await LocalTrainingBackend().train(context)
+
+        assert mock_run.call_args.args[0].run_options.resume_from == base_dir / CHECKPOINT_NAME
+
+    @pytest.mark.anyio
+    async def test_train_passes_the_persisted_huggingface_token(self, tmp_path):
+        context = _context(tmp_path, _payload())
+        settings = MagicMock()
+        settings.huggingface.hf_token = SecretStr("hf-secret")
+
+        with (
+            patch("training.run_training_job") as mock_run,
+            patch(f"{LOCAL}.get_settings", return_value=settings),
+        ):
+            await LocalTrainingBackend().train(context)
+
+        token = mock_run.call_args.args[0].run_options.hf_token
+        assert token is not None
+        assert token.get_secret_value() == "hf-secret"
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("configured_token", [None, SecretStr("")])
+    async def test_train_falls_back_to_huggingface_token_environment_variable(
+        self, tmp_path, monkeypatch, configured_token
+    ):
+        context = _context(tmp_path, _payload())
+        settings = MagicMock()
+        settings.huggingface.hf_token = configured_token
+        monkeypatch.setenv("HF_TOKEN", "hf-legacy")
+
+        with (
+            patch("training.run_training_job") as mock_run,
+            patch(f"{LOCAL}.get_settings", return_value=settings),
+        ):
+            await LocalTrainingBackend().train(context)
+
+        token = mock_run.call_args.args[0].run_options.hf_token
+        assert token is not None
+        assert token.get_secret_value() == "hf-legacy"
+
+    @pytest.mark.anyio
+    async def test_train_without_a_snapshot_is_rejected(self, tmp_path):
+        context = _context(tmp_path, _payload())
+        context.snapshot = None
+
+        with pytest.raises(ValueError, match="snapshot"):
+            await LocalTrainingBackend().train(context)
+
+    @pytest.mark.anyio
+    async def test_progress_is_capped_below_completion(self, tmp_path):
+        """The worker owns the final 100, so a running report must stay under it."""
+        context = _context(tmp_path, _payload())
+
+        with patch("training.run_training_job") as mock_run:
+            await LocalTrainingBackend().train(context)
+        mock_run.call_args.kwargs["report"](100, "Exporting", {})
+
+        context.progress.assert_called_once_with(99, message="Exporting", extra_info={})

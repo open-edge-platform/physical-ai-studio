@@ -56,6 +56,9 @@
   ignorePresets: [":prHourlyLimit2"],
   prHourlyLimit: 10,
 
+  // Apply a default blanket cooldown of 7 days to all dependencies
+  minimumReleaseAge: "7 days",
+
   packageRules: [
     // Disable non-security upgrades for pypi, except lock file update
     {
@@ -85,6 +88,36 @@
       matchManagers: ["github-actions", "custom.regex"],
       matchPackagePatterns: ["*"],
       schedule: ["* * 1,15 * *"], // twice a month
+      automerge: true,
+      automergeType: "pr",
+      reviewers: ["sys-geti"],
+      platformAutomerge: true,
+      assignAutomerge: true,
+    },
+
+    // Custom semver versioning for geti-ci actions to support tags like zizmor/v0.1.0
+    {
+      groupName: "GitHub Actions",
+      matchManagers: ["github-actions"],
+      matchPackageNames: ["open-edge-platform/geti-ci"],
+      schedule: ["* * 1,15 * *"], // twice a month
+      versioning: "regex:^(?<compatibility>[^/]+)/v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+    },
+
+    // The python base-image digest pin tracked via custom.regex (e.g. security-scan.yml)
+    // rides along with the "Container images" group/schedule instead of "GitHub Actions"
+    {
+      enabled: true,
+      matchManagers: ["custom.regex"],
+      matchDatasources: ["docker"],
+      matchDepNames: ["python"],
+      matchUpdateTypes: ["digest"],
+      groupName: "Container images",
+      schedule: ["* * * * 6"], // weekly on Saturday
+      automergeType: "pr",
+      reviewers: ["sys-geti"],
+      platformAutomerge: true,
+      assignAutomerge: true,
     },
 
     // uv version used in GitHub Actions is updated manually
@@ -150,10 +183,19 @@
       matchDepNames: ["docker/dockerfile"],
     },
 
-    // Disable non-security upgrades for npm, except lock file update
+    // Disable digest updates for physicalai git dependency
     {
       enabled: false,
-      matchDatasources: ["npm"],
+      matchDatasources: ["git-refs"],
+      matchDepNames: ["physicalai"],
+      matchUpdateTypes: ["digest"],
+    },
+
+    // Disable non-security and lock file upgrades for npm
+    // FIXME: Lock is updated manually
+    {
+      enabled: false,
+      matchManagers: ["npm"],
     },
 
     // NPM version in package.json is updated manually
@@ -171,6 +213,7 @@
       matchStrings: [
         "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+version: (?<currentValue>.*)",
         "# renovate: datasource=(?<datasource>.*?)\\s+export RENOVATE_IMAGE=(?<depName>[^:]+):(?<currentValue>[^@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?",
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+base-image: [\"']?[^:\"']+:(?<currentValue>[^@\"']+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?[\"']?",
       ],
     },
   ],

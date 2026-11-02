@@ -139,16 +139,21 @@ class LeRobotDataModule(DataModule):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
+        state_columns: list[str] | None = None,
+        action_columns: list[str] | None = None,
         # Eval-loss validation
         val_split: float = 0.0,
         val_split_seed: int | None = None,
-        val_batch_size: int = 1,
+        val_batch_size: int | None = None,
         # Base DataModule parameters (val/test gyms)
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
+        pin_memory: bool | Literal["auto"] = "auto",
+        persistent_workers: bool = True,
+        val_persistent_workers: bool = False,
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
@@ -187,6 +192,14 @@ class LeRobotDataModule(DataModule):
                 Output format for the data. Use "physicalai" for the native `Observation` format,
                 or "lerobot" for LeRobot's original dict format.
                 Defaults to "physicalai".
+            state_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
+                into a single ``observation.state`` tensor (e.g. DROID's
+                ``["observation.state.joint_positions", "observation.state.gripper_position"]``). Only used
+                with ``data_format="physicalai"``. Defaults to `None` (no combining).
+            action_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
+                into a single ``action`` tensor (e.g. DROID's
+                ``["action.joint_position", "action.gripper_position"]``). Only used with
+                ``data_format="physicalai"``. Defaults to `None` (no combining).
             val_split (float, optional): Fraction of episodes to hold out for eval-loss
                 validation (e.g. ``0.1`` for 10%). The last N episodes are used as the
                 validation set. Must be in ``[0, 1)``. ``0`` disables eval-loss validation.
@@ -195,8 +208,9 @@ class LeRobotDataModule(DataModule):
                 ``None`` (default) uses the global ``random`` module, which respects
                 ``seed_everything()``. Set an explicit int to use an isolated RNG
                 independent of the global seed. Defaults to ``None``.
-            val_batch_size (int, optional): Batch size for the eval-loss validation DataLoader.
-                Defaults to ``1``.
+            val_batch_size (int | None, optional): Batch size for the eval-loss validation
+                DataLoader. ``None`` (default) tracks ``train_batch_size``, including any value
+                chosen by ``auto_scale_batch_size``.
             val_gym (Gym | None, optional): Validation gym environment.
                 Defaults to `None`.
             num_rollouts_val (int, optional): Number of rollouts for validation.
@@ -207,6 +221,16 @@ class LeRobotDataModule(DataModule):
                 Defaults to `10`.
             max_episode_steps (int | None, optional): Maximum steps per episode.
                 Defaults to `300`.
+            pin_memory (bool | Literal["auto"], optional): Whether to use pinned (page-locked)
+                memory for the training and eval-loss validation DataLoaders, which speeds up
+                host-to-GPU transfers. ``"auto"`` (default) enables it only when an accelerator
+                (CUDA/XPU/etc.) is available, avoiding PyTorch's ``pin_memory=True`` warning on
+                CPU-only setups.
+            persistent_workers (bool, optional): Whether to keep training DataLoader worker
+                processes alive between epochs, avoiding the cost of re-spawning them every
+                epoch. Has no effect when ``num_workers`` resolves to ``0``. Defaults to `True`.
+            val_persistent_workers (bool, optional): Same as ``persistent_workers`` but for the
+                eval-loss validation DataLoader. Defaults to `False`.
 
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided, or if invalid `data_format`.
@@ -238,6 +262,8 @@ class LeRobotDataModule(DataModule):
 
         # Convert `data_format` to enum if it's a string
         self.data_format = DataFormat(data_format)
+        self._state_columns = state_columns
+        self._action_columns = action_columns
 
         # Split episodes into train / val based on val_split
         train_episodes = episodes
@@ -248,10 +274,10 @@ class LeRobotDataModule(DataModule):
             n_val = max(1, int(len(all_episodes) * val_split))
             # Use isolated RNG if seed given, otherwise global random (respects seed_everything)
             if val_split_seed is not None:
-                rng = random.Random(val_split_seed)  # noqa: S311
-                val_episodes = sorted(rng.sample(all_episodes, n_val))
+                rng = random.Random(val_split_seed)  # noqa: S311 # nosec B311 - non-cryptographic ML data split
+                val_episodes = sorted(rng.sample(all_episodes, n_val))  # nosec B311 - non-cryptographic ML data split
             else:
-                val_episodes = sorted(random.sample(all_episodes, n_val))
+                val_episodes = sorted(random.sample(all_episodes, n_val))  # nosec B311 - non-cryptographic ML data split
             train_episodes = sorted(ep for ep in all_episodes if ep not in set(val_episodes))
             logger.warning(
                 "Val split (%.0f%%): %d val episodes %s, %d train episodes (of %d total)",
@@ -273,7 +299,13 @@ class LeRobotDataModule(DataModule):
                 raise TypeError(msg)
 
             train_dataset = (
-                _LeRobotDatasetAdapter.from_lerobot(dataset) if data_format == DataFormat.PHYSICALAI else dataset
+                _LeRobotDatasetAdapter.from_lerobot(
+                    dataset,
+                    state_columns=state_columns,
+                    action_columns=action_columns,
+                )
+                if data_format == DataFormat.PHYSICALAI
+                else dataset
             )
 
         elif repo_id is not None:
@@ -290,6 +322,8 @@ class LeRobotDataModule(DataModule):
                     download_videos=download_videos,
                     video_backend=video_backend,
                     batch_encoding_size=batch_encoding_size,
+                    state_columns=state_columns,
+                    action_columns=action_columns,
                 )
                 if val_episodes is not None:
                     val_eval_dataset = _LeRobotDatasetAdapter(
@@ -303,6 +337,8 @@ class LeRobotDataModule(DataModule):
                         download_videos=download_videos,
                         video_backend=video_backend,
                         batch_encoding_size=batch_encoding_size,
+                        state_columns=state_columns,
+                        action_columns=action_columns,
                     )
             else:
                 if LeRobotDataset is None:
@@ -360,6 +396,9 @@ class LeRobotDataModule(DataModule):
             test_gym=test_gym,
             num_rollouts_test=num_rollouts_test,
             max_episode_steps=max_episode_steps,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            val_persistent_workers=val_persistent_workers,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -383,6 +422,8 @@ class LeRobotDataModule(DataModule):
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers,
         )
 
     @staticmethod
@@ -422,18 +463,20 @@ class LeRobotDataModule(DataModule):
         augment_dataset_quantile_stats(full_ds)
 
         # Propagate computed quantiles to the train adapter
-        for key, feat_stats in full_ds.meta.stats.items():
-            if "q01" in feat_stats and key in train_lerobot_ds.meta.stats:
-                train_lerobot_ds.meta.stats[key]["q01"] = feat_stats["q01"]
-                train_lerobot_ds.meta.stats[key]["q99"] = feat_stats["q99"]
+        train_stats = train_lerobot_ds.meta.stats or {}
+        for key, feat_stats in (full_ds.meta.stats or {}).items():
+            if "q01" in feat_stats and key in train_stats:
+                train_stats[key]["q01"] = feat_stats["q01"]
+                train_stats[key]["q99"] = feat_stats["q99"]
 
         # Propagate to val adapter if it exists
         if val_dataset is not None:
             val_lerobot_ds = val_dataset._lerobot_dataset  # noqa: SLF001
-            for key, feat_stats in full_ds.meta.stats.items():
-                if "q01" in feat_stats and key in val_lerobot_ds.meta.stats:
-                    val_lerobot_ds.meta.stats[key]["q01"] = feat_stats["q01"]
-                    val_lerobot_ds.meta.stats[key]["q99"] = feat_stats["q99"]
+            val_stats = val_lerobot_ds.meta.stats or {}
+            for key, feat_stats in (full_ds.meta.stats or {}).items():
+                if "q01" in feat_stats and key in val_stats:
+                    val_stats[key]["q01"] = feat_stats["q01"]
+                    val_stats[key]["q99"] = feat_stats["q99"]
 
 
 __all__ = ["LeRobotDataModule"]

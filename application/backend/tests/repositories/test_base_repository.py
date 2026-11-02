@@ -7,6 +7,7 @@ SQLAlchemy refresh logic.
 """
 
 import asyncio
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -29,6 +30,9 @@ class _NoIdModel:
 
     def model_dump(self) -> dict:
         return {}
+
+    def __iter__(self) -> Iterator[tuple[str, object]]:
+        return iter(())
 
     @classmethod
     def model_validate(cls, data: object) -> "_NoIdModel":

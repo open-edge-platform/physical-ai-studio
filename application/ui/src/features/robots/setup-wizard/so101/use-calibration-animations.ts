@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { degToRad } from 'three/src/math/MathUtils.js';
 
+import { fetchClient } from '../../../../api/client';
 import { useRobotModels } from '../../robot-models-context';
 
 /** URDF path for the SO101 model — this file is only used in the SO101 wizard. */
-const SO101_PATH = '/SO101/so101_new_calib.urdf';
+const SO101_PATH = fetchClient.PATH('/api/robots/catalog/{robot_type}/urdf', {
+    params: { path: { robot_type: 'SO101_Follower' } },
+});
 
 // ---------------------------------------------------------------------------
 // Shared easing function

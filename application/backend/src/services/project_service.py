@@ -1,46 +1,36 @@
 from uuid import UUID
 
-from db import get_async_db_session_ctx
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories import ProjectRepository
 from schemas import Project
 
 
 class ProjectService:
-    @staticmethod
-    async def get_project_list() -> list[Project]:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRepository(session)
-            return await repo.get_all()
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = ProjectRepository(session)
 
-    @staticmethod
-    async def get_project_by_id(project_id: UUID) -> Project:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRepository(session)
-            project = await repo.get_by_id(project_id)
+    async def get_project_list(self) -> list[Project]:
+        return await self.repo.get_all()
 
-            if project is None:
-                raise ResourceNotFoundError(ResourceType.PROJECT, str(project_id))
+    async def get_project_by_id(self, project_id: UUID) -> Project:
+        project = await self.repo.get_by_id(project_id)
 
-            return project
+        if project is None:
+            raise ResourceNotFoundError(ResourceType.PROJECT, str(project_id))
 
-    @staticmethod
-    async def create_project(project: Project) -> Project:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRepository(session)
-            return await repo.save(project)
+        return project
 
-    @staticmethod
-    async def update_project(project: Project, partial_config: dict) -> Project:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRepository(session)
-            return await repo.update(project, partial_config)
+    async def create_project(self, project: Project) -> Project:
+        return await self.repo.save(project)
 
-    @staticmethod
-    async def delete_project(project_id: UUID) -> None:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRepository(session)
-            project = await repo.get_by_id(project_id)
-            if project is None:
-                raise ResourceNotFoundError(ResourceType.PROJECT, str(project_id))
-            await repo.delete_by_id(project_id)
+    async def update_project(self, project: Project, partial_config: dict) -> Project:
+        return await self.repo.update(project, partial_config)
+
+    async def delete_project(self, project_id: UUID) -> None:
+        project = await self.repo.get_by_id(project_id)
+        if project is None:
+            raise ResourceNotFoundError(ResourceType.PROJECT, str(project_id))
+        await self.repo.delete_by_id(project_id)

@@ -89,22 +89,15 @@ recorder = VideoRecorder(
 
 ## CLI Integration
 
-The benchmark subcommand integrates with LightningCLI. Unlike `fit` and other subcommands, it skips model/trainer instantiation and handles policy loading from checkpoint directly.
-
-```python test="skip" reason="interface definition, not executable"
-class CLI(LightningCLI):
-    @staticmethod
-    def subcommands():
-        return {
-            "fit": {"skip": set()},
-            "benchmark": {"skip": {"model", "dataloaders", "datamodule", "trainer"}},
-        }
-```
+The benchmark subcommand is a standalone `jsonargparse` register module exposed
+through `physicalai.cli.subcommands`. Unlike the Trainer-backed commands, it only
+instantiates `benchmark`, then loads the policy and checkpoint explicitly.
 
 Implementation notes:
 
-- `instantiate_classes()` skips automatic instantiation for benchmark
-- `_run_benchmark()` loads policy from checkpoint and runs evaluation
+- `build_parser()` adds `benchmark`, `policy`, `ckpt_path`, and `output_dir`
+- `_load_policy()` preserves the checkpoint and export-directory loading logic
+- `run()` instantiates the benchmark, evaluates the policy, and writes JSON/CSV results
 
 ## Execution Flow
 

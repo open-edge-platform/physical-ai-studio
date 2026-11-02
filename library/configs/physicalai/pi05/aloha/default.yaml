@@ -1,0 +1,79 @@
+# Pi05 Policy Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/pi05/aloha/default.yaml
+
+model:
+  class_path: physicalai.policies.Pi05
+  init_args:
+    # Model architecture
+    paligemma_variant: gemma_2b
+    action_expert_variant: gemma_300m
+    dtype: bfloat16
+
+    # Input / output structure
+    n_obs_steps: 1
+    chunk_size: 50
+    n_action_steps: 50
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Image preprocessing
+    image_resolution:
+      - 224
+      - 224
+
+    # Flow matching parameters
+    num_inference_steps: 10
+
+    # Finetuning settings
+    freeze_vision_encoder: false
+    train_expert_only: false
+
+    # LoRA (Low-Rank Adaptation) fine-tuning. Requires a pretrained_name_or_path.
+    # `peft` is a core dependency (see pyproject.toml); the `pi05` extra is only
+    # needed for Pi0.5's transformers/tokenizer stack, not for `peft` itself.
+    # Set lora_enabled: true to enable; lora_rank/lora_alpha already have sensible defaults
+    # (rank 32, alpha = rank).
+    # Default target modules adapt the action expert's q/v attention projections plus the
+    # action/time projection heads; see Pi05Config.lora_target_modules to customize.
+    # NOTE: when enabling LoRA, the learning rate can usually be scaled up ~10x versus
+    # full fine-tuning (e.g. optimizer_lr: 2.5e-4, scheduler_decay_lr: 2.5e-5).
+    # lora_enabled: true
+    # lora_rank: 32       # try 16 for a lighter adapter, 64 for higher capacity
+    # lora_alpha: null    # null resolves to lora_rank (scaling = 1.0)
+    # lora_dropout: 0.05
+    # Set lora_use_dora: true to use DoRA (arxiv.org/abs/2402.09353) instead of plain LoRA;
+    # slightly more compute/memory but typically improves quality at low ranks.
+    # lora_use_dora: false
+
+    # Optimizer
+    optimizer_lr: 2.5e-5
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler
+    scheduler_warmup_steps: 1000
+    scheduler_decay_lr: 2.5e-6
+
+    # SnapFlow self-distillation (arxiv.org/abs/2604.05656)
+    # Uncomment to enable 1-step inference via progressive self-distillation:
+    # snapflow_enabled: true
+    # snapflow_alpha: 0.5
+    # snapflow_lambda: 1.0
+    # snapflow_num_inference_steps: 1
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 8
+    data_format: "physicalai"
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 10
