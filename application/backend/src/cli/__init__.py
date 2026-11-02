@@ -18,9 +18,9 @@ def cli() -> None:
     These commands do not connect to a remote Studio HTTP server. In Docker, run
     them inside the backend container.
 
-    Start with COMMAND --help. Use hf for Hub transfers, models/datasets for local
-    folder imports, and db for database maintenance. Policy training and inference
-    format conversion belong to the separate physicalai CLI.
+    Start with COMMAND --help. Use models/datasets for local folder imports, and
+    db for database maintenance. Policy training and inference format conversion
+    belong to the separate physicalai CLI.
     """
 
 
