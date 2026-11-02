@@ -35,6 +35,7 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
+from physicalai.export.hooks import compress_weights_executorch_openvino_int8_sym
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
@@ -578,7 +579,9 @@ class ExportablePolicyMixin:
                 - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for export and a
                   custom-built ExecuTorch runtime with OpenVINO backend for inference.
             delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
-                supports ``{"device": "CPU"}`` (or other supported target device).
+                supports ``{"device": "CPU"}`` (or other supported target device) and
+                ``{"compress_weights": True}`` to compress weights to INT8 symmetric with
+                ``nncf`` before lowering.
             **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
 
         Returns:
@@ -655,7 +658,6 @@ class ExportablePolicyMixin:
         finally:
             self.model.to(original_device)
 
-        # Declare the preprocessor pipeline and tensor-only input_names.
         self.create_manifest(
             export_dir,
             ExportBackend.EXECUTORCH,
@@ -698,11 +700,19 @@ class ExportablePolicyMixin:
             ImportError: If the selected delegate's dependencies are not installed.
         """
         cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
+        export_args = (cpu_input_sample,)
         aten_dialect = torch.export.export(
             self.model,
-            args=(cpu_input_sample,),
+            args=export_args,
             **extra_export_kwargs,
         )
+
+        if delegate == "openvino" and (delegate_config or {}).get("compress_weights"):
+            aten_dialect = compress_weights_executorch_openvino_int8_sym(
+                aten_dialect,
+                export_args,
+                **extra_export_kwargs,
+            )
 
         try:
             if delegate == "openvino":

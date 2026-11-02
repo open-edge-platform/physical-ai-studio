@@ -103,7 +103,11 @@ class ExecuTorchAdapter(RuntimeAdapter):
                 self._output_names = []
 
     def _read_input_dtypes(self) -> list[torch.dtype | None]:
-        """Read expected dtype per ``forward`` input; ``None`` if non-tensor/unknown."""
+        """Read expected dtype per ``forward`` input.
+
+        Returns:
+            Expected dtype per input; ``None`` for non-tensor/unknown inputs. Empty if unavailable.
+        """
         # input_tensor_meta().dtype() returns an ExecuTorch ScalarType int code.
         try:
             from executorch.exir.tensor import ScalarType, enum_to_scalar_map  # noqa: PLC0415
@@ -127,7 +131,11 @@ class ExecuTorchAdapter(RuntimeAdapter):
         return dtypes
 
     def _cast_input_dtypes(self, ordered_inputs: list[Any]) -> list[Any]:
-        """Cast each tensor to its expected dtype (``set_inputs()`` needs an exact match)."""
+        """Cast each tensor to its expected dtype (``set_inputs()`` needs an exact match).
+
+        Returns:
+            Inputs with tensors cast to their expected dtypes.
+        """
         if not self._input_dtypes:
             return ordered_inputs
 
@@ -135,20 +143,23 @@ class ExecuTorchAdapter(RuntimeAdapter):
         for i, value in enumerate(ordered_inputs):
             expected = self._input_dtypes[i] if i < len(self._input_dtypes) else None
             if isinstance(value, torch.Tensor) and expected is not None and value.dtype != expected:
-                value = value.to(expected)
-            cast_inputs.append(value)
+                cast_inputs.append(value.to(expected))
+            else:
+                cast_inputs.append(value)
         return cast_inputs
 
-    def _convert_to_tensor(self, value: Any) -> torch.Tensor | None:  # noqa: ANN401
-        """Convert input to a contiguous tensor; strings/None map to None (traced out)."""
+    @staticmethod
+    def _convert_to_tensor(value: Any) -> torch.Tensor | None:  # noqa: ANN401
+        """Convert input to a contiguous tensor.
+
+        Returns:
+            Contiguous tensor, or ``None`` for strings/None (traced out at export).
+        """
         if value is None:
             return None
         if isinstance(value, str):
             return None  # strings are traced out at export
-        if isinstance(value, torch.Tensor):
-            tensor = value
-        else:
-            tensor = torch.from_numpy(value)
+        tensor = value if isinstance(value, torch.Tensor) else torch.from_numpy(value)
         # ExecuTorch requires contiguous inputs.
         return tensor.contiguous()
 
@@ -174,13 +185,9 @@ class ExecuTorchAdapter(RuntimeAdapter):
             if missing_inputs:
                 msg = f"Missing required inputs: {missing_inputs}. Expected: {self._input_names}"
                 raise ValueError(msg)
-            ordered_inputs = [
-                self._convert_to_tensor(inputs[name]) for name in self._input_names
-            ]
+            ordered_inputs = [self._convert_to_tensor(inputs[name]) for name in self._input_names]
         else:
-            ordered_inputs = [
-                self._convert_to_tensor(value) for value in inputs.values()
-            ]
+            ordered_inputs = [self._convert_to_tensor(value) for value in inputs.values()]
 
         ordered_inputs = self._cast_input_dtypes(ordered_inputs)
 
