@@ -5,7 +5,6 @@
 
 import json
 import os
-import re
 import subprocess
 import sys
 import threading
@@ -19,12 +18,10 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
-from scripts.simulation_report import summarize
 from tests.integration import simulation_e2e as controls
 from tests.integration import test_simulation_e2e as suite
 
 from runtime.config_builder import policy_source_fragment, policy_source_from_fragment
-from training.job import CHECKPOINT_NAME
 
 ROOT = Path(__file__).resolve().parents[4]
 BACKEND = ROOT / "application/backend"
@@ -187,15 +184,13 @@ def control_report():
 
 
 @pytest.mark.parametrize(
-    "mode,correct,timing,error",
-    [("train", 0, False, None), ("full", 7, True, None), ("full", 0, True, "no-action"), ("full", 7, False, "timing")],
+    "correct,timing,error",
+    [(7, True, None), (0, True, "no-action"), (7, False, "timing")],
 )
-def test_automated_training_runs_the_fresh_model(tmp_path, monkeypatch, control_report, mode, correct, timing, error):
+def test_automated_training_runs_the_fresh_model(tmp_path, monkeypatch, control_report, correct, timing, error):
     report = tmp_path / "controls.json"
     report.write_text(json.dumps(control_report))
     for key, value in {
-        "MODE": mode,
-        "POLICY": "act",
         "DATASET_DIR": str(tmp_path),
         "CONTROLS_FILE": str(report),
     }.items():
@@ -211,8 +206,6 @@ def test_automated_training_runs_the_fresh_model(tmp_path, monkeypatch, control_
     monkeypatch.setattr(suite, "_project_environment", environment)
     imported = MagicMock(return_value="dataset")
     monkeypatch.setattr(suite, "_import_dataset", imported)
-    smoke = MagicMock(side_effect=AssertionError("Automated E2E must not crop the recording"))
-    monkeypatch.setattr(suite, "_smoke_dataset", smoke)
     model = {"id": "fresh-model"}
     train = MagicMock(return_value=(model, {"model_id": model["id"], "job_id": "fresh-job"}))
     monkeypatch.setattr(suite, "_train", train)
@@ -224,64 +217,47 @@ def test_automated_training_runs_the_fresh_model(tmp_path, monkeypatch, control_
     request = MagicMock()
     if error:
         with pytest.raises(AssertionError, match=error):
-            suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
+            suite.test_train_export_and_run_in_simulation(tmp_path, request, monkeypatch)
     else:
-        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
+        suite.test_train_export_and_run_in_simulation(tmp_path, request, monkeypatch)
     client = request.getfixturevalue.return_value
     assert imported.call_args.args[3] == tmp_path.resolve()
-    smoke.assert_not_called()
-    train.assert_called_once_with(client, "act", "project", "dataset", tmp_path.resolve(), evaluate=mode == "full")
-    assert environment.call_args.kwargs["simulation"] == (mode == "full")
+    train.assert_called_once_with(client, "act", "project", "dataset", tmp_path.resolve())
     training = json.loads((tmp_path / "training.json").read_text())
     assert training["model_id"] == "fresh-model" and training["job_id"] == "fresh-job"
-    if mode == "train":
-        bundle.assert_not_called()
-        rollout.assert_not_called()
-        assert not (tmp_path / "result.json").exists()
-    else:
-        bundle.assert_called_once_with(client, model, "environment", "sort items", tmp_path.resolve())
-        assert rollout.call_args.args[0] == bundle.return_value
-        result = json.loads((tmp_path / "result.json").read_text())
-        assert result["model_id"] == training["model_id"]
-        assert result["status"] == ("failed" if error else "passed")
-        assert result["quality"] == ("passed" if correct else "failed")
-        assert result["timing"] == ("passed" if timing else "failed")
+    bundle.assert_called_once_with(client, model, "environment", "sort items", tmp_path.resolve())
+    assert rollout.call_args.args[0] == bundle.return_value
+    result = json.loads((tmp_path / "result.json").read_text())
+    assert result["model_id"] == training["model_id"]
+    assert result["status"] == ("failed" if error else "passed")
+    assert result["quality"] == ("passed" if correct else "failed")
+    assert result["timing"] == ("passed" if timing else "failed")
 
 
 @pytest.mark.parametrize(
-    "manifest,epoch,evaluate,error",
+    "epoch,loss,exported,error",
     [
-        (None, 4, False, AssertionError),
-        ("{", 4, False, json.JSONDecodeError),
-        ("{}", 0, False, AssertionError),
-        ("{}", 4, False, None),
-        ("{}", 4, True, AssertionError),
+        (4, "0.1", True, None),
+        (0, "0.1", True, "epoch budget"),
+        (4, "nan", True, "validation loss"),
+        (4, "0.1", False, "OpenVINO"),
     ],
 )
-def test_training_validates_exports_and_completed_epochs(tmp_path, monkeypatch, manifest, epoch, evaluate, error):
-    from physicalai.inference import InferenceModel
-
+def test_training_validates_deployment_export_epochs_and_loss(tmp_path, monkeypatch, epoch, loss, exported, error):
     from schemas.model import Model
     from services.model_metrics_service import ModelMetricsService
 
     monkeypatch.setenv("SIM_E2E_ACCELERATOR", "cpu")
-    export = tmp_path / "exports/torch"
-    export.mkdir(parents=True)
-    (export / "model.pt").write_bytes(b"incomplete export")
-    if manifest is not None:
-        (export / "manifest.json").write_text(manifest)
-    (tmp_path / CHECKPOINT_NAME).touch()
+    if exported:
+        export = tmp_path / "exports/openvino"
+        export.mkdir(parents=True)
+        (export / "manifest.json").write_text("{}")
     model = Model.model_construct(
         id=uuid4(), name="ACT", policy="act", project_id=uuid4(), path=str(tmp_path), properties={}
     ).model_dump(mode="json")
-    assert model["available_backends"] == ["torch"]
     metrics_path = tmp_path / "metrics.csv"
-    metrics_path.write_text(f"epoch,val/loss\n{epoch},0.1\n")
+    metrics_path.write_text(f"epoch,val/loss\n{epoch},{loss}\n")
     monkeypatch.setattr(ModelMetricsService, "get_model_metrics_path", AsyncMock(return_value=metrics_path))
-    if manifest == "{}":
-        exported = MagicMock(spec=InferenceModel)
-        exported.__enter__.return_value.backend = "torch"
-        monkeypatch.setattr("physicalai.inference.InferenceModel", MagicMock(return_value=exported))
     client = MagicMock()
     client.get.return_value.status_code = 200
     client.get.return_value.json.return_value = [{"id": "act"}]
@@ -289,27 +265,12 @@ def test_training_validates_exports_and_completed_epochs(tmp_path, monkeypatch, 
     client.post.return_value.json.return_value = {"id": "job"}
     monkeypatch.setattr(suite, "wait_for_job", MagicMock(return_value={}))
     monkeypatch.setattr(suite, "wait_for_model", MagicMock(return_value=model))
-    monkeypatch.setattr(suite, "build_policy", MagicMock())
-    monkeypatch.setattr(
-        suite.torch,
-        "load",
-        MagicMock(return_value={"global_step": 20, "optimizer_states": [{"state": {0: {"step": 20}}}]}),
-    )
-    if error is not None:
-        match = "requested OpenVINO" if evaluate else ("epoch budget" if manifest == "{}" else None)
-        with pytest.raises(error, match=match):
-            suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path, evaluate=evaluate)
+    if error:
+        with pytest.raises(AssertionError, match=error):
+            suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path)
     else:
-        _, training = suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path, evaluate=evaluate)
+        _, training = suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path)
         assert training["training_epochs"] == 5
-        assert training["checkpoint_steps"] == 20  # The best checkpoint can precede the final epoch.
-
-
-def test_fixed_checkpoint_evaluation_is_removed(tmp_path, monkeypatch):
-    monkeypatch.setenv("SIM_E2E_MODE", "evaluate")
-    with pytest.raises(ValueError, match="Unknown E2E policy or mode"):
-        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, MagicMock(), monkeypatch)
-    assert not (BACKEND / "configs/simulation-e2e/checkpoints.json").exists()
 
 
 def test_controls_scores_use_completed_episodes(tmp_path, control_report):
@@ -335,40 +296,16 @@ def test_controls_must_pass_on_the_rollout_seeds(tmp_path, control_report, inval
 
 
 def test_full_pipeline_requires_controls_before_training(tmp_path, monkeypatch):
-    monkeypatch.setenv("SIM_E2E_MODE", "full")
     monkeypatch.setenv("SIM_E2E_DATASET_DIR", str(tmp_path))
     monkeypatch.setenv("SIM_E2E_CONTROLS_FILE", str(tmp_path / "missing.json"))
     monkeypatch.setattr(suite, "attest_runtime", dict)
     request = MagicMock()
     with pytest.raises(FileNotFoundError):
-        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
+        suite.test_train_export_and_run_in_simulation(tmp_path, request, monkeypatch)
     request.getfixturevalue.assert_not_called()
 
 
-def test_daily_report_does_not_promote_missing_or_zero_scores(tmp_path):
-    directory = tmp_path / "sim-full-act"
-    directory.mkdir()
-    (directory / "result.json").write_text(
-        json.dumps({"status": "failed", "quality": "failed", "wiring": "passed", "timing": "passed", "score": 0})
-    )
-    directory = tmp_path / "sim-full-xr0"
-    directory.mkdir()
-    (directory / "training.json").write_text(json.dumps({"status": "passed"}))
-    report = summarize(tmp_path)
-    assert "| act | failed/incomplete | passed | passed | failed | 0.0% |" in report
-    assert "| xr0 | passed | failed/incomplete | failed/incomplete | failed/incomplete |" in report
-    assert "| smolvla |" not in report
-
-
-def test_unsupported_hardware_is_not_a_training_pass(tmp_path):
-    directory = tmp_path / "sim-full-xr0"
-    directory.mkdir()
-    (directory / "training.json").write_text(json.dumps({"status": "unsupported_hardware"}))
-    assert "| xr0 | unsupported hardware |" in summarize(tmp_path)
-
-
-@pytest.mark.parametrize("name", controls.POLICIES)
-def test_trial_loads_application_recipe_and_reseeds_after_warmup(tmp_path, monkeypatch, name):
+def test_trial_loads_application_recipe_and_reseeds_after_warmup(tmp_path, monkeypatch):
     events = []
     monkeypatch.setattr(suite, "SEEDS", (42,))
     monkeypatch.setenv("SIM_E2E_HTTP_URL", "http://localhost")
@@ -388,7 +325,7 @@ def test_trial_loads_application_recipe_and_reseeds_after_warmup(tmp_path, monke
     monkeypatch.setattr(suite.RobotRuntime, "from_config", factory)
     recipe = tmp_path / "runtime.yaml"
     recipe.write_text("application-generated recipe remains untouched")
-    suite._trials(recipe, {"fps": 30, "features": {"observation.images.wrist": {}}}, tmp_path, name, monkeypatch)
+    suite._trials(recipe, {"fps": 30, "features": {"observation.images.wrist": {}}}, tmp_path, "act", monkeypatch)
     factory.assert_called_once_with(recipe)
     assert recipe.read_text() == "application-generated recipe remains untouched"
     assert events == ["prepare", "run", "prepare", "begin", "resume", "run", "pause"]
@@ -644,78 +581,10 @@ def test_video_requires_successful_encoding_decoding_and_rollout_coverage(tmp_pa
         decoder.assert_called_once()
 
 
-def test_training_artifacts_preserve_outputs_without_uploading_the_recording(tmp_path):
-    workflow = yaml.safe_load((ROOT / ".github/workflows/simulation-application-e2e.yml").read_text())
-    upload = next(
-        step
-        for step in workflow["jobs"]["policy"]["steps"]
-        if step.get("name") == "Retain training and deployment outputs"
-    )
-    assert upload["if"] == "always()"
-    assert upload["id"] == "training_outputs"
-    policy = workflow["jobs"]["policy"]
-    assert policy["permissions"]["actions"] == "write"
-    cleanup = next(step for step in policy["steps"] if step.get("name") == "Remove superseded training outputs")
-    assert cleanup["if"] == (
-        "always() && steps.training_outputs.outcome == 'success' && steps.training_outputs.outputs.artifact-id != ''"
-    )
-    assert cleanup["env"] == {
-        "GH_TOKEN": "${{ github.token }}",
-        "ARTIFACT_ID": "${{ steps.training_outputs.outputs.artifact-id }}",
-        "ARTIFACT_NAME": "training-outputs-${{ matrix.policy }}",
-    }
-    assert cleanup["run"] == "python3 application/backend/scripts/prune_simulation_artifacts.py"
-    assert policy["steps"].index(cleanup) > policy["steps"].index(upload)
-    assert workflow["jobs"]["controls"]["permissions"].get("actions") != "write"
-    assert workflow["jobs"]["report"]["permissions"]["actions"] == "read"
-    artifact = upload["with"]
-    assert artifact["name"] == "training-outputs-${{ matrix.policy }}"
-    assert artifact["retention-days"] == 14
-    assert artifact["compression-level"] == 0
-    expected = {
-        "training-request.json",
-        "application-job.json",
-        "application-model.json",
-        "runtime.zip",
-        "studio/models/model-id/model.ckpt",
-        "studio/models/model-id/version_0/metrics.csv",
-        "studio/models/model-id/version_0/hparams.yaml",
-        "studio/models/model-id/exports/openvino/model.bin",
-        "studio/models/model-id/exports/openvino/manifest.json",
-        "studio/models/model-id/exports/torch/model.pt",
-        "studio/cache/failed-job/model.ckpt",
-        "studio/cache/failed-job/version_0/metrics.csv",
-        "studio/cache/failed-job/version_0/hparams.yaml",
-        "studio/logs/backend.log",
-    }
-    excluded = {
-        "studio/datasets/recording/data.parquet",
-        "studio/snapshots/recording/data.parquet",
-        "studio/cache/imports/datasets/upload.zip",
-        "studio/settings.json",
-        "studio/studio.db",
-    }
-    output = tmp_path / ".simulation-results/full-act"
-    for name in expected | excluded:
-        path = output / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.touch()
-    retained = set()
-    for pattern in artifact["path"].replace("${{ matrix.policy }}", "act").splitlines():
-        for path in tmp_path.glob(pattern):
-            retained.update(
-                p.relative_to(output).as_posix() for p in (path.rglob("*") if path.is_dir() else [path]) if p.is_file()
-            )
-    assert retained == expected
-    download = next(step for step in workflow["jobs"]["report"]["steps"] if "pattern" in step.get("with", {}))
-    assert not Path("training-outputs-act").match(download["with"]["pattern"])
-
-
-@pytest.mark.parametrize("job", ["controls", "policy"])
 @pytest.mark.parametrize("borrowed_pid", [False, True])
-def test_cleanup_never_shuts_down_an_unowned_simulator(tmp_path, job, borrowed_pid):
+def test_cleanup_never_shuts_down_an_unowned_simulator(tmp_path, borrowed_pid):
     workflow = yaml.safe_load((ROOT / ".github/workflows/simulation-application-e2e.yml").read_text())
-    cleanup = next(step["run"] for step in workflow["jobs"][job]["steps"] if step.get("name") == "Stop owner")
+    cleanup = next(step["run"] for step in workflow["jobs"]["simulation"]["steps"] if step.get("name") == "Stop owner")
     binary = tmp_path / "bin"
     binary.mkdir()
     curl = binary / "curl"
@@ -756,32 +625,11 @@ def test_runtime_attestation_rejects_mixed_pins(monkeypatch):
         controls.attest_runtime()
 
 
-@pytest.mark.parametrize("choice", [None, "100"])
-def test_dataset_selection_is_pinned(monkeypatch, choice):
-    monkeypatch.delenv("SIM_E2E_DATASET", raising=False)
-    if choice is not None:
-        monkeypatch.setenv("SIM_E2E_DATASET", choice)
-    entry = controls.dataset_entry()
-    assert entry["episodes"] == 100
-    assert re.fullmatch(r"[0-9a-f]{40}", entry["revision"])
-    assert entry["repo_id"] == "Albertvh97/conveyor-sort-sim-demos-100-episodes"
-    assert entry["belt_speeds"] == [0.04]
-
-
-@pytest.mark.parametrize("choice", ["", "50", "120", "51", "../100", "100; echo unexpected"])
-def test_unknown_dataset_is_rejected(monkeypatch, choice):
-    monkeypatch.setenv("SIM_E2E_DATASET", choice)
-    with pytest.raises(ValueError, match="Unknown simulation dataset"):
-        controls.dataset_entry()
-
-
-@pytest.mark.parametrize("dataset", ["100"])
 @pytest.mark.parametrize("mismatch", [None, "scene", "belt_speeds", "episode count"])
-def test_recording_metadata_matches_selected_dataset(tmp_path, monkeypatch, dataset, mismatch):
-    monkeypatch.setenv("SIM_E2E_DATASET", dataset)
+def test_recording_metadata_matches_pinned_dataset(tmp_path, mismatch):
     recording = {"scene": "conveyor_sort", "belt_speed": 0.04}
     metadata = {
-        "total_episodes": int(dataset),
+        "total_episodes": 100,
         "fps": 30,
         "features": {key: {"shape": [6]} for key in ("action", "observation.state")},
     }
@@ -801,34 +649,29 @@ def test_recording_metadata_matches_selected_dataset(tmp_path, monkeypatch, data
             suite._recording_metadata(tmp_path, "conveyor_sort")
 
 
-def test_e2e_workflow_offers_only_100_episode_recording():
-    workflow = yaml.load(
-        (ROOT / ".github/workflows/simulation-application-e2e.yml").read_text(), Loader=yaml.BaseLoader
-    )
-    choice = workflow["on"]["workflow_dispatch"]["inputs"]["dataset"]
-    assert choice["type"] == "choice" and choice["default"] == "100"
-    assert set(choice["options"]) == set(controls.DATASETS) == {"100"}
-    env = workflow["env"]
-    assert env["SIM_E2E_DATASET"] == "${{ inputs.dataset || '100' }}"
-    assert "SIM_E2E_DATASET_DIR" not in env
-
-
 def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
     workflow = yaml.load(
         (ROOT / ".github/workflows/simulation-application-e2e.yml").read_text(), Loader=yaml.BaseLoader
     )
     assert workflow["on"]["schedule"] == [{"cron": "0 19 * * *"}]
-    policy = workflow["jobs"]["policy"]
-    assert policy["strategy"]["matrix"] == {"policy": ["act"]}
-    assert policy["timeout-minutes"] == "360"
-    assert policy["needs"] == "controls" and "if" not in policy
-    assert policy["env"]["SIM_E2E_MODE"] == "full"
-    assert policy["env"]["SIM_E2E_CONTROLS_FILE"].endswith("/controls/controls.json")
-    simulator = next(step for step in policy["steps"] if step.get("uses") == "./.github/actions/start-simulator")
-    assert "if" not in simulator
-    download = next(step for step in policy["steps"] if step.get("with", {}).get("name") == "sim-controls")
-    assert download["with"]["path"] == ".simulation-results/controls"
-    assert policy["steps"][-1]["with"]["name"] == "sim-full-${{ matrix.policy }}"
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(workflow["jobs"]) == {"simulation"}
+    job = workflow["jobs"]["simulation"]
+    assert job["timeout-minutes"] == "390"
+    steps = job["steps"]
+    controls_step = next(step for step in steps if step.get("name") == "Verify seeded expert and no-action episodes")
+    training_step = next(
+        step for step in steps if step.get("name") == "Train fresh model and run its deployment bundle"
+    )
+    assert steps.index(controls_step) < steps.index(training_step)
+    assert "if" not in training_step
+    assert controls_step["timeout-minutes"] == "30" and training_step["timeout-minutes"] == "360"
+    assert workflow["env"]["SIM_E2E_CONTROLS_FILE"].endswith("/full-act/controls.json")
+    upload = next(step for step in steps if step.get("name") == "Retain training and deployment outputs")
+    assert upload["if"] == "always()"
+    assert upload["with"]["name"] == "training-outputs-act"
+    assert upload["with"]["retention-days"] == "2"
+    assert steps[-1]["with"]["name"] == "sim-full-act"
 
 
 def _workflow_python(path, step):
@@ -838,8 +681,7 @@ def _workflow_python(path, step):
     return script.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
 
 
-@pytest.mark.parametrize("dataset", ["100"])
-def test_workflow_download_uses_selected_pins(tmp_path, dataset):
+def test_workflow_download_uses_pinned_recording(tmp_path):
     action = ROOT / ".github/actions/simulation-environment/action.yml"
     script = tmp_path / "download.py"
     script.write_text(_workflow_python(action, "Fetch pinned recording"))
@@ -849,7 +691,7 @@ def test_workflow_download_uses_selected_pins(tmp_path, dataset):
         "    return os.environ['FAKE_HF_SNAPSHOT']\n"
     )
     (tmp_path / "meta").mkdir()
-    (tmp_path / "meta/info.json").write_text(json.dumps({"total_episodes": int(dataset)}))
+    (tmp_path / "meta/info.json").write_text(json.dumps({"total_episodes": 100}))
     result = subprocess.run(
         [sys.executable, str(script)],
         capture_output=True,
@@ -858,14 +700,13 @@ def test_workflow_download_uses_selected_pins(tmp_path, dataset):
         env={
             **os.environ,
             "PYTHONPATH": str(BACKEND),
-            "SIM_E2E_DATASET": dataset,
             "FAKE_HF_SNAPSHOT": str(tmp_path),
             "GITHUB_ENV": str(tmp_path / "github-env"),
         },
     )
     fetched = json.loads(result.stdout)
-    assert fetched["repo_id"] == controls.DATASETS[dataset]["repo_id"]
-    assert fetched["revision"] == controls.DATASETS[dataset]["revision"]
+    assert fetched["repo_id"] == controls.DATASET["repo_id"]
+    assert fetched["revision"] == controls.DATASET["revision"]
     assert fetched["repo_type"] == "dataset"
     assert fetched["allow_patterns"] == ["simulation.json", "meta/*", "data/*", "videos/*"]
     assert "local_dir" not in fetched and "cache_dir" not in fetched

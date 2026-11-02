@@ -4,15 +4,9 @@ on:
   schedule:
     - cron: "0 19 * * *" # Daily at 19:00 UTC
   workflow_dispatch:
-    inputs:
-      dataset:
-        description: Conveyor recording size (episodes)
-        type: choice
-        options: ["100"]
-        default: "100"
-        required: true
 
-permissions: {}
+permissions:
+  contents: read
 concurrency:
   # Also serialize with runs started by the previous library workflows.
   group: simulation-library-gpu
@@ -26,20 +20,18 @@ env:
   SIM_E2E_ACCELERATOR: cuda
   SIM_E2E_HTTP_URL: http://127.0.0.1:8080
   SIM_E2E_OWNER: sim-daily-${{ github.run_id }}-${{ github.run_attempt }}
-  SIM_E2E_DATASET: ${{ inputs.dataset || '100' }}
+  SIM_E2E_RECORD_VIDEO: true
+  SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/full-act
+  SIM_E2E_CONTROLS_FILE: ${{ github.workspace }}/.simulation-results/full-act/controls.json
+  STORAGE_DIR: ${{ github.workspace }}/.simulation-results/full-act/studio
+  SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/full-act/studio/settings.json
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
-  controls:
-    name: Verify simulator controls
+  simulation:
+    name: ACT recording to inference
     runs-on: [self-hosted, Linux, X64, gpu]
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/controls
-      STORAGE_DIR: ${{ github.workspace }}/.simulation-results/controls/studio
-      SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/controls/studio/settings.json
+    timeout-minutes: 390
     steps:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
@@ -59,76 +51,15 @@ jobs:
       - uses: ./.github/actions/simulation-environment
       - uses: ./.github/actions/start-simulator
       - name: Verify seeded expert and no-action episodes
+        timeout-minutes: 30
         working-directory: application/backend
         run: |
           uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
             tests/integration/test_simulation_camera_freshness.py \
             -k 'test_simulator_controls or test_camera_latest_frame_does_not_backlog or test_application_simulation_environment' \
-            -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
-      - name: Stop owner
-        if: always()
-        run: |
-          if test -f "$SIM_E2E_OUTPUT_DIR/owner.pid"; then
-            pid=$(< "$SIM_E2E_OUTPUT_DIR/owner.pid")
-            if ps -p "$pid" -o args= | grep -F -- "--name $SIM_E2E_OWNER" > /dev/null; then
-              curl --silent --max-time 3 -X POST "$SIM_E2E_HTTP_URL/shutdown" || true
-              kill "$pid" 2>/dev/null || true
-            fi
-          fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: sim-controls
-          path: |
-            .simulation-results/controls/*.json
-            .simulation-results/controls/*.xml
-            .simulation-results/controls/*.log
-          retention-days: 14
-
-  policy:
-    name: Train to inference / ${{ matrix.policy }}
-    needs: controls
-    runs-on: [self-hosted, Linux, X64, gpu]
-    timeout-minutes: 360
-    permissions:
-      contents: read
-      actions: write
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        policy: [act]
-    env:
-      SIM_E2E_POLICY: ${{ matrix.policy }}
-      SIM_E2E_MODE: full
-      SIM_E2E_RECORD_VIDEO: true
-      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/full-${{ matrix.policy }}
-      STORAGE_DIR: ${{ github.workspace }}/.simulation-results/full-${{ matrix.policy }}/studio
-      SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/full-${{ matrix.policy }}/studio/settings.json
-      SIM_E2E_CONTROLS_FILE: ${{ github.workspace }}/.simulation-results/controls/controls.json
-    steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          disable-sudo: false
-          disable-telemetry: true
-          egress-policy: block
-          allowed-endpoints: >
-            api.github.com:443 github.com:443 raw.githubusercontent.com:443
-            huggingface.co:443 cas-server.xethub.hf.co:443 transfer.xethub.hf.co:443
-            us.aws.cdn.hf.co:443 download.pytorch.org:443 download-r2.pytorch.org:443
-            files.pythonhosted.org:443 pypi.org:443 releases.astral.sh:443
-            release-assets.githubusercontent.com:443 archive.ubuntu.com:80
-            security.ubuntu.com:80 azure.archive.ubuntu.com:80
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/simulation-environment
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: sim-controls
-          path: .simulation-results/controls
-      - uses: ./.github/actions/start-simulator
+            -v --junitxml="$SIM_E2E_OUTPUT_DIR/controls-junit.xml"
       - name: Train fresh model and run its deployment bundle
+        timeout-minutes: 360
         working-directory: application/backend
         run: |
           uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
@@ -144,56 +75,28 @@ jobs:
             fi
           fi
       - name: Retain training and deployment outputs
-        id: training_outputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: training-outputs-${{ matrix.policy }}
+          name: training-outputs-act
           path: |
-            .simulation-results/full-${{ matrix.policy }}/*.json
-            .simulation-results/full-${{ matrix.policy }}/studio/models/
-            .simulation-results/full-${{ matrix.policy }}/studio/cache/*/*.ckpt
-            .simulation-results/full-${{ matrix.policy }}/studio/cache/*/version_*/
-            .simulation-results/full-${{ matrix.policy }}/studio/logs/
-            .simulation-results/full-${{ matrix.policy }}/runtime.zip
+            .simulation-results/full-act/*.json
+            .simulation-results/full-act/studio/models/
+            .simulation-results/full-act/studio/cache/*/*.ckpt
+            .simulation-results/full-act/studio/cache/*/version_*/
+            .simulation-results/full-act/studio/logs/
+            .simulation-results/full-act/runtime.zip
           compression-level: 0
-          retention-days: 14
-      - name: Remove superseded training outputs
-        if: always() && steps.training_outputs.outcome == 'success' && steps.training_outputs.outputs.artifact-id != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ steps.training_outputs.outputs.artifact-id }}
-          ARTIFACT_NAME: training-outputs-${{ matrix.policy }}
-        run: python3 application/backend/scripts/prune_simulation_artifacts.py
+          retention-days: 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: sim-full-${{ matrix.policy }}
+          name: sim-full-act
           path: |
-            .simulation-results/full-${{ matrix.policy }}/*.json
-            .simulation-results/full-${{ matrix.policy }}/*.xml
-            .simulation-results/full-${{ matrix.policy }}/*.log
-            .simulation-results/full-${{ matrix.policy }}/*.mp4
-            .simulation-results/full-${{ matrix.policy }}/runtime/runtime.yaml
-            .simulation-results/full-${{ matrix.policy }}/runtime/README.md
+            .simulation-results/full-act/*.json
+            .simulation-results/full-act/*.xml
+            .simulation-results/full-act/*.log
+            .simulation-results/full-act/*.mp4
+            .simulation-results/full-act/runtime/runtime.yaml
+            .simulation-results/full-act/runtime/README.md
           retention-days: 14
-
-  report:
-    name: Daily application policy report
-    if: always()
-    needs: [controls, policy]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true
-        with:
-          pattern: sim-*
-          path: results
-      - name: Separate wiring from policy quality
-        run: python application/backend/scripts/simulation_report.py results >> "$GITHUB_STEP_SUMMARY"

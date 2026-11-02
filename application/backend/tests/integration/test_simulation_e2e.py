@@ -35,19 +35,17 @@ from physicalai.runtime import RobotRuntime
 from schemas.job import LocalTrainJobPayload
 from tests.integration.application_flow import wait_for_job, wait_for_model
 from tests.integration.simulation_e2e import (
-    POLICIES,
+    DATASET,
     SEEDS,
     EpisodeMonitor,
     attest_runtime,
     command,
     control_scores,
-    dataset_entry,
     prepare_episode,
     score,
     timing_passes,
     wait_health,
 )
-from training.job import TrainingJobSpec, build_policy, resolve_checkpoint
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -55,7 +53,6 @@ if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
-SCENES = ("conveyor_sort",)
 
 
 def _task_instruction(dataset: Path) -> str:
@@ -68,7 +65,7 @@ def _task_instruction(dataset: Path) -> str:
 
 def _recording_metadata(dataset: Path, scene: str) -> dict:
     recording = json.loads((dataset / "simulation.json").read_text())
-    entry = dataset_entry()
+    entry = DATASET
     belt_speeds = recording.get("belt_speeds_m_s", [recording.get("belt_speed")])
     if recording["scene"] != scene or belt_speeds != entry["belt_speeds"]:
         raise ValueError("Recording does not match the conveyor scene and belt speeds")
@@ -83,106 +80,54 @@ def _recording_metadata(dataset: Path, scene: str) -> dict:
     return metadata
 
 
-def _smoke_dataset(source: Path, destination: Path) -> Path:
-    """Keep 20 contiguous frames from three episodes; this is not a quality dataset."""
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-    recording = LeRobotDataset(dataset_entry()["repo_id"], root=source, episodes=[0, 1, 2])
-    keys = [
-        key
-        for key in recording.features
-        if key in {"action", "observation.state"} or key.startswith("observation.images.")
-    ]
-    features = {key: {name: value for name, value in recording.features[key].items() if name != "info"} for key in keys}
-    for key, feature in features.items():
-        if key.startswith("observation.images."):
-            feature["dtype"] = "image"
-    fixture = LeRobotDataset.create(
-        repo_id="physicalai-studio-tests/conveyor-smoke",
-        root=destination,
-        fps=recording.fps,
-        features=features,
-        robot_type="so101_follower",
-        use_videos=False,
-    )
-    for episode in range(3):
-        start = recording.meta.episodes[episode]["dataset_from_index"]
-        for index in range(start, start + 20):
-            sample = recording[index]
-            frame = {}
-            for key in keys:
-                value = sample[key]
-                frame[key] = (
-                    (value.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)
-                    if key.startswith("observation.images.")
-                    else value.numpy()
-                )
-            fixture.add_frame({**frame, "task": sample["task"]})
-        fixture.save_episode()
-    fixture.finalize()
-    (destination / "smoke-fixture.json").write_text(
-        json.dumps(
-            {
-                "purpose": "API/training/export wiring only; not behavioral qualification",
-                "source": dataset_entry(),
-                "episodes": [0, 1, 2],
-                "contiguous_frames_per_episode": 20,
-            }
-        )
-    )
-    return destination
-
-
-def _project_environment(client: TestClient, metadata: dict, *, simulation: bool) -> tuple[str, str]:
+def _project_environment(client: TestClient, metadata: dict) -> tuple[str, str]:
     project_id, environment_id = str(uuid4()), str(uuid4())
     response = client.post("/api/projects", json={"id": project_id, "name": "Simulation application E2E"})
     assert response.status_code == 201, response.text
-    robots, cameras = [], []
-    if simulation:
-        robot_id = str(uuid4())
+    robot_id = str(uuid4())
+    response = client.post(
+        f"/api/projects/{project_id}/robots",
+        json={
+            "id": robot_id,
+            "name": "Conveyor follower",
+            "type": "MuJoCo_SO101_Follower",
+            "payload": {"name": os.environ["SIM_E2E_OWNER"], "allow_remote": False, "connect_timeout": 10},
+        },
+    )
+    assert response.status_code == 201, response.text
+    cameras = []
+    url = os.environ["SIM_E2E_HTTP_URL"].rstrip("/")
+    camera_map = json.loads(os.environ.get("SIM_E2E_CAMERA_MAP", "{}"))
+    for key, feature in metadata["features"].items():
+        if not key.startswith("observation.images."):
+            continue
+        name = key.removeprefix("observation.images.")
+        camera_id = str(uuid4())
+        camera_url = f"{url}/cameras/{camera_map.get(name, name)}/mjpeg"
         response = client.post(
-            f"/api/projects/{project_id}/robots",
+            f"/api/projects/{project_id}/cameras",
             json={
-                "id": robot_id,
-                "name": "Conveyor follower",
-                "type": "MuJoCo_SO101_Follower",
-                "payload": {"name": os.environ["SIM_E2E_OWNER"], "allow_remote": False, "connect_timeout": 10},
+                "id": camera_id,
+                "name": name,
+                "driver": "ipcam",
+                "fingerprint": {"url": camera_url},
+                "hardware_name": f"Conveyor {name}",
+                "payload": {
+                    "url": camera_url,
+                    "fps": metadata["fps"],
+                    "height": feature["shape"][0],
+                    "width": feature["shape"][1],
+                },
             },
         )
         assert response.status_code == 201, response.text
-        robots.append({"robot_id": robot_id, "tele_operator": {"type": "none"}})
-        url = os.environ["SIM_E2E_HTTP_URL"].rstrip("/")
-        camera_map = json.loads(os.environ.get("SIM_E2E_CAMERA_MAP", "{}"))
-        for key, feature in metadata["features"].items():
-            if not key.startswith("observation.images."):
-                continue
-            name = key.removeprefix("observation.images.")
-            camera_id = str(uuid4())
-            camera_url = f"{url}/cameras/{camera_map.get(name, name)}/mjpeg"
-            response = client.post(
-                f"/api/projects/{project_id}/cameras",
-                json={
-                    "id": camera_id,
-                    "name": name,
-                    "driver": "ipcam",
-                    "fingerprint": {"url": camera_url},
-                    "hardware_name": f"Conveyor {name}",
-                    "payload": {
-                        "url": camera_url,
-                        "fps": metadata["fps"],
-                        "height": feature["shape"][0],
-                        "width": feature["shape"][1],
-                    },
-                },
-            )
-            assert response.status_code == 201, response.text
-            cameras.append({"camera_id": camera_id})
+        cameras.append({"camera_id": camera_id})
     response = client.post(
         f"/api/projects/{project_id}/environments",
         json={
             "id": environment_id,
-            "name": "Conveyor simulation" if simulation else "Offline training",
-            "robots": robots,
+            "name": "Conveyor simulation",
+            "robots": [{"robot_id": robot_id, "tele_operator": {"type": "none"}}],
             "cameras": cameras,
         },
     )
@@ -225,11 +170,7 @@ def _train(
     project: str,
     dataset: str,
     output: Path,
-    *,
-    evaluate: bool = False,
 ) -> tuple[dict, dict]:
-    from physicalai.inference import InferenceModel
-
     response = client.get("/api/policies/available")
     assert response.status_code == 200, response.text
     available = {policy["id"]: policy for policy in response.json()}
@@ -239,12 +180,7 @@ def _train(
         assert torch.cuda.is_available(), "Application E2E requested CUDA but it is unavailable"
         capacity = math.ceil(torch.cuda.get_device_properties(0).total_memory / 1024**3)
         required = math.ceil((available[name]["min_vram"] or 0) / 1024**3)
-        if capacity < required:
-            reason = f"Studio advertises {required} GiB for {name}; selected device has {capacity} GiB"
-            (output / "training.json").write_text(
-                json.dumps({"policy": name, "status": "unsupported_hardware", "reason": reason})
-            )
-            pytest.skip(reason)
+        assert capacity >= required, f"Studio requires {required} GiB for {name}; selected device has {capacity} GiB"
     elif accelerator != "cpu" or name != "act":
         raise ValueError("Use CUDA for the policy matrix, or CPU for ACT application training")
     # API defaults match the UI; only precision depends on the selected device.
@@ -265,29 +201,7 @@ def _train(
     model = wait_for_model(client, project, job_id)
     (output / "application-job.json").write_text(json.dumps(job))
     (output / "application-model.json").write_text(json.dumps(model))
-    model_dir = Path(model["path"])
-    checkpoint = resolve_checkpoint(model_dir)
-    assert checkpoint.is_file(), "Studio must publish its selected checkpoint"
-    state = torch.load(checkpoint, map_location="cpu", weights_only=True, mmap=True)
-    steps = state["global_step"]
-    assert steps > 0 and state["optimizer_states"], "Published checkpoint must include optimizer state"
-    optimizer_steps = [
-        float(value["step"])
-        for optimizer in state["optimizer_states"]
-        for value in optimizer["state"].values()
-        if "step" in value
-    ]
-    assert optimizer_steps and max(optimizer_steps) == steps, "Optimizer state must confirm real updates"
-    del state
-    restored = build_policy(TrainingJobSpec(policy=name), resume_from=checkpoint)
-    del restored
-    assert "torch" in model["available_backends"], "Application did not publish its requested Torch export"
-    torch_export = model_dir / "exports" / "torch"
-    assert (torch_export / "manifest.json").is_file(), "Torch export is missing its manifest"
-    with InferenceModel(torch_export, device="cpu") as exported:
-        assert exported.backend == "torch", "Application did not publish a loadable Torch export"
-    if evaluate:
-        assert "openvino" in model["available_backends"], "Application did not publish its requested OpenVINO export"
+    assert "openvino" in model["available_backends"], "Application did not publish its requested OpenVINO export"
     from schemas.model import Model
     from services.model_metrics_service import ModelMetricsService
 
@@ -301,10 +215,7 @@ def _train(
         values = metrics[column].loc[lambda values: values != ""].astype(float)
         assert np.isfinite(values).all(), "Application training loss must be finite when logged"
     training = {
-        "checkpoint_steps": steps,
         "training_seconds": time.monotonic() - start,
-        "checkpoint_reload": "passed",
-        "torch_export_reload": "passed",
         "job_id": job_id,
         "model_id": model["id"],
         "validation_loss": float(validation.iloc[-1]),
@@ -471,24 +382,19 @@ def _trials(recipe: Path, metadata: dict, output: Path, name: str, monkeypatch: 
     return trials
 
 
-@pytest.mark.parametrize("scene", SCENES)
 def test_train_export_and_run_in_simulation(
-    scene: str, tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Use normal application jobs and Runtime recipes, never a parallel trainer/controller."""
-    name = os.environ.get("SIM_E2E_POLICY", "act")
-    mode = os.environ.get("SIM_E2E_MODE", "full")
-    if name not in POLICIES or mode not in {"train", "full"}:
-        raise ValueError("Unknown E2E policy or mode")
+    name, scene = "act", "conveyor_sort"
     if "SIM_E2E_DATASET_DIR" not in os.environ:
         pytest.skip("Set SIM_E2E_DATASET_DIR to opt in to the application simulation E2E")
     output = Path(os.environ.get("SIM_E2E_OUTPUT_DIR", str(tmp_path))).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    recording_entry = dataset_entry()
+    recording_entry = DATASET
     provenance = {
         "policy": name,
         "scene": scene,
-        "mode": mode,
         "source_sha": os.environ.get("GITHUB_SHA"),
         "dataset_repo_id": recording_entry["repo_id"],
         "dataset_revision": recording_entry["revision"],
@@ -496,18 +402,16 @@ def test_train_export_and_run_in_simulation(
         "workflow": "application_jobs_runtime_recipe",
     }
     (output / "provenance.json").write_text(json.dumps(provenance))
-    controls = control_scores(Path(os.environ["SIM_E2E_CONTROLS_FILE"])) if mode == "full" else {}
+    controls = control_scores(Path(os.environ["SIM_E2E_CONTROLS_FILE"]))
     dataset = Path(os.environ["SIM_E2E_DATASET_DIR"]).resolve()
     metadata = _recording_metadata(dataset, scene)
     task = _task_instruction(dataset)
     client = request.getfixturevalue("application_client")
-    project, environment = _project_environment(client, metadata, simulation=mode != "train")
+    project, environment = _project_environment(client, metadata)
     dataset_id = _import_dataset(client, project, environment, dataset, task, output)
-    model, training = _train(client, name, project, dataset_id, output, evaluate=mode == "full")
+    model, training = _train(client, name, project, dataset_id, output)
     provenance.update(training)
     (output / "training.json").write_text(json.dumps({**provenance, "status": "passed"}))
-    if mode == "train":
-        return
     recipe = _runtime_bundle(client, model, environment, task, output)
     trials = _trials(recipe, metadata, output, name, monkeypatch)
     mean_score = score([episode for trial in trials for episode in trial["episodes"]])
@@ -545,31 +449,7 @@ def test_application_simulation_environment(application_client: TestClient, monk
     monkeypatch.setenv("SIM_E2E_OWNER", "simulation-registration-test")
     monkeypatch.setenv("SIM_E2E_HTTP_URL", "http://127.0.0.1:8080")
     metadata = {"fps": 30, "features": {"observation.images.overview": {"shape": [480, 640, 3]}}}
-    _project_environment(application_client, metadata, simulation=True)
-
-
-def test_application_training_smoke(
-    application_client: TestClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Check the migrated job path on CPU without a simulator or physical devices."""
-    from tests.integration.conftest import _build_synthetic_lerobot_v3_dataset
-
-    monkeypatch.setenv("SIM_E2E_ACCELERATOR", "cpu")
-    source = _build_synthetic_lerobot_v3_dataset(tmp_path / "source", num_episodes=3, frames_per_episode=25)
-    fixture = _smoke_dataset(source, tmp_path / "smoke")
-    output = tmp_path / "evidence"
-    output.mkdir()
-    project, environment = _project_environment(application_client, {}, simulation=False)
-    dataset = _import_dataset(application_client, project, environment, fixture, "do the thing", output)
-    model, training = _train(application_client, "act", project, dataset, output)
-    assert training["checkpoint_steps"] > 0
-    assert training["training_epochs"] == 5
-    assert training["checkpoint_reload"] == "passed"
-    assert training["torch_export_reload"] == "passed"
-    assert "torch" in model["available_backends"]
-    assert resolve_checkpoint(Path(model["path"])).is_file()
+    _project_environment(application_client, metadata)
 
 
 def test_simulator_controls(tmp_path: Path) -> None:

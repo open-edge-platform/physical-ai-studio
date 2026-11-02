@@ -24,8 +24,8 @@ runs:
         import os
         from pathlib import Path
         from huggingface_hub import snapshot_download
-        from tests.integration.simulation_e2e import dataset_entry
-        entry = dataset_entry()
+        from tests.integration.simulation_e2e import DATASET
+        entry = DATASET
         # Keep the recording in the runner's persistent HF cache, outside checkout cleanup.
         root = Path(snapshot_download(entry['repo_id'], repo_type='dataset', revision=entry['revision'],
                                      allow_patterns=['simulation.json', 'meta/*', 'data/*', 'videos/*']))

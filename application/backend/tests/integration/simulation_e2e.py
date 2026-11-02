@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from importlib.metadata import distribution
@@ -18,25 +17,14 @@ import numpy as np
 if TYPE_CHECKING:
     from pathlib import Path
 
-POLICIES = ("act", "molmoact2", "pi05", "rldx1", "smolvla", "xr0")
 RUNTIME_REVISION = "1cc910b451508ce40cd7319ece2a29283fadfcfb"
-DATASETS = {
-    "100": {
-        "repo_id": "Albertvh97/conveyor-sort-sim-demos-100-episodes",
-        "revision": "17db8f758b32141d795a71a064cfa9f5c6341b5b",
-        "episodes": 100,
-        "belt_speeds": [0.04],
-    },
+DATASET = {
+    "repo_id": "Albertvh97/conveyor-sort-sim-demos-100-episodes",
+    "revision": "17db8f758b32141d795a71a064cfa9f5c6341b5b",
+    "episodes": 100,
+    "belt_speeds": [0.04],
 }
 SEEDS = (104729, 104743, 104759, 104761, 104773)
-
-
-def dataset_entry() -> dict:
-    """Select the repository-reviewed 100-episode recording."""
-    choice = os.environ.get("SIM_E2E_DATASET", "100")
-    if choice not in DATASETS:
-        raise ValueError(f"Unknown simulation dataset: {choice!r}; choose 100")
-    return DATASETS[choice]
 
 
 def health(url: str) -> dict:
