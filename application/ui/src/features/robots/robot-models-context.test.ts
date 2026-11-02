@@ -63,7 +63,8 @@ describe('mapJointToURDFJoint', () => {
 
     it.each([
         { type: 'SO101_Follower', payload: { unit: 'degrees' } },
-        { type: 'SO101_Follower' },
+        { type: 'SO101_Leader', payload: { unit: 'degrees' } },
+        { type: 'SO101_Follower', payload: { unit: 'radians' } },
         { type: 'other-arm', payload: { unit: 'normalized' } },
     ])('preserves degree conversion for $type with $payload', (robot) => {
         const model = createModel();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import useWebSocket from 'react-use-websocket';
 
@@ -21,18 +21,21 @@ const getNewJointState = (newJoints: Record<string, number>) => {
 };
 
 export const useSynchronizeModelJoints = (joints: JointsState, robot: RobotModelConfig) => {
-    const { data: definition } = useRobotCatalogDefinitionQuery(robot.type);
+    const { type, payload } = robot;
+    const unit = payload && 'unit' in payload ? payload.unit : undefined;
+    const modelConfig = useMemo(() => ({ type, payload: { unit } }), [type, unit]);
+    const { data: definition } = useRobotCatalogDefinitionQuery(type);
     const jointMap = definition.joint_map;
 
-    const { data: model } = useLoadModelQuery(robot.type);
+    const { data: model } = useLoadModelQuery(type);
 
     useEffect(() => {
         if (!model) return;
 
         joints.forEach((joint) => {
-            mapJointToURDFJoint(joint, model, jointMap, robot);
+            mapJointToURDFJoint(joint, model, jointMap, modelConfig);
         });
-    }, [model, joints, jointMap, robot]);
+    }, [model, joints, jointMap, modelConfig]);
 };
 
 // Mirrors runtime.contract.FollowerSource. Inference uses 'policy'.
