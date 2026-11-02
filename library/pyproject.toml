@@ -321,6 +321,11 @@ ignore = [
 ]
 
 
+[tool.ruff.lint.isort]
+# Runtime owns this namespace; stale local bytecode must not make it first-party.
+known-third-party = ["physicalai.config"]
+
+
 # ============================================================================ #
 # BANDIT CONFIGURATION                                                         #
 # ============================================================================ #
