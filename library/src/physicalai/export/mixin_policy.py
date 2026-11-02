@@ -672,7 +672,6 @@ class ExportablePolicyMixin:
         finally:
             self.model.to(original_device)
 
-        # Declare the preprocessor pipeline and tensor-only input_names.
         self.create_manifest(
             export_dir,
             ExportBackend.EXECUTORCH,
