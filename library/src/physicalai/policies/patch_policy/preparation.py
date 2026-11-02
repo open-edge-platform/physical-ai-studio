@@ -57,7 +57,10 @@ def fit_tokenizer(policy: PatchPolicy) -> None:
     tokenizer = copy.deepcopy(head.quantizer).float().requires_grad_(requires_grad=True).train()
     actions = []
     for target in tqdm(
-        _action_targets(dataset), total=len(dataset), desc="Collecting tokenizer actions", unit="sample",
+        _action_targets(dataset),
+        total=len(dataset),
+        desc="Collecting tokenizer actions",
+        unit="sample",
     ):
         expected = (config.n_obs_steps + config.chunk_size - 1, config.action_dim)
         if not isinstance(target, torch.Tensor) or target.shape != expected:

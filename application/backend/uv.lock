@@ -3316,6 +3316,7 @@ requires-dist = [
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["molmoact2"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["nncf"], marker = "extra == 'executorch-openvino'" },
+    { name = "physicalai-train", extras = ["patch-policy"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["policies"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'policies'" },
@@ -3341,21 +3342,24 @@ requires-dist = [
     { name = "scipy", marker = "extra == 'rldx1'", specifier = ">=1.11.0,<2.0.0" },
     { name = "sentencepiece", marker = "extra == 'pi05'", specifier = "<=0.2.1" },
     { name = "tensorboard", marker = "extra == 'loggers'", specifier = ">=2.20" },
+    { name = "timm", marker = "extra == 'patch-policy'", specifier = ">=1.0.24,<2.0.0" },
     { name = "torch", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torch", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
+    { name = "torchvision", marker = "extra == 'patch-policy'" },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "transformers", marker = "extra == 'cosmos3'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'molmoact2'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'patch-policy'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'pi05'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'xr0'", specifier = ">=5.15.0,<=5.15.1" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "patch-policy", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [
