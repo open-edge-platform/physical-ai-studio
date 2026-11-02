@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Print the weekly simulation report from downloaded CI artifacts."""
+"""Print the daily simulation report from downloaded CI artifacts."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def summarize(root: Path) -> str:
                 f"no action {controls['off']['score']:.1%}"
             )
     lines = [
-        "## Weekly application conveyor regression",
+        "## Daily application conveyor regression",
         f"Simulator controls: {baseline}",
         "",
         "| Policy | Training/reload | Export + actions | Timing | Quality | Mean score |",
@@ -37,6 +37,8 @@ def summarize(root: Path) -> str:
     for policy in POLICIES:
         train_path = root / f"sim-train-{policy}" / "training.json"
         evaluate_path = root / f"sim-evaluate-{policy}" / "result.json"
+        if not train_path.is_file() and not evaluate_path.is_file():
+            continue
         train = json.loads(train_path.read_text()) if train_path.is_file() else {}
         result = json.loads(evaluate_path.read_text()) if evaluate_path.is_file() else {}
         training = train.get("status", "failed/incomplete").replace("unsupported_hardware", "unsupported hardware")

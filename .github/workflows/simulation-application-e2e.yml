@@ -2,14 +2,14 @@ name: Simulation application E2E
 
 on:
   schedule:
-    - cron: "0 19 * * 5"
+    - cron: "0 19 * * *" # Daily at 19:00 UTC
   workflow_dispatch:
     inputs:
       dataset:
         description: Conveyor recording size (episodes)
         type: choice
-        options: ["50", "100", "120"]
-        default: "50"
+        options: ["100"]
+        default: "100"
         required: true
 
 permissions: {}
@@ -25,9 +25,9 @@ env:
   MUJOCO_EGL_DEVICE_ID: ${{ vars.SIM_E2E_CUDA_VISIBLE_DEVICES || '0' }}
   SIM_E2E_ACCELERATOR: cuda
   SIM_E2E_HTTP_URL: http://127.0.0.1:8080
-  SIM_E2E_OWNER: sim-weekly-${{ github.run_id }}-${{ github.run_attempt }}
-  SIM_E2E_DATASET: ${{ inputs.dataset || '50' }}
-  SIM_E2E_DATASET_DIR: ${{ github.workspace }}/.simulation-dataset-${{ inputs.dataset || '50' }}
+  SIM_E2E_OWNER: sim-daily-${{ github.run_id }}-${{ github.run_attempt }}
+  SIM_E2E_DATASET: ${{ inputs.dataset || '100' }}
+  SIM_E2E_DATASET_DIR: ${{ github.workspace }}/.simulation-dataset-${{ inputs.dataset || '100' }}
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
@@ -99,7 +99,7 @@ jobs:
       max-parallel: 1
       matrix:
         mode: [train, evaluate]
-        policy: [act, molmoact2, pi05, rldx1, smolvla, xr0]
+        policy: [act]
     env:
       SIM_E2E_POLICY: ${{ matrix.policy }}
       SIM_E2E_MODE: ${{ matrix.mode }}
@@ -167,7 +167,7 @@ jobs:
           retention-days: 14
 
   report:
-    name: Weekly application policy report
+    name: Daily application policy report
     if: always()
     needs: [controls, policy]
     runs-on: ubuntu-latest

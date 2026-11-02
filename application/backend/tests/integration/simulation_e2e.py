@@ -23,33 +23,21 @@ if TYPE_CHECKING:
 POLICIES = ("act", "molmoact2", "pi05", "rldx1", "smolvla", "xr0")
 RUNTIME_REVISION = "1cc910b451508ce40cd7319ece2a29283fadfcfb"
 DATASETS = {
-    "50": {
-        "repo_id": "Albertvh97/conveyor-sort-sim-demos",
-        "revision": "6a949360761fee17089fbaaf8bc53f59715cb575",
-        "episodes": 50,
-        "belt_speeds": [0.04],
-    },
     "100": {
         "repo_id": "Albertvh97/conveyor-sort-sim-demos-100-episodes",
         "revision": "17db8f758b32141d795a71a064cfa9f5c6341b5b",
         "episodes": 100,
         "belt_speeds": [0.04],
     },
-    "120": {
-        "repo_id": "Albertvh97/conveyor-sort-sim-demos-120-episodes",
-        "revision": "f0687ee9eb66c5e369cb77e51a6260264a0cec24",
-        "episodes": 120,
-        "belt_speeds": [0.02, 0.04, 0.06, 0.08],
-    },
 }
 SEEDS = (104729, 104743, 104759, 104761, 104773)
 
 
 def dataset_entry() -> dict:
-    """Select a repository-reviewed recording, defaulting to the original 50 episodes."""
-    choice = os.environ.get("SIM_E2E_DATASET", "50")
+    """Select the repository-reviewed 100-episode recording."""
+    choice = os.environ.get("SIM_E2E_DATASET", "100")
     if choice not in DATASETS:
-        raise ValueError(f"Unknown simulation dataset: {choice!r}; choose 50, 100 or 120")
+        raise ValueError(f"Unknown simulation dataset: {choice!r}; choose 100")
     return DATASETS[choice]
 
 
