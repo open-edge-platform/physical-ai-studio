@@ -1,0 +1,53 @@
+# Patch Policy WebSSL-diffusion defaults for PushT (paper Appendix A.5, Table 11).
+model:
+  class_path: physicalai.policies.PatchPolicy
+  init_args:
+    encoder_name: webssl
+    encoder_output: patches
+    encoder_pretrained: true
+    eta: 1
+    action_head: diffusion
+    n_obs_steps: 2
+    chunk_size: 5
+    n_action_steps: 5
+    num_layers: 8
+    num_heads: 4
+    hidden_dim: 256
+    optimizer_lr: 1e-4
+    optimizer_weight_decay: 0.0
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: lerobot/pusht
+    train_batch_size: 256
+    data_format: physicalai
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+      init_args:
+        task_description: "Push the T-shaped block onto the T-shaped target."
+    num_rollouts_val: 10
+    num_workers: 0
+
+trainer:
+  max_steps: 100000
+  accelerator: gpu
+  devices: 1
+  precision: 32-true
+  log_every_n_steps: 100
+  val_check_interval: 10000
+  check_val_every_n_epoch: null
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      project: "patch-policy-pusht"
+      name: "webssl-patch-diffusion-paper"
+      log_model: false
+  callbacks:
+    - class_path: physicalai.train.RolloutVideoRecorderCallback
+      init_args:
+        output_dir: val_videos_pushT
+        fps: 10
+        record_mode: all
+        frame_key: top
+        caption: "Push the T-shaped block onto the T-shaped target."

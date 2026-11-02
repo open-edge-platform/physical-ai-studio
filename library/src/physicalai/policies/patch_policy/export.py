@@ -16,4 +16,4 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
         Returns:
             Torch as the only supported backend.
         """
-        return [ExportBackend.TORCH]
+        return []

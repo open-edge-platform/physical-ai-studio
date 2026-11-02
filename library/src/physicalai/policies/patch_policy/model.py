@@ -22,8 +22,7 @@ from physicalai.policies.base import Model
 from physicalai.policies.utils import in_episode_bound, reduce_losses
 
 from .components.encoder import TimmFeatureEncoder
-from .components.heads import PatchBehaviorTransformerHead, PatchDiffusionHead
-from .components.memory import EmbeddingMemoryBank
+from .components.heads import BehaviourTransformerHead, DiffusionHead
 from .processors import resolve_camera_name
 
 if TYPE_CHECKING:
@@ -70,17 +69,17 @@ class PatchPolicyModel(Model):
         *,
         action_dim: int,
         camera_names: list[str],
-        n_obs_steps: int = 1,
-        chunk_size: int = 16,
+        n_obs_steps: int = 5,
+        chunk_size: int = 5,
         encoder_name: FeatureEncoderName = "dinov2",
         encoder_output: EncoderOutput = "patches",
         encoder_pretrained: bool = True,
         image_size: tuple[int, int] = (224, 224),
-        action_head: ActionHeadName = "diffusion",
-        hidden_dim: int = 256,
-        num_layers: int = 4,
-        num_heads: int = 4,
-        dropout: float = 0.1,
+        action_head: ActionHeadName = "behavior_transformer",
+        hidden_dim: int = 512,
+        num_layers: int = 8,
+        num_heads: int = 8,
+        dropout: float = 0.0,
         embedding_dropout: float = 0.0,
         num_train_timesteps: int = 100,
         num_inference_steps: int = 100,
@@ -90,15 +89,15 @@ class PatchPolicyModel(Model):
         clip_sample_range: float = 1.0,
         eta: float = 1.0,
         use_random_input_noise: bool = True,
-        vq_latent_dim: int = 128,
+        vq_latent_dim: int = 512,
         vq_num_embeddings: int = 16,
         vq_num_groups: int = 2,
-        vq_action_scale: float = 1.0,
+        vq_action_scale: float = 500.0,
         offset_loss_weight: float = 10.0,
         secondary_code_weight: float = 0.5,
         focal_loss_gamma: float = 2.0,
     ) -> None:
-        """Initialize the encoder, embedding memory, and action head.
+        """Initialize the encoder and action head.
 
         Raises:
             ValueError: If camera names are empty or duplicated.
@@ -110,7 +109,6 @@ class PatchPolicyModel(Model):
         self.camera_names = tuple(camera_names)
         self._n_obs_steps = n_obs_steps
         self._chunk_size = chunk_size
-        self.memory_bank = EmbeddingMemoryBank(n_obs_steps)
         self.encoder = TimmFeatureEncoder(
             encoder_name,
             encoder_output,
@@ -118,7 +116,7 @@ class PatchPolicyModel(Model):
             image_size=image_size,
         )
         if action_head == "diffusion":
-            self.action_head = PatchDiffusionHead(
+            self.action_head = DiffusionHead(
                 self.encoder.output_dim,
                 action_dim,
                 chunk_size,
@@ -138,12 +136,12 @@ class PatchPolicyModel(Model):
                 eta=eta,
                 use_random_input_noise=use_random_input_noise,
             )
-            self.ema_action_head: PatchDiffusionHead | None = copy.deepcopy(self.action_head)
+            self.ema_action_head: DiffusionHead | None = copy.deepcopy(self.action_head)
             self.ema_action_head.requires_grad_(requires_grad=False).eval()
             self.register_buffer("ema_optimization_step", torch.tensor(0, dtype=torch.int64))
         else:
             self.ema_action_head = None
-            self.action_head = PatchBehaviorTransformerHead(
+            self.action_head = BehaviourTransformerHead(
                 self.encoder.output_dim,
                 action_dim,
                 chunk_size,
@@ -242,6 +240,9 @@ class PatchPolicyModel(Model):
             if image.ndim != 5:  # noqa: PLR2004
                 message = f"Camera {camera_name!r} must have shape [B, T, C, H, W], got {tuple(image.shape)}."
                 raise ValueError(message)
+            if image.shape[1] != self._n_obs_steps:
+                message = f"Expected {self._n_obs_steps} observation steps, got {image.shape[1]} for {camera_name!r}."
+                raise ValueError(message)
             if reference_shape is None:
                 reference_shape = image.shape
             elif image.shape != reference_shape:
@@ -261,19 +262,15 @@ class PatchPolicyModel(Model):
         # only internally while all images share one encoder invocation.
         stacked = torch.stack(views, dim=2)  # [B, T, V, C, H, W]
         tokens = self.encoder(stacked)  # [B, T, V, P, E]
-        temporal_tokens = tokens.flatten(2, 3)  # [B, T, V * P, E]
-        if self.training and temporal_tokens.shape[1] != self._n_obs_steps:
-            message = f"Training requires {self._n_obs_steps} observation steps, got {temporal_tokens.shape[1]}."
-            raise ValueError(message)
-        return temporal_tokens
+        return tokens.flatten(2, 3)  # [B, T, V * P, E]
 
     def _context(self, batch: dict[str, Any]) -> dict[str, Tensor]:
-        """Encode observations and resolve their temporal embedding context.
+        """Encode the complete observation window into visual context.
 
         Returns:
             Context tokens with temporal and patch dimensions flattened.
         """
-        return {"tokens": self.memory_bank(self._encode_observations(batch)).flatten(1, 2)}
+        return {"tokens": self._encode_observations(batch).flatten(1, 2)}
 
     def forward(self, batch: dict[str, Any]) -> Tensor | tuple[Tensor, dict[str, Tensor | float]]:
         """Compute training loss or sample actions according to module mode.
@@ -325,7 +322,7 @@ class PatchPolicyModel(Model):
         """
         valid_steps = in_episode_bound(batch)
         context = self._context(batch)
-        if isinstance(self.action_head, PatchBehaviorTransformerHead):
+        if isinstance(self.action_head, BehaviourTransformerHead):
             loss = self.action_head.compute_loss(batch["action"], context, valid_steps=valid_steps)
             return loss, {"loss": loss.detach()}
         losses = self.action_head.compute_loss(batch["action"], context)
@@ -390,7 +387,3 @@ class PatchPolicyModel(Model):
             None.
         """
         return None
-
-    def reset(self) -> None:
-        """Reset any internal state of the policy."""
-        self.memory_bank.reset()

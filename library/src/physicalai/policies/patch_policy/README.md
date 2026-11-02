@@ -16,7 +16,7 @@ uv sync --extra patch_policy
 Camera observations dict[str, B × T × C × H × W]
     │
     ├─ order and resize camera views
-    ├─ normalize each camera with dataset statistics
+    ├─ normalize each camera with encoder statistics
     ├─ stack views internally as [B, T, V, C, H, W]
     ▼
 TimmFeatureEncoder
@@ -27,11 +27,11 @@ TimmFeatureEncoder
     ▼
 Visual tokens [B, T × V × P, E]
     │
-    ├─ PatchDiffusionHead
+    ├─ DiffusionHead
     │    Iteratively denoises an action chunk while cross-attending to the
     │    visual tokens.
     │
-    └─ PatchBehaviorTransformerHead
+    └─ BehaviourTransformerHead
          Predicts residual-VQ action codes and code-conditioned continuous
          offsets with a patch-aware causal transformer.
     ▼
@@ -44,13 +44,13 @@ Robot actions [B, n_action_steps, action_dim]
 ```
 
 `n_obs_steps` is the number of temporal frames used for every camera. A
-single-frame input `[B, C, H, W]` is shaped as `[B, 1, C, H, W]`; callers
-providing a temporal window use `[B, n_obs_steps, C, H, W]`. Training datasets
-provide the complete window through the policy's observation delta indices.
-During inference, the encoder processes only the current frame and an embedding
-memory bank retains previous encoded observations. Missing history at the start
-of an episode repeats the first encoded observation, matching the original
-Patch Policy, and `policy.reset()` clears it.
+single-frame input `[B, C, H, W]` is accepted only when `n_obs_steps=1` and is
+expanded to `[B, 1, C, H, W]`. Otherwise, each camera must provide the complete
+window `[B, n_obs_steps, C, H, W]` for both training and inference. Training
+datasets provide this window through the policy's observation delta indices.
+Inference callers own observation history and any episode-start padding; the
+model does not retain or repeat observations. `policy.reset()` clears queued
+actions.
 
 The feature definitions also carry dataset normalization statistics. Images
 use the encoder statistics. Diffusion actions use min/max normalization to
@@ -115,6 +115,21 @@ loss, metrics = policy(observation)
 
 ## Main policy options
 
+Defaults follow upstream PushT VQ-BeT: DINOv2 patch features, five observation
+and action steps, a 512-wide transformer with eight layers/eight heads, zero
+dropout, and VQ action scale 500. Both heads use the normal action queue:
+`select_action` executes `n_action_steps` actions before replanning. With
+`n_action_steps=1`, it returns the newest chunk's first action without averaging
+older predictions. Temporal ensembling is a Runtime execution concern and is
+not implemented here. `predict_action_chunk` returns the execution horizon
+without updating the queue.
+
+Behavior Transformer optimization also matches upstream: AdamW with betas
+`(0.9, 0.999)`, configured decay on GPT linear weights and offset-head parameters,
+zero decay on GPT biases/normalization/embeddings, and decay `0.01` on the code
+head (the upstream optimizer's inherited default). Use training batch size 8
+without gradient accumulation to match the single-GPU PushT run.
+
 | Option                                             | Purpose                                                            |
 | -------------------------------------------------- | ------------------------------------------------------------------ |
 | `input_features`                                   | Ordered camera feature definitions and normalization statistics.   |
@@ -135,5 +150,55 @@ loss, metrics = policy(observation)
 Behavior Transformer-specific quantizer and loss settings are available on
 `PatchPolicyConfig`, including `vq_latent_dim`, `vq_num_embeddings`,
 `vq_num_groups`, `vq_action_scale`, and the offset, secondary-code, and
-focal-loss weights. A single-frame input remains one timestep even when
-`n_obs_steps` is larger.
+focal-loss weights. Inputs with missing or mismatched observation timesteps are
+rejected.
+
+## Training Preparation
+
+Patch Policy prepares training through its own Lightning hooks. No preparation
+callback is required:
+
+```python
+from physicalai.train import Trainer
+
+trainer = Trainer()
+trainer.fit(policy, datamodule)
+```
+
+`setup("fit")` resolves dataset features, and Lightning calls `configure_model()`
+in its strategy-aware construction context. Studio's `PolicyDatasetInteraction`
+callback configures dataset windows before ordinary user callbacks can construct
+training loaders. The policy's
+`on_fit_start()` fits a fresh VQ tokenizer after model
+restoration, device placement, and optimizer creation, but before sanity
+validation and training. Diffusion and already-fitted tokenizers skip fitting.
+Optimizer construction has no preparation side effects. Plain Lightning Trainer
+users can place the existing `PolicyDatasetInteraction` callback before callbacks
+that inspect loaders. No Patch-specific callback is needed.
+
+Training, validation, testing, prediction, and gym evaluation receive image
+windows and run the encoder and head. The encoder remains frozen and in
+evaluation mode, with no gradients. Visual features are computed per batch;
+there is no feature cache, dataset replacement, or temporary storage lifecycle.
+
+Set `PatchPolicy(compile_model=True)` to compile the feature encoder in place
+for training and inference. Compilation is lazy, so initial calls may be slower;
+steady-state speed depends on the device and workload. This execution option is
+not saved in hyperparameters or the policy configuration and must be requested
+again when loading a checkpoint.
+
+For Behavior Transformer, a fresh action tokenizer is fitted before head
+training. Preparation fits unique overlapping training
+action windows, including boundary padding, using Adam (`lr=1e-3`,
+`weight_decay=1e-4`), reconstruction L1 and residual commitment losses, EMA
+codebooks, and dead-code replacement. `vqvae_iters` defaults to 1000 full
+passes and `vqvae_batch_size` to 1024. The fitted tokenizer stays frozen and its
+checkpointed completion flag prevents refitting on resume. Interrupted tokenizer
+preparation restarts; it does not support mid-preparation resume.
+
+Tokenizer fitting currently supports a single device with FP32 parameters (including
+mixed-precision head training), not true-half parameters, distributed strategies,
+or batch-size/learning-rate tuning. It preserves upstream tokenizer equations,
+but deliberately does not reproduce upstream's incidental codebook updates and
+zero-loss policy steps during its initial collection epoch. Full training-score
+parity still requires matched experiments.

@@ -183,7 +183,8 @@ class Trainer(lightning.Trainer):
             else:
                 normalized_callbacks.append(callback)
 
-        callbacks = [*normalized_callbacks, PolicyDatasetInteraction()]
+        # Configure temporal windows before user callbacks can initialize loaders.
+        callbacks = [PolicyDatasetInteraction(), *normalized_callbacks]
 
         # LearningRateMonitor raises if the trainer has no logger, so skip it when logging is disabled.
         logging_enabled = logger is not False and not barebones

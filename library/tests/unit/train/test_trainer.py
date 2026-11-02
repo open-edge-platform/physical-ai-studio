@@ -39,6 +39,22 @@ class TestTrainer:
         assert len(monitors) == 1
         assert monitors[0].logging_interval == "step"
 
+    def test_dataset_configuration_precedes_user_callbacks(self):
+        """Dataset windows must be configured before progress can request loaders."""
+        from lightning.pytorch.callbacks import Callback
+        from physicalai.train.callbacks import PolicyDatasetInteraction, ProgressReportingCallback
+
+        progress = ProgressReportingCallback(report=lambda *_args: None, should_stop=lambda: False)
+        other = Callback()
+        trainer = Trainer(
+            accelerator="cpu", logger=False, enable_checkpointing=False,
+            enable_progress_bar=False, enable_model_summary=False,
+            callbacks=[progress, other],
+        )
+
+        assert isinstance(trainer.callbacks[0], PolicyDatasetInteraction)
+        assert trainer.callbacks[1:] == [progress, other]
+
     def test_learning_rate_monitor_skipped_without_logger(self):
         """Verify LearningRateMonitor is not injected when logging is disabled."""
         from lightning.pytorch.callbacks import LearningRateMonitor

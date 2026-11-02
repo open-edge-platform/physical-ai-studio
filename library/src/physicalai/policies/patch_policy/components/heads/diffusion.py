@@ -42,7 +42,7 @@ class _SinusoidalPositionalEmbedding(nn.Module):
         return torch.cat((values.sin(), values.cos()), dim=-1)
 
 
-class PatchDiffusionHead(DiffusionActionHead):
+class DiffusionHead(DiffusionActionHead):
     """Patch Policy's causal transformer diffusion network."""
 
     def __init__(  # noqa: PLR0913

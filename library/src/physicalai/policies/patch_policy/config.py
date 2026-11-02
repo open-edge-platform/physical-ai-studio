@@ -88,20 +88,20 @@ class PatchPolicyConfig(Config):
     output_features: list[Feature]
     action_dim: int
 
-    n_obs_steps: int = 1
-    chunk_size: int = 16
-    n_action_steps: int = 16
+    n_obs_steps: int = 5
+    chunk_size: int = 5
+    n_action_steps: int = 1
 
     encoder_name: FeatureEncoderName = "dinov2"
     encoder_output: EncoderOutput = "patches"
     encoder_pretrained: bool = True
     image_size: tuple[int, int] = (224, 224)
-    action_head: ActionHeadName = "diffusion"
+    action_head: ActionHeadName = "behavior_transformer"
 
-    hidden_dim: int = 256
-    num_layers: int = 4
-    num_heads: int = 4
-    dropout: float = 0.1
+    hidden_dim: int = 512
+    num_layers: int = 8
+    num_heads: int = 8
+    dropout: float = 0.0
     embedding_dropout: float = 0.0
 
     num_train_timesteps: int = 100
@@ -116,7 +116,9 @@ class PatchPolicyConfig(Config):
     vq_latent_dim: int = 512
     vq_num_embeddings: int = 16
     vq_num_groups: int = 2
-    vq_action_scale: float = 1.0
+    vq_action_scale: float = 500.0
+    vqvae_iters: int = 1000
+    vqvae_batch_size: int = 1024
     offset_loss_weight: float = 10.0
     secondary_code_weight: float = 0.5
     focal_loss_gamma: float = 2.0
@@ -150,4 +152,7 @@ class PatchPolicyConfig(Config):
             raise ValueError(msg)
         if self.vq_action_scale <= 0:
             msg = "vq_action_scale must be positive."
+            raise ValueError(msg)
+        if self.vqvae_iters <= 0 or self.vqvae_batch_size <= 0:
+            msg = "vqvae_iters and vqvae_batch_size must be positive."
             raise ValueError(msg)

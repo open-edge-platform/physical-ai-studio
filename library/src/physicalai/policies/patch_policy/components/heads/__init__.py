@@ -7,7 +7,7 @@
 
 """Patch Policy action heads."""
 
-from .behavior_transformer import PatchBehaviorTransformerHead
-from .diffusion import PatchDiffusionHead
+from .behavior_transformer import BehaviourTransformerHead
+from .diffusion import DiffusionHead
 
-__all__ = ["PatchBehaviorTransformerHead", "PatchDiffusionHead"]
+__all__ = ["BehaviourTransformerHead", "DiffusionHead"]

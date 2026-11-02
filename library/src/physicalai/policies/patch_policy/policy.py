@@ -20,6 +20,7 @@ from torch import Tensor
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
 from physicalai.policies.base import Model, Policy
 
+from .components.heads import BehaviourTransformerHead
 from .config import (
     ActionHeadName,
     EncoderOutput,
@@ -29,6 +30,7 @@ from .config import (
 )
 from .export import PatchPolicyExportMixin
 from .model import PatchPolicyModel
+from .preparation import fit_tokenizer
 from .processors import (
     PatchPolicyPostprocessor,
     PatchPolicyPreprocessor,
@@ -123,8 +125,11 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         num_inference_steps: Number of denoising steps used during inference.
         eta: DDIM stochasticity coefficient used during diffusion inference.
         use_random_input_noise: Whether diffusion sampling starts from random noise.
+        vqvae_iters: Full passes over unique action windows when fitting a new tokenizer.
+        vqvae_batch_size: Tokenizer fitting minibatch size.
         optimizer_lr: AdamW learning rate.
         optimizer_weight_decay: AdamW weight-decay coefficient.
+        compile_model: Compile the frozen feature encoder with torch.compile.
     """
 
     model: Model | None  # pyrefly: ignore[bad-override-mutable-attribute]
@@ -140,18 +145,18 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         input_features: list[Feature] | None = None,
         output_features: list[Feature] | None = None,
         *,
-        encoder_name: FeatureEncoderName = "webssl",
+        encoder_name: FeatureEncoderName = "dinov2",
         encoder_output: EncoderOutput = "patches",
         encoder_pretrained: bool = True,
         image_size: tuple[int, int] = (224, 224),
         action_head: ActionHeadName = "behavior_transformer",
-        n_obs_steps: int = 1,
-        chunk_size: int = 16,
-        n_action_steps: int = 16,
-        hidden_dim: int = 256,
-        num_layers: int = 4,
-        num_heads: int = 4,
-        dropout: float = 0.1,
+        n_obs_steps: int = 5,
+        chunk_size: int = 5,
+        n_action_steps: int = 1,
+        hidden_dim: int = 512,
+        num_layers: int = 8,
+        num_heads: int = 8,
+        dropout: float = 0.0,
         embedding_dropout: float = 0.0,
         num_train_timesteps: int = 100,
         num_inference_steps: int = 100,
@@ -160,12 +165,15 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         vq_latent_dim: int = 512,
         vq_num_embeddings: int = 16,
         vq_num_groups: int = 2,
-        vq_action_scale: float = 1.0,
+        vq_action_scale: float = 500.0,
+        vqvae_iters: int = 1000,
+        vqvae_batch_size: int = 1024,
         offset_loss_weight: float = 10.0,
         secondary_code_weight: float = 0.5,
         focal_loss_gamma: float = 2.0,
-        optimizer_lr: float = 1e-4,
-        optimizer_weight_decay: float = 0.0,
+        optimizer_lr: float = 5.5e-5,
+        optimizer_weight_decay: float = 2e-4,
+        compile_model: bool = False,
     ) -> None:
         """Initialize policy settings and configure the model when features are available."""
         super().__init__(n_action_steps=n_action_steps)
@@ -203,6 +211,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.vq_num_embeddings = vq_num_embeddings
         self.vq_num_groups = vq_num_groups
         self.vq_action_scale = vq_action_scale
+        self.vqvae_iters = vqvae_iters
+        self.vqvae_batch_size = vqvae_batch_size
         self.offset_loss_weight = offset_loss_weight
         self.secondary_code_weight = secondary_code_weight
         self.focal_loss_gamma = focal_loss_gamma
@@ -210,9 +220,11 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         # Extra params for training
         self.optimizer_lr = optimizer_lr
         self.optimizer_weight_decay = optimizer_weight_decay
+        self.compile_model = compile_model
+        self._encoder_compiled = False
 
         # Don't save possibly unresolved input / output features
-        self.save_hyperparameters(ignore=["input_features", "output_features"])
+        self.save_hyperparameters(ignore=["input_features", "output_features", "compile_model"])
 
         if self.input_features is not None and self.output_features is not None:
             self.configure_model()
@@ -258,13 +270,19 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.input_features = input_features
         self.output_features = output_features
 
+    def on_fit_start(self) -> None:
+        """Fit the action tokenizer after checkpoint restoration and device placement."""
+        super().on_fit_start()
+        fit_tokenizer(self)
+
     @classmethod
     def from_config(
         cls,
         config: PatchPolicyConfig,
         *,
-        optimizer_lr: float = 1e-4,
-        optimizer_weight_decay: float = 0.0,
+        optimizer_lr: float = 5.5e-5,
+        optimizer_weight_decay: float = 2e-4,
+        compile_model: bool = False,
     ) -> PatchPolicy:
         """Build a policy from a resolved configuration.
 
@@ -295,11 +313,14 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             vq_num_embeddings=config.vq_num_embeddings,
             vq_num_groups=config.vq_num_groups,
             vq_action_scale=config.vq_action_scale,
+            vqvae_iters=config.vqvae_iters,
+            vqvae_batch_size=config.vqvae_batch_size,
             offset_loss_weight=config.offset_loss_weight,
             secondary_code_weight=config.secondary_code_weight,
             focal_loss_gamma=config.focal_loss_gamma,
             optimizer_lr=optimizer_lr,
             optimizer_weight_decay=optimizer_weight_decay,
+            compile_model=compile_model,
         )
         policy._initialize_from_checkpoint_config(config)
         return policy
@@ -366,6 +387,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
                 vq_num_embeddings=self.vq_num_embeddings,
                 vq_num_groups=self.vq_num_groups,
                 vq_action_scale=self.vq_action_scale,
+                vqvae_iters=self.vqvae_iters,
+                vqvae_batch_size=self.vqvae_batch_size,
                 offset_loss_weight=self.offset_loss_weight,
                 secondary_code_weight=self.secondary_code_weight,
                 focal_loss_gamma=self.focal_loss_gamma,
@@ -395,6 +418,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.vq_num_embeddings = config.vq_num_embeddings
         self.vq_num_groups = config.vq_num_groups
         self.vq_action_scale = config.vq_action_scale
+        self.vqvae_iters = config.vqvae_iters
+        self.vqvae_batch_size = config.vqvae_batch_size
         self.offset_loss_weight = config.offset_loss_weight
         self.secondary_code_weight = config.secondary_code_weight
         self.focal_loss_gamma = config.focal_loss_gamma
@@ -420,6 +445,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             vq_num_embeddings=config.vq_num_embeddings,
             vq_num_groups=config.vq_num_groups,
             vq_action_scale=config.vq_action_scale,
+            vqvae_iters=config.vqvae_iters,
+            vqvae_batch_size=config.vqvae_batch_size,
             offset_loss_weight=config.offset_loss_weight,
             secondary_code_weight=config.secondary_code_weight,
             focal_loss_gamma=config.focal_loss_gamma,
@@ -459,6 +486,10 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.input_features = config.input_features
         self.model = model
         self._preprocessor, self._postprocessor = make_policy_processors(config, model.encoder.image_size)
+
+        if self.compile_model and not self._encoder_compiled:
+            model.encoder.compile()
+            self._encoder_compiled = True
 
     def _initialize_from_checkpoint_config(self, config: PatchPolicyConfig) -> None:
         if self.model is not None:
@@ -505,20 +536,6 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             msg = "Patch Policy checkpoint is missing a valid policy_config."
             raise TypeError(msg)
         self._initialize_from_checkpoint_config(PatchPolicyConfig.from_dict(config_data))
-
-    def reset(self) -> None:
-        """Clear the model history and queued actions.
-
-        Raises:
-            TypeError: If the configured model is not a PatchPolicyModel.
-        """
-        if self.model is not None:
-            if not isinstance(self.model, PatchPolicyModel):
-                msg = "Patch Policy requires a PatchPolicyModel instance."
-                raise TypeError(msg)
-            self.model.reset()
-        # Call the reset method of the parent class
-        super().reset()
 
     def _prepare_batch(
         self,
@@ -617,6 +634,25 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         if self.model is None:
             msg = "Cannot configure optimizers before Patch Policy features and model are resolved."
             raise RuntimeError(msg)
+        head = self.model.action_head
+        if isinstance(head, BehaviourTransformerHead):
+            decay = {}
+            no_decay = {}
+            for module_name, module in head.trunk.named_modules():
+                for name, parameter in module.named_parameters(recurse=False):
+                    full_name = f"{module_name}.{name}" if module_name else name
+                    group = decay if isinstance(module, torch.nn.Linear) and name == "weight" else no_decay
+                    group[full_name] = parameter
+            return torch.optim.AdamW(
+                [
+                    {"params": [decay[name] for name in sorted(decay)], "weight_decay": self.optimizer_weight_decay},
+                    {"params": [no_decay[name] for name in sorted(no_decay)], "weight_decay": 0.0},
+                    {"params": head.code_head.parameters(), "weight_decay": 0.01},
+                    {"params": head.offset_head.parameters(), "weight_decay": self.optimizer_weight_decay},
+                ],
+                lr=self.optimizer_lr,
+                betas=(0.9, 0.999),
+            )
         return torch.optim.AdamW(
             (parameter for parameter in self.parameters() if parameter.requires_grad),
             lr=self.optimizer_lr,

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import fields, replace
+from inspect import signature
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -27,11 +28,11 @@ from physicalai.inference.preprocessors import (
     StatsNormalizer,
     ToFloatTensorPreprocessor,
 )
+from physicalai.policies.base import Policy
 from physicalai.policies.patch_policy import PatchPolicy
 from physicalai.policies.patch_policy.components.encoder import TimmFeatureEncoder
-from physicalai.policies.patch_policy.components.heads import PatchBehaviorTransformerHead
-from physicalai.policies.patch_policy.components.memory import EmbeddingMemoryBank
-from physicalai.policies.patch_policy.config import FeatureEncoderName
+from physicalai.policies.patch_policy.components.heads import BehaviourTransformerHead
+from physicalai.policies.patch_policy.config import FeatureEncoderName, PatchPolicyConfig
 from physicalai.policies.patch_policy.model import PatchPolicyModel
 from physicalai.policies.patch_policy.policy import _copy_normalization_data
 from physicalai.policies.patch_policy.processors import PatchPolicyPostprocessor, PatchPolicyPreprocessor
@@ -49,10 +50,11 @@ def features() -> tuple[list[Feature], list[Feature]]:
 
 def make_policy(
     action_head: str, *, use_random_input_noise: bool = True, image_size: tuple[int, int] = (224, 224),
+    n_action_steps: int = 2,
 ) -> PatchPolicy:
     """Construct a small policy without downloading pretrained weights."""
     inputs, outputs = features()
-    return PatchPolicy(
+    policy = PatchPolicy(
         input_features=inputs,
         output_features=outputs,
         encoder_name="resnet18",
@@ -62,7 +64,7 @@ def make_policy(
         action_head=action_head,  # type: ignore[arg-type]
         n_obs_steps=2,
         chunk_size=4,
-        n_action_steps=2,
+        n_action_steps=n_action_steps,
         hidden_dim=32,
         num_layers=1,
         num_heads=4,
@@ -71,6 +73,9 @@ def make_policy(
         num_inference_steps=2,
         use_random_input_noise=use_random_input_noise,
     )
+    if isinstance(policy.model.action_head, BehaviourTransformerHead):
+        policy.model.action_head.quantizer.fitted.fill_(True)
+    return policy
 
 
 def batch() -> Observation:
@@ -87,18 +92,106 @@ def test_package_exports_only_public_policy_types() -> None:
     assert not hasattr(patch_policy, "EmbeddingMemoryBank")
 
 
-@pytest.mark.parametrize("n_obs_steps", [1, 2, 3])
-def test_explicit_memory_matches_eager_history(n_obs_steps: int) -> None:
-    bank = EmbeddingMemoryBank(n_obs_steps)
-    for _ in range(2):
-        bank.reset()
-        history = torch.zeros(2, n_obs_steps, 4, 8)
-        initialized = torch.zeros(1)
-        for _ in range(4):
-            embeddings = torch.randn(2, 1, 4, 8)
-            history, initialized = bank.update(embeddings, history, initialized)
-            torch.testing.assert_close(history, bank(embeddings))
-            torch.testing.assert_close(initialized, torch.ones_like(initialized))
+def test_default_settings_match_pusht_vqbet() -> None:
+    inputs, outputs = features()
+    config = PatchPolicyConfig(input_features=inputs, output_features=outputs, action_dim=2)
+    expected = {
+        "action_head": "behavior_transformer",
+        "encoder_name": "dinov2",
+        "n_obs_steps": 5,
+        "chunk_size": 5,
+        "hidden_dim": 512,
+        "num_layers": 8,
+        "num_heads": 8,
+        "dropout": 0.0,
+        "vq_latent_dim": 512,
+        "vq_action_scale": 500.0,
+    }
+    for name, value in expected.items():
+        assert getattr(config, name) == value
+        assert signature(PatchPolicy).parameters[name].default == value
+        assert signature(PatchPolicyModel).parameters[name].default == value
+    assert config.n_action_steps == signature(PatchPolicy).parameters["n_action_steps"].default == 1
+    for name, value in {"optimizer_lr": 5.5e-5, "optimizer_weight_decay": 2e-4}.items():
+        assert signature(PatchPolicy).parameters[name].default == value
+        assert signature(PatchPolicy.from_config).parameters[name].default == value
+
+
+def test_optimizer_configuration_does_not_prepare_training(monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = make_policy("diffusion")
+    policy.trainer = Mock()
+    preparation = Mock(side_effect=AssertionError("Optimizer creation must not prepare training"))
+    monkeypatch.setattr("physicalai.policies.patch_policy.policy.fit_tokenizer", preparation)
+    optimizer = policy.configure_optimizers()
+    assert isinstance(optimizer, torch.optim.AdamW)
+    preparation.assert_not_called()
+
+
+def test_fit_start_calls_parent_before_tokenizer_fitting(monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = make_policy("diffusion")
+    calls = []
+    monkeypatch.setattr(Policy, "on_fit_start", lambda _self: calls.append("parent"))
+    monkeypatch.setattr("physicalai.policies.patch_policy.policy.fit_tokenizer", lambda _policy: calls.append("tokenizer"))
+
+    policy.on_fit_start()
+
+    assert calls == ["parent", "tokenizer"]
+
+
+@pytest.mark.parametrize("compile_model", [False, True])
+@pytest.mark.parametrize("deferred", [False, True])
+def test_compile_feature_encoder_once_without_saving_option(
+    monkeypatch: pytest.MonkeyPatch, compile_model: bool, deferred: bool,
+) -> None:
+    compile_encoder = Mock()
+    monkeypatch.setattr(TimmFeatureEncoder, "compile", compile_encoder)
+    inputs, outputs = features()
+    policy = PatchPolicy(
+        input_features=None if deferred else inputs,
+        output_features=None if deferred else outputs,
+        encoder_name="resnet18", encoder_output="average", encoder_pretrained=False,
+        hidden_dim=8, num_layers=1, num_heads=2, compile_model=compile_model,
+    )
+    if deferred:
+        compile_encoder.assert_not_called()
+        policy.input_features, policy.output_features = inputs, outputs
+        policy.configure_model()
+    encoder = policy.model.encoder
+    keys = set(policy.state_dict())
+    policy.configure_model()
+    policy.configure_model()
+    assert compile_encoder.call_count == int(compile_model)
+    assert policy.model.encoder is encoder
+    assert set(policy.state_dict()) == keys
+    assert "compile_model" not in policy.hparams
+    assert "compile_model" not in policy.config.to_dict()
+
+
+def test_behavior_transformer_optimizer_matches_upstream_groups() -> None:
+    policy = make_policy("behavior_transformer")
+    optimizer = policy.configure_optimizers()
+    head = policy.model.action_head
+    decay_by_parameter = {
+        id(parameter): group["weight_decay"]
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+    }
+    assert len(decay_by_parameter) == sum(parameter.requires_grad for parameter in policy.parameters())
+    for module in head.trunk.modules():
+        for name, parameter in module.named_parameters(recurse=False):
+            expected = policy.optimizer_weight_decay if isinstance(module, torch.nn.Linear) and name == "weight" else 0.0
+            assert decay_by_parameter[id(parameter)] == expected
+    for parameter in head.code_head.parameters():
+        assert decay_by_parameter[id(parameter)] == 0.01
+    for parameter in head.offset_head.parameters():
+        assert decay_by_parameter[id(parameter)] == policy.optimizer_weight_decay
+    assert all(group["lr"] == 5.5e-5 and group["betas"] == (0.9, 0.999) for group in optimizer.param_groups)
+
+
+@pytest.mark.parametrize("n_obs_steps", [0, -1])
+def test_preprocessor_requires_positive_observation_window(n_obs_steps: int) -> None:
+    with pytest.raises(ValueError, match="n_obs_steps must be positive"):
+        PatchPolicyPreprocessor([], [], (4, 4), n_obs_steps=n_obs_steps)
 
 
 @pytest.mark.parametrize("flatten", [False, True])
@@ -119,7 +212,7 @@ def test_preprocessor_preserves_action_padding(flatten: bool) -> None:
 
 def test_behavior_transformer_loss_has_action_and_model_gradients() -> None:
     torch.manual_seed(0)
-    head = PatchBehaviorTransformerHead(
+    head = BehaviourTransformerHead(
         8,
         2,
         4,
@@ -145,7 +238,7 @@ def test_behavior_transformer_loss_has_action_and_model_gradients() -> None:
 
 
 def test_behavior_transformer_unpadded_loss_is_unchanged() -> None:
-    head = PatchBehaviorTransformerHead(
+    head = BehaviourTransformerHead(
         8,
         2,
         4,
@@ -172,7 +265,7 @@ def test_behavior_transformer_unpadded_loss_is_unchanged() -> None:
 
 def test_behavior_transformer_backward_updates_trunk() -> None:
     """Transformer residual connections preserve gradients during a full backward pass."""
-    head = PatchBehaviorTransformerHead(
+    head = BehaviourTransformerHead(
         8,
         2,
         4,
@@ -189,6 +282,7 @@ def test_behavior_transformer_backward_updates_trunk() -> None:
     actions = torch.randn(2, 5, 2)
     context = {"tokens": torch.randn(2, 4, 8)}
 
+    head.quantizer.fitted.fill_(True)
     head.compute_loss(actions, context).mean().backward()
 
     assert any(parameter.grad is not None for parameter in head.trunk.parameters())
@@ -304,7 +398,7 @@ def test_processors_normalize_images_and_concatenated_actions() -> None:
 def test_preprocessor_adds_singleton_time_axis_to_single_frame() -> None:
     """Single frames gain a time axis without processor-owned history or padding."""
     feature = Feature(name="front", ftype=FeatureType.VISUAL, shape=(3, 4, 4))
-    preprocessor = PatchPolicyPreprocessor([feature], [], (4, 4), n_obs_steps=3)
+    preprocessor = PatchPolicyPreprocessor([feature], [], (4, 4), n_obs_steps=1)
     frame = torch.full((1, 3, 4, 4), 5.0)
 
     processed = preprocessor({"images": {"front": frame}})
@@ -350,7 +444,7 @@ def test_numpy_image_pipeline_matches_torch(
         ),
         Feature(name="front", ftype=FeatureType.VISUAL, shape=(3, 5, 7)),
     ]
-    torch_processor = PatchPolicyPreprocessor(inputs, [], (8, 10), n_obs_steps=3)
+    torch_processor = PatchPolicyPreprocessor(inputs, [], (8, 10), n_obs_steps=timesteps)
     camera_processor = NumpyPatchPolicyPreprocessor(["wrist", "front"], n_obs_steps=3)
     resizer = ResizePreprocessor((8, 10), image_layout=image_layout, mode="stretch")
     normalizer = StatsNormalizer(stats={
@@ -431,7 +525,7 @@ def test_setup_resolves_features_from_training_dataset() -> None:
     train_dataset = Mock(spec=Dataset)
     train_dataset.observation_features = {feature.name: feature for feature in inputs}
     train_dataset.action_features = {feature.name: feature for feature in dataset_outputs}
-    trainer = Mock()
+    trainer = Mock(callbacks=[])
     trainer.datamodule.train_dataset = train_dataset
     policy = PatchPolicy(
         encoder_name="resnet18",
@@ -498,7 +592,7 @@ def test_setup_replaces_existing_action_statistics(dataset_stats: NormalizationP
     train_dataset = Mock(spec=Dataset)
     train_dataset.observation_features = {feature.name: feature for feature in inputs}
     train_dataset.action_features = {"action": replace(outputs[0], normalization_data=dataset_stats)}
-    trainer = Mock()
+    trainer = Mock(callbacks=[])
     trainer.datamodule.train_dataset = train_dataset
     policy.trainer = trainer
 
@@ -533,7 +627,7 @@ def test_configure_model_refreshes_processors_without_rebuilding_model(monkeypat
     train_dataset = Mock(spec=Dataset)
     train_dataset.observation_features = {feature.name: feature for feature in inputs}
     train_dataset.action_features = {feature.name: feature for feature in dataset_outputs}
-    trainer = Mock()
+    trainer = Mock(callbacks=[])
     trainer.datamodule.train_dataset = train_dataset
     policy._trainer = trainer
 
@@ -541,7 +635,6 @@ def test_configure_model_refreshes_processors_without_rebuilding_model(monkeypat
 
     assert policy._preprocessor is preprocessor
     assert policy._postprocessor is postprocessor
-
     policy.configure_model()
 
     assert policy.model is model
@@ -570,7 +663,7 @@ def test_setup_rejects_mismatched_explicit_features(feature_kind: str) -> None:
     train_dataset = Mock(spec=Dataset)
     train_dataset.observation_features = {feature.name: feature for feature in inputs}
     train_dataset.action_features = {feature.name: feature for feature in outputs}
-    trainer = Mock()
+    trainer = Mock(callbacks=[])
     trainer.datamodule.train_dataset = train_dataset
     if feature_kind == "input":
         policy = PatchPolicy(input_features=[replace(inputs[0], shape=(3, 16, 16))])
@@ -611,71 +704,71 @@ def test_preprocessor_requires_matching_temporal_length() -> None:
 
     assert processed["images.front"].shape == (1, 3, 3, 4, 4)
 
-    with pytest.raises(ValueError, match="Expected 3 observation timestep"):
-        preprocessor({"images": {"front": torch.zeros(1, 2, 3, 4, 4)}})
+    for timesteps in (0, 1, 2, 4):
+        with pytest.raises(ValueError, match="Expected 3 observation timestep"):
+            preprocessor({"images": {"front": torch.zeros(1, timesteps, 3, 4, 4)}})
 
 
-def test_select_action_does_not_track_queued_observations(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("shape", [(1, 3, 4, 4), (3, 4, 4), (1, 2, 1, 3, 4, 4)])
+def test_preprocessor_rejects_invalid_image_shape(shape: tuple[int, ...]) -> None:
+    feature = Feature(name="front", ftype=FeatureType.VISUAL, shape=(3, 4, 4))
+    preprocessor = PatchPolicyPreprocessor([feature], [], (4, 4), n_obs_steps=2)
+
+    with pytest.raises(ValueError, match="Expected image shape"):
+        preprocessor({"images": {"front": torch.zeros(shape)}})
+
+
+@pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
+def test_select_action_uses_newest_chunk_without_averaging(action_head: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = make_policy(action_head, n_action_steps=1).eval()
+    chunks = torch.arange(8 * 2 * 4 * 2, dtype=torch.float32).reshape(8, 2, 4, 2)
+    predict = Mock(side_effect=list(chunks) + [chunks[0]])
+    monkeypatch.setattr(policy.model, "predict_action_chunk", predict)
+    for chunk in chunks:
+        actual = policy.select_action(batch())
+        torch.testing.assert_close(actual, chunk[:, 0])
+        assert not policy._action_queue
+
+    assert predict.call_count == len(chunks)
+    policy.reset()
+    torch.testing.assert_close(policy.select_action(batch()), chunks[0, :, 0])
+    assert predict.call_count == len(chunks) + 1
+
+
+@pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
+def test_select_action_does_not_track_queued_observations(action_head: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """The policy does not preprocess or retain observations while actions are queued."""
-    policy = make_policy("diffusion")
+    policy = make_policy(action_head)
     policy.eval()
     captured: list[torch.Tensor] = []
 
     def predict(batch: dict[str, Any]) -> torch.Tensor:
         captured.append(batch["images.front"].clone())
-        return torch.zeros(1, 4, 2)
+        return torch.arange(8, dtype=torch.float32).reshape(1, 4, 2) + 100 * len(captured)
 
     assert policy.model is not None
     monkeypatch.setattr(policy.model, "predict_action_chunk", predict)
-    for value in (1.0, 2.0, 3.0):
-        policy.select_action(Observation(images={"front": torch.full((1, 3, 32, 32), value)}))
+    for value, expected in ((1.0, 100.0), (2.0, 102.0), (3.0, 200.0)):
+        action = policy.select_action(Observation(images={"front": torch.full((1, 2, 3, 32, 32), value)}))
+        torch.testing.assert_close(action, torch.tensor([[expected, expected + 1]]))
 
     assert len(captured) == 2
-    assert captured[0].shape == (1, 1, 3, *policy.model.encoder.image_size)
-    assert captured[1].shape == (1, 1, 3, *policy.model.encoder.image_size)
+    assert captured[0].shape == (1, 2, 3, *policy.model.encoder.image_size)
+    assert captured[1].shape == (1, 2, 3, *policy.model.encoder.image_size)
     mean, std = torch.tensor(0.485), torch.tensor(0.229)
     torch.testing.assert_close(captured[0][0, 0, 0, 0, 0], (torch.tensor(1.0) - mean) / std)
     torch.testing.assert_close(captured[1][0, 0, 0, 0, 0], (torch.tensor(3.0) - mean) / std)
 
     policy.reset()
-    policy.select_action(Observation(images={"front": torch.full((1, 3, 32, 32), 4.0)}))
+    assert not policy._action_queue
+    action = policy.select_action(Observation(images={"front": torch.full((1, 2, 3, 32, 32), 4.0)}))
+    torch.testing.assert_close(action, torch.tensor([[300.0, 301.0]]))
+    assert len(captured) == 3
     torch.testing.assert_close(captured[2][0, 0, 0, 0, 0], (torch.tensor(4.0) - mean) / std)
 
 
-def test_embedding_memory_bank_pads_rolls_and_resets() -> None:
-    """Single encoded observations form a bounded, first-frame-padded temporal window."""
-    memory = EmbeddingMemoryBank(3)
-
-    first = memory(torch.ones(1, 1, 2, 4))
-    second = memory(torch.full((1, 1, 2, 4), 2.0))
-    third = memory(torch.full((1, 1, 2, 4), 3.0))
-    fourth = memory(torch.full((1, 1, 2, 4), 4.0))
-
-    torch.testing.assert_close(first, torch.ones_like(first))
-    torch.testing.assert_close(second[:, :, 0, 0], torch.tensor([[1.0, 1.0, 2.0]]))
-    torch.testing.assert_close(third[:, :, 0, 0], torch.tensor([[1.0, 2.0, 3.0]]))
-    torch.testing.assert_close(fourth[:, :, 0, 0], torch.tensor([[2.0, 3.0, 4.0]]))
-
-    memory.reset()
-    after_reset = memory(torch.full((1, 1, 2, 4), 5.0))
-    torch.testing.assert_close(after_reset[:, :, 0, 0], torch.tensor([[5.0, 5.0, 5.0]]))
-
-
-def test_embedding_memory_bank_bypasses_explicit_window() -> None:
-    """Dataset-provided temporal windows neither use nor mutate inference history."""
-    memory = EmbeddingMemoryBank(2)
-    current = torch.ones(1, 1, 1, 1)
-    memory(current)
-    explicit = torch.tensor([[[[7.0]], [[8.0]]]])
-
-    assert memory(explicit) is explicit
-    result = memory(torch.full_like(current, 2.0))
-
-    torch.testing.assert_close(result[:, :, 0, 0], torch.tensor([[1.0, 2.0]]))
-
-
-def test_model_stacks_camera_dict_and_banks_encoded_observations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Views become an internal 6D tensor before one encoded embedding is retained."""
+def test_model_stacks_camera_windows_without_retaining_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Complete windows preserve temporal/camera ordering independently of prior calls."""
     inputs, outputs = features()
     inputs.append(replace(inputs[0], name="wrist"))
     policy = PatchPolicy(
@@ -705,26 +798,22 @@ def test_model_stacks_camera_dict_and_banks_encoded_observations(monkeypatch: py
 
     monkeypatch.setattr(model.encoder, "forward", encode)
 
-    first = model._context({"images": {"wrist": torch.full((1, 1, 3, 4, 4), 2.0), "front": torch.ones(1, 1, 3, 4, 4)}})
-    second = model._context({
+    sample = {
         "images": {
-            "front": torch.full((1, 1, 3, 4, 4), 3.0),
-            "wrist": torch.full((1, 1, 3, 4, 4), 4.0),
+            "wrist": torch.tensor([2.0, 4.0]).reshape(1, 2, 1, 1, 1).expand(1, 2, 3, 4, 4),
+            "front": torch.tensor([1.0, 3.0]).reshape(1, 2, 1, 1, 1).expand(1, 2, 3, 4, 4),
         },
-    })
+    }
+    first = model._context(sample)
+    model._context({"images": {name: torch.zeros_like(image) for name, image in sample["images"].items()}})
+    repeated = model._context(sample)
 
-    assert received[0].shape == (1, 1, 2, 3, 4, 4)
+    assert received[0].shape == (1, 2, 2, 3, 4, 4)
     torch.testing.assert_close(received[0][0, 0, 0], torch.ones(3, 4, 4))
     torch.testing.assert_close(received[0][0, 0, 1], torch.full((3, 4, 4), 2.0))
     assert first["tokens"].shape == (1, 4, model.encoder.output_dim)
-    torch.testing.assert_close(first["tokens"][0, :, 0], torch.tensor([1.0, 2.0, 1.0, 2.0]))
-    torch.testing.assert_close(second["tokens"][0, :, 0], torch.tensor([1.0, 2.0, 3.0, 4.0]))
-
-    model.reset()
-    after_reset = model._context(
-        {"images": {"front": torch.full((1, 1, 3, 4, 4), 5.0), "wrist": torch.full((1, 1, 3, 4, 4), 6.0)}},
-    )
-    torch.testing.assert_close(after_reset["tokens"][0, :, 0], torch.tensor([5.0, 6.0, 5.0, 6.0]))
+    torch.testing.assert_close(first["tokens"][0, :, 0], torch.tensor([1.0, 2.0, 3.0, 4.0]))
+    torch.testing.assert_close(repeated["tokens"], first["tokens"])
 
 
 @pytest.mark.parametrize("flatten", [False, True])
@@ -736,9 +825,9 @@ def test_model_camera_order_follows_input_features(flatten: bool, monkeypatch: p
         input_features=[replace(inputs[0], name="wrist"), inputs[0]],
     )
     model = PatchPolicyModel.from_config(config).eval()
-    images = {"front": torch.ones(1, 1, 3, 4, 4), "wrist": torch.full((1, 1, 3, 4, 4), 2.0)}
+    images = {"front": torch.ones(1, 2, 3, 4, 4), "wrist": torch.full((1, 2, 3, 4, 4), 2.0)}
     sample = {f"images.{name}": value for name, value in images.items()} if flatten else {"images": images}
-    encode = Mock(return_value=torch.zeros(1, 1, 2, 1, model.encoder.output_dim))
+    encode = Mock(return_value=torch.zeros(1, 2, 2, 1, model.encoder.output_dim))
     monkeypatch.setattr(model.encoder, "forward", encode)
 
     model._encode_observations(sample)
@@ -747,9 +836,13 @@ def test_model_camera_order_follows_input_features(flatten: bool, monkeypatch: p
     torch.testing.assert_close(encode.call_args.args[0], torch.stack([images["wrist"], images["front"]], dim=2))
 
 
-def test_model_training_requires_complete_temporal_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Training consumes dataset history directly and rejects incomplete windows."""
-    policy = make_policy("diffusion")
+@pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
+@pytest.mark.parametrize("training", [False, True])
+def test_model_requires_complete_temporal_window(
+    action_head: str, training: bool, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Training and inference both require complete caller-provided history."""
+    policy = make_policy(action_head)
     model = policy.model
     assert isinstance(model, PatchPolicyModel)
 
@@ -757,11 +850,11 @@ def test_model_training_requires_complete_temporal_window(monkeypatch: pytest.Mo
         return torch.zeros(*images.shape[:3], 1, model.encoder.output_dim)
 
     monkeypatch.setattr(model.encoder, "forward", encode)
-    model.train()
+    model.train(training)
 
     context = model._context({"images": {"front": torch.zeros(1, 2, 3, 4, 4)}})
     assert context["tokens"].shape == (1, 2, model.encoder.output_dim)
-    with pytest.raises(ValueError, match="Training requires 2 observation steps"):
+    with pytest.raises(ValueError, match="Expected 2 observation steps"):
         model._context({"images": {"front": torch.zeros(1, 1, 3, 4, 4)}})
 
 
@@ -999,7 +1092,7 @@ def test_checkpoint_rejects_incompatible_existing_model() -> None:
 
 @pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
 def test_torch_export_round_trip(tmp_path: Path, action_head: str) -> None:
-    """Torch exports preserve configuration, weights, and streamed inference."""
+    """Torch exports preserve configuration, weights, and explicit-window inference."""
     original = make_policy(action_head, use_random_input_noise=False, image_size=(28, 42)).eval()
 
     original.export(tmp_path, backend=ExportBackend.TORCH)
@@ -1019,7 +1112,7 @@ def test_torch_export_round_trip(tmp_path: Path, action_head: str) -> None:
     adapter = TorchAdapter()
     adapter.load(model_path)
     for _ in range(3):
-        images = torch.rand(2, 1, 3, 32, 32)
+        images = torch.rand(2, 2, 3, 32, 32)
         observation = Observation(images={"front": images})
         torch.manual_seed(7)
         expected = original.predict_action_chunk(observation)

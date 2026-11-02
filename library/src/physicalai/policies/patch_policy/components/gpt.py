@@ -103,12 +103,14 @@ class CausalSelfAttention(nn.Module):
         q = q.view(b, t, self.n_head, c // self.n_head).transpose(1, 2)
         v = v.view(b, t, self.n_head, c // self.n_head).transpose(1, 2)
 
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        mask = self.bias[:, :, :t, :t]
-        att = att.masked_fill(mask == 0, float("-inf"))
-        att = functional.softmax(att, dim=-1)
-        att = self.attn_dropout(att)
-        y = att @ v
+        # PATCH is causal across timesteps, not within a timestep's patches.
+        y = functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=self.bias[:, :, :t, :t].bool(),
+            dropout_p=self.attn_dropout.p if self.training else 0.0,
+        )
         y = y.transpose(1, 2).contiguous().view(b, t, c)
         return self.resid_dropout(self.c_proj(y))
 

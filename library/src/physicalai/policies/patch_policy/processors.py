@@ -156,9 +156,12 @@ class PatchPolicyPreprocessor(nn.Module):
         """Initialize camera and action transforms.
 
         Raises:
-            ValueError: If configured camera names are duplicated.
+            ValueError: If the observation window is not positive or camera names are duplicated.
         """
         super().__init__()
+        if n_obs_steps <= 0:
+            msg = "n_obs_steps must be positive."
+            raise ValueError(msg)
         self.visual_features = [feature for feature in input_features if feature.ftype is FeatureType.VISUAL]
         self.output_features = output_features
         if action_normalization is NormalizationType.MEAN_STD:
@@ -208,14 +211,17 @@ class PatchPolicyPreprocessor(nn.Module):
 
     @staticmethod
     def _with_time_axis(image: Tensor, feature: Feature, n_obs_steps: int) -> Tensor:
-        if image.ndim == _BATCHED_IMAGE_NDIM:
+        if image.ndim == _BATCHED_IMAGE_NDIM and n_obs_steps == 1:
             return image[:, None]
-        if image.ndim == _TEMPORAL_IMAGE_NDIM and image.shape[1] in {1, n_obs_steps}:
+        if image.ndim == _TEMPORAL_IMAGE_NDIM and image.shape[1] == n_obs_steps:
             return image
         if image.ndim == _TEMPORAL_IMAGE_NDIM:
             msg = f"Expected {n_obs_steps} observation timestep(s), got {image.shape[1]} for {feature.name!r}."
             raise ValueError(msg)
-        msg = f"Expected image shape [B, C, H, W] or [B, T, C, H, W] for key {feature.name}, got {tuple(image.shape)}."
+        msg = (
+            f"Expected image shape [B, {n_obs_steps}, C, H, W] for key {feature.name!r}, "
+            f"got {tuple(image.shape)}. [B, C, H, W] is only accepted when n_obs_steps=1."
+        )
         raise ValueError(msg)
 
     @staticmethod
