@@ -6,7 +6,7 @@ disconnects anything, so switching controls is cheap and leaves every device
 as it was. The robot worker follows whatever ``action`` holds, at its own rate.
 
 Switching still leaves a gap, as the old control is joined before the next
-starts. What changes while a control runs (teleop's slowdown, for example) is
+starts. What changes while a control runs is
 therefore a command the control serves on the session's bus itself, between
 its ticks, rather than a new control.
 

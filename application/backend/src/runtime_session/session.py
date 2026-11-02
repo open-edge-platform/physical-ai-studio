@@ -37,7 +37,6 @@ from loguru import logger
 
 from exceptions import BaseException as AppBaseException
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
-from internal_datasets.utils import get_internal_read_dataset
 from runtime_session.bus import EVENTS, Bus, BusRequestError, command_key, publish_status, status_key
 from runtime_session.controls import build_control
 from runtime_session.controls.base import CHANGED as CONTROL_CHANGED
@@ -59,7 +58,6 @@ from schemas.runtime_session import (
     ModelControlConfig,
     ReloadEnvironment,
     ReloadEnvironmentCommand,
-    ReplayControlConfig,
     RuntimeSessionInfo,
     SessionEnvironment,
     SessionState,
@@ -87,7 +85,7 @@ if TYPE_CHECKING:
     from runtime_session.environment import EnvironmentDescription
     from runtime_session.registry import RuntimeSessionRegistry
     from runtime_session.store import FeatureSpec, Mismatch
-    from schemas.dataset import Dataset, Episode
+    from schemas.dataset import Dataset
     from schemas.environment import EnvironmentWithRelations
     from schemas.model import Model
     from schemas.runtime_session import ControlConfig, EnvironmentDraft
@@ -446,8 +444,7 @@ class RuntimeSession:
 
         Raises:
             RuntimeSessionCommandError: No environment is loaded.
-            RuntimeSessionCommandError: A replay without a loaded dataset.
-            ValueError: The environment cannot run ``config`` (no leader, unknown joints, no such episode).
+            ValueError: The environment cannot run ``config`` (no leader, or no model loaded).
             WorkerStartupError: The control failed to start; the follower holds.
         """
         async with self._lock:
@@ -469,15 +466,9 @@ class RuntimeSession:
 
     @asynccontextmanager
     async def _watched_control(self, config: ControlConfig, environment: Environment) -> AsyncIterator[Control]:
-        episode = await self._episode(config.episode_index) if isinstance(config, ReplayControlConfig) else None
-        control = build_control(config, environment.store, environment.leader, episode, self._model.value, self.bus)
+        control = build_control(config, environment.store, environment.leader, self._model.value, self.bus)
         async with self._reported(_CONTROL, control):
             yield control
-
-    async def _episode(self, index: int) -> Episode | None:
-        """An episode of the loaded dataset as it is on disk, without what this session has recorded into it."""
-        dataset = self._dataset.require("Load a dataset to replay first.").dataset
-        return await asyncio.to_thread(lambda: get_internal_read_dataset(dataset).find_episode(index))
 
     async def reload_environment(self) -> None:
         """Ask the environment to connect its devices again; the store and the dataset stay.

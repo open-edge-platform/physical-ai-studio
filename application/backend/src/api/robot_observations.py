@@ -60,8 +60,7 @@ async def _stream_joint_observations(websocket: WebSocket, store: Store, worker:
             if not sent_ready:
                 await websocket.send_json({"event": "state", "data": {"connected": True}})
                 sent_ready = True
-            data = dict(zip(sample.names, map(float, sample.value), strict=True))
-            await websocket.send_json(ObservationEvent(data=data).model_dump(mode="json"))
+            await websocket.send_json(ObservationEvent(data=sample.named_values()).model_dump(mode="json"))
             sent_at = sample.timestamp
         await rate.sleep()
 

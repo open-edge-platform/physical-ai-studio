@@ -39,32 +39,6 @@ class TeleopControlConfig(BaseModel):
         le=30,
         description="On every start, the follower closes the gap to the leader over this long instead of jumping",
     )
-    slowdown: float | None = Field(
-        None,
-        ge=1,
-        le=10,
-        description="Relative mode: the follower moves by the leader's movement since the start, divided by this",
-    )
-
-
-class MoveControlConfig(BaseModel):
-    """Move the follower from where it is to ``position`` over ``duration_s``, then hold there."""
-
-    type: Literal["move"] = "move"
-    position: dict[str, float] = Field(description="Target by joint name (`<joint>.pos`); joints left out stay put")
-    duration_s: float = Field(gt=0, le=60)
-    hz: float = Field(50, gt=0, le=500)
-
-
-class ReplayControlConfig(BaseModel):
-    """Play one of the loaded dataset's episodes on the follower, at the dataset's fps, then hold its last frame.
-
-    Only episodes on disk: those recorded this session reach the dataset when the recording is finished.
-    """
-
-    type: Literal["replay"] = "replay"
-    episode_index: int = Field(ge=0)
-    grace_s: float = Field(3, ge=0, le=30, description="The follower moves to the episode's first frame over this long")
 
 
 class ExecutionConfig(BaseModel):
@@ -93,9 +67,7 @@ class ModelControlConfig(BaseModel):
     )
 
 
-ControlConfig = Annotated[
-    TeleopControlConfig | MoveControlConfig | ReplayControlConfig | ModelControlConfig, Field(discriminator="type")
-]
+ControlConfig = Annotated[TeleopControlConfig | ModelControlConfig, Field(discriminator="type")]
 
 
 class LoadEnvironmentCommand(BaseModel):
@@ -175,17 +147,6 @@ class DiscardEpisodeCommand(BaseModel):
     request_id: str
 
 
-class SetTeleopSlowdownCommand(BaseModel):
-    """While teleoperating, switch to relative teleop slowed down by ``slowdown``, or back to absolute with ``null``.
-
-    The control keeps running, so the follower is driven throughout the switch.
-    """
-
-    command: Literal["set_teleop_slowdown"] = "set_teleop_slowdown"
-    request_id: str
-    slowdown: float | None = Field(None, ge=1, le=10)
-
-
 class SetControlCommand(BaseModel):
     """Switch what drives the follower. ``null`` holds it where it is."""
 
@@ -199,7 +160,6 @@ RuntimeSessionCommand = Annotated[
     | UnloadEnvironmentCommand
     | ReloadEnvironmentCommand
     | SetControlCommand
-    | SetTeleopSlowdownCommand
     | LoadDatasetCommand
     | UnloadDatasetCommand
     | LoadModelCommand

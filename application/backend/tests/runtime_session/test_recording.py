@@ -12,12 +12,13 @@ from uuid import uuid4
 import pytest
 
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
+from internal_datasets.utils import get_internal_read_dataset
 from runtime_session.bus import BusRequestError, NoResponderError, command_key
 from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec
 from runtime_session.session import RuntimeSession
 from runtime_session.store import FeatureSpecMismatchError, ImageSpec
 from schemas.dataset import Dataset
-from schemas.runtime_session import DiscardEpisodeCommand, ReplayControlConfig, SaveEpisodeCommand, StartEpisodeCommand
+from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand
 from tests.workers.fake_dataset import FakeDatasetWorker, recording_log
 from workers.dataset_worker import RecordingStatus
 
@@ -388,22 +389,16 @@ async def test_a_dead_dataset_worker_unloads_the_dataset(new_session, fake_camer
     assert session.environment is not None  # the environment stays loaded
 
 
-async def test_replay_plays_episodes_on_disk_only(new_session, fake_cameras) -> None:
-    """Through lerobot: an episode reaches replay once the recording that saved it is finished."""
+async def test_a_saved_episode_reaches_the_dataset_when_the_recording_finishes(new_session, fake_cameras) -> None:
+    """Through lerobot: until then, it is in the recording's cache."""
     dataset = _dataset()
     session = await new_session()
     await session.load_environment(make_environment())
-    with pytest.raises(RuntimeSessionCommandError, match="Load a dataset"):
-        await session.set_control(ReplayControlConfig(episode_index=0))
     await session.load_dataset(dataset)
     await _start(session, "pick the block")
     await asyncio.sleep(0.4)
     await _save(session)
-    # Saved, but still in the recording's cache.
-    with pytest.raises(ValueError, match="not in the dataset"):
-        await session.set_control(ReplayControlConfig(episode_index=0))
+    assert get_internal_read_dataset(dataset).find_episode(0) is None
 
     await session.unload_dataset()
-    await session.load_dataset(dataset)
-    await session.set_control(ReplayControlConfig(episode_index=0, grace_s=0))
-    assert session.state().control == ReplayControlConfig(episode_index=0, grace_s=0)
+    assert get_internal_read_dataset(dataset).find_episode(0) is not None

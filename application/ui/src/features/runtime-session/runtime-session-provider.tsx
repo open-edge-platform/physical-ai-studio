@@ -29,7 +29,6 @@ import {
     SchemaSaveEpisodeCommand,
     SchemaSessionState,
     SchemaSetControlCommand,
-    SchemaSetTeleopSlowdownCommand,
     SchemaStartEpisodeCommand,
     SchemaStateMessage,
     SchemaStatusMessage,
@@ -37,7 +36,6 @@ import {
     SchemaUnloadEnvironmentCommand,
     SchemaUnloadModelCommand,
 } from '../../api/openapi-spec';
-import { FrameSource } from '../cameras/camera-view';
 import { JointsState } from '../robots/use-robot-observations';
 
 /** Session errors go away by themselves; the parts panel keeps showing what is still failed. */
@@ -51,7 +49,6 @@ type Command =
     | Omit<SchemaUnloadEnvironmentCommand, 'request_id'>
     | Omit<SchemaReloadEnvironmentCommand, 'request_id'>
     | Omit<SchemaSetControlCommand, 'request_id'>
-    | Omit<SchemaSetTeleopSlowdownCommand, 'request_id'>
     | Omit<SchemaLoadDatasetCommand, 'request_id'>
     | Omit<SchemaUnloadDatasetCommand, 'request_id'>
     | Omit<SchemaLoadModelCommand, 'request_id'>
@@ -137,7 +134,11 @@ const SESSION_HZ = 20;
 const sessionSocketUrl = (project_id: string) =>
     fetchClient.PATH('/api/projects/{project_id}/runtime/ws', { params: { path: { project_id } } });
 
-/** ``[u32 big-endian header length][header JSON][jpeg bytes, in the order of header.frames]`` */
+/** ``[u32 big-endian header length][header JSON][jpeg bytes, in the order of header.frames]``.
+ *  The storage is all stored in one float array in shared memory in the backend.
+ *  This data can then also be used for observation reporting.
+ *  The parsing reads the data assuming a format based on _sample_store in api/runtime_ws.py
+ *  */
 export const parseObservation = async (
     blob: Blob
 ): Promise<{ observation: SchemaObservationMessage; frames: Map<string, Blob> }> => {
@@ -345,10 +346,4 @@ export const useSessionJoints = (): JointsState => {
         () => Object.entries(observation?.state ?? {}).map(([name, value]) => ({ name, value })),
         [observation]
     );
-};
-
-/** Frames of one session camera, by store key. */
-export const useSessionCamera = (key: string): FrameSource => {
-    const { frame } = useRuntimeSession();
-    return frame(key);
 };

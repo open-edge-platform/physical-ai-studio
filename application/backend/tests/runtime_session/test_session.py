@@ -232,29 +232,6 @@ async def test_teleop_drives_the_follower_and_none_holds_it(new_session, robot_f
         await session.stop()
 
 
-async def test_teleop_switches_to_relative_over_the_bus_without_stopping(new_session, robot_factory, tmp_path) -> None:
-    from runtime_session.bus import command_key
-    from schemas.runtime_session import CommandDone, SetTeleopSlowdownCommand, StateMessage, TeleopControlConfig
-
-    await _leader_at(robot_factory, tmp_path, [5.0, 6.0])
-    session = await new_session()
-    await session.load_environment(make_environment(cameras=0))
-    events = subscribe_events(session)
-    try:
-        await session.set_control(TeleopControlConfig(hz=50, grace_s=0))
-        control = session._control.value
-        command = SetTeleopSlowdownCommand(request_id="1", slowdown=2.0)
-        await session.bus.request(command_key(command.command), command, CommandDone, timeout=2.0)
-
-        assert session._control.value is control  # the same control, still running
-        assert session.state().control == TeleopControlConfig(hz=50, grace_s=0, slowdown=2.0)
-        async with asyncio.timeout(2.0):  # and the socket is told
-            while not isinstance(event := await events.next(), StateMessage) or event.data.control != control.config:
-                pass
-    finally:
-        await session.stop()
-
-
 async def test_set_control_needs_an_environment(new_session) -> None:
     from schemas.runtime_session import TeleopControlConfig
 

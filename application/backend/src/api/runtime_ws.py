@@ -174,7 +174,7 @@ async def _forward_events(websocket: WebSocket, events: Subscription[Any]) -> No
 
 
 def _named(sample: Sample | None) -> dict[str, float] | None:
-    return None if sample is None else dict(zip(sample.names, map(float, sample.value), strict=True))
+    return None if sample is None else sample.named_values()
 
 
 async def _sample_store(websocket: WebSocket, session: RuntimeSession, hz: float) -> None:

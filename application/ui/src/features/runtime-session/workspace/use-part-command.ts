@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { toast } from '@geti-ui/ui';
+import { useMutation } from '@tanstack/react-query';
 
 import { SchemaIncompatiblePart } from '../../../api/openapi-spec';
 import { ERROR_TOAST, useRuntimeSession } from '../runtime-session-provider';
@@ -23,12 +24,10 @@ export interface PendingConfirmation {
  */
 export const usePartCommand = () => {
     const { send } = useRuntimeSession();
-    const [isPending, setIsPending] = useState(false);
     const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
 
-    const run = async (command: SessionCommand): Promise<boolean> => {
-        setIsPending(true);
-        try {
+    const { mutateAsync: run, isPending } = useMutation<boolean, Error, SessionCommand>({
+        mutationFn: async (command) => {
             const ack = await send(command);
             if (ack.ok) {
                 return true;
@@ -46,10 +45,8 @@ export const usePartCommand = () => {
             }
             toast.negative(ack.error?.message ?? 'The command failed.', ERROR_TOAST);
             return false;
-        } finally {
-            setIsPending(false);
-        }
-    };
+        },
+    });
 
     return { run, isPending, confirmation };
 };

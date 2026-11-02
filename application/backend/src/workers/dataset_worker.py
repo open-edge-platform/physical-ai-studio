@@ -122,12 +122,10 @@ class Recorder:
             # A row is all or nothing: a default where a measurement belongs would be indistinguishable from data.
             self.skipped += 1
             return
-        observation: dict[str, Any] = dict(zip(state.names, map(float, state.value), strict=True))
+        observation: dict[str, Any] = state.named_values()
         observation.update({key: frame.value for key, frame in frames.items() if frame is not None})
         try:
-            self.mutation.add_frame(
-                observation, dict(zip(action.names, map(float, action.value), strict=True)), self.task
-            )
+            self.mutation.add_frame(observation, action.named_values(), self.task)
         except Exception:
             # Lose this episode, not the worker: a crash would end the recording without finalizing it.
             logger.exception("Recording a frame failed; discarding the episode")

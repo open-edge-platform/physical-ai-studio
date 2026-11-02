@@ -1,6 +1,6 @@
 # Runtime Session Architecture
 
-Studio drives a physical robot in a few ways: previewing it, teleoperating it by hand, recording a dataset, replaying an episode and running a trained policy. All of them run in one **runtime session**. The session belongs to a websocket, holds what that page has loaded (an environment, a dataset, a model) and runs one **control** that decides what the follower does.
+Studio drives a physical robot in a few ways: previewing it, teleoperating it by hand, recording a dataset and running a trained policy. All of them run in one **runtime session**. The session belongs to a websocket, holds what that page has loaded (an environment, a dataset, a model) and runs one **control** that decides what the follower does.
 
 This page covers the decisions and constraints you cannot read off the code, especially the traps. For what the code does, read `backend/src/runtime_session/` and `backend/src/workers/`. For how it was built and why in this order, see [the runtime inhousing plan](../feature_plans/runtime-inhousing-plan.md).
 
@@ -26,7 +26,7 @@ Studio used to run on `physicalai.runtime.RobotRuntime`: one loop at one fps, wi
 
 - **Different rates at once.** The follower runs at 100 Hz, cameras at their own fps, a dataset records at 30 Hz and a model is asked for chunks when its queue runs low. One loop at one fps forces all of them onto the slowest.
 - **Parts that come and go.** A page swaps the dataset or the model, or reloads the environment, while the session keeps running. The old runtime fixed its devices and callbacks at construction and had to be rebuilt around them.
-- **Controls that can be anything.** Teleop, a move to a pose, a replay, a policy, and later a human in the loop. Each is a small class that can act on many things, not a mode inside one action source.
+- **Controls that can be anything.** Teleop, a policy, and later a human in the loop. Each is a small class that can act on many things, not a mode inside one action source.
 
 Studio still uses `physicalai` for everything below the loop: `physicalai.robot` drivers, `SharedCamera`, `InferenceModel`, and `physicalai.runtime`'s policy execution (`PolicySource`, the executors, `ChunkedActionQueue`, `LerpSmoother`), so a policy runs in Studio exactly as an export runs it.
 
@@ -38,7 +38,7 @@ flowchart LR
   subgraph api["FastAPI process"]
     ws["runtime_ws<br/>forwards commands, samples the store"]
     sess["RuntimeSession<br/>parts in slots · claims"]
-    ctl["Control thread<br/>teleop · move · replay · model"]
+    ctl["Control thread<br/>teleop · model"]
     cam["CameraWorker threads"]
   end
   robot["RobotWorker process<br/>follower"]
@@ -123,17 +123,15 @@ A worker that dies is reported `failed` with its reason. Nothing retries silentl
 
 | Control | Writes | Grace move |
 |---|---|---|
-| `TeleopControl` | what the leader measures, at 100 Hz; held relative, its movement slowed down, grippers absolute | over `grace_s` to the leader |
-| `MoveControl` | a straight line to a pose over `duration_s`, then holds | – (it is one) |
-| `ReplayControl` | an episode of the loaded dataset as it is on disk, at its fps, then holds the last frame | to the first frame, before playing |
+| `TeleopControl` | what the leader measures, at 100 Hz | over `grace_s` to the leader |
 | `ModelControl` | the loaded model's executor's next action, at 30 Hz | over `grace_s` to the model's actions |
 | none | nothing: the follower holds the last action | – |
 
 - **One at a time is structural, not arbitrated.** `set_control` stops and joins the old control, writes the measured state into `action`, then starts the new one. The follower therefore holds where it is, not where the old control last pointed it.
 - **No control means hold.** The robot worker seeds `action` with the measured position when it connects, and keeps sending `action` as it is.
-- **Every control that can start far from the follower eases in.** A leader, an episode's first frame or a model's rest pose can be anywhere. Without the grace move the follower is driven there at full speed: on an SO-101, an ACT policy commanding its rest pose swung the arm about 150° in one go. Teleop and the model blend from where the follower was to their target while they keep tracking it, so they are on it when the grace period ends. Replay moves to the first frame and only then starts the clock.
+- **Every control that can start far from the follower eases in.** A leader or a model's rest pose can be anywhere. Without the grace move the follower is driven there at full speed: on an SO-101, an ACT policy commanding its rest pose swung the arm about 150° in one go. Teleop and the model blend from where the follower was to their target while they keep tracking it, so they are on it when the grace period ends.
 - **`goal_time` is the only interpolation.** The robot worker sends each action with `goal_time = max(action.timestamp - previous tick, 1/hz)`. An action stamped in the future (a model's chunk at `t0 + i·dt`) is approached over that time, anything else as fast as one tick allows.
-- **What changes while a control runs is a command, not a new control.** Switching joins the old control before the next starts, so the follower is undriven for that moment, which shows in a recording. A control therefore serves its own commands on the session's bus while it runs (`Control.commands`), handled on its thread between ticks, and publishes its changed config on `evt/control` for the session to report. Teleop's `set_teleop_slowdown` switches between absolute and relative this way, moving on from the last command in the new mode.
+- **What changes while a control runs is a command, not a new control.** Switching joins the old control before the next starts, so the follower is undriven for that moment, which shows in a recording. A control therefore serves its own commands on the session's bus while it runs (`Control.commands`), handled on its thread between ticks, and publishes its changed config on `evt/control` for the session to report.
 - **Controls borrow; they never connect.** A control gets references to what the session loaded (the leader, the model), so switching control, which happens all the time, never connects or disconnects a device. Some robots reset on disconnect.
 
 Combinations such as a human taking over from a policy get a control of their own when they are designed, rather than two controls fighting over `action`.
@@ -160,7 +158,7 @@ Measured on an SO-101 with an ACT export: OpenVINO loads in about 1.3 s and answ
 - **`error`** (JSON) says whether the session survived it. `session_closed` ends the socket.
 - **Observations are binary**, at `?hz=` (20 by default): `[u32 big-endian header length][header JSON][JPEGs]`. The header has the joints, the action and the frames, and lists only frames newer than the last ones sent, so a camera slower than the socket is not encoded twice. Binary avoids base64's third more on every JPEG. JPEGs are encoded off the event loop.
 
-In the browser, `RuntimeSessionProvider` opens the socket and loads what its page asks for: the environment, then a dataset or a model. Observations and frames go into channels outside React state, so a 20 Hz tick does not re-render the page. The session workspace offers every mode (record, replay, inference) whatever page opened it; a mode says which parts it is missing, with a way to load each.
+In the browser, `RuntimeSessionProvider` opens the socket and loads what its page asks for: the environment, then a dataset or a model. Observations and frames go into channels outside React state, so a 20 Hz tick does not re-render the page. The session workspace offers every mode (record, inference) whatever page opened it; a mode says which parts it is missing, with a way to load each.
 
 ### Forms
 
@@ -208,7 +206,6 @@ Each of these has cost someone time.
 - **Pickle-safe workers.** Anything a `ProcessWorker` holds is pickled into the child under `spawn`. A driver, a database session or a `TypeAdapter` there fails when the worker starts.
 - **A request right after a worker starts finds no responder.** Wait with `until_serving`. The session's own commands do not need it, because it serves and requests on the same zenoh session.
 - **A refused command used to leave no trace.** Refusals are logged as warnings now (`Session command … refused`); an internal error is logged with its traceback. Look there first when "nothing happened" in the UI.
-- **Episodes recorded this session cannot be replayed until the recording is finished.** The dataset worker records into a copy in the cache, which is copied back when the dataset is unloaded or reloaded. Replay reads the dataset on disk.
 - **Camera keys must match what the model was trained on**, which is not always the environment's current camera names. They diverge the moment someone renames a camera between recording and inference. The model's manifest is checked at load, so this is refused with the missing camera named rather than failing on the first inference.
 - **One camera collapses to a bare `images` input.** With exactly one camera an export may read `images` instead of `images.<key>`, which `model_inputs` maps to the store's only camera. With two or more the names have to match.
 - **OpenVINO's device names are not torch's.** OpenVINO rejects `cpu` and wants `CPU`, `GPU` or `AUTO`. Take the names `/api/system/devices/inference` lists for the backend.

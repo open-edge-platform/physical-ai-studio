@@ -30,6 +30,12 @@ def store():
     store.unlink()
 
 
+def test_block_name_fits_macos_limit_for_the_largest_pid(store: Store) -> None:
+    session_part = store.name.removeprefix(f"{BLOCK_PREFIX}{os.getpid()}-")
+    # 31 bytes on macOS, including the "/" SharedMemory adds; Linux pids reach 7 digits.
+    assert len(f"/{BLOCK_PREFIX}{4194304}-{session_part}") <= 31
+
+
 def test_every_feature_starts_unwritten(store: Store) -> None:
     for key in (STATE, ACTION):
         assert store.read(key) is None

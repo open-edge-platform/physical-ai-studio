@@ -33,7 +33,9 @@ VECTOR_KEYS = (STATE, ACTION)
 """Joint vectors the store always holds; they share the spec's joint names."""
 
 BLOCK_PREFIX = "pai-"
-_SHM_DIR = Path("/dev/shm")  # noqa: S108 - where Linux exposes POSIX shared memory
+# macOS limits names to 31 bytes including Python's leading "/": this leaves room for a 7-digit pid.
+_BLOCK_SESSION_CHARS = 18
+_SHM_DIR = Path("/dev/shm")  # noqa: S108  # nosec B108 - where Linux exposes POSIX shared memory, not a temp file
 _WORD = 8
 
 
@@ -107,6 +109,10 @@ class Sample:
     timestamp: float
     """``time.monotonic()`` when the value was measured or commanded."""
 
+    def named_values(self) -> dict[str, float]:
+        """Each joint's value by name, as plain floats for JSON."""
+        return dict(zip(self.names, map(float, self.value), strict=True))
+
 
 @dataclass(frozen=True, slots=True)
 class _Slot:
@@ -157,7 +163,7 @@ class Store:
         """Allocate the block for a session, with every feature unwritten."""
         _vectors, _images, size = _layout(spec)
         # The creator's pid in the name lets a sweep tell a dead backend's block from a live one's.
-        name = f"{BLOCK_PREFIX}{os.getpid()}-{session_id}"
+        name = f"{BLOCK_PREFIX}{os.getpid()}-{session_id[:_BLOCK_SESSION_CHARS]}"
         block = shared_memory.SharedMemory(name=name, create=True, size=size)
         store = cls(spec, block)
         store._stamps[:] = math.nan

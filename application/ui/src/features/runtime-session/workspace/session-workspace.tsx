@@ -8,7 +8,6 @@ import { InferenceMode } from './inference-mode';
 import { PartControlsProvider, usePartControls } from './part-controls';
 import { PartsPanel } from './parts-panel';
 import { RecordMode } from './record-mode';
-import { ReplayMode } from './replay-mode';
 
 /**
  * One way of working with the session: the parts it needs, and its side bar panel, which
@@ -22,11 +21,10 @@ interface WorkspaceMode {
     panel: ReactNode;
 }
 
-export type ModeKey = 'record' | 'replay' | 'inference';
+export type ModeKey = 'record' | 'inference';
 
 const MODES: WorkspaceMode[] = [
     { key: 'record', label: 'Record', needs: ['environment', 'dataset'], panel: <RecordMode /> },
-    { key: 'replay', label: 'Replay', needs: ['environment', 'dataset'], panel: <ReplayMode /> },
     { key: 'inference', label: 'Inference', needs: ['environment', 'model'], panel: <InferenceMode /> },
 ];
 

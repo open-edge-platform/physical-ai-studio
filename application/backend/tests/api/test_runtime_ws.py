@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
@@ -206,7 +207,7 @@ def test_set_control_is_acked_and_reported_in_state(client: TestClient) -> None:
         assert socket.ack({"command": "load_environment", "environment": _draft()})["ok"]
         assert socket.ack({"command": "set_control", "control": {"type": "teleop", "hz": 50}})["ok"]
         state = socket.until_state(lambda data: data["control"] is not None)
-        assert state["control"] == {"type": "teleop", "hz": 50.0, "grace_s": 3.0, "slowdown": None}  # the defaults
+        assert state["control"] == {"type": "teleop", "hz": 50.0, "grace_s": 3.0}  # the defaults
 
         assert socket.ack({"command": "set_control", "control": None})["ok"]
         assert socket.until_state(lambda data: data["control"] is None)["control"] is None
@@ -241,6 +242,7 @@ def test_recording_commands_over_the_socket(client: TestClient) -> None:
 
         assert socket.ack({"command": "load_dataset", "dataset_id": str(ours.id)})["ok"]
         assert socket.ack({"command": "start_episode", "task": "pick"})["ok"]
+        time.sleep(0.3)  # record enough frames: a shorter episode is refused as too short
         assert socket.ack({"command": "save_episode"})["ok"]
         # The worker publishes its new status; the session shows it.
         state = socket.until_state(lambda data: (data["dataset"] or {}).get("episodes_recorded") == 1)
