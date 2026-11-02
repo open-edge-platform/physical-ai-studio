@@ -17,7 +17,13 @@ from physicalai.policies.act.preprocessor import ACTPreprocessor
 @pytest.mark.parametrize("backend", ["onnx", "openvino", "executorch"])
 @pytest.mark.parametrize("layout", ["BHWC", "BCHW"])
 @pytest.mark.parametrize("dtype", [np.uint8, np.float32])
-def test_export_recipe_matches_native_resize_for_camera_inputs(backend, layout, dtype, keys):
+def test_export_recipe_matches_native_resize_for_camera_inputs(
+    backend: str,
+    layout: str,
+    dtype: type[np.uint8] | type[np.float32],
+    keys: tuple[str, ...],
+) -> None:
+    """Export recipes must resize camera bytes and normalized floats like native ACT."""
     rng = np.random.default_rng(42)
     pixels = rng.integers(0, 256, size=(1, 37, 53, 3), dtype=np.uint8)
     native_input = torch.from_numpy(pixels.transpose(0, 3, 1, 2).astype(np.float32) / 255.0)

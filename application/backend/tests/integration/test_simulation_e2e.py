@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Opt-in simulation E2E through Studio jobs, model import, and Runtime recipes.
+"""Opt-in simulation E2E through fresh Studio training jobs and Runtime recipes.
 
 The harness owns fixtures, simulator controls, scoring, and evidence only.
 Training, snapshots, normalization, export, camera configuration, and action
@@ -15,9 +15,7 @@ import json
 import math
 import os
 import shutil
-import signal
 import subprocess
-import sys
 import threading
 import time
 import zipfile
@@ -34,21 +32,22 @@ from physicalai.config import Config
 from physicalai.data.archive_safety import SafeZipArchive
 from physicalai.runtime import RobotRuntime
 
+from schemas.job import LocalTrainJobPayload
 from tests.integration.application_flow import wait_for_job, wait_for_model
 from tests.integration.simulation_e2e import (
     POLICIES,
     SEEDS,
     EpisodeMonitor,
     attest_runtime,
-    checkpoint_entry,
     command,
+    control_scores,
     dataset_entry,
     prepare_episode,
     score,
-    verify_checkpoint,
+    timing_passes,
     wait_health,
 )
-from training.job import CHECKPOINT_NAME, TrainingJobSpec, _export, build_policy, resolve_checkpoint
+from training.job import TrainingJobSpec, build_policy, resolve_checkpoint
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -220,33 +219,6 @@ def _import_dataset(client: TestClient, project: str, environment: str, dataset:
     return imported["payload"]["result_dataset_id"]
 
 
-def _import_model(client: TestClient, project: str, dataset: str, directory: Path) -> dict:
-    # Use the supported operator CLI, rather than hand-creating model/job rows.
-    subprocess.run(
-        [
-            str(Path(sys.executable).with_name("physicalai-studio")),
-            "models",
-            "import-dir",
-            "--copy",
-            "--source-dir",
-            str(directory),
-            "--project-id",
-            project,
-            "--dataset-id",
-            dataset,
-            "--model-name",
-            "Imported conveyor policy",
-        ],
-        check=True,
-        timeout=300,
-    )
-    response = client.get(f"/api/projects/{project}/models")
-    assert response.status_code == 200, response.text
-    models = response.json()
-    assert len(models) == 1, models
-    return models[0]
-
-
 def _train(
     client: TestClient,
     name: str,
@@ -254,10 +226,10 @@ def _train(
     dataset: str,
     output: Path,
     *,
-    smoke: bool,
-    base_model: dict | None = None,
     evaluate: bool = False,
 ) -> tuple[dict, dict]:
+    from physicalai.inference import InferenceModel
+
     response = client.get("/api/policies/available")
     assert response.status_code == 200, response.text
     available = {policy["id"]: policy for policy in response.json()}
@@ -274,28 +246,22 @@ def _train(
             )
             pytest.skip(reason)
     elif accelerator != "cpu" or name != "act":
-        raise ValueError("Use CUDA for the policy matrix, or CPU for the ACT application smoke")
-    payload = {
-        "project_id": project,
-        "dataset_id": dataset,
-        "policy": name,
-        "model_name": f"Conveyor {name}",
-        "max_epochs": 1 if smoke else int(os.environ.get("SIM_E2E_EPOCHS", "3")),
-        "batch_size": 2,
-        "num_workers": 0,
-        "val_split": 0.2,
-        "device": {"type": accelerator, **({"index": 0} if accelerator == "cuda" else {})},
-        "precision": "32-true" if name == "act" else "bf16-true",
-        "export_backends": ["torch", "openvino"] if evaluate else ["torch"],
-    }
-    if base_model is not None:
-        payload["base_model_id"] = base_model["id"]
+        raise ValueError("Use CUDA for the policy matrix, or CPU for ACT application training")
+    # API defaults match the UI; only precision depends on the selected device.
+    payload = LocalTrainJobPayload(
+        project_id=project,
+        dataset_id=dataset,
+        policy=name,
+        model_name=f"Conveyor {name}",
+        device={"type": accelerator, **({"index": 0} if accelerator == "cuda" else {})},
+        precision="bf16-mixed" if accelerator == "cuda" else "32-true",
+    ).model_dump(mode="json")
     (output / "training-request.json").write_text(json.dumps(payload))
     start = time.monotonic()
     response = client.post("/api/jobs:train", json=payload)
     assert response.status_code == 200, response.text
     job_id = response.json()["id"]
-    job = wait_for_job(client, job_id, timeout=float(os.environ.get("SIM_E2E_JOB_TIMEOUT_SECONDS", "1200")))
+    job = wait_for_job(client, job_id, timeout=float(os.environ.get("SIM_E2E_JOB_TIMEOUT_SECONDS", "18000")))
     model = wait_for_model(client, project, job_id)
     (output / "application-job.json").write_text(json.dumps(job))
     (output / "application-model.json").write_text(json.dumps(model))
@@ -312,11 +278,14 @@ def _train(
         if "step" in value
     ]
     assert optimizer_steps and max(optimizer_steps) == steps, "Optimizer state must confirm real updates"
-    assert not smoke or steps == 20, "Three 20-frame episodes, batch two and one epoch must make 20 updates"
     del state
     restored = build_policy(TrainingJobSpec(policy=name), resume_from=checkpoint)
     del restored
     assert "torch" in model["available_backends"], "Application did not publish its requested Torch export"
+    torch_export = model_dir / "exports" / "torch"
+    assert (torch_export / "manifest.json").is_file(), "Torch export is missing its manifest"
+    with InferenceModel(torch_export, device="cpu") as exported:
+        assert exported.backend == "torch", "Application did not publish a loadable Torch export"
     if evaluate:
         assert "openvino" in model["available_backends"], "Application did not publish its requested OpenVINO export"
     from schemas.model import Model
@@ -324,6 +293,8 @@ def _train(
 
     metrics_path = asyncio.run(ModelMetricsService.get_model_metrics_path(Model.model_validate(model)))
     metrics = pd.read_csv(metrics_path, keep_default_na=False)
+    epochs = metrics["epoch"].loc[lambda values: values != ""].astype(float)
+    assert epochs.max() == payload["max_epochs"] - 1, "Training must complete the UI's default epoch budget"
     validation = metrics["val/loss"].loc[lambda values: values != ""].astype(float)
     assert not validation.empty and np.isfinite(validation).all(), "Application validation loss must be finite"
     for column in (key for key in metrics if key.startswith("train/loss")):
@@ -333,11 +304,12 @@ def _train(
         "checkpoint_steps": steps,
         "training_seconds": time.monotonic() - start,
         "checkpoint_reload": "passed",
+        "torch_export_reload": "passed",
         "job_id": job_id,
         "model_id": model["id"],
         "validation_loss": float(validation.iloc[-1]),
         "training_payload": payload,
-        "fixture": "wiring_only" if smoke else "full_recording",
+        "training_epochs": int(epochs.max()) + 1,
     }
     return model, training
 
@@ -366,7 +338,7 @@ def _record_video(
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("SIM_E2E_RECORD_VIDEO requires ffmpeg on PATH")
     path = output_dir / f"inference-{policy}-{scene}.mp4"
-    args = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "warning", "-y"]
+    args = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-xerror", "-y"]
     for camera in cameras:
         args += [
             "-thread_queue_size",
@@ -381,7 +353,7 @@ def _record_video(
     else:
         streams = ";".join(f"[{i}:v]fps={fps},setsar=1[v{i}]" for i in range(len(cameras)))
         stack = "".join(f"[v{i}]" for i in range(len(cameras)))
-        args += ["-filter_complex", f"{streams};{stack}hstack=inputs={len(cameras)}[v]", "-map", "[v]"]
+        args += ["-filter_complex", f"{streams};{stack}hstack=inputs={len(cameras)}:shortest=1[v]", "-map", "[v]"]
     args += [
         "-an",
         "-c:v",
@@ -398,23 +370,56 @@ def _record_video(
     ]
     log_path = output_dir / "inference-video-ffmpeg.log"
     with log_path.open("w") as log:
-        process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT)
+        started = time.monotonic()
         try:
             time.sleep(1)
             if process.poll() is not None:
                 raise RuntimeError(f"ffmpeg failed to start; see {log_path}")
+            started = time.monotonic()
             yield path
         finally:
+            elapsed = time.monotonic() - started
             if process.poll() is None:
-                process.send_signal(signal.SIGINT)
                 try:
-                    process.wait(timeout=30)
+                    process.communicate(input=b"q\n", timeout=30)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
                     raise RuntimeError(f"ffmpeg did not finish recording; see {log_path}") from None
+            if process.returncode != 0:
+                raise RuntimeError(f"ffmpeg failed while recording; see {log_path}")
             if not path.is_file() or path.stat().st_size == 0:
                 raise RuntimeError(f"ffmpeg did not save an inference video; see {log_path}")
+            decoded = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-xerror",
+                    "-i",
+                    str(path),
+                    "-map",
+                    "0:v:0",
+                    "-progress",
+                    "pipe:1",
+                    "-nostats",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=max(120, elapsed),
+                check=True,
+            )
+            progress = dict(line.split("=", 1) for line in decoded.stdout.splitlines() if "=" in line)
+            duration = int(progress.get("out_time_us", "0")) / 1e6
+            frames = int(progress.get("frame", "0"))
+            if frames < max(1, (elapsed - 1) * fps) or duration <= 0 or duration < elapsed - 1:
+                raise RuntimeError("Inference video is empty or does not cover the full rollout (1s tolerance)")
 
 
 def _trials(recipe: Path, metadata: dict, output: Path, name: str, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
@@ -473,7 +478,7 @@ def test_train_export_and_run_in_simulation(
     """Use normal application jobs and Runtime recipes, never a parallel trainer/controller."""
     name = os.environ.get("SIM_E2E_POLICY", "act")
     mode = os.environ.get("SIM_E2E_MODE", "full")
-    if name not in POLICIES or mode not in {"train", "evaluate", "full"}:
+    if name not in POLICIES or mode not in {"train", "full"}:
         raise ValueError("Unknown E2E policy or mode")
     if "SIM_E2E_DATASET_DIR" not in os.environ:
         pytest.skip("Set SIM_E2E_DATASET_DIR to opt in to the application simulation E2E")
@@ -491,63 +496,37 @@ def test_train_export_and_run_in_simulation(
         "workflow": "application_jobs_runtime_recipe",
     }
     (output / "provenance.json").write_text(json.dumps(provenance))
-    entry = None
-    if mode == "evaluate":
-        entry = checkpoint_entry(
-            Path(os.environ.get("SIM_E2E_CHECKPOINT_MANIFEST", "configs/simulation-e2e/checkpoints.json")), name
-        )
-        if entry is None:
-            (output / "result.json").write_text(json.dumps({**provenance, "status": "quality_baseline_unavailable"}))
-            pytest.skip(f"No qualified checkpoint for {name}; quality baseline unavailable")
+    controls = control_scores(Path(os.environ["SIM_E2E_CONTROLS_FILE"])) if mode == "full" else {}
     dataset = Path(os.environ["SIM_E2E_DATASET_DIR"]).resolve()
     metadata = _recording_metadata(dataset, scene)
     task = _task_instruction(dataset)
-    smoke = mode == "train" and os.environ.get("SIM_E2E_FULL_DATASET", "false").lower() != "true"
-    fixture = _smoke_dataset(dataset, tmp_path / "smoke") if smoke else dataset
     client = request.getfixturevalue("application_client")
     project, environment = _project_environment(client, metadata, simulation=mode != "train")
-    dataset_id = _import_dataset(client, project, environment, fixture, task, output)
-    if entry is not None:
-        from huggingface_hub import hf_hub_download
-
-        checkpoint = Path(hf_hub_download(entry["repo_id"], entry["filename"], revision=entry["revision"]))
-        verify_checkpoint(checkpoint, entry["sha256"])
-        provenance["checkpoint"] = entry
-        staged = output / "qualified-model"
-        staged.mkdir()
-        shutil.copy2(checkpoint, staged / CHECKPOINT_NAME)
-        # Stage a reviewed checkpoint with the same loader/exporter used by application training.
-        policy = build_policy(TrainingJobSpec(policy=name), resume_from=checkpoint)
-        _export(policy, staged, lambda *_args: None, ["openvino"])
-        del policy
-        model = _import_model(client, project, dataset_id, staged)
-    else:
-        base_dir = os.environ.get("SIM_E2E_BASE_MODEL_DIR")
-        base = _import_model(client, project, dataset_id, Path(base_dir)) if base_dir else None
-        model, training = _train(
-            client, name, project, dataset_id, output, smoke=smoke, base_model=base, evaluate=mode == "full"
-        )
-        provenance.update(training)
-        (output / "training.json").write_text(json.dumps({**provenance, "status": "passed"}))
-        if mode == "train":
-            return
+    dataset_id = _import_dataset(client, project, environment, dataset, task, output)
+    model, training = _train(client, name, project, dataset_id, output, evaluate=mode == "full")
+    provenance.update(training)
+    (output / "training.json").write_text(json.dumps({**provenance, "status": "passed"}))
+    if mode == "train":
+        return
     recipe = _runtime_bundle(client, model, environment, task, output)
     trials = _trials(recipe, metadata, output, name, monkeypatch)
     mean_score = score([episode for trial in trials for episode in trial["episodes"]])
-    timing_ok = all(
-        trial["control_hz"] is not None
-        and trial["control_hz"] >= metadata["fps"] * 0.8
-        and 0.9 <= (trial["simulator_timing"].get("real_time_factor") or 0) <= 1.1
-        and bool(trial["simulator_timing"].get("camera_fps"))
-        and all((rate or 0) >= metadata["fps"] * 0.8 for rate in trial["simulator_timing"]["camera_fps"].values())
-        for trial in trials
+    timing_ok = timing_passes(
+        trials,
+        metadata["fps"],
+        [
+            key.removeprefix("observation.images.")
+            for key in metadata["features"]
+            if key.startswith("observation.images.")
+        ],
     )
-    quality_ok = entry is not None and mean_score >= entry["min_score"]
+    quality_ok = mean_score > controls["off"]
     result = {
         **provenance,
         "status": "passed" if quality_ok and timing_ok else "failed",
         "wiring": "passed",
-        "quality": "passed" if quality_ok else ("failed" if entry else "unqualified"),
+        "quality": "passed" if quality_ok else "failed",
+        "controls": controls,
         "timing": "passed" if timing_ok else "failed",
         "score": mean_score,
         "rollouts": trials,
@@ -557,8 +536,7 @@ def test_train_export_and_run_in_simulation(
     }
     (output / "result.json").write_text(json.dumps(result))
     assert timing_ok, "Control/camera rates or simulator real-time factor violate the timing contract"
-    if entry is not None:
-        assert quality_ok, "Sorting score is below the qualified checkpoint threshold"
+    assert quality_ok, "Freshly trained policy must beat the same-seed no-action control"
 
 
 def test_application_simulation_environment(application_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -585,10 +563,12 @@ def test_application_training_smoke(
     output.mkdir()
     project, environment = _project_environment(application_client, {}, simulation=False)
     dataset = _import_dataset(application_client, project, environment, fixture, "do the thing", output)
-    model, training = _train(application_client, "act", project, dataset, output, smoke=True)
-    assert training["checkpoint_steps"] == 20
+    model, training = _train(application_client, "act", project, dataset, output)
+    assert training["checkpoint_steps"] > 0
+    assert training["training_epochs"] == 5
     assert training["checkpoint_reload"] == "passed"
-    assert model["available_backends"] == ["torch"]
+    assert training["torch_export_reload"] == "passed"
+    assert "torch" in model["available_backends"]
     assert resolve_checkpoint(Path(model["path"])).is_file()
 
 

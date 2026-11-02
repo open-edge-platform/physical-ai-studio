@@ -3,7 +3,6 @@
 
 """Offline checks for application-owned simulation controls and evidence."""
 
-import hashlib
 import json
 import os
 import re
@@ -13,7 +12,8 @@ import threading
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,7 @@ from tests.integration import simulation_e2e as controls
 from tests.integration import test_simulation_e2e as suite
 
 from runtime.config_builder import policy_source_fragment, policy_source_from_fragment
+from training.job import CHECKPOINT_NAME
 
 ROOT = Path(__file__).resolve().parents[4]
 BACKEND = ROOT / "application/backend"
@@ -36,7 +37,7 @@ def snapshot(count=0, correct=7):
             "items_per_episode": 10,
             "last_episode": {"correct": correct, "wrong": 1, "missed": 9 - correct},
         },
-        "timing": {"real_time_factor": 1.0},
+        "timing": {"real_time_factor": 1.0, "camera_fps": {"overview": 30, "wrist": 30}},
     }
 
 
@@ -85,6 +86,29 @@ def test_tick_metrics_do_not_poll_http(monkeypatch):
     controls.health.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "action",
+    [np.ones(5), np.ones((1, 6)), np.full(6, np.nan), np.full(6, np.inf), np.full(6, -np.inf), np.full(6, "bad")],
+)
+@pytest.mark.parametrize("recording", [False, True])
+def test_invalid_actions_fail_even_when_runtime_swallows_callback_errors(action, recording):
+    from physicalai.runtime._callback_bus import _CallbackBus
+
+    stop = threading.Event()
+    monitor = controls.EpisodeMonitor("http://localhost", snapshot(), stop, 1)
+    monitor.recording = recording
+    monitor.thread = MagicMock()
+    monitor.thread.is_alive.return_value = False
+    _CallbackBus([monitor]).emit_tick(SimpleNamespace(action_sent=action))
+    assert stop.is_set()
+    assert monitor.actions_sent == 0
+    with pytest.raises(AssertionError, match="six finite joint values"):
+        monitor.close()
+    if not recording:
+        with pytest.raises(AssertionError, match="six finite joint values"):
+            monitor.begin(snapshot())
+
+
 def test_monitor_deadline_stops_runtime(monkeypatch):
     monkeypatch.setattr(controls, "health", lambda url: snapshot())
     stop = threading.Event()
@@ -116,76 +140,228 @@ def test_seeded_setup_uses_mode_barrier_before_resuming(monkeypatch):
     ]
 
 
-def test_missing_checkpoint_is_explicitly_unqualified(tmp_path, monkeypatch):
-    manifest = tmp_path / "checkpoints.json"
-    manifest.write_text(json.dumps({"act": None}))
-    for key, value in {
-        "MODE": "evaluate",
-        "POLICY": "act",
-        "CHECKPOINT_MANIFEST": str(manifest),
-        "OUTPUT_DIR": str(tmp_path),
-        "DATASET_DIR": str(tmp_path),
-    }.items():
-        monkeypatch.setenv(f"SIM_E2E_{key}", value)
-    monkeypatch.setattr(suite, "attest_runtime", dict)
-    request = MagicMock()
-    with pytest.raises(pytest.skip.Exception):
-        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
-    request.getfixturevalue.assert_not_called()
-    assert json.loads((tmp_path / "result.json").read_text())["status"] == "quality_baseline_unavailable"
+@pytest.mark.parametrize("accelerator", ["cpu", "cuda"])
+def test_training_uses_ui_defaults(tmp_path, monkeypatch, accelerator):
+    monkeypatch.setenv("SIM_E2E_ACCELERATOR", accelerator)
+    monkeypatch.setenv("SIM_E2E_EPOCHS", "1")
+    monkeypatch.setattr(suite.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(suite.torch.cuda, "get_device_properties", lambda _: SimpleNamespace(total_memory=40 * 1024**3))
+    client = MagicMock()
+    client.get.return_value.status_code = 200
+    client.get.return_value.json.return_value = [{"id": "act", "min_vram": 0}]
+    client.post.return_value.status_code = 200
+    client.post.return_value.json.return_value = {"id": "job"}
+    wait = MagicMock(side_effect=TimeoutError("stop after submission"))
+    monkeypatch.setattr(suite, "wait_for_job", wait)
+    with pytest.raises(TimeoutError, match="stop after submission"):
+        suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path)
+    payload = client.post.call_args.kwargs["json"]
+    assert payload == json.loads((tmp_path / "training-request.json").read_text())
+    assert payload["max_epochs"] == 5
+    assert payload["batch_size"] == 8
+    assert payload["num_workers"] == "auto"
+    assert payload["val_split"] == 0.1
+    assert payload["precision"] == ("bf16-mixed" if accelerator == "cuda" else "32-true")
+    assert payload["export_backends"] is None
+    assert payload["base_model_id"] is None
+    for flag in ("auto_scale_batch_size", "compile_model", "lora_enabled", "snapflow_enabled", "augment_images"):
+        assert payload[flag] is False
+    assert wait.call_args.kwargs["timeout"] == 18000
+
+
+@pytest.fixture
+def control_report():
+    return {
+        "status": "passed",
+        **{
+            mode: {
+                "score": correct / 10,
+                "trials": [
+                    {"seed": seed, "episodes": [{"correct": correct, "wrong": 0, "missed": 10 - correct}]}
+                    for seed in controls.SEEDS
+                ],
+            }
+            for mode, correct in (("off", 0), ("drive", 10))
+        },
+    }
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    "mode,correct,timing,error",
+    [("train", 0, False, None), ("full", 7, True, None), ("full", 0, True, "no-action"), ("full", 7, False, "timing")],
+)
+def test_automated_training_runs_the_fresh_model(tmp_path, monkeypatch, control_report, mode, correct, timing, error):
+    report = tmp_path / "controls.json"
+    report.write_text(json.dumps(control_report))
+    for key, value in {
+        "MODE": mode,
+        "POLICY": "act",
+        "DATASET_DIR": str(tmp_path),
+        "CONTROLS_FILE": str(report),
+    }.items():
+        monkeypatch.setenv(f"SIM_E2E_{key}", value)
+    monkeypatch.setattr(suite, "attest_runtime", dict)
+    monkeypatch.setattr(
+        suite,
+        "_recording_metadata",
+        MagicMock(return_value={"fps": 30, "features": {"observation.images.overview": {}}}),
+    )
+    monkeypatch.setattr(suite, "_task_instruction", MagicMock(return_value="sort items"))
+    environment = MagicMock(return_value=("project", "environment"))
+    monkeypatch.setattr(suite, "_project_environment", environment)
+    imported = MagicMock(return_value="dataset")
+    monkeypatch.setattr(suite, "_import_dataset", imported)
+    smoke = MagicMock(side_effect=AssertionError("Automated E2E must not crop the recording"))
+    monkeypatch.setattr(suite, "_smoke_dataset", smoke)
+    model = {"id": "fresh-model"}
+    train = MagicMock(return_value=(model, {"model_id": model["id"], "job_id": "fresh-job"}))
+    monkeypatch.setattr(suite, "_train", train)
+    bundle = MagicMock(return_value=tmp_path / "runtime.yaml")
+    monkeypatch.setattr(suite, "_runtime_bundle", bundle)
+    rollout = MagicMock(return_value=[{"episodes": [{"correct": correct, "wrong": 0, "missed": 10 - correct}]}])
+    monkeypatch.setattr(suite, "_trials", rollout)
+    monkeypatch.setattr(suite, "timing_passes", MagicMock(return_value=timing))
+    request = MagicMock()
+    if error:
+        with pytest.raises(AssertionError, match=error):
+            suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
+    else:
+        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
+    client = request.getfixturevalue.return_value
+    assert imported.call_args.args[3] == tmp_path.resolve()
+    smoke.assert_not_called()
+    train.assert_called_once_with(client, "act", "project", "dataset", tmp_path.resolve(), evaluate=mode == "full")
+    assert environment.call_args.kwargs["simulation"] == (mode == "full")
+    training = json.loads((tmp_path / "training.json").read_text())
+    assert training["model_id"] == "fresh-model" and training["job_id"] == "fresh-job"
+    if mode == "train":
+        bundle.assert_not_called()
+        rollout.assert_not_called()
+        assert not (tmp_path / "result.json").exists()
+    else:
+        bundle.assert_called_once_with(client, model, "environment", "sort items", tmp_path.resolve())
+        assert rollout.call_args.args[0] == bundle.return_value
+        result = json.loads((tmp_path / "result.json").read_text())
+        assert result["model_id"] == training["model_id"]
+        assert result["status"] == ("failed" if error else "passed")
+        assert result["quality"] == ("passed" if correct else "failed")
+        assert result["timing"] == ("passed" if timing else "failed")
+
+
+@pytest.mark.parametrize(
+    "manifest,epoch,evaluate,error",
     [
-        ("revision", "main"),
-        ("filename", "../model.ckpt"),
-        ("filename", "nested/model.ckpt"),
-        ("sha256", "bad"),
-        ("min_score", 0),
-        ("min_score", True),
+        (None, 4, False, AssertionError),
+        ("{", 4, False, json.JSONDecodeError),
+        ("{}", 0, False, AssertionError),
+        ("{}", 4, False, None),
+        ("{}", 4, True, AssertionError),
     ],
 )
-def test_qualified_checkpoint_manifest_validation(tmp_path, field, value):
-    entry = {
-        "repo_id": "org/policy",
-        "revision": "a" * 40,
-        "filename": "model.ckpt",
-        "sha256": "b" * 64,
-        "min_score": 0.5,
-    }
-    entry[field] = value
-    manifest = tmp_path / "checkpoints.json"
-    manifest.write_text(json.dumps({"act": entry}))
+def test_training_validates_exports_and_completed_epochs(tmp_path, monkeypatch, manifest, epoch, evaluate, error):
+    from physicalai.inference import InferenceModel
+
+    from schemas.model import Model
+    from services.model_metrics_service import ModelMetricsService
+
+    monkeypatch.setenv("SIM_E2E_ACCELERATOR", "cpu")
+    export = tmp_path / "exports/torch"
+    export.mkdir(parents=True)
+    (export / "model.pt").write_bytes(b"incomplete export")
+    if manifest is not None:
+        (export / "manifest.json").write_text(manifest)
+    (tmp_path / CHECKPOINT_NAME).touch()
+    model = Model.model_construct(
+        id=uuid4(), name="ACT", policy="act", project_id=uuid4(), path=str(tmp_path), properties={}
+    ).model_dump(mode="json")
+    assert model["available_backends"] == ["torch"]
+    metrics_path = tmp_path / "metrics.csv"
+    metrics_path.write_text(f"epoch,val/loss\n{epoch},0.1\n")
+    monkeypatch.setattr(ModelMetricsService, "get_model_metrics_path", AsyncMock(return_value=metrics_path))
+    if manifest == "{}":
+        exported = MagicMock(spec=InferenceModel)
+        exported.__enter__.return_value.backend = "torch"
+        monkeypatch.setattr("physicalai.inference.InferenceModel", MagicMock(return_value=exported))
+    client = MagicMock()
+    client.get.return_value.status_code = 200
+    client.get.return_value.json.return_value = [{"id": "act"}]
+    client.post.return_value.status_code = 200
+    client.post.return_value.json.return_value = {"id": "job"}
+    monkeypatch.setattr(suite, "wait_for_job", MagicMock(return_value={}))
+    monkeypatch.setattr(suite, "wait_for_model", MagicMock(return_value=model))
+    monkeypatch.setattr(suite, "build_policy", MagicMock())
+    monkeypatch.setattr(
+        suite.torch,
+        "load",
+        MagicMock(return_value={"global_step": 20, "optimizer_states": [{"state": {0: {"step": 20}}}]}),
+    )
+    if error is not None:
+        match = "requested OpenVINO" if evaluate else ("epoch budget" if manifest == "{}" else None)
+        with pytest.raises(error, match=match):
+            suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path, evaluate=evaluate)
+    else:
+        _, training = suite._train(client, "act", str(uuid4()), str(uuid4()), tmp_path, evaluate=evaluate)
+        assert training["training_epochs"] == 5
+        assert training["checkpoint_steps"] == 20  # The best checkpoint can precede the final epoch.
+
+
+def test_fixed_checkpoint_evaluation_is_removed(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIM_E2E_MODE", "evaluate")
+    with pytest.raises(ValueError, match="Unknown E2E policy or mode"):
+        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, MagicMock(), monkeypatch)
+    assert not (BACKEND / "configs/simulation-e2e/checkpoints.json").exists()
+
+
+def test_controls_scores_use_completed_episodes(tmp_path, control_report):
+    path = tmp_path / "controls.json"
+    control_report["off"]["score"] = 1  # Do not trust a stale summary over the actual scored episodes.
+    path.write_text(json.dumps(control_report))
+    assert controls.control_scores(path) == {"off": 0, "drive": 1}
+
+
+@pytest.mark.parametrize("invalid", ["status", "seed", "score"])
+def test_controls_must_pass_on_the_rollout_seeds(tmp_path, control_report, invalid):
+    if invalid == "status":
+        control_report["status"] = "incomplete"
+    elif invalid == "seed":
+        control_report["off"]["trials"][0]["seed"] = 0
+    else:
+        for trial in control_report["drive"]["trials"]:
+            trial["episodes"] = [{"correct": 0, "wrong": 0, "missed": 10}]
+    path = tmp_path / "controls.json"
+    path.write_text(json.dumps(control_report))
     with pytest.raises(ValueError):
-        controls.checkpoint_entry(manifest, "act")
+        controls.control_scores(path)
 
 
-def test_checkpoint_checksum(tmp_path):
-    checkpoint = tmp_path / "model.ckpt"
-    checkpoint.write_bytes(b"checkpoint")
-    controls.verify_checkpoint(checkpoint, hashlib.sha256(b"checkpoint").hexdigest())
-    with pytest.raises(ValueError, match="checksum mismatch"):
-        controls.verify_checkpoint(checkpoint, "b" * 64)
+def test_full_pipeline_requires_controls_before_training(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIM_E2E_MODE", "full")
+    monkeypatch.setenv("SIM_E2E_DATASET_DIR", str(tmp_path))
+    monkeypatch.setenv("SIM_E2E_CONTROLS_FILE", str(tmp_path / "missing.json"))
+    monkeypatch.setattr(suite, "attest_runtime", dict)
+    request = MagicMock()
+    with pytest.raises(FileNotFoundError):
+        suite.test_train_export_and_run_in_simulation("conveyor_sort", tmp_path, request, monkeypatch)
+    request.getfixturevalue.assert_not_called()
 
 
 def test_daily_report_does_not_promote_missing_or_zero_scores(tmp_path):
-    directory = tmp_path / "sim-evaluate-act"
+    directory = tmp_path / "sim-full-act"
     directory.mkdir()
     (directory / "result.json").write_text(
         json.dumps({"status": "failed", "quality": "failed", "wiring": "passed", "timing": "passed", "score": 0})
     )
-    directory = tmp_path / "sim-evaluate-xr0"
+    directory = tmp_path / "sim-full-xr0"
     directory.mkdir()
-    (directory / "result.json").write_text(json.dumps({"status": "quality_baseline_unavailable"}))
+    (directory / "training.json").write_text(json.dumps({"status": "passed"}))
     report = summarize(tmp_path)
     assert "| act | failed/incomplete | passed | passed | failed | 0.0% |" in report
-    assert "| xr0 | failed/incomplete | not evaluated | not evaluated | baseline unavailable |" in report
+    assert "| xr0 | passed | failed/incomplete | failed/incomplete | failed/incomplete |" in report
     assert "| smolvla |" not in report
 
 
 def test_unsupported_hardware_is_not_a_training_pass(tmp_path):
-    directory = tmp_path / "sim-train-xr0"
+    directory = tmp_path / "sim-full-xr0"
     directory.mkdir()
     (directory / "training.json").write_text(json.dumps({"status": "unsupported_hardware"}))
     assert "| xr0 | unsupported hardware |" in summarize(tmp_path)
@@ -294,7 +470,7 @@ def test_paused_warmup_does_not_enter_trial_metrics():
     stop = threading.Event()
     monitor = controls.EpisodeMonitor("http://localhost", snapshot(), stop, 1)
     monitor.recording = False
-    monitor.on_tick(SimpleNamespace())
+    monitor.on_tick(SimpleNamespace(action_sent=None))
     assert stop.is_set()
     assert monitor.ticks == []
 
@@ -309,6 +485,84 @@ def test_timing_includes_delay_before_first_action():
     assert result["first_action_delay_s"] == 10
 
 
+@pytest.mark.parametrize(
+    "timing",
+    [
+        {"real_time_factor": 1.0, "camera_fps": {"overview": 30, "wrist": 30}},
+        {"real_time_factor": 0.5, "camera_fps": {"overview": 30, "wrist": 30}},
+        {"real_time_factor": 1.2, "camera_fps": {"overview": 30, "wrist": 30}},
+        {"real_time_factor": 1.0, "camera_fps": {"overview": 30, "wrist": 15}},
+        {"real_time_factor": 1.0, "camera_fps": {"overview": 30, "wrist": None}},
+        {"real_time_factor": 1.0, "camera_fps": {}},
+        {},
+    ],
+)
+def test_timing_gate_keeps_earlier_violations_after_recovery(timing):
+    monitor = controls.EpisodeMonitor("http://localhost", snapshot(), threading.Event(), 1)
+    monitor.started_at = 0
+    monitor.ticks = [(index + 1) / 30 for index in range(300)]
+    monitor.frame_times = {camera: set(range(300)) for camera in ("overview", "wrist")}
+    monitor.frame_updates = dict.fromkeys(monitor.frame_times, 10.0)
+    monitor.frame_max_gaps = dict.fromkeys(monitor.frame_times, 1 / 30)
+    for _ in range(100):
+        monitor.observe({**snapshot(), "timing": timing})
+    monitor.observe(snapshot(1))
+    result = monitor.result(42)
+    assert result["simulator_timing"] == snapshot()["timing"]
+    assert len(result["simulator_timing_samples"]) == 101
+    assert controls.timing_passes([result], 30, ["overview", "wrist"]) == (timing == snapshot()["timing"])
+
+
+@pytest.mark.parametrize("control_hz", [None, 0, 23.9])
+def test_timing_gate_rejects_slow_control_loop(control_hz):
+    assert not controls.timing_passes(
+        [{"control_hz": control_hz, "simulator_timing_samples": [snapshot()["timing"]]}], 30, ["overview"]
+    )
+
+
+def test_timing_gate_requires_trials_and_simulator_measurements():
+    assert not controls.timing_passes([], 30, ["overview"])
+    trial = {"control_hz": 30, "camera_hz": {"overview": 30}, "camera_max_gap_s": {"overview": 0.04}}
+    assert not controls.timing_passes([{**trial, "simulator_timing_samples": []}], 30, ["overview"])
+    assert not controls.timing_passes([trial], 30, [])
+
+
+@pytest.mark.parametrize("case", ["healthy", "frozen", "missing", "slow", "recovered", "stopped"])
+def test_timing_gate_requires_progress_from_every_runtime_camera(monkeypatch, case):
+    monitor = controls.EpisodeMonitor("http://localhost", snapshot(), threading.Event(), 10)
+    monitor.started_at = 0.0
+    clock = iter((index + 1) / 30 for index in range(300))
+    monkeypatch.setattr(controls.time, "monotonic", lambda: next(clock))
+    for index in range(300):
+        wrist = index
+        if case == "frozen":
+            wrist = 0
+        elif case == "slow":
+            wrist = index // 2
+        elif case == "recovered" and 30 <= index < 45:
+            wrist = 29
+        elif case == "stopped":
+            wrist = min(index, 29)
+        frames = {"overview": SimpleNamespace(timestamp=index), "wrist": SimpleNamespace(timestamp=wrist)}
+        if case == "missing":
+            del frames["wrist"]
+        monitor.on_tick(
+            SimpleNamespace(
+                action_sent=np.ones(6),
+                robot_state=SimpleNamespace(joint_positions=np.full(6, index / 100)),
+                camera_frames=frames,
+            )
+        )
+    monitor.observe(snapshot(1))
+    result = monitor.result(42)
+    assert result["control_hz"] == 30
+    assert result["simulator_timing"]["camera_fps"]["wrist"] == 30
+    assert controls.timing_passes([result], 30, ["overview", "wrist"]) == (case == "healthy")
+    if case == "recovered":
+        assert result["camera_hz"]["wrist"] >= 24
+        assert result["camera_max_gap_s"]["wrist"] > 0.25
+
+
 def test_video_requests_require_encoder(tmp_path, monkeypatch):
     monkeypatch.setattr(suite.shutil, "which", lambda name: None)
     with (
@@ -316,6 +570,145 @@ def test_video_requests_require_encoder(tmp_path, monkeypatch):
         suite._record_video(tmp_path, "http://localhost", ["overview"], {}, 30, "act", "conveyor_sort"),
     ):
         pass
+
+
+@pytest.mark.parametrize(
+    "case,error",
+    [
+        ("running", None),
+        ("finished", None),
+        ("encoder_failed", RuntimeError),
+        ("encoder_hung", RuntimeError),
+        ("unexpected_interrupt", RuntimeError),
+        ("early_exit", RuntimeError),
+        ("few_frames", RuntimeError),
+        ("missing", RuntimeError),
+        ("empty", RuntimeError),
+        ("no_frames", RuntimeError),
+        ("zero_duration", RuntimeError),
+        ("corrupt", subprocess.CalledProcessError),
+        ("decode_timeout", subprocess.TimeoutExpired),
+        ("rollout_failed", AssertionError),
+    ],
+)
+def test_video_requires_successful_encoding_decoding_and_rollout_coverage(tmp_path, monkeypatch, case, error):
+    path = tmp_path / "inference-act-conveyor_sort.mp4"
+    if case != "missing":
+        path.write_bytes(b"" if case == "empty" else b"encoded video")
+    process = MagicMock(returncode=1 if case == "encoder_failed" else (255 if case == "unexpected_interrupt" else 0))
+    process.poll.side_effect = [None, 255 if case == "unexpected_interrupt" else (0 if case == "finished" else None)]
+    if case == "encoder_hung":
+        process.communicate.side_effect = subprocess.TimeoutExpired("ffmpeg", 30)
+    monkeypatch.setattr(suite.subprocess, "Popen", MagicMock(return_value=process))
+    monkeypatch.setattr(suite.shutil, "which", lambda name: "/bin/ffmpeg")
+    monkeypatch.setattr(suite.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(suite.time, "monotonic", MagicMock(side_effect=[0, 1, 11]))
+    duration = 8 if case == "early_exit" else (0 if case == "zero_duration" else 10)
+    frames = 0 if case == "no_frames" else (10 if case == "few_frames" else 300)
+    decoder = MagicMock(
+        return_value=SimpleNamespace(stdout=f"frame={frames}\nout_time_us={duration * 1000000}\nprogress=end\n")
+    )
+    if case == "corrupt":
+        decoder.side_effect = subprocess.CalledProcessError(1, "ffmpeg")
+    elif case == "decode_timeout":
+        decoder.side_effect = subprocess.TimeoutExpired("ffmpeg", 120)
+    monkeypatch.setattr(suite.subprocess, "run", decoder)
+
+    def record():
+        with suite._record_video(tmp_path, "http://localhost", ["overview", "wrist"], {}, 30, "act", "conveyor_sort"):
+            if case == "rollout_failed":
+                raise AssertionError("Policy rollout failed")
+
+    if error:
+        with pytest.raises(error):
+            record()
+    else:
+        record()
+    encoder_args = suite.subprocess.Popen.call_args.args[0]
+    assert "-nostdin" not in encoder_args
+    assert "-xerror" in encoder_args
+    assert "hstack=inputs=2:shortest=1" in encoder_args[encoder_args.index("-filter_complex") + 1]
+    assert suite.subprocess.Popen.call_args.kwargs["stdin"] == subprocess.PIPE
+    if case not in {"finished", "unexpected_interrupt"}:
+        process.communicate.assert_called_once_with(input=b"q\n", timeout=30)
+    if decoder.called:
+        args = decoder.call_args.args[0]
+        assert "-xerror" in args and str(path) in args
+        assert decoder.call_args.kwargs["check"] is True
+    if case == "encoder_hung":
+        process.kill.assert_called_once()
+        process.wait.assert_called_once()
+        decoder.assert_not_called()
+    if case == "rollout_failed":
+        assert path.is_file()
+        decoder.assert_called_once()
+
+
+def test_training_artifacts_preserve_outputs_without_uploading_the_recording(tmp_path):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/simulation-application-e2e.yml").read_text())
+    upload = next(
+        step
+        for step in workflow["jobs"]["policy"]["steps"]
+        if step.get("name") == "Retain training and deployment outputs"
+    )
+    assert upload["if"] == "always()"
+    assert upload["id"] == "training_outputs"
+    policy = workflow["jobs"]["policy"]
+    assert policy["permissions"]["actions"] == "write"
+    cleanup = next(step for step in policy["steps"] if step.get("name") == "Remove superseded training outputs")
+    assert cleanup["if"] == (
+        "always() && steps.training_outputs.outcome == 'success' && steps.training_outputs.outputs.artifact-id != ''"
+    )
+    assert cleanup["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "ARTIFACT_ID": "${{ steps.training_outputs.outputs.artifact-id }}",
+        "ARTIFACT_NAME": "training-outputs-${{ matrix.policy }}",
+    }
+    assert cleanup["run"] == "python3 application/backend/scripts/prune_simulation_artifacts.py"
+    assert policy["steps"].index(cleanup) > policy["steps"].index(upload)
+    assert workflow["jobs"]["controls"]["permissions"].get("actions") != "write"
+    assert workflow["jobs"]["report"]["permissions"]["actions"] == "read"
+    artifact = upload["with"]
+    assert artifact["name"] == "training-outputs-${{ matrix.policy }}"
+    assert artifact["retention-days"] == 14
+    assert artifact["compression-level"] == 0
+    expected = {
+        "training-request.json",
+        "application-job.json",
+        "application-model.json",
+        "runtime.zip",
+        "studio/models/model-id/model.ckpt",
+        "studio/models/model-id/version_0/metrics.csv",
+        "studio/models/model-id/version_0/hparams.yaml",
+        "studio/models/model-id/exports/openvino/model.bin",
+        "studio/models/model-id/exports/openvino/manifest.json",
+        "studio/models/model-id/exports/torch/model.pt",
+        "studio/cache/failed-job/model.ckpt",
+        "studio/cache/failed-job/version_0/metrics.csv",
+        "studio/cache/failed-job/version_0/hparams.yaml",
+        "studio/logs/backend.log",
+    }
+    excluded = {
+        "studio/datasets/recording/data.parquet",
+        "studio/snapshots/recording/data.parquet",
+        "studio/cache/imports/datasets/upload.zip",
+        "studio/settings.json",
+        "studio/studio.db",
+    }
+    output = tmp_path / ".simulation-results/full-act"
+    for name in expected | excluded:
+        path = output / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    retained = set()
+    for pattern in artifact["path"].replace("${{ matrix.policy }}", "act").splitlines():
+        for path in tmp_path.glob(pattern):
+            retained.update(
+                p.relative_to(output).as_posix() for p in (path.rglob("*") if path.is_dir() else [path]) if p.is_file()
+            )
+    assert retained == expected
+    download = next(step for step in workflow["jobs"]["report"]["steps"] if "pattern" in step.get("with", {}))
+    assert not Path("training-outputs-act").match(download["with"]["pattern"])
 
 
 @pytest.mark.parametrize("job", ["controls", "policy"])
@@ -417,7 +810,7 @@ def test_e2e_workflow_offers_only_100_episode_recording():
     assert set(choice["options"]) == set(controls.DATASETS) == {"100"}
     env = workflow["env"]
     assert env["SIM_E2E_DATASET"] == "${{ inputs.dataset || '100' }}"
-    assert env["SIM_E2E_DATASET_DIR"].endswith(".simulation-dataset-${{ inputs.dataset || '100' }}")
+    assert "SIM_E2E_DATASET_DIR" not in env
 
 
 def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
@@ -425,7 +818,17 @@ def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
         (ROOT / ".github/workflows/simulation-application-e2e.yml").read_text(), Loader=yaml.BaseLoader
     )
     assert workflow["on"]["schedule"] == [{"cron": "0 19 * * *"}]
-    assert workflow["jobs"]["policy"]["strategy"]["matrix"] == {"mode": ["train", "evaluate"], "policy": ["act"]}
+    policy = workflow["jobs"]["policy"]
+    assert policy["strategy"]["matrix"] == {"policy": ["act"]}
+    assert policy["timeout-minutes"] == "360"
+    assert policy["needs"] == "controls" and "if" not in policy
+    assert policy["env"]["SIM_E2E_MODE"] == "full"
+    assert policy["env"]["SIM_E2E_CONTROLS_FILE"].endswith("/controls/controls.json")
+    simulator = next(step for step in policy["steps"] if step.get("uses") == "./.github/actions/start-simulator")
+    assert "if" not in simulator
+    download = next(step for step in policy["steps"] if step.get("with", {}).get("name") == "sim-controls")
+    assert download["with"]["path"] == ".simulation-results/controls"
+    assert policy["steps"][-1]["with"]["name"] == "sim-full-${{ matrix.policy }}"
 
 
 def _workflow_python(path, step):
@@ -441,8 +844,9 @@ def test_workflow_download_uses_selected_pins(tmp_path, dataset):
     script = tmp_path / "download.py"
     script.write_text(_workflow_python(action, "Fetch pinned recording"))
     (tmp_path / "huggingface_hub.py").write_text(
-        "import json\ndef snapshot_download(repo_id, **kwargs):\n"
+        "import json, os\ndef snapshot_download(repo_id, **kwargs):\n"
         '    print(json.dumps({"repo_id": repo_id, **kwargs}, default=str))\n'
+        "    return os.environ['FAKE_HF_SNAPSHOT']\n"
     )
     (tmp_path / "meta").mkdir()
     (tmp_path / "meta/info.json").write_text(json.dumps({"total_episodes": int(dataset)}))
@@ -455,7 +859,8 @@ def test_workflow_download_uses_selected_pins(tmp_path, dataset):
             **os.environ,
             "PYTHONPATH": str(BACKEND),
             "SIM_E2E_DATASET": dataset,
-            "SIM_E2E_DATASET_DIR": str(tmp_path),
+            "FAKE_HF_SNAPSHOT": str(tmp_path),
+            "GITHUB_ENV": str(tmp_path / "github-env"),
         },
     )
     fetched = json.loads(result.stdout)
@@ -463,3 +868,5 @@ def test_workflow_download_uses_selected_pins(tmp_path, dataset):
     assert fetched["revision"] == controls.DATASETS[dataset]["revision"]
     assert fetched["repo_type"] == "dataset"
     assert fetched["allow_patterns"] == ["simulation.json", "meta/*", "data/*", "videos/*"]
+    assert "local_dir" not in fetched and "cache_dir" not in fetched
+    assert (tmp_path / "github-env").read_text() == f"SIM_E2E_DATASET_DIR={tmp_path}\n"

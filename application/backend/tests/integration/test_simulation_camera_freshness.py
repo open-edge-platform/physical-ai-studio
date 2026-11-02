@@ -3,6 +3,7 @@
 
 """Check actual MJPEG image age, not the timestamp assigned when an old frame is read."""
 
+import shutil
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -101,3 +102,71 @@ def test_camera_latest_frame_does_not_backlog() -> None:
             server.server_close()
             thread.join(timeout=2)
             assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("end_one_feed", [False, True])
+def test_video_requires_both_mjpeg_feeds_throughout_rollout(tmp_path, end_one_feed) -> None:
+    """An ended view must fail recording, not become a frozen half of a valid MP4."""
+    from tests.integration.test_simulation_e2e import _record_video
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is required for the real two-stream recording regression")
+    cv2 = pytest.importorskip("cv2")
+    ok, encoded = cv2.imencode(".jpg", np.full((48, 64, 3), 128, dtype=np.uint8))
+    assert ok
+    payload = encoded.tobytes()
+    packet = (
+        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+        + str(len(payload)).encode()
+        + b"\r\n\r\n"
+        + payload
+        + b"\r\n"
+    )
+    end_overview = threading.Event()
+    shutdown = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.end_headers()
+            try:
+                while not shutdown.is_set():
+                    if "overview" in self.path and end_overview.is_set():
+                        return
+                    self.wfile.write(packet)
+                    self.wfile.flush()
+                    shutdown.wait(1 / 30)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        def log_message(self, _format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+
+    def record() -> None:
+        with _record_video(tmp_path, url, ["overview", "wrist"], {}, 30, "act", "conveyor_sort"):
+            time.sleep(0.5)
+            if end_one_feed:
+                end_overview.set()
+            time.sleep(1.5)
+
+    try:
+        if end_one_feed:
+            with pytest.raises(RuntimeError, match=r"ffmpeg failed|does not cover"):
+                record()
+            assert end_overview.is_set(), "Feed must end during the rollout, not during startup"
+        else:
+            record()
+        assert (tmp_path / "inference-act-conveyor_sort.mp4").is_file()
+    finally:
+        shutdown.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        assert not thread.is_alive()

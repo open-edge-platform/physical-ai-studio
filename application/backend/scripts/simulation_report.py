@@ -35,25 +35,23 @@ def summarize(root: Path) -> str:
         "| --- | --- | --- | --- | --- | ---: |",
     ]
     for policy in POLICIES:
-        train_path = root / f"sim-train-{policy}" / "training.json"
-        evaluate_path = root / f"sim-evaluate-{policy}" / "result.json"
-        if not train_path.is_file() and not evaluate_path.is_file():
+        run = root / f"sim-full-{policy}"
+        if not run.is_dir():
             continue
+        train_path, result_path = run / "training.json", run / "result.json"
         train = json.loads(train_path.read_text()) if train_path.is_file() else {}
-        result = json.loads(evaluate_path.read_text()) if evaluate_path.is_file() else {}
+        result = json.loads(result_path.read_text()) if result_path.is_file() else {}
         training = train.get("status", "failed/incomplete").replace("unsupported_hardware", "unsupported hardware")
-        if result.get("status") == "quality_baseline_unavailable":
-            wiring, timing, quality = "not evaluated", "not evaluated", "baseline unavailable"
-        else:
-            wiring = result.get("wiring", "failed/incomplete")
-            timing = result.get("timing", "failed/incomplete")
-            quality = result.get("quality", "failed/incomplete")
+        wiring = result.get("wiring", "failed/incomplete")
+        timing = result.get("timing", "failed/incomplete")
+        quality = result.get("quality", "failed/incomplete")
         value = f"{result['score']:.1%}" if "score" in result else "—"
         lines.append(f"| {policy} | {training} | {wiring} | {timing} | {quality} | {value} |")
     lines += [
         "",
-        "Missing/unqualified checkpoints and unsupported hardware are not passes. "
-        "Inspect per-job logs and JUnit for errors.",
+        "Each row follows one freshly trained model through export and inference. "
+        "Quality requires beating the same-seed no-action control; this is not deployment qualification. "
+        "Incomplete work and unsupported hardware are not passes. Inspect per-job logs and JUnit for errors.",
     ]
     return "\n".join(lines) + "\n"
 

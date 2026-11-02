@@ -5,10 +5,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import re
 import threading
 import time
 from importlib.metadata import distribution
@@ -99,6 +97,31 @@ def score(episodes: list[dict]) -> float:
     return sum(e["correct"] for e in episodes) / total
 
 
+def timing_passes(trials: list[dict], fps: float, cameras: list[str]) -> bool:
+    """Require control throughput and valid simulator timing throughout every scored trial."""
+    return (
+        bool(trials)
+        and bool(cameras)
+        and all(
+            trial["control_hz"] is not None
+            and trial["control_hz"] >= fps * 0.8
+            and all(
+                trial["camera_hz"].get(camera, 0) >= fps * 0.8
+                and trial["camera_max_gap_s"].get(camera, float("inf")) <= 0.25
+                for camera in cameras
+            )
+            and bool(trial["simulator_timing_samples"])
+            and all(
+                0.9 <= (timing.get("real_time_factor") or 0) <= 1.1
+                and bool(timing.get("camera_fps"))
+                and all((rate or 0) >= fps * 0.8 for rate in timing["camera_fps"].values())
+                for timing in trial["simulator_timing_samples"]
+            )
+            for trial in trials
+        )
+    )
+
+
 class EpisodeMonitor:
     """Poll simulator HTTP outside Runtime's synchronous tick callbacks."""
 
@@ -112,11 +135,14 @@ class EpisodeMonitor:
         self.started_at: float | None = None
         self.actions_sent = 0
         self.max_joint_change = 0.0
-        self.initial_joints = None
+        self.initial_joints: np.ndarray | None = None
         self.ticks: list[float] = []
         self.latencies: list[float] = []
         self.frame_times: dict[str, set[float]] = {}
+        self.frame_updates: dict[str, float] = {}
+        self.frame_max_gaps: dict[str, float] = {}
         self.snapshot = before
+        self.timing_samples: list[dict] = []
         self.finished = threading.Event()
         self.thread = threading.Thread(target=self._poll, daemon=True)
 
@@ -129,6 +155,7 @@ class EpisodeMonitor:
         if count < self.count or count > self.count + 1:
             raise AssertionError("Lost simulator episodes or unexpected reset")
         self.snapshot = snapshot
+        self.timing_samples.append(snapshot.get("timing", {}))
         if count > self.count:
             episode = snapshot["episode"]["last_episode"]
             if sum(episode[k] for k in ("correct", "wrong", "missed")) != self.items:
@@ -151,13 +178,23 @@ class EpisodeMonitor:
             self.stop.set()
 
     def begin(self, before: dict) -> None:
+        if self.error is not None:
+            raise self.error
         self.count = before["episode"]["episode_count"]
         self.snapshot = before
+        self.timing_samples.clear()
         self.recording = True
         self.started_at = time.monotonic()
         self.thread.start()
 
     def on_tick(self, event) -> None:
+        if event.action_sent is not None:
+            action = np.asarray(event.action_sent)
+            if action.shape != (6,) or action.dtype.kind not in "fiu" or not np.isfinite(action).all():
+                # Runtime logs callback exceptions; retain the failure for close()/begin().
+                self.error = AssertionError("Policy actions must contain six finite joint values")
+                self.stop.set()
+                return
         if not self.recording:
             self.stop.set()  # A paused one-tick warmup must not enter scored metrics.
             return
@@ -168,7 +205,14 @@ class EpisodeMonitor:
             self.initial_joints = joints.copy()
         self.max_joint_change = max(self.max_joint_change, float(np.max(np.abs(joints - self.initial_joints))))
         for key, frame in event.camera_frames.items():
-            self.frame_times.setdefault(key, set()).add(frame.timestamp)
+            timestamps = self.frame_times.setdefault(key, set())
+            if frame.timestamp not in timestamps:
+                previous = self.frame_updates.get(
+                    key, self.started_at if self.started_at is not None else self.ticks[0]
+                )
+                self.frame_max_gaps[key] = max(self.frame_max_gaps.get(key, 0), self.ticks[-1] - previous)
+                self.frame_updates[key] = self.ticks[-1]
+                timestamps.add(frame.timestamp)
 
     def on_inference(self, event) -> None:
         if self.recording:
@@ -203,7 +247,13 @@ class EpisodeMonitor:
             else None,
             "inference_p95_s": float(np.percentile(self.latencies, 95)) if self.latencies else None,
             "unique_camera_frames": {key: len(times) for key, times in self.frame_times.items()},
+            "camera_hz": {key: len(times) / elapsed if elapsed else 0 for key, times in self.frame_times.items()},
+            "camera_max_gap_s": {
+                key: max(self.frame_max_gaps[key], self.ticks[-1] - updated)
+                for key, updated in self.frame_updates.items()
+            },
             "simulator_timing": self.snapshot.get("timing", {}),
+            "simulator_timing_samples": self.timing_samples,
         }
 
 
@@ -219,34 +269,17 @@ def attest_runtime() -> dict:
     return commits
 
 
-def checkpoint_entry(path: Path, policy: str) -> dict | None:
-    entry = json.loads(path.read_text())[policy]
-    if entry is None:
-        return None
-    if not isinstance(entry, dict) or set(entry) != {"repo_id", "revision", "filename", "sha256", "min_score"}:
-        raise ValueError("Invalid qualified checkpoint entry")
-    if not isinstance(entry["repo_id"], str) or not re.fullmatch(r"[\w.-]+/[\w.-]+", entry["repo_id"]):
-        raise ValueError("Invalid checkpoint repository")
-    if not isinstance(entry["revision"], str) or not re.fullmatch(r"[0-9a-f]{40}", entry["revision"]):
-        raise ValueError("Checkpoint revision must be immutable")
-    filename = entry["filename"]
-    if (
-        not isinstance(filename, str)
-        or "/" in filename
-        or "\\" in filename
-        or ".." in filename
-        or not filename.endswith(".ckpt")
-    ):
-        raise ValueError("Invalid checkpoint filename")
-    if not isinstance(entry["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]):
-        raise ValueError("Invalid checkpoint checksum")
-    if type(entry["min_score"]) not in (int, float) or not 0 < entry["min_score"] <= 1:
-        raise ValueError("A qualified checkpoint needs a positive measured score threshold")
-    return entry
-
-
-def verify_checkpoint(path: Path, expected: str) -> None:
-    with path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    if digest != expected:
-        raise ValueError("Checkpoint checksum mismatch")
+def control_scores(path: Path) -> dict[str, float]:
+    """Require successful expert/no-action controls on the rollout's exact seed protocol."""
+    report = json.loads(path.read_text())
+    if report.get("status") != "passed":
+        raise ValueError("Simulator controls must pass before training and inference")
+    scores = {}
+    for mode in ("off", "drive"):
+        trials = report[mode]["trials"]
+        if [trial["seed"] for trial in trials] != list(SEEDS):
+            raise ValueError("Simulator controls must use the rollout seeds")
+        scores[mode] = score([episode for trial in trials for episode in trial["episodes"]])
+    if not 0 <= scores["off"] < scores["drive"] <= 1:
+        raise ValueError("Scripted expert must beat a valid no-action score")
+    return scores

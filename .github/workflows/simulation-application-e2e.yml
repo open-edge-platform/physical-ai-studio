@@ -27,7 +27,6 @@ env:
   SIM_E2E_HTTP_URL: http://127.0.0.1:8080
   SIM_E2E_OWNER: sim-daily-${{ github.run_id }}-${{ github.run_attempt }}
   SIM_E2E_DATASET: ${{ inputs.dataset || '100' }}
-  SIM_E2E_DATASET_DIR: ${{ github.workspace }}/.simulation-dataset-${{ inputs.dataset || '100' }}
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
@@ -87,27 +86,26 @@ jobs:
           retention-days: 14
 
   policy:
-    name: ${{ matrix.mode }} / ${{ matrix.policy }}
-    if: always()
+    name: Train to inference / ${{ matrix.policy }}
     needs: controls
     runs-on: [self-hosted, Linux, X64, gpu]
-    timeout-minutes: 30
+    timeout-minutes: 360
     permissions:
       contents: read
+      actions: write
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        mode: [train, evaluate]
         policy: [act]
     env:
       SIM_E2E_POLICY: ${{ matrix.policy }}
-      SIM_E2E_MODE: ${{ matrix.mode }}
+      SIM_E2E_MODE: full
       SIM_E2E_RECORD_VIDEO: true
-      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/${{ matrix.mode }}-${{ matrix.policy }}
-      STORAGE_DIR: ${{ github.workspace }}/.simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/studio
-      SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/studio/settings.json
-      CONTROLS_RESULT: ${{ needs.controls.result }}
+      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/full-${{ matrix.policy }}
+      STORAGE_DIR: ${{ github.workspace }}/.simulation-results/full-${{ matrix.policy }}/studio
+      SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/full-${{ matrix.policy }}/studio/settings.json
+      SIM_E2E_CONTROLS_FILE: ${{ github.workspace }}/.simulation-results/controls/controls.json
     steps:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
@@ -125,26 +123,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/simulation-environment
-      - name: Check qualification and simulator baseline
-        id: qualification
-        working-directory: application/backend
-        run: |
-          mkdir -p "$SIM_E2E_OUTPUT_DIR"
-          qualified=$(uv run --no-sync python -c 'import os; from pathlib import Path; from tests.integration.simulation_e2e import checkpoint_entry; print(str(checkpoint_entry(Path("configs/simulation-e2e/checkpoints.json"), os.environ["SIM_E2E_POLICY"]) is not None).lower())')
-          echo "qualified=$qualified" >> "$GITHUB_OUTPUT"
-          if [[ "$SIM_E2E_MODE" == evaluate && "$CONTROLS_RESULT" != success ]]; then
-            echo 'Simulator controls failed; quality evaluation is blocked' >&2
-            exit 1
-          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sim-controls
+          path: .simulation-results/controls
       - uses: ./.github/actions/start-simulator
-        if: matrix.mode == 'evaluate' && steps.qualification.outputs.qualified == 'true'
-      - name: Run application training or qualified export and evaluation
+      - name: Train fresh model and run its deployment bundle
         working-directory: application/backend
         run: |
           uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
             -k test_train_export_and_run_in_simulation -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
       - name: Stop owner
-        if: always() && matrix.mode == 'evaluate'
+        if: always()
         run: |
           if test -f "$SIM_E2E_OUTPUT_DIR/owner.pid"; then
             pid=$(< "$SIM_E2E_OUTPUT_DIR/owner.pid")
@@ -153,17 +143,39 @@ jobs:
               kill "$pid" 2>/dev/null || true
             fi
           fi
+      - name: Retain training and deployment outputs
+        id: training_outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: training-outputs-${{ matrix.policy }}
+          path: |
+            .simulation-results/full-${{ matrix.policy }}/*.json
+            .simulation-results/full-${{ matrix.policy }}/studio/models/
+            .simulation-results/full-${{ matrix.policy }}/studio/cache/*/*.ckpt
+            .simulation-results/full-${{ matrix.policy }}/studio/cache/*/version_*/
+            .simulation-results/full-${{ matrix.policy }}/studio/logs/
+            .simulation-results/full-${{ matrix.policy }}/runtime.zip
+          compression-level: 0
+          retention-days: 14
+      - name: Remove superseded training outputs
+        if: always() && steps.training_outputs.outcome == 'success' && steps.training_outputs.outputs.artifact-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.training_outputs.outputs.artifact-id }}
+          ARTIFACT_NAME: training-outputs-${{ matrix.policy }}
+        run: python3 application/backend/scripts/prune_simulation_artifacts.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: sim-${{ matrix.mode }}-${{ matrix.policy }}
+          name: sim-full-${{ matrix.policy }}
           path: |
-            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.json
-            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.xml
-            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.log
-            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.mp4
-            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/runtime/runtime.yaml
-            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/runtime/README.md
+            .simulation-results/full-${{ matrix.policy }}/*.json
+            .simulation-results/full-${{ matrix.policy }}/*.xml
+            .simulation-results/full-${{ matrix.policy }}/*.log
+            .simulation-results/full-${{ matrix.policy }}/*.mp4
+            .simulation-results/full-${{ matrix.policy }}/runtime/runtime.yaml
+            .simulation-results/full-${{ matrix.policy }}/runtime/README.md
           retention-days: 14
 
   report:
