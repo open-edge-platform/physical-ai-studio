@@ -231,6 +231,8 @@ class SessionModel(BaseModel):
 
 class SessionState(BaseModel):
     session_id: str
+    rerun_url: str | None = None
+    """Hosted web viewer for the session's stream; local streams require a browser on the backend host."""
     environment: SessionEnvironment | None = None
     control: ControlConfig | None = None
     """What drives the follower; ``None`` holds it still."""

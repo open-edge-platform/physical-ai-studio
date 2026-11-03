@@ -290,6 +290,7 @@ class RuntimeSession:
         control, dataset, model = self._control.value, self._dataset.value, self._model.value
         return SessionState(
             session_id=self.id,
+            rerun_url=self._observer.viewer_url if self._observer is not None and self._observer.is_alive() else None,
             environment=self.environment,
             control=control.config if control else None,
             dataset=dataset.state() if dataset else None,

@@ -5,6 +5,7 @@ import { Button, Divider, Flex, Grid, Item, Loading, minmax, Picker, Text, View 
 import { SessionPartName, useRuntimeSession } from '../runtime-session-provider';
 import { SessionViewer } from '../session-viewer';
 import { InferenceMode } from './inference-mode';
+import { OpenRerunButton } from './open-rerun-button';
 import { PartControlsProvider, usePartControls } from './part-controls';
 import { PartsPanel } from './parts-panel';
 import { RecordMode } from './record-mode';
@@ -100,6 +101,7 @@ export const SessionWorkspace = ({ initialMode, cancelHref }: { initialMode: Mod
                             <PartsPanel />
                         </Suspense>
                         <Divider size='S' />
+                        <OpenRerunButton url={state?.rerun_url} />
                         <Picker
                             label='Mode'
                             width='100%'
