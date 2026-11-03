@@ -56,7 +56,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-10-27T09:29:23.851529Z"
+exclude-newer = "2026-10-27T10:22:03.155699Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -69,7 +69,7 @@ openvino = false
 lightning = false
 physicalai-rebot-b601-plugin = false
 pynokhwa = false
-pyrealsense2 = { timestamp = "2026-11-02T09:29:23.851694Z", span = "P1D" }
+pyrealsense2 = { timestamp = "2026-11-02T10:22:03.155704Z", span = "P1D" }
 physicalai-lerobot-plugin = false
 physicalai-studio-plugin = false
 physicalai-so101-plugin = false
@@ -78,7 +78,6 @@ physicalai-stararm-plugin = false
 [manifest]
 overrides = [
     { name = "diffusers", specifier = ">=0.38.0" },
-    { name = "physicalai", extras = ["capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=b4cc2cf569c24f92424001dde7aca4081096ebd1" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "setuptools", specifier = ">=83.0.0" },
 ]
@@ -3015,7 +3014,7 @@ dependencies = [
     { name = "mujoco-menagerie" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
-    { name = "physicalai", extra = ["capture", "transport"] },
+    { name = "physicalai", extra = ["transport"] },
     { name = "physicalai-studio-plugin" },
     { name = "pydantic" },
     { name = "uvicorn" },
@@ -3033,7 +3032,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "feetech-servo-sdk" },
     { name = "loguru" },
-    { name = "physicalai", extra = ["capture", "transport"] },
+    { name = "physicalai" },
     { name = "physicalai-studio-plugin" },
     { name = "pydantic" },
     { name = "pyserial" },
@@ -3212,7 +3211,7 @@ name = "physicalai-studio-plugin"
 version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "physicalai", extra = ["capture", "transport"] },
+    { name = "physicalai" },
     { name = "pydantic" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7f/68/acc1209091f33b6574f4b7937eaa7c4c7eeaf9ab35b52c5fd848c704c08e/physicalai_studio_plugin-0.5.0.tar.gz", hash = "sha256:605a587f709420ac3b48436fa9662538ae16b00fb272d7ddd080cfac43b65c2e", size = 21932, upload-time = "2026-10-30T17:15:26.028Z" }
@@ -3236,7 +3235,7 @@ dependencies = [
     { name = "openvino" },
     { name = "openvino-tokenizers" },
     { name = "peft" },
-    { name = "physicalai", extra = ["capture", "transport"] },
+    { name = "physicalai" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pymunk" },
@@ -3368,7 +3367,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "numpy", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "physicalai", extra = ["capture", "transport"], marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
+    { name = "physicalai", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "physicalai-studio-plugin", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "pydantic", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "trossen-arm", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },

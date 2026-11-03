@@ -185,8 +185,6 @@ exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai
 # is listed as a named index with higher priority above.
 index-strategy = "unsafe-best-match"
 override-dependencies = [
-    # The SDK 0.3 simulator's workspace pins Runtime; use the application's newer revision.
-    "physicalai[capture,transport] @ git+https://github.com/openvinotoolkit/physicalai.git@b4cc2cf569c24f92424001dde7aca4081096ebd1",
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
     # Safe to override because executorch
     # production code does not import pytest at runtime.
