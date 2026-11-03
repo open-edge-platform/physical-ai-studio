@@ -163,20 +163,6 @@ class RuntimeSession:
         self._serve_commands(self._bus)
         self._listen(self._bus)
         self._registry.add(self)
-        rerun_settings = get_settings().rerun
-        if not rerun_settings.enabled:
-            return self
-        observer = RerunObserver(self.id, settings=rerun_settings)
-        try:
-            await observer.__aenter__()
-        except Exception:
-            logger.exception("Session {} could not start Rerun; continuing without visualization", self.id)
-        except BaseException:
-            self._registry.remove(self)
-            self._bus.close()
-            raise
-        else:
-            self._observer = observer
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
@@ -212,8 +198,6 @@ class RuntimeSession:
                     )
                 if self._bus is not None:
                     self._bus.close()
-                if self._observer is not None:
-                    await self._observer.__aexit__(None, None, None)
                 logger.info("Session {} closed ({})", self.id, reason)
                 self.finished.set()
 
@@ -492,11 +476,33 @@ class RuntimeSession:
 
     @asynccontextmanager
     async def _watched_control(self, config: ControlConfig, environment: Environment) -> AsyncIterator[Control]:
-        control = build_control(
-            config, environment.store, environment.leader, self._model.value, self.bus, observer=self._observer
-        )
-        async with self._reported(_CONTROL, control):
-            yield control
+        try:
+            if isinstance(config, ModelControlConfig):
+                await self._start_observer(environment.store)
+            control = build_control(
+                config, environment.store, environment.leader, self._model.value, self.bus, observer=self._observer
+            )
+            async with self._reported(_CONTROL, control):
+                yield control
+        finally:
+            observer, self._observer = self._observer, None
+            if observer is not None:
+                observer.set_store(None)
+                await observer.__aexit__(None, None, None)
+
+    async def _start_observer(self, store: Store) -> None:
+        """Start a fresh recording for this model run; visualization is best-effort."""
+        rerun_settings = get_settings().rerun
+        if not rerun_settings.enabled:
+            return
+        observer = RerunObserver(f"{self.id}-{uuid4().hex}", settings=rerun_settings)
+        observer.set_store(store)
+        try:
+            await observer.__aenter__()
+        except Exception:
+            logger.exception("Session {} could not start Rerun; continuing without visualization", self.id)
+        else:
+            self._observer = observer
 
     async def reload_environment(self) -> None:
         """Ask the environment to connect its devices again; the store and the dataset stay.
