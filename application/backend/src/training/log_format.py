@@ -1,11 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Shared formatting for training-progress log lines.
-
-Local and remote backends must emit identical job-log lines so the UI log
-stream reads the same regardless of where training ran.
-"""
+"""Formatting for training and validation progress log lines."""
 
 from __future__ import annotations
 
