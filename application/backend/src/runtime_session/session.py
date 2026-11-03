@@ -456,6 +456,8 @@ class RuntimeSession:
 
     async def _switch_control(self, environment: Environment, config: ControlConfig | None) -> None:
         """Hold the lock. One control at a time, by construction: the old one is joined before the next starts."""
+        # An episode records one way of driving the follower; a switch mid-episode would mix two.
+        await self._stop_recording()
         await self._control.unload()
         # Hold: the follower stays where it is now, not where the old control last pointed it.
         if (state := environment.store.read(STATE)) is not None:
@@ -563,7 +565,7 @@ class RuntimeSession:
         self._emit(StateMessage(data=self.state()))
 
     async def _stop_recording(self) -> None:
-        """Hold the lock. Discard the episode being recorded: its last frames came from failing devices."""
+        """Hold the lock. Discard the episode being recorded, when what it records from changes or fails."""
         dataset = self._dataset.value
         if dataset is None or not dataset.status.is_recording:
             return

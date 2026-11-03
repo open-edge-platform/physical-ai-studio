@@ -376,6 +376,21 @@ async def test_a_failed_environment_keeps_its_dataset_loaded_but_not_recording(
     await _start(session, "pick")
 
 
+async def test_switching_the_control_discards_the_open_episode(new_session, fake_cameras, fake_worker) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    await _start(session, "pick")
+    await _until(lambda: session.state().dataset.is_recording)
+
+    await session.set_control(None)
+
+    await _until(lambda: not session.state().dataset.is_recording)
+    assert session.state().dataset.episodes_recorded == 0
+    assert "discard" in [event["event"] for event in recording_log(Path(dataset.path) / "recording.jsonl")]
+
+
 async def test_a_dead_dataset_worker_unloads_the_dataset(new_session, fake_cameras, fake_worker) -> None:
     session = await new_session()
     statuses = subscribe_statuses(session)
