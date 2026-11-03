@@ -868,8 +868,9 @@ class SO101SetupWorker(TransportWorker):
                 async with self._bus_lock:
                     await asyncio.to_thread(self.bus.disconnect)
             except Exception:
+                logger.warning("Failed to disconnect motor bus; retrying without disabling torque")
                 try:
-                    self.bus.port_handler.closePort()
+                    await asyncio.to_thread(self.bus.disconnect, disable_torque=False)
                 except Exception:
                     logger.debug("Failed to close motor bus port", exc_info=True)
             self.bus = None

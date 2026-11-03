@@ -83,7 +83,7 @@ diffusion = ["diffusers>=0.38.0"]
 # Physical Intelligence Pi0.5 foundation model
 # Requires the PaliGemma backbone + Gemma action expert.
 pi05 = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "sentencepiece<=0.2.1",
@@ -91,7 +91,7 @@ pi05 = [
 
 # SmolVLA foundation model
 smolvla = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "num2words>=0.5.14,<0.6.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
@@ -99,14 +99,14 @@ smolvla = [
 # MolmoAct2
 # Supports LoRA fine-tuning for efficient adaptation
 molmoact2 = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
 
 # RLWRLD RLDX-1
 rldx1 = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "scipy>=1.11.0,<2.0.0",
@@ -117,7 +117,7 @@ rldx1 = [
 # NVIDIA Cosmos 3 foundation policy
 cosmos3 = [
     "diffusers>=0.40.0",
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
@@ -128,7 +128,7 @@ nncf = ["nncf>=3.0.0"]
 # Xiaomi-Robotics-0 (XR0) foundation model
 # Requires a Qwen3-VL backbone (transformers>=5.5.0 ships the qwen3_vl models)
 xr0 = [
-    "transformers>=5.15.0,<=5.15.1",
+    "transformers>=5.22.0,<5.23.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
 ]
@@ -201,7 +201,8 @@ exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
 # FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
-exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false }
+# FIXME: transformers: disable cutoff so 5.22 required by lerobot main resolves despite being <7 days old
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false, transformers = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -212,6 +213,11 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
+    # The physicalai runtime pins transformers<5.16, but lerobot main needs 5.22. The runtime only
+    # uses transformers for AutoTokenizer.from_pretrained, which is stable across 5.x.
+    { package = { name = "physicalai" }, dependencies = [
+        "transformers>=5.22.0,<5.23.0",
+    ] },
 ]
 
 

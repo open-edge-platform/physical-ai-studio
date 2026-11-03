@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import av
 import numpy as np
+import pandas as pd
 import pytest
 from lerobot.configs import RGBEncoderConfig
 from lerobot.configs.video import DepthEncoderConfig
@@ -16,6 +17,39 @@ from internal_datasets.lerobot.video_encoding_settings import (
     VideoEncodingSettings,
     video_encoding_presets,
 )
+
+
+@pytest.mark.parametrize("tasks", [None, pd.DataFrame({"task_index": []})])
+def test_get_tasks_without_recorded_tasks(tmp_path: Path, tasks) -> None:
+    dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
+    dataset.path = tmp_path
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta/info.json").touch()
+    dataset._dataset = MagicMock()
+    dataset._dataset.meta.tasks = tasks
+
+    assert dataset.get_tasks() == []
+
+
+def test_get_tasks_returns_task_names(tmp_path: Path) -> None:
+    dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
+    dataset.path = tmp_path
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta/info.json").touch()
+    dataset._dataset = MagicMock()
+    dataset._dataset.meta.tasks = pd.DataFrame({"task_index": [0, 1]}, index=["pick", "place"])
+
+    assert dataset.get_tasks() == ["pick", "place"]
+
+
+@pytest.mark.parametrize("episodes", [None, [], [{"episode_index": 0}, "not metadata"]])
+def test_get_episode_metadata_list_handles_empty_metadata(episodes) -> None:
+    dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
+    dataset._dataset = MagicMock()
+    dataset._dataset.meta.episodes = episodes
+
+    expected = [{"episode_index": 0}] if episodes else []
+    assert dataset._get_episode_metadata_list() == expected
 
 
 def test_video_recording_settings_translate_to_lerobot_kwargs() -> None:

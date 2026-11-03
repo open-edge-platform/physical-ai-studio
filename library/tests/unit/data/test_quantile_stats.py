@@ -12,6 +12,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import datasets
 import numpy as np
 import pytest
 import torch
@@ -23,7 +24,7 @@ class _FakeLeRobotDataset:
     Provides the attributes required by both ``has_quantile_stats`` and
     LeRobot's ``compute_quantile_stats_for_dataset``:
     ``meta.stats``, ``meta.episodes``, ``meta.video_keys``,
-    ``features``, ``num_episodes``, ``__len__``, ``__getitem__``.
+    ``features``, ``hf_dataset``, ``num_episodes``, ``__len__``, ``__getitem__``.
     """
 
     def __init__(self, num_episodes: int = 3, frames_per_episode: int = 20, seed: int = 42) -> None:
@@ -71,6 +72,14 @@ class _FakeLeRobotDataset:
             features=features_dict,
             stats=stats,
         )
+
+        # LeRobot reads numeric columns straight from the underlying HF table.
+        self.hf_dataset = datasets.Dataset.from_dict({
+            "observation.state": self._state_data.numpy(),
+            "action": self._action_data.numpy(),
+            "episode_index": np.arange(total) // frames_per_episode,
+            "frame_index": np.arange(total) % frames_per_episode,
+        })
 
     @property
     def features(self) -> dict:

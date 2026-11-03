@@ -191,7 +191,8 @@ exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
 # FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
-exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-trossen-plugin = false, physicalai-so101-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false}
+# FIXME: transformers: disable cutoff so 5.22 required by lerobot main resolves despite being <7 days old
+exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-trossen-plugin = false, physicalai-so101-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false, transformers = false}
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
@@ -210,6 +211,11 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
+    # The physicalai runtime pins transformers<5.16, but lerobot main needs 5.22. The runtime only
+    # uses transformers for AutoTokenizer.from_pretrained, which is stable across 5.x.
+    { package = { name = "physicalai" }, dependencies = [
+        "transformers>=5.22.0,<5.23.0",
+    ] },
     # LeRobot declares torchcodec with per-platform markers; uv forks on those and then
     # can't keep the per-extra torchcodec sources apart. Collapse it to one requirement.
     { package = { name = "lerobot" }, dependencies = [

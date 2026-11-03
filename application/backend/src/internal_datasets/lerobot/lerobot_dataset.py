@@ -119,10 +119,13 @@ class InternalLeRobotDataset(DatasetClient):
         )
 
     def get_tasks(self) -> list[str]:
-        """Get Tasks in dataset."""
+        """Get dataset tasks, or an empty list before tasks are recorded."""
         if not self.exists_on_disk:
             return []
-        return list(self._dataset.meta.tasks.to_dict()["task_index"].keys())
+        tasks = self._dataset.meta.tasks
+        if tasks is None:
+            return []
+        return list(tasks.to_dict()["task_index"].keys())
 
     def get_video_path(self, episode: int, camera: str) -> Path:
         """Get Video path of specific episode and camera."""
@@ -411,7 +414,10 @@ class InternalLeRobotDataset(DatasetClient):
         return None
 
     def _get_episode_metadata_list(self) -> list[EpisodeMetadata]:
-        return [episode for episode in self._dataset.meta.episodes if isinstance(episode, dict)]
+        episodes = self._dataset.meta.episodes
+        if episodes is None:
+            return []
+        return [episode for episode in episodes if isinstance(episode, dict)]
 
     @staticmethod
     @lru_cache(maxsize=128)
