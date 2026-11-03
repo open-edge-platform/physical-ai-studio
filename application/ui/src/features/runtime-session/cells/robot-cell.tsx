@@ -37,8 +37,9 @@ export const TeleopSwitch = () => {
         <Switch
             isEmphasized
             isSelected={state?.control?.type === 'teleop'}
-            // A failed environment stays loaded until it is loaded again, with nothing to drive.
-            isDisabled={isPending || failureOf(statuses, 'environment') !== null}
+            // A failed environment stays loaded until it is loaded again, with nothing to drive;
+            // switching the control mid-episode discards the episode.
+            isDisabled={isPending || failureOf(statuses, 'environment') !== null || state?.dataset?.is_recording}
             onChange={setTeleop}
         >
             Teleoperate

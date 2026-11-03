@@ -71,7 +71,7 @@ const MissingParts = ({ needs }: { needs: SessionPartName[] }) => {
  * (record, run model) only choose what is loaded first and which mode is selected.
  */
 export const SessionWorkspace = ({ initialMode, cancelHref }: { initialMode: ModeKey; cancelHref: string }) => {
-    const { send } = useRuntimeSession();
+    const { send, state } = useRuntimeSession();
     const [modeKey, setModeKey] = useState(initialMode);
     const mode = MODES.find((candidate) => candidate.key === modeKey) ?? MODES[0];
 
@@ -106,6 +106,7 @@ export const SessionWorkspace = ({ initialMode, cancelHref }: { initialMode: Mod
                             items={MODES}
                             selectedKey={mode.key}
                             onSelectionChange={(key) => key !== null && selectMode(key as ModeKey)}
+                            isDisabled={state?.dataset?.is_recording}
                         >
                             {(candidate) => <Item key={candidate.key}>{candidate.label}</Item>}
                         </Picker>
