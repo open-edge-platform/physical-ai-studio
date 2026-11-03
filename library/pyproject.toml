@@ -33,7 +33,7 @@ dependencies = [
     "lightning-utilities",
     "lerobot[dataset]==0.6.0",
     "gymnasium>=0.29.1",
-    "gym-pusht>=0.1.5",
+    "gym-pusht>=0.1.5,<=0.1.8",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
     "openvino>=2026.4",
@@ -51,10 +51,17 @@ dependencies = [
 [project.optional-dependencies]
 # PyTorch dependency groups
 cpu = ["torch", "torchvision"]
-cu128 = ["torch", "torchvision"]
+# The PyPI wheels for torchao 0.18+ are built against CUDA 13 and
+# fail to dlopen next to a cu128 torch.
+cu128 = [
+    "torch",
+    "torchvision",
+    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 xpu = [
     "torch",
     "torchvision",
+    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # Testing dependencies
 tests = [
@@ -231,7 +238,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "1cc910b451508ce40cd7319ece2a29283fadfcfb" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -239,6 +246,10 @@ torch = [
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+torchao = [
     { index = "pytorch-cu128", extra = "cu128" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]

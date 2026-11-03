@@ -96,7 +96,7 @@ For cloud-based remote training, the Hugging Face token may be exposed in logs d
 The supplied stack scales compute to zero when idle. Keep it deployed for future training jobs; storage charges still apply.
 
 1. Open **Settings**, then **Training Targets**, and select **AWS Provider**.
-2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in **US East (N. Virginia)** (`us-east-1`), or use an existing deployment. Wait for stack creation to complete and copy `ConfigurationUri` from its **Outputs** tab.
+2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in one of the template's supported `DeploymentRegion` options (defaults to `us-east-1`), or use an existing deployment. Wait for stack creation to complete and copy `ConfigurationUri` from its **Outputs** tab.
 3. Paste that output into **S3 configuration file URI**, then select **Next**. Use the configuration file URI, not just the bucket URL.
 4. In **Connect to AWS remote training stack**, select an **AWS profile** that is configured and authenticated on the Studio backend host. The information button explains credential setup.
 5. Select **Connect**. Studio reads and validates the configuration using the selected profile, then saves the target. If it fails, an error toast explains recovery and the form preserves your inputs. **Back** returns to the URI without discarding your profile selection.
