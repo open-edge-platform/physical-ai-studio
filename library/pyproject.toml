@@ -31,7 +31,7 @@ dependencies = [
     "pillow",
     "lightning>=2.6.6",
     "lightning-utilities",
-    "lerobot[dataset]==0.6.0",
+    "lerobot[dataset]>=0.6.0",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5,<=0.1.8",
     "pymunk>=6.6.0,<7.0.0",
@@ -50,18 +50,20 @@ dependencies = [
 
 [project.optional-dependencies]
 # PyTorch dependency groups
-cpu = ["torch", "torchvision"]
-# The PyPI wheels for torchao 0.18+ are built against CUDA 13 and
-# fail to dlopen next to a cu128 torch.
-cu128 = [
+cpu = [
     "torch",
     "torchvision",
-    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torchao>=0.18.0,<0.19",
+]
+cu130 = [
+    "torch",
+    "torchvision",
+    "torchao>=0.18.0,<0.19",
 ]
 xpu = [
     "torch",
     "torchvision",
-    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torchao>=0.18.0,<0.19; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # Testing dependencies
 tests = [
@@ -221,9 +223,6 @@ override-dependencies = [
     ] },
     # Locked torch is 2.14, which only executorch 1.5.x runs on (see the executorch extra).
     "executorch>=1.5.0,<1.6",
-    # Mirrors executorch 1.5's own torchao range. Needed only so the `pypi` source below
-    # applies: uv ignores sources for transitive deps unless they are overridden.
-    "torchao>=0.18.0,<0.19",
 ]
 
 
@@ -256,6 +255,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
+lerobot = { git = "https://github.com/huggingface/lerobot.git", rev = "06f78b6c46670d0372b9a0f1544574c6b84a0df8" }
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
@@ -268,8 +268,11 @@ torchvision = [
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchao = [
-    { index = "pytorch-cu128", extra = "cu128" },
-    { index = "pytorch-xpu", extra = "xpu" },ßßßß
+    { index = "pytorch-cpu", extra = "cpu" },
+    # The cu130 index only publishes linux x86_64 torchao wheels.
+    { index = "pytorch-cu130", extra = "cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pypi", extra = "cu130", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
+    { index = "pytorch-xpu", extra = "xpu" },
 ]
 
 triton-xpu = { index = "pytorch-xpu" }
