@@ -673,14 +673,17 @@ def test_lockfiles_resolve_the_configured_runtime_and_plugin_pin():
     for project in (ROOT / "library", BACKEND):
         config = tomllib.loads((project / "pyproject.toml").read_text())
         lock = tomllib.loads((project / "uv.lock").read_text())
-        names = ("physicalai", "physicalai-mujoco-plugin") if project == BACKEND else ("physicalai",)
-        for name in names:
-            expected = config["tool"]["uv"]["sources"][name]["rev"]
-            package = next(package for package in lock["package"] if package["name"] == name)
-            assert package["source"]["git"].endswith(f"#{expected}")
-            assert expected == (
-                controls.MUJOCO_REVISION if name == "physicalai-mujoco-plugin" else controls.RUNTIME_REVISION
-            )
+        expected = config["tool"]["uv"]["sources"]["physicalai"]["rev"]
+        package = next(package for package in lock["package"] if package["name"] == "physicalai")
+        assert package["source"]["git"].endswith(f"#{expected}")
+        assert expected == controls.RUNTIME_REVISION
+        if project == BACKEND:
+            assert config["project"]["optional-dependencies"]["sim-e2e"] == [
+                f"physicalai-mujoco-plugin=={controls.MUJOCO_VERSION}"
+            ]
+            plugin = next(package for package in lock["package"] if package["name"] == "physicalai-mujoco-plugin")
+            assert plugin["version"] == controls.MUJOCO_VERSION
+            assert plugin["source"] == {"registry": "https://pypi.org/simple"}
 
 
 def test_runtime_attestation_rejects_mixed_pins(monkeypatch):
@@ -689,6 +692,22 @@ def test_runtime_attestation_rejects_mixed_pins(monkeypatch):
     monkeypatch.setattr(controls, "distribution", lambda name: dist)
     with pytest.raises(RuntimeError, match="pinned Runtime"):
         controls.attest_runtime()
+
+
+@pytest.mark.parametrize("plugin_version", [controls.MUJOCO_VERSION, "0.4.0"])
+def test_runtime_attestation_checks_plugin_release(monkeypatch, plugin_version):
+    runtime = MagicMock()
+    runtime.read_text.return_value = json.dumps({"vcs_info": {"commit_id": controls.RUNTIME_REVISION}})
+    plugin = MagicMock(version=plugin_version)
+    monkeypatch.setattr(controls, "distribution", lambda name: runtime if name == "physicalai" else plugin)
+    if plugin_version != controls.MUJOCO_VERSION:
+        with pytest.raises(RuntimeError, match="pinned release version"):
+            controls.attest_runtime()
+    else:
+        assert controls.attest_runtime() == {
+            "physicalai": controls.RUNTIME_REVISION,
+            "physicalai-mujoco-plugin": controls.MUJOCO_VERSION,
+        }
 
 
 @pytest.mark.parametrize("mismatch", [None, "scene", "belt_speeds", "episode count"])

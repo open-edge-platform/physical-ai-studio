@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 RUNTIME_REVISION = "b4cc2cf569c24f92424001dde7aca4081096ebd1"
-MUJOCO_REVISION = "1cc910b451508ce40cd7319ece2a29283fadfcfb"
+MUJOCO_VERSION = "0.5.0"
 DATASET = {
-    "repo_id": "Albertvh97/conveyor-sort-sim-demos-100-episodes",
+    "repo_id": "physicalai-studio/conveyor-sort-sim-demos-100-episodes",
     "revision": "17db8f758b32141d795a71a064cfa9f5c6341b5b",
     "episodes": 100,
     "belt_speeds": [0.04],
@@ -264,15 +264,15 @@ class EpisodeMonitor:
 
 
 def attest_runtime() -> dict:
-    """Fail before expensive work if installed VCS dependencies differ from the pins."""
-    commits = {}
-    for name, revision in (("physicalai", RUNTIME_REVISION), ("physicalai-mujoco-plugin", MUJOCO_REVISION)):
-        direct_url = json.loads(distribution(name).read_text("direct_url.json") or "{}")
-        commit = direct_url.get("vcs_info", {}).get("commit_id")
-        if commit != revision:
-            raise RuntimeError(f"Installed {name} does not match the pinned Runtime revision")
-        commits[name] = commit
-    return commits
+    """Fail before expensive work if installed dependencies differ from the pins."""
+    direct_url = json.loads(distribution("physicalai").read_text("direct_url.json") or "{}")
+    commit = direct_url.get("vcs_info", {}).get("commit_id")
+    if commit != RUNTIME_REVISION:
+        raise RuntimeError("Installed physicalai does not match the pinned Runtime revision")
+    plugin_version = distribution("physicalai-mujoco-plugin").version
+    if plugin_version != MUJOCO_VERSION:
+        raise RuntimeError("Installed physicalai-mujoco-plugin does not match the pinned release version")
+    return {"physicalai": commit, "physicalai-mujoco-plugin": plugin_version}
 
 
 def control_scores(path: Path) -> dict[str, float]:
