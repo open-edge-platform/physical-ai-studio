@@ -17,6 +17,7 @@ from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from importlib.resources import files
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import numpy as np
 import psutil
@@ -140,6 +141,18 @@ class RerunObserver(ThreadWorker[None]):
         self._recording: RecordingStream
         self._process: psutil.Process | None = None
         self._next_system = 0.0
+
+    @property
+    def viewer_url(self) -> str:
+        """Return the matching hosted viewer URL using this session's startup settings."""
+        import rerun as rr
+
+        stream_url = (
+            self.settings.connect_url
+            if self.settings.mode == "connect"
+            else f"rerun+http://127.0.0.1:{self.settings.spawn_port}/proxy"
+        )
+        return f"https://app.rerun.io/version/{rr.__version__}/?{urlencode({'url': stream_url})}"
 
     def set_store(self, store: Store | None) -> None:
         """Detach before the session unlinks a store; only copying samples holds the lock."""

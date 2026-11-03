@@ -4,8 +4,10 @@ import asyncio
 import socket
 import time
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
+import httpx
 import numpy as np
 import pytest
 import rerun as rr
@@ -63,6 +65,16 @@ def test_real_headless_server_is_shared_and_reaped_after_the_last_session() -> N
         process = _BACKGROUND_SERVERS[port].process
         assert process.poll() is None
         assert _listening(port)
+        response = httpx.options(
+            f"http://127.0.0.1:{port}/rerun.sdk_comms.v1.MessageProxyService/ReadMessages",
+            headers={
+                "Origin": "https://app.rerun.io",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type,x-grpc-web,x-user-agent",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "https://app.rerun.io"
         with background_server(port):
             assert _BACKGROUND_SERVERS[port].process is process
             assert _BACKGROUND_SERVERS[port].users == 2
@@ -88,6 +100,41 @@ async def test_disabled_logging_does_not_start_an_observer(new_session, monkeypa
         session = await new_session()
     observer.assert_not_called()
     assert session._observer is None
+    assert session.state().rerun_url is None
+
+
+@pytest.mark.parametrize(
+    ("settings", "stream_url"),
+    [
+        (RerunSettings(spawn_port=1234), "rerun+http://127.0.0.1:1234/proxy"),
+        (RerunSettings(mode="connect", connect_addr="host:4321"), "rerun+http://host:4321/proxy"),
+        (
+            RerunSettings(mode="connect", connect_addr="rerun+https://host:4321/proxy"),
+            "rerun+https://host:4321/proxy",
+        ),
+    ],
+)
+def test_browser_link_matches_sdk_version_and_session_connection(settings: RerunSettings, stream_url: str) -> None:
+    observer = RerunObserver("browser", settings=settings)
+    with patch("subprocess.Popen") as spawn:
+        url = urlsplit(observer.viewer_url)
+    spawn.assert_not_called()
+    assert url.scheme == "https"
+    assert url.netloc == "app.rerun.io"
+    assert url.path == f"/version/{rr.__version__}/"
+    assert parse_qs(url.query) == {"url": [stream_url]}
+
+
+async def test_session_viewer_link_keeps_its_startup_settings(new_session, monkeypatch, tmp_path) -> None:
+    from settings import merge_user_settings
+
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    merge_user_settings({"rerun": {"spawn_port": 1234}})
+    session = await new_session()
+    initial_url = session.state().rerun_url
+    assert parse_qs(urlsplit(initial_url).query)["url"] == ["rerun+http://127.0.0.1:1234/proxy"]
+    merge_user_settings({"rerun": {"spawn_port": 4321}})
+    assert session.state().rerun_url == initial_url
 
 
 def test_samples_targets_and_latest_images_only_when_changed(store: Store) -> None:

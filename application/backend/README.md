@@ -98,6 +98,10 @@ Server starts at `http://localhost:7860` by default.
 Opening a runtime session starts (or reuses) a background Rerun server on
 `127.0.0.1:9876`, without opening a window. Connect a native Rerun viewer manually
 with `rerun rerun+http://127.0.0.1:9876/proxy` while the session is running.
+The runtime workspace's **Open Rerun** button opens Rerun's version-matched hosted
+web viewer in a new browser tab, connected to the session's stream. Loading the
+viewer requires internet access, and the stream must be reachable from the browser.
+For Studio's local, loopback-only server, use a browser on the backend machine.
 Studio stops its background server when the last session using it closes;
 servers started outside Studio are left running. The server buffers up to 256 MiB.
 Each session has a separate recording of measured joints,
