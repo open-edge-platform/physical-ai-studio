@@ -14,7 +14,7 @@ dependencies = [
   "eclipse-zenoh==1.9.0",
   "msgpack==1.2.1",
   "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
-  "lerobot[dataset,feetech]>=0.6.0",
+  "lerobot[dataset,feetech]>=0.6.2",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
@@ -68,8 +68,7 @@ path = "scripts/hatch_build.py"
 # torch build (see library conflicts), so it ships only with cpu/cuda.
 # torchvision hard-pins `torch==<matching version>`, so the two ranges stay aligned:
 # torch 2.11 <-> torchvision 0.26 ... torch 2.14 <-> torchvision 0.29.
-# torchcodec floor stays at 0.11 (pairs with torch 2.11) so published metadata satisfies
-# lerobot's torchcodec<0.12 cap; the lerobot override below lifts it to 0.12+ in the lock.
+# torchcodec floor stays at 0.11, which pairs with the torch 2.11 floor.
 cpu = [
     "torch>=2.11,<2.15",
     "torchvision>=0.26,<0.30",
@@ -211,17 +210,11 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
-    # LeRobot 0.6.0 caps torch<2.12 / torchvision<0.27 / torchcodec<0.12, below the top of
-    # our supported range. Scoped to lerobot on purpose: an unscoped override would replace
-    # the hardware extras' own requirements too, dropping their [tool.uv.sources] routing
-    # and resolving e.g. `--extra cpu` to a `+xpu` build.
+    # LeRobot declares torchcodec with per-platform markers; uv forks on those and then
+    # can't keep the per-extra torchcodec sources apart. Collapse it to one requirement.
     { package = { name = "lerobot" }, dependencies = [
-        "torch>=2.11,<2.15",
-        "torchvision>=0.26,<0.30",
-        "torchcodec>=0.12; extra == 'dataset'",
+        "torchcodec>=0.11,<0.18; extra == 'dataset'",
     ] },
-    # Locked torch is 2.14, which only executorch 1.5.x runs on (see the library's executorch extra).
-    "executorch>=1.5.0,<1.6",
 ]
 conflicts = [
     [
