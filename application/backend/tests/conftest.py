@@ -34,6 +34,12 @@ from schemas.environment import EnvironmentWithRelations
 from schemas.model import Model
 
 
+@pytest.fixture(autouse=True)
+def no_rerun_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep runtime tests from opening a native viewer on the developer's desktop."""
+    monkeypatch.setattr("rerun.spawn", lambda **_kwargs: None)
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Remove test storage when this conftest created it."""
     if _STORAGE_DIR_CREATED:

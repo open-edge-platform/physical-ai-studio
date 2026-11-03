@@ -95,6 +95,13 @@ uv run physicalai-studio serve
 
 Server starts at `http://localhost:7860` by default.
 
+Opening a runtime session spawns (or reuses) a native Rerun viewer on port `9876`
+on the backend host. Each session has a separate recording of measured joints,
+target actions, latest camera frames, model predictions, queue depth, inference
+latency, and host/Studio CPU and memory usage. Visualization failures do not stop
+the session. Actions are targets rather than the robot's interpolated commands;
+camera frames are not guaranteed to be the inputs to a particular inference.
+
 To change the host/port:
 
 ```bash
