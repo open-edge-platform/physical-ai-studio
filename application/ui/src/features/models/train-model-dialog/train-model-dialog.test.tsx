@@ -7,6 +7,7 @@ import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
 import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
+import { getMockedRerunSettings } from '../../../test-utils/mocks/mock-settings';
 import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
 import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
@@ -78,6 +79,7 @@ const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) =>
                     trainer_shm_size_gb: 32,
                 },
                 hotkeys: { bindings: {} },
+                rerun: getMockedRerunSettings(),
             })
         ),
         http.get('/api/policies/available', () =>

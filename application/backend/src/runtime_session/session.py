@@ -70,6 +70,7 @@ from schemas.runtime_session import (
     UnloadModelCommand,
 )
 from services.camera_claims import CameraClaim, settings_from_camera
+from settings import get_settings
 from workers import dataset_worker as dataset_rpc
 from workers.base import WorkerStartupError
 from workers.dataset_worker import RecordingStatus
@@ -162,7 +163,10 @@ class RuntimeSession:
         self._serve_commands(self._bus)
         self._listen(self._bus)
         self._registry.add(self)
-        observer = RerunObserver(self.id)
+        rerun_settings = get_settings().rerun
+        if not rerun_settings.enabled:
+            return self
+        observer = RerunObserver(self.id, settings=rerun_settings)
         try:
             await observer.__aenter__()
         except Exception:
