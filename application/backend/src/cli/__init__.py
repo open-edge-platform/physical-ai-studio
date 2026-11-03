@@ -1,8 +1,6 @@
 """Command line interface for interacting with the Physical AI Studio application."""
 
-import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
 import sys
-from pathlib import Path
 
 import click
 
@@ -10,19 +8,34 @@ from cli.database import database
 from cli.datasets import datasets
 from cli.models import models
 from cli.serve import serve
-from robots.catalog.assets import get_builtin_robot_assets_root
-from robots.catalog.sync_robot_assets import sync_robot_assets as sync_builtin_robot_assets
 
 
-@click.group()
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli() -> None:
-    """Physical AI Studio CLI."""
+    """Manage the local Physical AI Studio application and its stored assets.
+
+    Use the same STORAGE_DIR, SETTINGS_FILE, and database configuration as Studio.
+    These commands do not connect to a remote Studio HTTP server. In Docker, run
+    them inside the backend container.
+
+    Start with COMMAND --help. Use models/datasets for local folder imports, and
+    db for database maintenance. Policy training and inference format conversion
+    belong to the separate physicalai CLI.
+    """
 
 
 @cli.command()
-@click.option("--target-path", default="docs/openapi.json")
+@click.option(
+    "--target-path",
+    default="docs/openapi.json",
+    show_default=True,
+    help="Output JSON path; an existing file is overwritten.",
+)
 def gen_api(target_path: str) -> None:
-    """Generate OpenAPI specification JSON file."""
+    """Generate OpenAPI JSON for development tooling.
+
+    Imports the application and overwrites the target JSON file if it exists.
+    """
     # Importing create_openapi imports threading which is slow. Importing here to not slow down other cli commands.
     from create_openapi import create_openapi
 
@@ -33,22 +46,6 @@ def gen_api(target_path: str) -> None:
         click.echo(f"✗ Failed to generate OpenAPI specification: {e}")
         sys.exit(1)
     click.echo("Waiting for threading to finish...")
-
-
-@cli.command()
-@click.option(
-    "--target-dir",
-    default=str(get_builtin_robot_assets_root()),
-    show_default=True,
-)
-def sync_robot_assets(target_dir: str) -> None:
-    """Sync SO101 and WidowX assets into backend static storage."""
-    try:
-        sync_builtin_robot_assets(Path(target_dir))
-        click.echo("✓ Robot assets synced successfully")
-    except (subprocess.CalledProcessError, OSError) as error:
-        click.echo(f"✗ Failed to sync robot assets: {error}")
-        sys.exit(1)
 
 
 cli.add_command(database)

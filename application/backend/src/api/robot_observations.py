@@ -71,7 +71,6 @@ async def _stream_joint_observations(websocket: WebSocket, shared_robot: SharedR
             data = observation_to_dict(
                 shared_robot.joint_names,
                 observation,
-                include_velocities=False,
             )
             if not sent_ready:
                 await websocket.send_json({"event": "state", "data": {"connected": True}})

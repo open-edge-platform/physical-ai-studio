@@ -72,11 +72,13 @@ class TrainingService:
     """
 
     @staticmethod
-    async def abort_orphan_jobs(job_service: JobService, *, exclude_job_ids: Collection[UUID] | None = None) -> None:
+    async def abort_orphan_jobs(
+        job_service: JobService, *, exclude_job_ids: Collection[UUID] | None = None
+    ) -> list[Job]:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
-        Called on training-worker setup and teardown. Remote trainers run
+        Called by the scheduler on startup, worker exit, and shutdown. Remote trainers run
         independently of Studio, so a RUNNING job that
         already recorded its ``remote_job_id`` is requeued (back to PENDING) to
         reattach and mirror progress on the next pickup -- this is what lets a run
@@ -86,7 +88,11 @@ class TrainingService:
         Args:
             job_service: Used to list and update RUNNING training jobs.
             exclude_job_ids: Job ids already handled by another recovery pass.
+
+        Returns:
+            Updated jobs for the caller to publish to subscribed clients.
         """
+        reconciled: list[Job] = []
         excluded = frozenset(exclude_job_ids) if exclude_job_ids is not None else frozenset()
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
         running_jobs = await job_service.get_job_list(extra_filters=query)
@@ -100,18 +106,21 @@ class TrainingService:
                     job.id,
                     remote_job_id,
                 )
-                await job_service.update_job_status(
+                updated_job = await job_service.update_job_status(
                     job_id=job.id,
                     status=JobStatus.PENDING,
                     message="Reconnecting to remote training job after restart",
                 )
+                reconciled.append(updated_job)
                 continue
             logger.warning(f"Aborting orphan training job with id: {job.id}")
-            await job_service.update_job_status(
+            updated_job = await job_service.update_job_status(
                 job_id=job.id,
                 status=JobStatus.FAILED,
                 message="Job aborted due to application shutdown",
             )
+            reconciled.append(updated_job)
+        return reconciled
 
     # Targets whose trainer keeps running independently of the studio process,
     # and so can be reattached to after a restart via their remote_job_id.

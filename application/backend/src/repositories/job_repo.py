@@ -2,7 +2,7 @@ import datetime
 from collections.abc import Callable
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from db.schema import JobDB
@@ -11,7 +11,7 @@ from repositories.mappers import JobMapper
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import ImportStep
-from schemas.job import TrainJobPayload
+from schemas.job import TrainingTarget, TrainJobPayload
 
 
 class JobRepository(BaseRepository):
@@ -56,6 +56,32 @@ class JobRepository(BaseRepository):
             order_by=self.schema.created_at,
             ascending=True,
         )
+
+    async def transition_pending_train_job(self, job_id: UUID, status: JobStatus) -> Job | None:
+        """Atomically claim or cancel a queued training job, never overwrite another state."""
+        if status not in {JobStatus.RUNNING, JobStatus.CANCELED}:
+            raise ValueError("Queued training jobs can only be claimed or canceled")
+        now = datetime.datetime.now(tz=datetime.UTC)
+        values: dict = {"status": status}
+        if status == JobStatus.RUNNING:
+            values.update(start_time=func.coalesce(JobDB.start_time, now), message="Preparing training")
+        else:
+            values.update(end_time=now, message="Training canceled")
+        query = update(JobDB).where(
+            JobDB.id == str(job_id), JobDB.type == JobType.TRAINING, JobDB.status == JobStatus.PENDING
+        )
+        if status == JobStatus.CANCELED:
+            # Requeued remote executions must be canceled by a reattached worker.
+            query = query.where(
+                or_(
+                    func.json_extract(JobDB.payload, "$.training_target").is_distinct_from(TrainingTarget.REMOTE.value),
+                    func.json_extract(JobDB.payload, "$.remote_job_id").is_(None),
+                )
+            )
+        result = await self.db.execute(query.values(**values).returning(JobDB.id))
+        changed_id = result.scalar_one_or_none()
+        await self.db.commit()
+        return await self.get_by_id(changed_id) if changed_id is not None else None
 
     async def claim_pending_dataset_import_job(self) -> Job | None:
         pending_steps = [

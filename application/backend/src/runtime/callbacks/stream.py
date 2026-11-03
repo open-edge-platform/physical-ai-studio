@@ -37,13 +37,10 @@ class StreamCallback:
         self._lifecycle_lock = lifecycle_lock or threading.Lock()
 
     def on_tick(self, event: TickEvent) -> None:
-        # Positions only: the browser maps ".pos" features onto the URDF model
-        # and drops everything else. Velocities come back with the dataset
-        # features in phase B, where a declared schema is what needs them.
+        # Positions only: the browser maps ".pos" features onto the URDF model.
         data = observation_to_dict(
             self._joint_names,
             event.robot_state,
-            include_velocities=False,
         )
         actions = None
         if event.action_sent is not None and self._joint_names:

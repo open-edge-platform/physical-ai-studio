@@ -117,13 +117,12 @@ def test_stream_emits_named_joint_features(client: TestClient, factory, shared_r
             messages.append(websocket.receive_json())
 
     events = {message["event"]: message for message in messages}
-    expected_keys = feature_names(JOINT_NAMES, include_velocities=False)
+    expected_keys = feature_names(JOINT_NAMES)
 
     assert events["state"] == {"event": "state", "data": {"connected": True}}
     assert events["observation"]["event"] == "observation"
     assert list(events["observation"]["data"]) == expected_keys
     assert events["observation"]["data"] == {"shoulder_pan.pos": 12.3, "shoulder_lift.pos": 0.0}
-    factory.build.assert_not_called()
     factory.build_shared_robot.assert_called_once()
     assert shared_robot.connect_calls == 1
 

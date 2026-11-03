@@ -1,18 +1,23 @@
 import asyncio
-from typing import Literal
+from typing import Annotated, Literal
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+from loguru import logger
 from pydantic import BaseModel
 
+from api.dependencies import get_remote_trainer_service
+from services.remote_trainer_service import RemoteTrainerService
 from services.training_backends.local import resolve_hf_token
+from training.policy_catalog import AvailablePolicy, available_policy_classes, policy_catalog
+from training.policy_catalog import missing_policy_dependencies as _missing_policy_dependencies
 
 router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
 _AccessStatus = Literal["granted", "missing_token", "denied", "unavailable", "not_required"]
 
-_POLICY_NAMES = ("act", "pi05", "rldx1", "smolvla", "molmoact2", "xr0")
 
 _HUGGINGFACE_REQUIREMENTS = {
     # Hub dependencies are lazy and can vary with a policy's configuration, so
@@ -49,26 +54,39 @@ class HuggingFaceAccessResponse(BaseModel):
     requirements: list[HuggingFaceRequirementAccess]
 
 
-@router.get("/backends")
-def get_supported_backends_per_policy() -> dict[str, list[str]]:
-    """Return the supported export backends for each policy."""
-    from physicalai.policies import get_physicalai_policy_class
+def _available_policy_classes() -> dict[str, tuple[type, list[str]]]:
+    """Resolve installed first-party policies and their export backends."""
+    return available_policy_classes(_missing_policy_dependencies, logger.warning)
 
-    backends: dict[str, list[str]] = {}
-    for name in _POLICY_NAMES:
-        cls = get_physicalai_policy_class(name)
-        backends[name] = (
-            [str(b) for b in cls.get_supported_export_backends()]
-            if hasattr(cls, "get_supported_export_backends")
-            else []
-        )
-    return backends
+
+@router.get("/available")
+async def get_available_policies(
+    service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+    remote_trainer_id: UUID | None = None,
+) -> list[AvailablePolicy]:
+    """Return policies available on the selected training target."""
+    if remote_trainer_id is not None:
+        return (await service.get_policy_catalog(remote_trainer_id)).available
+    return policy_catalog(_available_policy_classes()).available
+
+
+@router.get("/backends")
+async def get_supported_backends_per_policy(
+    service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+    remote_trainer_id: UUID | None = None,
+) -> dict[str, list[str]]:
+    """Return export backends on the selected training target."""
+    if remote_trainer_id is not None:
+        return (await service.get_policy_catalog(remote_trainer_id)).backends
+    return policy_catalog(_available_policy_classes()).backends
 
 
 @router.get("/{policy}/huggingface-access")
 async def check_huggingface_access(policy: str) -> HuggingFaceAccessResponse:
     """Check whether the configured token can read a policy's required Hub model."""
-    if policy not in _POLICY_NAMES:
+    from physicalai.policies import list_physicalai_policies
+
+    if policy not in list_physicalai_policies():
         raise HTTPException(status_code=404, detail="Unknown policy")
 
     requirements = _HUGGINGFACE_REQUIREMENTS.get(policy, ())

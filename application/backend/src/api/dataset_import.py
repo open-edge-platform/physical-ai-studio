@@ -17,6 +17,7 @@ from schemas import Job
 from schemas.base_job import JobType
 from schemas.dataset_import_job import DatasetImportFinalizeInput, DatasetImportJobPayload, ImportStep
 from schemas.job import DatasetImportJob
+from schemas.job_response import JobResponse
 from services.dataset_import.adapters import get_supported_dataset_import_formats
 from services.dataset_import.service import DatasetImportService
 from services.dataset_import.staging import resolve_payload_archive_path
@@ -100,7 +101,7 @@ async def get_awaiting_upload_job(
     return job
 
 
-@router.post("/datasets:prepare", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/datasets:prepare", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
 async def prepare_dataset_import_job(
     project_id: ProjectID,
     dataset_import_service: Annotated[DatasetImportService, Depends(get_dataset_import_service)],
@@ -130,7 +131,7 @@ async def prepare_dataset_import_job(
     )
 
 
-@router.put("/datasets/{job_id}:upload", status_code=status.HTTP_202_ACCEPTED)
+@router.put("/datasets/{job_id}:upload", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
 async def upload_dataset_import_archive(
     request: Request,
     project_id: ProjectID,
@@ -181,7 +182,7 @@ async def upload_dataset_import_archive(
     )
 
 
-@router.post("/datasets/{job_id}:finalize", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/datasets/{job_id}:finalize", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
 async def finalize_dataset_import_job(
     project_id: ProjectID,
     job_id: UUID,
@@ -196,7 +197,7 @@ async def finalize_dataset_import_job(
     )
 
 
-@router.post("/datasets/{job_id}:cancel", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/datasets/{job_id}:cancel", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
 async def cancel_dataset_import_job(
     project_id: ProjectID,
     job_id: UUID,

@@ -38,20 +38,22 @@ import classes from './remote-trainer-form.module.css';
 const SSH_HOST_SETUP_URL =
     'https://github.com/open-edge-platform/physical-ai-studio/blob/main/' +
     'application/docs/07-remote-training.md#prepare-an-ssh-host';
-const AWS_STACK_TEMPLATE_URL = encodeURIComponent(
-    'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/remote-trainer.yaml'
-);
-const AWS_STACK_URL =
-    'https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1' +
-    `#/stacks/create/review?templateURL=${AWS_STACK_TEMPLATE_URL}` +
-    '&stackName=physical-ai-studio-remote-trainer';
+const AWS_TEMPLATE_BASE = 'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/';
+const awsStackUrl = (template: string, stackName: string) =>
+    'https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1' +
+    `#/stacks/create/review?templateURL=${encodeURIComponent(AWS_TEMPLATE_BASE + template)}` +
+    `&stackName=${stackName}`;
+const AWS_EC2_STACK_URL = awsStackUrl('remote-trainer.yaml', 'physical-ai-studio-remote-trainer');
+
 type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
     close: () => void;
     requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
     sshAvailable?: boolean;
+    instanceType?: 'direct' | 'ssh';
 };
 
+type ConnectionMode = 'direct' | 'ssh';
 type SshHostSource = 'manual' | 'pick';
 
 export const RemoteTrainerForm = ({
@@ -59,24 +61,27 @@ export const RemoteTrainerForm = ({
     close,
     requestHostKeyConfirmation,
     sshAvailable = true,
+    instanceType,
 }: RemoteTrainerFormProps) => {
+    const existing = remoteTrainer?.connection;
+    const existingSsh = existing?.connection_mode === 'ssh' ? existing : undefined;
+    const existingDirect = existing?.connection_mode === 'direct' ? existing : undefined;
+
     const [name, setName] = useState(remoteTrainer?.name ?? '');
-    const [url, setUrl] = useState(remoteTrainer?.url ?? '');
-    const [connectionMode, setConnectionMode] = useState(
-        remoteTrainer?.connection_mode ?? (sshAvailable ? 'ssh' : 'direct')
+    const [url, setUrl] = useState(existingDirect?.url ?? '');
+    const [connectionMode, setConnectionMode] = useState<ConnectionMode>(
+        instanceType ?? (existingSsh ? 'ssh' : existingDirect ? 'direct' : sshAvailable ? 'ssh' : 'direct')
     );
-    const [sshHostSource, setSshHostSource] = useState<SshHostSource>(
-        remoteTrainer?.ssh_connection ? 'manual' : 'pick'
-    );
-    const [sshHostAlias, setSshHostAlias] = useState(remoteTrainer?.ssh_host_alias ?? '');
-    const [sshHostname, setSshHostname] = useState(remoteTrainer?.ssh_connection?.hostname ?? '');
-    const [sshPort, setSshPort] = useState<number | undefined>(remoteTrainer?.ssh_connection?.port ?? 22);
+    const [sshHostSource, setSshHostSource] = useState<SshHostSource>(existingSsh?.ssh_connection ? 'manual' : 'pick');
+    const [sshHostAlias, setSshHostAlias] = useState(existingSsh?.ssh_host_alias ?? '');
+    const [sshHostname, setSshHostname] = useState(existingSsh?.ssh_connection?.hostname ?? '');
+    const [sshPort, setSshPort] = useState<number | undefined>(existingSsh?.ssh_connection?.port ?? 22);
     const [sshUser, setSshUser] = useState(
-        remoteTrainer === undefined ? 'ec2-user' : (remoteTrainer.ssh_connection?.user ?? '')
+        remoteTrainer === undefined ? 'ec2-user' : (existingSsh?.ssh_connection?.user ?? '')
     );
-    const [sshIdentityFile, setSshIdentityFile] = useState(remoteTrainer?.ssh_connection?.identity_file ?? '');
-    const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(remoteTrainer?.ssh_remote_port ?? 8001);
-    const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
+    const [sshIdentityFile, setSshIdentityFile] = useState(existingSsh?.ssh_connection?.identity_file ?? '');
+    const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(existingSsh?.ssh_remote_port ?? 8001);
+    const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(existingSsh?.ssh_local_port ?? undefined);
     const [installPrerequisites, setInstallPrerequisites] = useState(false);
     const isEditing = remoteTrainer !== undefined;
     const { aliases } = useSshHostAliases(sshAvailable);
@@ -84,11 +89,10 @@ export const RemoteTrainerForm = ({
 
     const isSsh = connectionMode === 'ssh';
     const isManual = isSsh && sshHostSource === 'manual';
-    const values: RemoteTrainerFormValues = isSsh
+
+    const connection: RemoteTrainerFormValues['connection'] = isSsh
         ? {
-              name: name.trim(),
               connection_mode: 'ssh',
-              url: null,
               ssh_host_alias: isManual ? null : sshHostAlias.trim(),
               ssh_connection: isManual
                   ? {
@@ -98,18 +102,11 @@ export const RemoteTrainerForm = ({
                         identity_file: sshIdentityFile.trim() || null,
                     }
                   : null,
-              ssh_remote_port: sshRemotePort ?? null,
+              ssh_remote_port: sshRemotePort ?? 8001,
               ssh_local_port: sshLocalPort ?? null,
           }
-        : {
-              name: name.trim(),
-              connection_mode: 'direct',
-              url,
-              ssh_host_alias: null,
-              ssh_connection: null,
-              ssh_remote_port: null,
-              ssh_local_port: null,
-          };
+        : { connection_mode: 'direct', url };
+    const values: RemoteTrainerFormValues = { name: name.trim(), connection };
 
     const sshHostIdentity = isManual ? `${sshHostname.trim()}:${sshPort ?? 22}` : sshHostAlias.trim();
     const errorMessage =
@@ -137,10 +134,7 @@ export const RemoteTrainerForm = ({
 
     const hasValidSshHost = isManual ? sshHostname.trim() !== '' : sshHostAlias.trim() !== '';
     const canSubmit =
-        name.trim() !== '' &&
-        (isSsh
-            ? sshAvailable && hasValidSshHost && Boolean(sshRemotePort) && Boolean(sshLocalPort)
-            : url.trim() !== '');
+        name.trim() !== '' && (isSsh ? sshAvailable && hasValidSshHost && Boolean(sshRemotePort) : url.trim() !== '');
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -154,7 +148,15 @@ export const RemoteTrainerForm = ({
     return (
         <Form onSubmit={handleSubmit} validationBehavior='native'>
             <Dialog width='size-6000'>
-                <Heading>{isEditing ? 'Edit remote trainer' : 'Add remote trainer'}</Heading>
+                <Heading>
+                    {instanceType
+                        ? isEditing
+                            ? 'Edit training target'
+                            : 'Add training target'
+                        : isEditing
+                          ? 'Edit remote trainer'
+                          : 'Add remote trainer'}
+                </Heading>
                 <Divider />
                 <Content>
                     <Flex direction='column' gap='size-150'>
@@ -167,23 +169,25 @@ export const RemoteTrainerForm = ({
                             onChange={setName}
                             width='100%'
                         />
-                        <Tabs
-                            selectedKey={connectionMode}
-                            disabledKeys={!sshAvailable ? ['ssh'] : []}
-                            onSelectionChange={(key) => setConnectionMode(key as 'direct' | 'ssh')}
-                        >
-                            <TabList aria-label='Connection method'>
-                                <Item key='ssh'>SSH tunnel</Item>
-                                <Item key='direct'>Trainer URL</Item>
-                            </TabList>
-                        </Tabs>
+                        {!instanceType && (
+                            <Tabs
+                                selectedKey={connectionMode}
+                                disabledKeys={!sshAvailable ? ['ssh'] : []}
+                                onSelectionChange={(key) => setConnectionMode(key as ConnectionMode)}
+                            >
+                                <TabList aria-label='Connection method'>
+                                    <Item key='ssh'>SSH tunnel</Item>
+                                    <Item key='direct'>Trainer URL</Item>
+                                </TabList>
+                            </Tabs>
+                        )}
                         <div className={classes.modeFields}>
                             <Text>
                                 {isSsh
                                     ? 'Connect through SSH when the trainer is not directly reachable.'
                                     : 'Enter the URL of a trainer that Studio can reach directly.'}
                             </Text>
-                            {!isSsh ? (
+                            {connectionMode === 'direct' ? (
                                 <TextField
                                     isRequired
                                     label='Trainer URL'
@@ -199,44 +203,12 @@ export const RemoteTrainerForm = ({
                                     width='100%'
                                 />
                             ) : null}
-                            {!isSsh && isInsecureUrl && (
+                            {connectionMode === 'direct' && isInsecureUrl && (
                                 <Text UNSAFE_className={classes.errorMessage}>{INSECURE_TRAINER_URL_WARNING}</Text>
                             )}
                             {isSsh && !sshAvailable && <Text>SSH is unavailable in this environment.</Text>}
                             {isSsh && sshAvailable && (
                                 <Flex direction='column' gap='size-100'>
-                                    <div className={classes.fieldRow}>
-                                        <NumberField
-                                            isRequired
-                                            label='Remote port'
-                                            value={sshRemotePort}
-                                            onChange={setSshRemotePort}
-                                            minValue={1}
-                                            maxValue={65535}
-                                            formatOptions={{ useGrouping: false }}
-                                            contextualHelp={
-                                                <InfoHelp title='Remote port'>
-                                                    Port where the trainer listens remotely.
-                                                </InfoHelp>
-                                            }
-                                            width='100%'
-                                        />
-                                        <NumberField
-                                            isRequired
-                                            label='Local port'
-                                            value={sshLocalPort}
-                                            onChange={setSshLocalPort}
-                                            minValue={1}
-                                            maxValue={65535}
-                                            formatOptions={{ useGrouping: false }}
-                                            contextualHelp={
-                                                <InfoHelp title='Local port'>
-                                                    Loopback port the tunnel binds to on this Studio host.
-                                                </InfoHelp>
-                                            }
-                                            width='100%'
-                                        />
-                                    </div>
                                     <Tabs
                                         selectedKey={sshHostSource}
                                         onSelectionChange={(key) => setSshHostSource(key as SshHostSource)}
@@ -326,6 +298,41 @@ export const RemoteTrainerForm = ({
                                             </DialogTrigger>
                                         </Flex>
                                     )}
+                                    <details>
+                                        <summary className={classes.advancedSettingsToggle}>Advanced settings</summary>
+                                        <div className={classes.fieldRow}>
+                                            <NumberField
+                                                label='Remote port'
+                                                value={sshRemotePort}
+                                                onChange={setSshRemotePort}
+                                                minValue={1}
+                                                maxValue={65535}
+                                                formatOptions={{ useGrouping: false }}
+                                                contextualHelp={
+                                                    <InfoHelp title='Remote port'>
+                                                        Port on the SSH host where the trainer is exposed. Change it if
+                                                        the port is already in use.
+                                                    </InfoHelp>
+                                                }
+                                                width='100%'
+                                            />
+                                            <NumberField
+                                                label='Local port'
+                                                value={sshLocalPort}
+                                                onChange={setSshLocalPort}
+                                                minValue={1}
+                                                maxValue={65535}
+                                                formatOptions={{ useGrouping: false }}
+                                                contextualHelp={
+                                                    <InfoHelp title='Local port'>
+                                                        Port on this Studio host for the SSH tunnel. Leave blank to
+                                                        assign one automatically.
+                                                    </InfoHelp>
+                                                }
+                                                width='100%'
+                                            />
+                                        </div>
+                                    </details>
                                     {!isEditing && (
                                         <Flex alignItems='center' gap='size-50'>
                                             <Checkbox
@@ -363,7 +370,7 @@ export const RemoteTrainerForm = ({
                                     <AwsIcon aria-hidden='true' className={classes.awsIcon} />
                                     <Flex alignItems='center' gap='size-75' UNSAFE_className={classes.awsPrompt}>
                                         <Text>Need a new remote trainer?</Text>
-                                        <Link href={AWS_STACK_URL} target='_blank' rel='noopener noreferrer'>
+                                        <Link href={AWS_EC2_STACK_URL} target='_blank' rel='noopener noreferrer'>
                                             <span className={classes.awsStackLinkContent}>
                                                 Deploy AWS stack
                                                 <ExternalLinkIcon aria-hidden='true' />
@@ -380,7 +387,7 @@ export const RemoteTrainerForm = ({
                         Cancel
                     </Button>
                     <Button variant='accent' type='submit' isDisabled={!canSubmit} isPending={isPending}>
-                        {isEditing ? 'Save changes' : 'Add trainer'}
+                        {isEditing ? 'Save changes' : instanceType ? 'Add training target' : 'Add trainer'}
                     </Button>
                 </ButtonGroup>
             </Dialog>

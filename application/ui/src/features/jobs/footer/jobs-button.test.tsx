@@ -13,10 +13,11 @@ import { JobsButton } from './jobs-button';
 // LogsDialog streams via the browser-native EventSource, which jsdom does not
 // implement. Stub it so opening the logs view resolves its stream immediately
 // instead of throwing `ReferenceError: EventSource is not defined`.
-class ImmediatelyClosingEventSource {
+class ImmediatelyClosingEventSource extends EventTarget {
     onmessage: ((event: { data: string }) => void) | null = null;
     onerror: (() => void) | null = null;
     constructor() {
+        super();
         queueMicrotask(() => this.onmessage?.({ data: 'DONE' }));
     }
     close() {}

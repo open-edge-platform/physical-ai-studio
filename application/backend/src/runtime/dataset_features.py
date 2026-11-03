@@ -27,7 +27,7 @@ def build_lerobot_dataset_features(
 
     action_features: dict[str, Any] = {}
     observation_features: dict[str, Any] = {}
-    for feature in feature_names(joint_names, include_velocities=False):
+    for feature in feature_names(joint_names):
         action_features[feature] = float
         observation_features[feature] = float
 

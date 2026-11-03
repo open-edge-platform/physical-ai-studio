@@ -26,50 +26,6 @@ def _clear_packaged_runtime_environment() -> Iterator[None]:
     security_module.get_ssh_feature_availability.cache_clear()
 
 
-def test_sync_missing_robot_assets_skips_when_available(monkeypatch) -> None:
-    sync_called = False
-
-    monkeypatch.setattr(serve_module, "builtin_robot_assets_are_available", lambda: True)
-
-    def fake_sync_robot_assets() -> None:
-        nonlocal sync_called
-        sync_called = True
-
-    monkeypatch.setattr(serve_module, "sync_robot_assets", fake_sync_robot_assets)
-
-    serve_module._sync_missing_robot_assets()
-
-    assert not sync_called
-
-
-def test_sync_missing_robot_assets_syncs_when_unavailable(monkeypatch) -> None:
-    sync_called = False
-
-    monkeypatch.setattr(serve_module, "builtin_robot_assets_are_available", lambda: False)
-
-    def fake_sync_robot_assets() -> None:
-        nonlocal sync_called
-        sync_called = True
-
-    monkeypatch.setattr(serve_module, "sync_robot_assets", fake_sync_robot_assets)
-
-    serve_module._sync_missing_robot_assets()
-
-    assert sync_called
-
-
-def test_sync_missing_robot_assets_exits_when_sync_fails(monkeypatch) -> None:
-    monkeypatch.setattr(serve_module, "builtin_robot_assets_are_available", lambda: False)
-
-    def fake_sync_robot_assets() -> None:
-        raise OSError("no network")
-
-    monkeypatch.setattr(serve_module, "sync_robot_assets", fake_sync_robot_assets)
-
-    with pytest.raises(SystemExit):
-        serve_module._sync_missing_robot_assets()
-
-
 def test_configure_packaged_runtime_updates_settings(monkeypatch) -> None:
     settings_module = importlib.import_module("settings")
 
@@ -108,7 +64,6 @@ def test_start_server_reconciles_settings_host_with_the_actual_bind_argument(mon
     settings_module = importlib.import_module("settings")
 
     monkeypatch.setattr(serve_module, "_configure_packaged_runtime", lambda: None)
-    monkeypatch.setattr(serve_module, "_sync_missing_robot_assets", lambda: None)
     monkeypatch.setattr(serve_module, "_run_migrations", lambda: None)
 
     import uvicorn

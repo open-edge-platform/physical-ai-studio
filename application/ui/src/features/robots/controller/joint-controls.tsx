@@ -88,7 +88,7 @@ const useRobotJointsState = (): {
 
     const { project_id, robot_id } = useRobotId();
     const { joints, error, errorCode } = useRobotObservations(project_id, robot_id);
-    useSynchronizeModelJoints(joints, robot.type);
+    useSynchronizeModelJoints(joints, robot);
 
     return {
         joints: joints.map((joint) => {

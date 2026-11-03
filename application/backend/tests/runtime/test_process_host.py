@@ -168,7 +168,7 @@ def test_runtime_session_and_own_shared_robot_use_different_listeners() -> None:
                 "class_path": "tests.runtime.fakes.FakeRobot",
                 "init_args": {"positions": [[0.0]], "joint_names": ["joint"]},
             },
-            "idle_timeout": 0.5,
+            "idle_timeout": 2.0,
         },
     ).to_dict()
     document = Config(

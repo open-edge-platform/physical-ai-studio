@@ -165,7 +165,7 @@ class RobotZeroCalibrationWorker(TransportWorker):
             await calibration.set_zero(driver)
             observation = await asyncio.to_thread(driver.get_observation)
 
-        joints = observation_to_dict(driver.joint_names, observation, include_velocities=False)
+        joints = observation_to_dict(driver.joint_names, observation)
         tolerance = calibration.zero_tolerance_deg
         success = all(math.isfinite(value) and abs(value) <= tolerance for value in joints.values())
         logger.info(f"Calibration worker: set zero, success={success}")
@@ -201,7 +201,7 @@ class RobotZeroCalibrationWorker(TransportWorker):
         driver = self._require_driver()
         async with self._driver_lock:
             observation = await asyncio.to_thread(driver.get_observation)
-        data = observation_to_dict(driver.joint_names, observation, include_velocities=False)
+        data = observation_to_dict(driver.joint_names, observation)
         await self._send_event("observation", data=data)
 
     # ------------------------------------------------------------------

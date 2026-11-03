@@ -22,10 +22,15 @@ from services.training_backends.base import (
 async def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
     """Return the backend selected by a job's persisted execution target."""
     if isinstance(payload, RemoteTrainJobPayload):
-        from services.training_backends.remote import RemoteTrainingBackend
-
         if payload.remote_trainer_url is None:
             raise ValueError("Remote training job is missing its pinned trainer URL")
+        if payload.remote_trainer_url.startswith("aws-batch://"):
+            from services.aws_batch import aws_batch_connection_from_url
+            from services.training_backends.aws_batch import AwsBatchTrainingBackend
+
+            return AwsBatchTrainingBackend(aws_batch_connection_from_url(payload.remote_trainer_url))
+        from services.training_backends.remote import RemoteTrainingBackend
+
         return RemoteTrainingBackend(
             payload.remote_trainer_url, trainer_name=payload.remote_trainer_name, device=payload.device
         )

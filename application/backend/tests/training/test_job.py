@@ -13,6 +13,7 @@ is mocked out; it is not under test.
 from __future__ import annotations
 
 import gc
+import inspect
 import os
 import weakref
 from pathlib import Path
@@ -24,6 +25,7 @@ import pytest
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from pydantic import SecretStr, ValidationError
 
+from api.policies import _available_policy_classes
 from training import RunOptions, TrainingJobSpec
 from training.job import (
     CHECKPOINT_NAME,
@@ -126,6 +128,28 @@ class TestTrainingJobSpec:
 
 
 class TestBuildPolicy:
+    def test_studio_trainable_policy_constructors_accept_wizard_arguments(self) -> None:
+        """Bind Studio's actual kwargs to opt-in constructors without downloading weights."""
+        available = _available_policy_classes()
+        assert available
+        for name, (cls, _) in available.items():
+            specs = [
+                TrainingJobSpec(policy=name),
+                TrainingJobSpec(policy=name, image_key_reorder_map={"camera": 0}, num_cameras=1),
+            ]
+            if name in PEFT_POLICIES:
+                specs.append(TrainingJobSpec(policy=name, lora_enabled=True))
+            for spec in specs:
+                with patch("physicalai.policies.get_policy") as get_policy:
+                    build_policy(spec)
+
+                assert get_policy.call_args.args == (name,)
+                kwargs = {key: value for key, value in get_policy.call_args.kwargs.items() if key != "source"}
+                try:
+                    inspect.signature(cls).bind(**kwargs)
+                except TypeError as exc:
+                    pytest.fail(f"{name} cannot be constructed by Studio: {exc}")
+
     def test_fresh_policy_is_built_from_the_spec(self) -> None:
         with patch("physicalai.policies.get_policy") as get_policy:
             policy = build_policy(TrainingJobSpec(policy="act", compile_model=True))

@@ -121,7 +121,13 @@ class HotkeySettings(BaseModel):
     bindings: dict[str, str] = Field(default_factory=dict)
 
 
-_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface", "hotkeys")
+class VideoRecordingSettings(BaseModel):
+    """The user-selected recording preset for new dataset recordings."""
+
+    preset: str | None = Field(default=None)
+
+
+_USER_CONFIG_GROUPS: tuple[str, ...] = ("video_recording", "trainer", "huggingface", "hotkeys")
 
 
 def _storage_key(field_name: str) -> str:
@@ -290,6 +296,8 @@ class Settings(BaseSettings):
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
     # User-configurable keyboard shortcut bindings.
     hotkeys: HotkeySettings = HotkeySettings()
+    # User-configurable video encoding for dataset recordings.
+    video_recording: VideoRecordingSettings = VideoRecordingSettings()
 
     # Managed SSH trainers require a loopback-bound backend; see
     # `core.security.ssh_network_exposure`. The UI warns that SSH access has
@@ -366,6 +374,8 @@ class Settings(BaseSettings):
     # under a minute. Labs on flaky networks want it longer, an unattended rig
     # wants it shorter.
     runtime_idle_timeout_s: float = Field(default=45.0, alias="RUNTIME_IDLE_TIMEOUT_S")
+
+    aws_enabled: bool = Field(default=False, alias="AWS_ENABLED")
 
     # Server
     host: str = Field(default="127.0.0.1", alias="HOST")

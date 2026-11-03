@@ -35,10 +35,11 @@ class FakeWebSocket extends EventTarget {
     send() {}
 }
 
-class ImmediatelyClosingEventSource {
+class ImmediatelyClosingEventSource extends EventTarget {
     onmessage: ((event: { data: string }) => void) | null = null;
     onerror: (() => void) | null = null;
     constructor() {
+        super();
         queueMicrotask(() => this.onmessage?.({ data: 'DONE' }));
     }
     close() {}
@@ -75,6 +76,10 @@ const mockApi = (initialJobs: SchemaTrainJob[]) => {
         http.get('/api/dataset/{dataset_id}', () => HttpResponse.error()),
         http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.error()),
         http.get('/api/remote-trainers', () => HttpResponse.json([])),
+        http.get('/api/policies/available', () =>
+            HttpResponse.json([{ id: 'act', name: 'ACT', description: 'ACT policy', min_vram: null }])
+        ),
+        http.get('/api/policies/backends', () => HttpResponse.json({ act: ['torch'] })),
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
                 id: projectId,
@@ -140,8 +145,7 @@ describe('ModelsPage - Current Training', () => {
         renderPage();
 
         await user.click(await screen.findByRole('button', { name: 'Train model' }));
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent('Test dataset');
         // Training is submitted from the last wizard step, so walk there first.
         while (screen.queryByRole('button', { name: 'Next' }) !== null) {
             await user.click(screen.getByRole('button', { name: 'Next' }));

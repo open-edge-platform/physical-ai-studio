@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from lerobot.datasets.dataset_tools import delete_episodes as lerobot_delete_episodes
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.video_utils import VideoDecoderCache, decode_video_frames_torchcodec
 from lerobot.processor import make_default_processors
 from lerobot.processor.pipeline import RobotProcessorPipeline
 from lerobot.utils.constants import ACTION, OBS_STR
@@ -18,7 +19,7 @@ from loguru import logger
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
-from internal_datasets.lerobot.streaming_encoding_settings import StreamingEncodingSettings
+from internal_datasets.lerobot.video_encoding_settings import VideoEncodingSettings
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeInfo, EpisodeVideo
 from settings import get_settings
@@ -34,18 +35,18 @@ class InternalLeRobotDataset(DatasetClient):
     _teleop_action_processor: RobotProcessorPipeline
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
-    _streaming_encoding_settings: StreamingEncodingSettings
+    _recording_video_encoding_settings: VideoEncodingSettings
     _access_mode: DatasetAccessMode
 
     def __init__(
         self,
         dataset_path: Path,
         *,
-        streaming_encoding_settings: StreamingEncodingSettings = StreamingEncodingSettings(),
+        recording_video_encoding_settings: VideoEncodingSettings = VideoEncodingSettings(),
         access_mode: DatasetAccessMode = DatasetAccessMode.READ_ONLY,
     ):
         self.path = dataset_path
-        self._streaming_encoding_settings = streaming_encoding_settings
+        self._recording_video_encoding_settings = recording_video_encoding_settings
         self._access_mode = access_mode
         self.load_dataset()
 
@@ -60,7 +61,7 @@ class InternalLeRobotDataset(DatasetClient):
                 self._dataset = LeRobotDataset.resume(
                     repo_id=str(uuid4()),
                     root=self.path,
-                    **self._resolved_streaming_encoding_settings_write(),
+                    **self._resolved_recording_video_encoding_settings_write(),
                 )
             else:
                 self._dataset = LeRobotDataset(
@@ -69,9 +70,8 @@ class InternalLeRobotDataset(DatasetClient):
                 )
             self.has_episodes = self._dataset.num_episodes > 0
 
-    def _resolved_streaming_encoding_settings_write(self) -> dict:
-        settings = self._streaming_encoding_settings.with_resolved_vcodec()
-        return settings.to_lerobot_write_kwargs()
+    def _resolved_recording_video_encoding_settings_write(self) -> dict:
+        return self._recording_video_encoding_settings.to_lerobot_write_kwargs()
 
     def _resume_for_writing(self, repo_id: str | None = None) -> None:
         if not self._check_repository_exists(self.path):
@@ -81,7 +81,7 @@ class InternalLeRobotDataset(DatasetClient):
         self._dataset = LeRobotDataset.resume(
             repo_id=resolved_repo_id,
             root=self.path,
-            **self._resolved_streaming_encoding_settings_write(),
+            **self._resolved_recording_video_encoding_settings_write(),
         )
         self.has_episodes = self._dataset.num_episodes > 0
 
@@ -107,14 +107,16 @@ class InternalLeRobotDataset(DatasetClient):
             features=features,
             robot_type=robot_type,
             use_videos=True,
-            **self._resolved_streaming_encoding_settings_write(),
+            **self._resolved_recording_video_encoding_settings_write(),
         )
         self.has_episodes = False
 
     def delete_episodes(self, episode_indices: list[int], output_path: Path) -> DatasetClient:
         """Copy over repo without given episode_indices to output_path."""
         lerobot_delete_episodes(dataset=self._dataset, episode_indices=episode_indices, output_dir=output_path)
-        return InternalLeRobotDataset(output_path, streaming_encoding_settings=self._streaming_encoding_settings)
+        return InternalLeRobotDataset(
+            output_path, recording_video_encoding_settings=self._recording_video_encoding_settings
+        )
 
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
@@ -156,15 +158,19 @@ class InternalLeRobotDataset(DatasetClient):
         build_thumbnail = (
             self._cached_thumbnail_png_bytes if width <= 320 and height <= 240 else self._build_thumbnail_png_bytes
         )
-        thumbnail_png = build_thumbnail(
-            str(video_path),
-            episode[f"videos/{video_key}/from_timestamp"],
-            width,
-            height,
-            video_stat.st_mtime_ns,
-            video_stat.st_size,
-        )
-        if thumbnail_png is None:
+        try:
+            thumbnail_png = build_thumbnail(
+                str(video_path),
+                episode[f"videos/{video_key}/from_timestamp"],
+                width,
+                height,
+                video_stat.st_mtime_ns,
+                video_stat.st_size,
+                self._dataset.tolerance_s,
+            )
+        except (ImportError, RuntimeError, ValueError, OSError, cv2.error) as exc:
+            # Catch outside the PNG cache so transient decoding failures can be retried.
+            logger.warning("Could not build thumbnail from '{}': {}", video_path, exc)
             return None
 
         return thumbnail_png, video_path
@@ -275,7 +281,7 @@ class InternalLeRobotDataset(DatasetClient):
     def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> RecordingMutation:
         """Start recording mutation."""
         # Fail before copying the dataset if PyAV has no usable video encoder.
-        self._resolved_streaming_encoding_settings_write()
+        self._resolved_recording_video_encoding_settings_write()
 
         settings = get_settings()
         cache_dir = settings.cache_dir / str(uuid4())
@@ -283,7 +289,7 @@ class InternalLeRobotDataset(DatasetClient):
         logger.info(f"Creating cache dataset {cache_dir}")
         cache_dataset = InternalLeRobotDataset(
             cache_dir,
-            streaming_encoding_settings=self._streaming_encoding_settings,
+            recording_video_encoding_settings=self._recording_video_encoding_settings,
         )
         if self.exists_on_disk:
             shutil.copytree(self.path, cache_dir)
@@ -410,29 +416,31 @@ class InternalLeRobotDataset(DatasetClient):
     @staticmethod
     @lru_cache(maxsize=128)
     def _cached_thumbnail_png_bytes(
-        video_path: str, start: float, width: int, height: int, mtime_ns: int, size: int
-    ) -> bytes | None:
-        return InternalLeRobotDataset._build_thumbnail_png_bytes(video_path, start, width, height, mtime_ns, size)
+        video_path: str, start: float, width: int, height: int, mtime_ns: int, size: int, tolerance_s: float
+    ) -> bytes:
+        return InternalLeRobotDataset._build_thumbnail_png_bytes(
+            video_path, start, width, height, mtime_ns, size, tolerance_s
+        )
 
     @staticmethod
     def _build_thumbnail_png_bytes(
-        video_path: str, start: float, width: int, height: int, _mtime_ns: int, _size: int
-    ) -> bytes | None:
-        capture = cv2.VideoCapture(video_path)
+        video_path: str, start: float, width: int, height: int, _mtime_ns: int, _size: int, tolerance_s: float
+    ) -> bytes:
+        # OpenCV's bundled FFmpeg can lack software AV1 decoding. Use LeRobot's
+        # CPU decoder, without its global path-only cache which can retain replaced videos.
+        decoder_cache = VideoDecoderCache(max_size=1)
         try:
-            capture.set(cv2.CAP_PROP_POS_MSEC, start * 1000)
-            ok, frame = capture.read()
+            frames = decode_video_frames_torchcodec(
+                video_path, [start], tolerance_s, decoder_cache=decoder_cache, return_uint8=True
+            )
         finally:
-            capture.release()
-        if not ok:
-            logger.warning("Could not decode thumbnail frame from '{}' at {}s", video_path, start)
-            return None
+            decoder_cache.clear()
 
+        frame = cv2.cvtColor(frames[0].permute(1, 2, 0).numpy(), cv2.COLOR_RGB2BGR)
         resized = cv2.resize(frame, (width, height))
         encoded, imagebytes = cv2.imencode(".png", resized)
         if not encoded:
-            logger.warning("Failed to encode thumbnail PNG from '{}'", video_path)
-            return None
+            raise RuntimeError(f"Failed to encode thumbnail PNG from '{video_path}'")
 
         return imagebytes.tobytes()
 

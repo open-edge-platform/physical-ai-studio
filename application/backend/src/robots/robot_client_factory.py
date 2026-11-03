@@ -6,8 +6,6 @@ from physicalai_studio_plugin import CatalogRobotFactory, RobotCatalogDefinition
 
 from exceptions import RobotPluginUnavailableError
 from robots.catalog.registry import RobotCatalogRegistry
-from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
-from robots.robot_client import RobotClient
 from schemas import SerialPortInfo
 from schemas.robot import ReadableRobot, UnavailableRobot
 from utils.device_paths import resolve_serial_device
@@ -26,24 +24,6 @@ class RobotClientFactory:
         self.robot_manager = robot_manager
         self.catalog_registry = catalog_registry or RobotCatalogRegistry()
 
-    async def build(self, robot: ReadableRobot) -> RobotClient:
-        if isinstance(robot, UnavailableRobot):
-            raise RobotPluginUnavailableError(robot.name, robot.type)
-
-        shared_robot, definition = await self.build_shared_robot(robot)
-        adapter_options = definition.adapter_options
-        return PhysicalAIRobotAdapter(
-            robot=shared_robot,
-            robot_type=robot.type,
-            robot_role=definition.role,
-            display_name=robot.name,
-            config=PhysicalAIRobotAdapterConfig(
-                include_velocities=adapter_options.include_velocities,
-                goal_time_scale=adapter_options.goal_time_scale,
-                external_effort_gain=adapter_options.external_effort_gain,
-            ),
-        )
-
     async def build_robot_driver(
         self, robot: ReadableRobot, port_finder: CatalogRobotFactory
     ) -> tuple[Any, RobotCatalogDefinition]:
@@ -60,7 +40,7 @@ class RobotClientFactory:
         return await definition.robot_builder(robot, port_finder), definition
 
     async def build_shared_robot(self, robot: ReadableRobot) -> tuple[SharedRobot, RobotCatalogDefinition]:
-        """Build the shared transport used by runtime and adapter callers."""
+        """Build the shared transport used by robot observation streams."""
         robot_driver, definition = await self.build_robot_driver(robot, self)
         # Builders return a plain driver; wrapping happens here so every robot
         # type (including third-party plugins) gets one owner process holding

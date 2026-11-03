@@ -8,7 +8,7 @@ from runtime.features import feature_names, sanitize_camera_name
 def test_features_come_from_joint_names() -> None:
     names = ["shoulder_pan", "wrist"]
     features = build_lerobot_dataset_features(joint_names=names, camera_specs={})
-    expected = feature_names(names, include_velocities=False)
+    expected = feature_names(names)
 
     assert features["observation.state"]["names"] == expected
     assert features["action"]["names"] == expected

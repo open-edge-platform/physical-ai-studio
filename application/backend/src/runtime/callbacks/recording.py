@@ -162,7 +162,6 @@ class RecordingCallback:
             observation_to_dict(
                 self._joint_names,
                 event.robot_state,
-                include_velocities=False,
             )
         )
         for key, frame in event.camera_frames.items():

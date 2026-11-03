@@ -554,6 +554,17 @@ class TrainerContainerLaunchError(BaseException):
         )
 
 
+class AwsFeatureDisabledError(BaseException):
+    """Raised when the AWS integration is disabled."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="The AWS provider is disabled. Set AWS_ENABLED=true to enable it.",
+            error_code="aws_feature_unavailable",
+            http_status=http.HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+
+
 class SshFeatureDisabledError(BaseException):
     """Raised when the SSH remote-trainer feature fails closed on network exposure.
 

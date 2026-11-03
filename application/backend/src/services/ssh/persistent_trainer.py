@@ -6,8 +6,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from core.backend_instance import get_backend_instance_id
+from exceptions import TrainerContainerLaunchError
 from schemas.hardware import DeviceType
-from schemas.remote_trainer import RemoteTrainer
+from schemas.remote_trainer import RemoteTrainer, SshConnection
 from services.ssh import docker_ops
 from services.ssh.connection import AliasTarget, DirectTarget
 from services.ssh.docker_ops import verify_image_signature
@@ -94,23 +95,24 @@ def _container_name(trainer_id: object) -> str:
 
 
 def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
-    if remote_trainer.ssh_host_alias:
-        return AliasTarget(remote_trainer.ssh_host_alias)
-    connection = remote_trainer.ssh_connection
+    ssh = remote_trainer.connection
+    if not isinstance(ssh, SshConnection):
+        raise ValueError("Trainer is not an SSH trainer")
+    if ssh.ssh_host_alias:
+        return AliasTarget(ssh.ssh_host_alias)
+    connection = ssh.ssh_connection
     if connection is None:
         raise ValueError("SSH trainer has no configured host")
     return DirectTarget(connection.hostname, connection.port, connection.user, connection.identity_file)
 
 
-async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
+async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:  # noqa: PLR0915
     """Ensure an SSH trainer has a running container."""
-    if remote_trainer.connection_mode.value != "ssh":
+    if not isinstance(remote_trainer.connection, SshConnection):
         return
     settings = get_settings()
     target = _ssh_target(remote_trainer)
-    remote_port = remote_trainer.ssh_remote_port
-    if remote_port is None:
-        raise ValueError("SSH trainer has no configured remote port")
+    remote_port = remote_trainer.connection.ssh_remote_port
     name = _container_name(remote_trainer.id)
     _launch_started_at[remote_trainer.id] = datetime.now(UTC)
     _launch_failure.pop(remote_trainer.id, None)
@@ -177,14 +179,26 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
             await docker_ops.remove_stale_containers_on_port(
                 transport, remote_port, backend_instance_id, str(remote_trainer.id)
             )
-            await docker_ops.launch_container(transport, argv, remote_trainer.name)
+            try:
+                await docker_ops.launch_container(transport, argv, remote_trainer.name)
+            except TrainerContainerLaunchError as error:
+                if any(marker in error.message.lower() for marker in ("already allocated", "address already in use")):
+                    _launch_failure[remote_trainer.id] = "remote_port_in_use"
+                raise
     finally:
         _launch_phase.pop(remote_trainer.id, None)
 
 
+def clear_launch_state(remote_trainer_id: UUID) -> None:
+    """Drop local launch state without contacting the SSH host."""
+    _launch_phase.pop(remote_trainer_id, None)
+    _launch_started_at.pop(remote_trainer_id, None)
+    _launch_failure.pop(remote_trainer_id, None)
+
+
 async def stop(remote_trainer: RemoteTrainer, *, remove_volume: bool = True) -> None:
     """Remove the container, retaining its volume when reconfiguring a trainer."""
-    if remote_trainer.connection_mode.value != "ssh":
+    if not isinstance(remote_trainer.connection, SshConnection):
         return
     settings = get_settings()
     async with SshTransport(_ssh_target(remote_trainer), settings) as transport:
@@ -193,6 +207,4 @@ async def stop(remote_trainer: RemoteTrainer, *, remove_volume: bool = True) -> 
         )
         if remove_volume:
             await docker_ops.remove_volume(transport, docker_ops.data_volume_name(str(remote_trainer.id)))
-    _launch_phase.pop(remote_trainer.id, None)
-    _launch_started_at.pop(remote_trainer.id, None)
-    _launch_failure.pop(remote_trainer.id, None)
+    clear_launch_state(remote_trainer.id)

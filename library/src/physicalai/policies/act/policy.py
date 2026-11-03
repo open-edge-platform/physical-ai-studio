@@ -26,59 +26,13 @@ from physicalai.export.backends import (
 )
 from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.gyms import Gym
-from physicalai.policies.act.config import IMAGENET_MEAN, IMAGENET_STD, ACTConfig
+from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
 from physicalai.policies.act.preprocessor import ACTPreprocessor
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 logger = logging.getLogger(__name__)
-
-RGB_CHANNELS = 3
-
-# LeRobot's checkpoint state dict uses a flat "model."/"normalize_inputs."/"normalize_targets."/
-# "unnormalize_outputs." prefix scheme, while physicalai's ACTModel nests the core network under
-# "_model." and splits normalization buffers into "_input_normalizer"/"_output_denormalizer" modules.
-_LEROBOT_ACT_PREFIX_MAP = {
-    "model.": "_model.",
-    "normalize_targets.buffer_action": "_input_normalizer.buffer_action",
-    "normalize_inputs.buffer_observation_state": "_input_normalizer.buffer_state",
-    "unnormalize_outputs.buffer_action": "_output_denormalizer.buffer_action",
-}
-
-
-def _remap_lerobot_act_state_dict(
-    state_dict: dict[str, torch.Tensor],
-    image_feature_names: list[str],
-) -> dict[str, torch.Tensor]:
-    """Remap a LeRobot ``ACTPolicy`` checkpoint state dict to physicalai's native ``ACT`` key names.
-
-    Args:
-        state_dict: State dict as loaded from a LeRobot ``model.safetensors`` checkpoint.
-        image_feature_names: Names of the camera/image input features declared in the checkpoint's
-            ``config.json`` (e.g. ``["observation.images.top"]``), used to remap per-camera
-            normalizer buffers. Single-camera checkpoints use the generic ``images`` buffer name;
-            multi-camera checkpoints key the buffer by feature name, matching ``ACTModel``'s layout.
-
-    Returns:
-        A new state dict with keys renamed to match physicalai's native ``ACTModel``/normalizer layout.
-    """
-    single_camera = len(image_feature_names) == 1
-    remapped: dict[str, torch.Tensor] = {}
-    for key, value in state_dict.items():
-        new_key = key
-        for old_prefix, new_prefix in _LEROBOT_ACT_PREFIX_MAP.items():
-            if key.startswith(old_prefix):
-                new_key = new_prefix + key[len(old_prefix) :]
-                break
-        else:
-            image_prefix = "normalize_inputs.buffer_observation_images_"
-            if key.startswith(image_prefix):
-                suffix = key.split(".")[-1]
-                image_key = f"buffer_{IMAGES}" if single_camera else key[len("normalize_inputs.") : -len(f".{suffix}")]
-                new_key = f"_input_normalizer.{image_key}.{suffix}"
-        remapped[new_key] = value
-    return remapped
 
 
 class ACT(ExportablePolicyMixin, Policy):
@@ -248,15 +202,7 @@ class ACT(ExportablePolicyMixin, Policy):
         # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
             if self.config.use_imagenet_stats and weights_file is None:
-                dataset_stats = copy.deepcopy(dataset_stats)
-                for stat in dataset_stats.values():
-                    if (
-                        FeatureType(stat["type"]) == FeatureType.VISUAL
-                        and len(stat["shape"]) >= RGB_CHANNELS
-                        and stat["shape"][0] == RGB_CHANNELS
-                    ):
-                        stat["mean"] = list(IMAGENET_MEAN)
-                        stat["std"] = list(IMAGENET_STD)
+                dataset_stats = _with_imagenet_stats(dataset_stats)
             self._initialize_model(dataset_stats, weights_file)
 
         self._dataset_stats = dataset_stats
@@ -366,27 +312,13 @@ class ACT(ExportablePolicyMixin, Policy):
         features: dict[str, Feature] = {}
         for stat in dataset_stats.values():
             ftype = cast("FeatureType", stat["type"])
-            shape = cast("tuple[int, ...]", stat["shape"])
-            if (
-                self.config.use_imagenet_stats
-                and weights_file is None
-                and FeatureType(ftype) == FeatureType.VISUAL
-                and len(shape) >= RGB_CHANNELS
-                and shape[0] == RGB_CHANNELS
-            ):
-                mean = list(IMAGENET_MEAN)
-                std = list(IMAGENET_STD)
-            else:
-                mean = cast("list[float]", stat["mean"])
-                std = cast("list[float]", stat["std"])
-
             features[str(stat["name"])] = Feature(
                 name=str(stat["name"]),
                 ftype=ftype,
-                shape=shape,
+                shape=cast("tuple[int, ...]", stat["shape"]),
                 normalization_data=NormalizationParameters(
-                    mean=mean,
-                    std=std,
+                    mean=cast("list[float]", stat["mean"]),
+                    std=cast("list[float]", stat["std"]),
                 ),
             )
 
@@ -463,16 +395,11 @@ class ACT(ExportablePolicyMixin, Policy):
             reformat_dataset_to_match_policy(self, datamodule)
             return
 
-        stats_dict = copy.deepcopy(train_dataset.stats)
-        if self.config.use_imagenet_stats:
-            for stat in stats_dict.values():
-                if (
-                    FeatureType(stat["type"]) == FeatureType.VISUAL
-                    and len(stat["shape"]) >= RGB_CHANNELS
-                    and stat["shape"][0] == RGB_CHANNELS
-                ):
-                    stat["mean"] = list(IMAGENET_MEAN)
-                    stat["std"] = list(IMAGENET_STD)
+        stats_dict = (
+            _with_imagenet_stats(train_dataset.stats)
+            if self.config.use_imagenet_stats
+            else copy.deepcopy(train_dataset.stats)
+        )
 
         self.hparams["dataset_stats"] = stats_dict
 
@@ -815,3 +742,73 @@ class ACT(ExportablePolicyMixin, Policy):
         )
 
         return extra_args
+
+
+_RGB_CHANNELS = 3
+_IMAGENET_MEAN: list[float] = [0.485, 0.456, 0.406]
+_IMAGENET_STD: list[float] = [0.229, 0.224, 0.225]
+
+# LeRobot's checkpoint state dict uses a flat "model."/"normalize_inputs."/"normalize_targets."/
+# "unnormalize_outputs." prefix scheme, while physicalai's ACTModel nests the core network under
+# "_model." and splits normalization buffers into "_input_normalizer"/"_output_denormalizer" modules.
+_LEROBOT_ACT_PREFIX_MAP = {
+    "model.": "_model.",
+    "normalize_targets.buffer_action": "_input_normalizer.buffer_action",
+    "normalize_inputs.buffer_observation_state": "_input_normalizer.buffer_state",
+    "unnormalize_outputs.buffer_action": "_output_denormalizer.buffer_action",
+}
+
+
+def _remap_lerobot_act_state_dict(
+    state_dict: dict[str, torch.Tensor],
+    image_feature_names: list[str],
+) -> dict[str, torch.Tensor]:
+    """Remap a LeRobot ``ACTPolicy`` checkpoint state dict to physicalai's native ``ACT`` key names.
+
+    Args:
+        state_dict: State dict as loaded from a LeRobot ``model.safetensors`` checkpoint.
+        image_feature_names: Names of the camera/image input features declared in the checkpoint's
+            ``config.json`` (e.g. ``["observation.images.top"]``), used to remap per-camera
+            normalizer buffers. Single-camera checkpoints use the generic ``images`` buffer name;
+            multi-camera checkpoints key the buffer by feature name, matching ``ACTModel``'s layout.
+
+    Returns:
+        A new state dict with keys renamed to match physicalai's native ``ACTModel``/normalizer layout.
+    """
+    single_camera = len(image_feature_names) == 1
+    remapped: dict[str, torch.Tensor] = {}
+    for key, value in state_dict.items():
+        new_key = key
+        for old_prefix, new_prefix in _LEROBOT_ACT_PREFIX_MAP.items():
+            if key.startswith(old_prefix):
+                new_key = new_prefix + key[len(old_prefix) :]
+                break
+        else:
+            image_prefix = "normalize_inputs.buffer_observation_images_"
+            if key.startswith(image_prefix):
+                suffix = key.split(".")[-1]
+                image_key = f"buffer_{IMAGES}" if single_camera else key[len("normalize_inputs.") : -len(f".{suffix}")]
+                new_key = f"_input_normalizer.{image_key}.{suffix}"
+        remapped[new_key] = value
+    return remapped
+
+
+def _with_imagenet_stats(dataset_stats: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Return a copy of ``dataset_stats`` with ImageNet mean/std applied to RGB visual features.
+
+    Args:
+        dataset_stats: Per-feature normalization statistics.
+
+    Returns:
+        A deep copy of ``dataset_stats`` with RGB visual feature stats replaced.
+    """
+    stats = copy.deepcopy(dataset_stats)
+    for stat in stats.values():
+        shape = stat["shape"]
+        if (
+            FeatureType(stat["type"]) == FeatureType.VISUAL
+            and len(shape) >= _RGB_CHANNELS
+            and shape[0] == _RGB_CHANNELS
+        ):
+            stat["mean"], stat["std"] = list(_IMAGENET_MEAN), list(_IMAGENET_STD)
+    return stats

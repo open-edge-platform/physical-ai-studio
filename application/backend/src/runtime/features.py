@@ -10,34 +10,21 @@ if TYPE_CHECKING:
     from physicalai.robot.interface import RobotObservation
 
 
-def feature_names(joint_names: list[str], *, include_velocities: bool) -> list[str]:
-    """Return position feature names followed by optional velocity names."""
-    positions = [f"{name}.pos" for name in joint_names]
-    if not include_velocities:
-        return positions
-    return positions + [f"{name}.vel" for name in joint_names]
+def feature_names(joint_names: list[str]) -> list[str]:
+    """Return the position feature names used by Studio robot data."""
+    return [f"{name}.pos" for name in joint_names]
 
 
 def _named_positions(joint_names: list[str], values: Iterable[float]) -> dict[str, float]:
-    names = feature_names(joint_names, include_velocities=False)
-    return dict(zip(names, (float(value) for value in values), strict=True))
+    return dict(zip(feature_names(joint_names), (float(value) for value in values), strict=True))
 
 
 def observation_to_dict(
     joint_names: list[str],
     observation: RobotObservation,
-    *,
-    include_velocities: bool,
 ) -> dict[str, float]:
-    """Map a robot observation to Studio's named scalar features."""
-    values = [float(value) for value in observation.joint_positions]
-    if include_velocities:
-        sensor_data = observation.sensor_data
-        if sensor_data is None or "velocities" not in sensor_data:
-            raise RuntimeError("Robot observation is missing velocity data")
-        values.extend(float(value) for value in sensor_data["velocities"])
-        return dict(zip(feature_names(joint_names, include_velocities=True), values, strict=True))
-    return _named_positions(joint_names, values)
+    """Map joint positions from an observation to Studio's named features."""
+    return _named_positions(joint_names, observation.joint_positions)
 
 
 def action_to_dict(joint_names: list[str], action: np.ndarray) -> dict[str, float]:

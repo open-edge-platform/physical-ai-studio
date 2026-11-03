@@ -21,7 +21,6 @@ from services.dataset_import.adapters import (
     get_registered_dataset_import_adapters,
     select_dataset_import_adapter,
 )
-from services.dataset_import.service import DatasetImportService
 from services.dataset_import.staging import resolve_payload_archive_path
 from services.dataset_service import DatasetService
 from services.event_processor import EventType
@@ -40,20 +39,20 @@ if TYPE_CHECKING:
 class DatasetImportWorker(BaseProcessWorker):
     ROLE = "DatasetImportWorker"
 
-    def __init__(self, stop_event: EventClass, event_queue: mp.Queue):
+    def __init__(self, job_id: UUID, stop_event: EventClass, event_queue: mp.Queue):
         super().__init__(stop_event=stop_event)
+        self.job_id = job_id
         self.queue = event_queue
         self.adapters: list[DatasetImportAdapter] = get_registered_dataset_import_adapters()
 
     async def run_loop(self) -> None:
-        logger.info("Dataset Import Worker is running")
-        while not self.should_stop():
-            async with get_async_db_session_ctx() as session:
-                job = await DatasetImportService(session).claim_pending_dataset_import_job()
-            if isinstance(job, DatasetImportJob):
-                await self._process_job(job)
-
-            self.stop_aware_sleep(0.5)
+        """Execute one claimed import step, then exit (including before user review)."""
+        if self.should_stop():
+            return
+        async with get_async_db_session_ctx() as session:
+            job = await JobService(session).get_job_by_id(self.job_id)
+        if isinstance(job, DatasetImportJob) and job.status == JobStatus.RUNNING:
+            await self._process_job(job)
 
     async def _process_job(self, job: DatasetImportJob) -> None:
         with job_logging_ctx(job_id=str(job.id)):

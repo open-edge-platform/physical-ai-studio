@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
 import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
-import { mapJointToURDFJoint, useLoadModelQuery } from './robot-models-context';
-import { SchemaRobotType } from './robot-types';
+import { mapJointToURDFJoint, RobotModelConfig, useLoadModelQuery } from './robot-models-context';
 
 type JointsState = Array<{
     name: string;
@@ -21,19 +20,22 @@ const getNewJointState = (newJoints: Record<string, number>) => {
     });
 };
 
-export const useSynchronizeModelJoints = (joints: JointsState, robotType: SchemaRobotType) => {
-    const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
+export const useSynchronizeModelJoints = (joints: JointsState, robot: RobotModelConfig) => {
+    const { type, payload } = robot;
+    const unit = payload && 'unit' in payload ? payload.unit : undefined;
+    const modelConfig = useMemo(() => ({ type, payload: { unit } }), [type, unit]);
+    const { data: definition } = useRobotCatalogDefinitionQuery(type);
     const jointMap = definition.joint_map;
 
-    const { data: model } = useLoadModelQuery(robotType);
+    const { data: model } = useLoadModelQuery(type);
 
     useEffect(() => {
         if (!model) return;
 
         joints.forEach((joint) => {
-            mapJointToURDFJoint(joint, model, jointMap);
+            mapJointToURDFJoint(joint, model, jointMap, modelConfig);
         });
-    }, [model, joints, jointMap]);
+    }, [model, joints, jointMap, modelConfig]);
 };
 
 // Mirrors runtime.contract.FollowerSource. Inference uses 'policy'.

@@ -3,13 +3,12 @@ import { Checkbox, CheckboxGroup, Flex, ProgressCircle, Text } from '@geti-ui/ui
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { isExportBackend } from '../inference-backends';
 import { InferenceBackendLogo } from '../model-formats/backend-card';
-import { MODELS } from './policies';
 import { ExportSelection } from './use-export-backends';
 
 import classes from './train-model-dialog.module.css';
 
 interface ExportStepProps {
-    policy: string;
+    policyName: string;
     selection: ExportSelection;
 }
 
@@ -20,8 +19,7 @@ interface ExportStepProps {
  * conversion of the same weights — so this is about which runtimes the model
  * should be deployable on, not about how it is trained.
  */
-export const ExportStep = ({ policy, selection }: ExportStepProps) => {
-    const policyName = MODELS.find((model) => model.id === policy)?.name ?? policy;
+export const ExportStep = ({ policyName, selection }: ExportStepProps) => {
     const { backends, selectedBackends, setSelectedBackends, isLoading, error } = selection;
 
     if (isLoading) {
@@ -30,6 +28,10 @@ export const ExportStep = ({ policy, selection }: ExportStepProps) => {
                 <ProgressCircle aria-label='Loading export formats' isIndeterminate />
             </Flex>
         );
+    }
+
+    if (error !== null && backends.length === 0) {
+        return <InlineAlert variant='warning'>{error}</InlineAlert>;
     }
 
     if (backends.length === 0) {

@@ -21,10 +21,17 @@ describe('RemoteTrainerForm', () => {
         await user.click(screen.getByRole('tab', { name: /ssh tunnel/i }));
         await user.click(screen.getByRole('tab', { name: /connection details/i }));
 
+        const deployUrl = new URL(screen.getByRole<HTMLAnchorElement>('link', { name: 'Deploy AWS stack' }).href);
+        expect(deployUrl.hostname).toBe('us-east-1.console.aws.amazon.com');
+        expect(deployUrl.searchParams.get('region')).toBe('us-east-1');
         expect(screen.getByText('Connect through SSH when the trainer is not directly reachable.')).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: /connection details/i })).toHaveAttribute('aria-selected', 'true');
         expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('ec2-user');
-        expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('8001');
+        expect(screen.getByRole('textbox', { name: /remote port/i })).not.toBeVisible();
+        expect(screen.getByRole('textbox', { name: /local port/i })).not.toBeVisible();
+        await user.click(screen.getByText('Advanced settings'));
+        expect(screen.getByRole('textbox', { name: /remote port/i })).toHaveValue('8001');
+        expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('');
         expect(screen.queryByRole('textbox', { name: /trainer url/i })).not.toBeInTheDocument();
     });
 
@@ -89,32 +96,37 @@ describe('RemoteTrainerForm', () => {
         await waitFor(() => expect(created).toBeDefined());
         expect(requestedInstallation).toBe(true);
         expect(created).toMatchObject({
-            connection_mode: 'ssh',
-            url: null,
-            ssh_host_alias: null,
-            ssh_connection: {
-                hostname: 'gpu.example.test',
-                port: 2222,
-                user: 'trainer',
-                identity_file: '~/.ssh/trainer',
+            connection: {
+                connection_mode: 'ssh',
+                ssh_host_alias: null,
+                ssh_connection: {
+                    hostname: 'gpu.example.test',
+                    port: 2222,
+                    user: 'trainer',
+                    identity_file: '~/.ssh/trainer',
+                },
+                ssh_remote_port: 8001,
+                ssh_local_port: null,
             },
-            ssh_remote_port: 8001,
-            ssh_local_port: 8001,
         });
     });
 
     it('restores a manually configured SSH host when editing a remote trainer', async () => {
         const manualTrainer = getMockedRemoteTrainer({
             connection_mode: 'ssh',
-            url: undefined,
-            ssh_connection: {
-                hostname: 'gpu.example.test',
-                port: 2222,
-                user: null,
-                identity_file: '~/.ssh/trainer',
+            url: 'http://127.0.0.1:8001',
+            connection: {
+                connection_mode: 'ssh',
+                ssh_host_alias: null,
+                ssh_connection: {
+                    hostname: 'gpu.example.test',
+                    port: 2222,
+                    user: null,
+                    identity_file: '~/.ssh/trainer',
+                },
+                ssh_remote_port: 8001,
+                ssh_local_port: 8001,
             },
-            ssh_remote_port: 8001,
-            ssh_local_port: 8001,
         });
 
         renderForm({ remoteTrainer: manualTrainer });
@@ -128,6 +140,41 @@ describe('RemoteTrainerForm', () => {
         expect(screen.getByRole('textbox', { name: /^Port/ })).toHaveValue('2,222');
         expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('');
         expect(screen.getByRole('textbox', { name: /key path/i })).toHaveValue('~/.ssh/trainer');
+        await userEvent.setup().click(screen.getByText('Advanced settings'));
+        expect(screen.getByRole('textbox', { name: /remote port/i })).toHaveValue('8001');
+    });
+
+    it('allows editing both SSH tunnel ports', async () => {
+        const user = userEvent.setup();
+        let updated: Record<string, unknown> | undefined;
+        server.use(
+            http.patch('/api/remote-trainers/{remote_trainer_id}', async ({ request }) => {
+                updated = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json(getMockedRemoteTrainer());
+            })
+        );
+        renderForm({
+            remoteTrainer: getMockedRemoteTrainer({
+                connection_mode: 'ssh',
+                connection: {
+                    connection_mode: 'ssh',
+                    ssh_connection: { hostname: 'gpu.example.test', port: 22, user: 'trainer', identity_file: null },
+                    ssh_remote_port: 8001,
+                    ssh_local_port: 9012,
+                },
+            }),
+        });
+
+        await user.click(screen.getByText('Advanced settings'));
+        await user.clear(screen.getByRole('textbox', { name: /remote port/i }));
+        await user.type(screen.getByRole('textbox', { name: /remote port/i }), '8002');
+        expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('9012');
+        await user.clear(screen.getByRole('textbox', { name: /local port/i }));
+        await user.type(screen.getByRole('textbox', { name: /local port/i }), '9013');
+        await user.click(screen.getByRole('button', { name: 'Save changes' }));
+        await waitFor(() =>
+            expect(updated).toMatchObject({ connection: { ssh_remote_port: 8002, ssh_local_port: 9013 } })
+        );
     });
 
     it('does not offer SSH actions for an existing SSH trainer when the feature is unavailable', async () => {
@@ -135,9 +182,13 @@ describe('RemoteTrainerForm', () => {
             sshAvailable: false,
             remoteTrainer: getMockedRemoteTrainer({
                 connection_mode: 'ssh',
-                ssh_host_alias: 'gpu-box',
-                ssh_remote_port: 8001,
-                ssh_local_port: 8001,
+                url: 'http://127.0.0.1:8001',
+                connection: {
+                    connection_mode: 'ssh',
+                    ssh_host_alias: 'gpu-box',
+                    ssh_remote_port: 8001,
+                    ssh_local_port: 8001,
+                },
             }),
         });
 
@@ -175,13 +226,20 @@ describe('RemoteTrainerForm', () => {
 
         await waitFor(() => expect(created).toBeDefined());
         expect(created).toMatchObject({
-            connection_mode: 'ssh',
-            url: null,
-            ssh_host_alias: 'gpu-box',
-            ssh_connection: null,
-            ssh_remote_port: 8001,
-            ssh_local_port: 8001,
+            connection: {
+                connection_mode: 'ssh',
+                ssh_host_alias: 'gpu-box',
+                ssh_connection: null,
+                ssh_remote_port: 8001,
+                ssh_local_port: null,
+            },
         });
+    });
+
+    it('keeps AWS Batch out of the self-managed form', () => {
+        renderForm();
+        expect(screen.queryByRole('tab', { name: 'AWS Batch' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: /studio configuration/i })).not.toBeInTheDocument();
     });
 
     it('shows an insecure-URL warning for a non-loopback http:// trainer URL', async () => {

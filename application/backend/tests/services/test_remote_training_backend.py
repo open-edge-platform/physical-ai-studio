@@ -20,6 +20,7 @@ import httpx
 import pytest
 from loguru import logger
 from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from schemas.base_job import JobStatus
 from schemas.dataset import Snapshot
@@ -399,6 +400,21 @@ class TestRemoteTrainingBackend:
         assert controller.cancelled is True
 
     @pytest.mark.anyio
+    async def test_reattachment_cancel_before_remote_upload(self, tmp_path):
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        remote_job_id = uuid4()
+        context = _context(tmp_path, remote_job_id=remote_job_id, should_cancel_job=True)
+        backend = _backend(settings)
+        with (
+            patch.object(backend, "cancel", new_callable=AsyncMock) as cancel,
+            pytest.raises(TrainingCanceledError),
+        ):
+            await backend.train(context)
+        cancel.assert_awaited_once_with(remote_job_id)
+
+    @pytest.mark.anyio
     async def test_remote_failure_raises(self, tmp_path):
         settings = _settings()
         context = _context(tmp_path)
@@ -567,22 +583,19 @@ class TestRemoteTrainingBackend:
         controller.raise_connection_error = True
         controller.poll_state = {"status": "running", "progress": 50}
         job = MagicMock(id=uuid4(), message="Training")
-        service = JobService(MagicMock())
+        session = MagicMock(spec=AsyncSession)
+        service = JobService(session)
         service.repo.get_by_id = AsyncMock(return_value=job)
 
-        def persist(_job, updates):
+        def persist(statement, **kwargs):
+            updates = statement.compile().params
             job.message = updates.get("message", job.message)
-            return job
 
-        service.repo.update = AsyncMock(side_effect=persist)
+        session.execute.side_effect = persist
         pending = []
 
         def report(progress, *, message=None, extra_info=None):
-            pending.append(
-                asyncio.create_task(
-                    service.update_job_status(job.id, JobStatus.RUNNING, message=message, progress=progress)
-                )
-            )
+            pending.append(service.update_job_status(job.id, JobStatus.RUNNING, message=message, progress=progress))
 
         context.progress = report
 
@@ -601,9 +614,11 @@ class TestRemoteTrainingBackend:
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
         ):
             await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
-            await asyncio.gather(*pending)
+            for update in pending:
+                await update
 
-        assert job.message == "Trainer connection restored"
+        persisted = await service.get_job_by_id(job.id)
+        assert persisted.message == "Trainer connection restored"
 
     @pytest.mark.anyio
     async def test_reconnects_after_outage_exceeds_warning_threshold(self, tmp_path):

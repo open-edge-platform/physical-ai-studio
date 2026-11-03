@@ -33,7 +33,7 @@ dependencies = [
     "lightning-utilities",
     "lerobot[dataset]==0.6.0",
     "gymnasium>=0.29.1",
-    "gym-pusht>=0.1.5",
+    "gym-pusht>=0.1.5,<=0.1.8",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
     "openvino>=2026.4",
@@ -49,17 +49,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# PyTorch dependency groups.
-# torchvision hard-pins `torch==<matching version>`, so the two ranges must stay aligned:
-# torch 2.11 <-> torchvision 0.26 ... torch 2.14 <-> torchvision 0.29.
-# torchcodec floor stays at 0.11 (pairs with torch 2.11) so published metadata satisfies
-# lerobot's torchcodec<0.12 cap; the lerobot override below lifts it to 0.12+ in the lock.
-cpu = ["torch>=2.11,<2.15", "torchvision>=0.26,<0.30", "torchcodec>=0.11"]
-cu130 = ["torch>=2.11,<2.15", "torchvision>=0.26,<0.30", "torchcodec>=0.11"]
+# PyTorch dependency groups
+cpu = ["torch", "torchvision"]
+# The PyPI wheels for torchao 0.18+ are built against CUDA 13 and
+# fail to dlopen next to a cu128 torch.
+cu128 = [
+    "torch",
+    "torchvision",
+    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 xpu = [
-    "torch>=2.11,<2.15",
-    "torchvision>=0.26,<0.30",
-    "torchcodec>=0.11",
+    "torch",
+    "torchvision",
+    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # Testing dependencies
 tests = [
@@ -68,7 +70,7 @@ tests = [
     "pytest-mock",
     "pytest-examples>=0.0.13",
     "mypy==2.3.1",
-    "diffusers>=0.38.0",
+    "diffusers>=0.40.0",
 ]
 loggers = ["wandb>=0.22", "tensorboard>=2.20"]
 libero = ["hf-libero>=0.1.3,<0.2.0"]
@@ -113,7 +115,7 @@ rldx1 = [
 # NVIDIA Cosmos 3 foundation policy
 cosmos3 = [
     "diffusers>=0.40.0",
-    "transformers>=5.15.1",
+    "transformers>=5.15.1,<5.16.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
@@ -185,7 +187,7 @@ dev = [
     "mypy==2.3.1",
     "pyrefly==1.3.0",
     "ruff==0.16.7",
-    "diffusers>=0.38.0",
+    "diffusers>=0.40.0",
     "peft>=0.13.0,<1.0.0",
 ]
 
@@ -254,16 +256,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "f90b3767cfa99e243fc7b277b9faa242c87db213" }
-# PyPI's Linux torchcodec wheel is CUDA-built (needs libnvrtc), so route it per extra like torch.
-torchcodec = [
-    { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu130", extra = "cu130" },
-    { index = "pytorch-xpu", extra = "xpu" },
-]
-# Same issue as torchcodec: the XPU index ships `torchao` `+xpu` builds that would
-# otherwise be picked for the cpu/cu130 executorch installs.
-torchao = { index = "pypi" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cu130" },
@@ -273,6 +266,10 @@ torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cu130" },
     { index = "pytorch-xpu", extra = "xpu" },
+]
+torchao = [
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-xpu", extra = "xpu" },ßßßß
 ]
 
 triton-xpu = { index = "pytorch-xpu" }

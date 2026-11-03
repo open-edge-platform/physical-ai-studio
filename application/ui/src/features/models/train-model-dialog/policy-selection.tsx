@@ -1,13 +1,16 @@
 import { Card, Divider, Flex, Text, View } from '@geti-ui/ui';
 
-import { SchemaDeviceInfo } from '../../../api/openapi-spec';
+import { SchemaAvailablePolicy, SchemaDeviceInfo } from '../../../api/openapi-spec';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
-import { formatBytes, MODELS } from './policies';
+import { formatBytes } from './policies';
 
 import classes from './train-model-dialog.module.css';
 
 interface PolicySelectionProps {
     selectedPolicy: string;
+    availablePolicies: SchemaAvailablePolicy[];
+    isLoadingPolicies: boolean;
+    policiesUnavailable?: boolean;
     onSelectionChange: (policy: string) => void;
     isDisabled?: boolean;
     trainingDevice: SchemaDeviceInfo | null;
@@ -15,24 +18,27 @@ interface PolicySelectionProps {
 
 export const PolicySelection = ({
     selectedPolicy,
+    availablePolicies,
+    isLoadingPolicies,
+    policiesUnavailable,
     onSelectionChange,
     isDisabled,
     trainingDevice,
 }: PolicySelectionProps) => {
     const availableVram = trainingDevice?.memory ?? 0;
 
-    const selectedModel = MODELS.find((m) => m.id === selectedPolicy) ?? null;
+    const selectedModel = availablePolicies.find((model) => model.id === selectedPolicy) ?? null;
     const hasInsufficientVram =
-        selectedModel !== null &&
+        selectedModel?.min_vram != null &&
         availableVram > 0 &&
-        selectedModel.minVRAM > availableVram &&
-        formatBytes(selectedModel.minVRAM) !== formatBytes(availableVram);
+        selectedModel.min_vram > availableVram &&
+        formatBytes(selectedModel.min_vram) !== formatBytes(availableVram);
 
     return (
         <Flex direction='column' gap='size-100'>
             <Text UNSAFE_style={{ fontSize: 12 }}>Policy</Text>
             <div className={classes.policyGrid}>
-                {MODELS.map((model) => {
+                {availablePolicies.map((model) => {
                     const isSelected = selectedPolicy === model.id;
                     if (isDisabled && !isSelected) {
                         return null;
@@ -62,7 +68,7 @@ export const PolicySelection = ({
                                         direction='column'
                                         gap='size-50'
                                     >
-                                        <Text>&ge; {formatBytes(model.minVRAM)} VRAM</Text>
+                                        {model.min_vram != null && <Text>&ge; {formatBytes(model.min_vram)} VRAM</Text>}
                                     </Flex>
                                 </Flex>
                                 <Divider size='S' />
@@ -73,11 +79,22 @@ export const PolicySelection = ({
                 })}
             </div>
 
-            {hasInsufficientVram && (
+            {policiesUnavailable && (
+                <InlineAlert variant='warning'>
+                    Cannot verify policies on this training target. Check its connection.
+                </InlineAlert>
+            )}
+            {!isLoadingPolicies && !policiesUnavailable && availablePolicies.length === 0 && (
+                <InlineAlert variant='warning'>No training policies are available. Check the backend logs.</InlineAlert>
+            )}
+            {!isLoadingPolicies && availablePolicies.length > 0 && !selectedModel && (
+                <InlineAlert variant='warning'>This policy is unavailable. Choose another policy.</InlineAlert>
+            )}
+            {hasInsufficientVram && selectedModel?.min_vram != null && (
                 <View marginTop='size-100'>
                     <InlineAlert variant='warning'>
-                        {selectedModel.name} requires at least {formatBytes(selectedModel.minVRAM)} VRAM, but the device
-                        reports less than that. Training may fail or be very slow.
+                        {selectedModel.name} requires at least {formatBytes(selectedModel.min_vram)} VRAM, but the
+                        device reports less than that. Training may fail or be very slow.
                     </InlineAlert>
                 </View>
             )}

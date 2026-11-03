@@ -46,8 +46,9 @@ class TestReattachOrphans:
         service.get_job_list = AsyncMock(return_value=[job])
         service.update_job_status = AsyncMock(return_value=MagicMock())
 
-        await TrainingService.abort_orphan_jobs(service)
+        reconciled = await TrainingService.abort_orphan_jobs(service)
 
+        assert reconciled == [service.update_job_status.return_value]
         service.update_job_status.assert_awaited_once()
         assert service.update_job_status.call_args.kwargs["status"] == JobStatus.PENDING
 
@@ -60,8 +61,9 @@ class TestReattachOrphans:
         service.get_job_list = AsyncMock(return_value=[job])
         service.update_job_status = AsyncMock(return_value=MagicMock())
 
-        await TrainingService.abort_orphan_jobs(service)
+        reconciled = await TrainingService.abort_orphan_jobs(service)
 
+        assert reconciled == [service.update_job_status.return_value]
         assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
     @pytest.mark.anyio
@@ -80,8 +82,9 @@ class TestReattachOrphans:
         service.get_job_list = AsyncMock(return_value=[job])
         service.update_job_status = AsyncMock(return_value=MagicMock())
 
-        await TrainingService.abort_orphan_jobs(service)
+        reconciled = await TrainingService.abort_orphan_jobs(service)
 
+        assert reconciled == [service.update_job_status.return_value]
         assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
     def test_reattachable_remote_job_id_reads_dict_payload(self):
@@ -109,6 +112,7 @@ class TestReattachOrphans:
         service.get_job_list = AsyncMock(return_value=[job])
         service.update_job_status = AsyncMock(return_value=MagicMock())
 
-        await TrainingService.abort_orphan_jobs(service, exclude_job_ids={job.id})
+        reconciled = await TrainingService.abort_orphan_jobs(service, exclude_job_ids={job.id})
 
+        assert reconciled == []
         service.update_job_status.assert_not_awaited()

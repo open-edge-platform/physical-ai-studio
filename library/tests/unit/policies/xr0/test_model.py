@@ -663,4 +663,3 @@ class TestExportInputAlias:
         model({"input_ids": ids, "attention_mask": mask})
         assert captured.keys() == {"input_ids", "attention_mask"}
         assert torch.equal(captured["input_ids"], ids)
-

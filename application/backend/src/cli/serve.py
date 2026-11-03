@@ -1,16 +1,12 @@
 """Serve backend and frontend CLI commands."""
 
 import os
-import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
-import sys
 from pathlib import Path
 
 import click
 
 from cli.database import _run_migrations
 from core.security import get_ssh_feature_availability
-from robots.catalog.assets import builtin_robot_assets_are_available
-from robots.catalog.sync_robot_assets import sync_robot_assets
 from settings import get_settings
 
 
@@ -41,7 +37,6 @@ def start_server(host: str, port: int) -> None:
     os.environ["HOST"] = host
     os.environ["PORT"] = str(port)
     get_ssh_feature_availability.cache_clear()
-    _sync_missing_robot_assets()
     _run_migrations()
 
     import uvicorn
@@ -53,20 +48,23 @@ def start_server(host: str, port: int) -> None:
 
 
 @click.command()
-@click.option("--host", default=lambda: get_settings().host, show_default=True)
-@click.option("--port", default=lambda: get_settings().port, show_default=True, type=int)
+@click.option(
+    "--host",
+    default=lambda: get_settings().host,
+    show_default=True,
+    help="Bind address (HOST setting). Keep loopback unless network exposure is intended.",
+)
+@click.option(
+    "--port", default=lambda: get_settings().port, show_default=True, type=int, help="HTTP port (PORT setting)."
+)
 def serve(host: str, port: int) -> None:
-    """Start the Physical AI Studio web application."""
+    """Run migrations and start the Studio web application.
+
+    Uses the configured local storage and database. Startup can modify them.
+    Studio's API has no authentication model; do not expose it to untrusted networks.
+
+    \b
+    Example:
+      physicalai-studio serve --host 127.0.0.1 --port 7861
+    """
     start_server(host, port)
-
-
-def _sync_missing_robot_assets() -> None:
-    if builtin_robot_assets_are_available():
-        return
-
-    click.echo("Robot assets are missing; syncing them now...")
-    try:
-        sync_robot_assets()
-    except (subprocess.CalledProcessError, OSError) as error:
-        click.echo(f"✗ Failed to sync robot assets: {error}")
-        sys.exit(1)

@@ -1,72 +1,44 @@
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+from fastapi import HTTPException
+
 import robots.catalog.assets as assets
-from robots.catalog import so101, widowxai
+from robots.catalog.registry import RobotCatalogRegistry
 
 
-def test_get_builtin_robot_assets_root_uses_shared_constant() -> None:
-    assert assets.get_builtin_robot_assets_root() == assets.BUILTIN_ROBOT_ASSETS_ROOT
+def test_resolve_so101_plugin_assets_uses_plugin_root_resolver(monkeypatch) -> None:
+    builtin_root = Path("/builtin-assets")
+    monkeypatch.setattr(assets, "BUILTIN_ROBOT_ASSETS_ROOT", builtin_root)
+    definition = RobotCatalogRegistry().get_definition("SO101_Follower")
+
+    assert definition is not None
+    assert definition.asset is not None
+    assert definition.asset.root_resolver is not None
+
+    urdf_path = assets.resolve_robot_urdf_path(definition)
+
+    assert urdf_path == definition.asset.root_resolver() / definition.asset.urdf_relative_path
+    assert not urdf_path.is_relative_to(builtin_root)
+
+    mesh_path = assets.resolve_robot_relative_asset_path(definition, Path("assets/base_so101_v2.stl"))
+    package_root = next(iter(definition.asset.packages.values()))
+    assert mesh_path == definition.asset.root_resolver() / package_root / "assets/base_so101_v2.stl"
+    assert not mesh_path.is_relative_to(builtin_root)
 
 
-def test_builtin_robot_assets_are_available_requires_all_urdfs(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(assets, "BUILTIN_ROBOT_ASSETS_ROOT", tmp_path)
-    definitions = so101.get_definitions() + widowxai.get_definitions()
-    urdf_relative_paths = {
-        definition.asset.urdf_relative_path for definition in definitions if definition.asset is not None
-    }
+def test_resolve_relative_asset_rejects_ambiguous_package_roots() -> None:
+    definition = RobotCatalogRegistry().get_definition("SO101_Follower")
 
-    for relative_path in urdf_relative_paths:
-        path = tmp_path / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("urdf", encoding="utf-8")
-
-    assert assets.builtin_robot_assets_are_available()
-
-    (tmp_path / next(iter(urdf_relative_paths))).unlink()
-
-    assert not assets.builtin_robot_assets_are_available()
-
-
-def test_resolve_robot_urdf_path_uses_builtin_assets_root(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(assets, "BUILTIN_ROBOT_ASSETS_ROOT", tmp_path)
-    definition = next(definition for definition in so101.get_definitions() if definition.type == "SO101_Follower")
-
-    urdf_path = tmp_path / "SO101" / "so101_new_calib.urdf"
-    urdf_path.parent.mkdir(parents=True)
-    urdf_path.write_text("urdf", encoding="utf-8")
-
-    assert assets.resolve_robot_urdf_path(definition) == urdf_path
-
-
-def test_resolve_robot_relative_asset_path_uses_declared_package_root(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(assets, "BUILTIN_ROBOT_ASSETS_ROOT", tmp_path)
-    definition = next(
-        definition for definition in widowxai.get_definitions() if definition.type == "Trossen_WidowXAI_Follower"
+    assert definition is not None
+    assert definition.asset is not None
+    definition = replace(
+        definition,
+        asset=replace(definition.asset, packages={"one": Path("one"), "two": Path("two")}),
     )
 
-    asset_path = tmp_path / "widowx" / "meshes" / "base.stl"
-    asset_path.parent.mkdir(parents=True)
-    asset_path.write_text("mesh", encoding="utf-8")
+    with pytest.raises(HTTPException, match="multiple package roots") as error:
+        assets.resolve_robot_relative_asset_path(definition, Path("assets/base.stl"))
 
-    assert (
-        assets.resolve_robot_relative_asset_path(
-            definition,
-            asset_path=asset_path.relative_to(tmp_path / "widowx"),
-        )
-        == asset_path
-    )
-
-
-def test_resolve_robot_relative_asset_path_uses_model_asset_root(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(assets, "BUILTIN_ROBOT_ASSETS_ROOT", tmp_path)
-    definition = next(definition for definition in so101.get_definitions() if definition.type == "SO101_Follower")
-
-    asset_path = tmp_path / "SO101" / "meshes" / "base.stl"
-    asset_path.parent.mkdir(parents=True)
-    asset_path.write_text("mesh", encoding="utf-8")
-
-    assert (
-        assets.resolve_robot_relative_asset_path(
-            definition,
-            asset_path=asset_path.relative_to(tmp_path / "SO101"),
-        )
-        == asset_path
-    )
+    assert error.value.status_code == 500

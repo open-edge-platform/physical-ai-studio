@@ -7,7 +7,7 @@ from physicalai_studio_plugin import RobotCatalogDefinition
 from pydantic import BaseModel, Field
 
 from api.dependencies import RobotCatalogServiceDep, RobotConnectionManagerDep
-from exceptions import ResourceNotFoundError, ResourceType
+from exceptions import ResourceNotFoundError, ResourceType, RobotIdentifyError
 from robots.catalog.assets import resolve_robot_relative_asset_path, resolve_robot_urdf_path
 from schemas import SerialPortInfo
 
@@ -80,6 +80,11 @@ ProbePayloadDep = Annotated[BaseModel | dict[str, Any], Depends(_validate_probe_
 router = APIRouter(prefix="/api/robots/catalog", tags=["Robot Catalog"])
 
 
+def _is_so101_overload_protection_error(error: RuntimeError) -> bool:
+    """Return whether a plugin error represents the SO101 identify recovery action."""
+    return "stopped responding during motion" in str(error) and "overload protection" in str(error)
+
+
 @router.get("")
 async def list_robot_catalog(catalog_service: RobotCatalogServiceDep) -> list[RobotCatalogDefinitionResponse]:
     """List robot catalog definitions exposed to the UI."""
@@ -111,7 +116,12 @@ async def identify_robot(
             resource_id=definition.type,
             message=f"Robot type {definition.type} does not support identification.",
         )
-    await definition.probe.identify(payload, robot_manager, joint)
+    try:
+        await definition.probe.identify(payload, robot_manager, joint)
+    except RuntimeError as error:
+        if _is_so101_overload_protection_error(error):
+            raise RobotIdentifyError(str(error)) from error
+        raise
 
 
 @router.post("/{robot_type}/is-online")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition

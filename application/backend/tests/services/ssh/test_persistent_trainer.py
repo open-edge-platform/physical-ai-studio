@@ -7,8 +7,9 @@ from uuid import uuid4
 
 import pytest
 
+from exceptions import TrainerContainerLaunchError
 from schemas.hardware import DeviceType
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode
+from schemas.remote_trainer import DirectConnection, RemoteTrainer, SshConnection
 from services.ssh import persistent_trainer
 from services.ssh.docker_ops import ContainerInspection, ResolvedImage
 
@@ -32,11 +33,7 @@ def _ssh_trainer() -> RemoteTrainer:
     return RemoteTrainer(
         id=uuid4(),
         name="gpu-trainer",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-        ssh_remote_port=8001,
-        ssh_local_port=8001,
+        connection=SshConnection(ssh_host_alias="gpu-box", ssh_remote_port=8001, ssh_local_port=8001),
     )
 
 
@@ -75,6 +72,39 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
     assert persistent_trainer.get_launch_phase(trainer.id) is None
     assert docker_ops_module.build_run_argv.call_args.kwargs["shm_size_gb"] == 8
     docker_ops_module.launch_container.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("detail", "reason"),
+    [
+        ("port is already allocated", "remote_port_in_use"),
+        ("bind: address already in use", "remote_port_in_use"),
+        ("permission denied", None),
+    ],
+)
+async def test_remote_port_collision_is_reported_to_health_checks(detail: str, reason: str | None) -> None:
+    trainer = _ssh_trainer()
+    with (
+        patch(f"{MODULE}.SshTransport", return_value=_fake_transport_cm()),
+        patch(f"{MODULE}.get_backend_instance_id", return_value="this-instance"),
+        patch(f"{MODULE}.docker_ops") as docker_ops_module,
+        pytest.raises(TrainerContainerLaunchError),
+    ):
+        docker_ops_module.inspect_container = AsyncMock(return_value=None)
+        docker_ops_module.resolve_protocol_image = AsyncMock(return_value=_IMAGE)
+        docker_ops_module.pull_image = AsyncMock()
+        docker_ops_module.management_labels = MagicMock(return_value={})
+        docker_ops_module.data_volume_name = MagicMock(return_value="vol")
+        docker_ops_module.create_data_volume = AsyncMock()
+        docker_ops_module.build_run_argv = MagicMock(return_value=["docker", "run", "127.0.0.1::8001", "img"])
+        docker_ops_module.remove_stale_containers_on_port = AsyncMock(return_value=[])
+        docker_ops_module.launch_container = AsyncMock(
+            side_effect=TrainerContainerLaunchError("gpu-box", f"Bind for 127.0.0.1:8001 failed: {detail}")
+        )
+        await persistent_trainer.start(trainer)
+
+    assert persistent_trainer.get_launch_failure(trainer.id) == reason
+    assert persistent_trainer.get_launch_phase(trainer.id) is None
 
 
 async def test_unverified_image_is_never_pulled_or_launched() -> None:
@@ -208,7 +238,7 @@ async def test_start_records_missing_accelerator_for_the_health_ui() -> None:
 
 
 async def test_start_is_a_noop_for_a_direct_url_trainer() -> None:
-    trainer = RemoteTrainer(id=uuid4(), name="direct", url="https://trainer.test")
+    trainer = RemoteTrainer(id=uuid4(), name="direct", connection=DirectConnection(url="https://trainer.test"))
 
     with patch(f"{MODULE}.SshTransport") as ssh_transport:
         await persistent_trainer.start(trainer)

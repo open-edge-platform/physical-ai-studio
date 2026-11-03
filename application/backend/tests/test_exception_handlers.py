@@ -5,6 +5,7 @@
 
 from fastapi.testclient import TestClient
 
+from exception_handlers import _rewrite_validation_error_status_code
 from main import app
 
 
@@ -33,3 +34,34 @@ def test_validation_exception_handler_reports_nested_field_names() -> None:
     body = response.json()
     assert body["error_code"] == "bad_request"
     assert "ssh.connect_timeout_s" in body["message"]
+
+
+def test_openapi_preserves_explicit_request_errors_alongside_validation() -> None:
+    schema = {
+        "paths": {
+            "/test": {
+                "post": {
+                    "responses": {
+                        "400": {
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/OperationalIssue"}}
+                            }
+                        },
+                        "422": {
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/HTTPValidationError"}}
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+    rewritten = _rewrite_validation_error_status_code(schema)
+    responses = rewritten["paths"]["/test"]["post"]["responses"]
+    assert "422" not in responses
+    assert responses["400"]["content"]["application/json"]["schema"]["anyOf"] == [
+        {"$ref": "#/components/schemas/OperationalIssue"},
+        {"$ref": "#/components/schemas/HTTPValidationError"},
+    ]
+    assert _rewrite_validation_error_status_code(rewritten) == rewritten

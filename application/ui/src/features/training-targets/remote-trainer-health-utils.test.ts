@@ -12,6 +12,23 @@ const startingHealth: SchemaRemoteTrainerHealth = {
 };
 
 describe('remote-trainer-health-utils starting status', () => {
+    it.each([
+        ['authentication_required', 'Authentication required', 'Authentication is required'],
+        ['access_denied', 'Access denied', 'Check permissions'],
+        ['resource_missing', 'Resource missing', 'could not be found'],
+        ['resource_disabled', 'Resource unavailable', 'disabled or invalid'],
+        ['service_error', 'Degraded', 'service returned an error'],
+    ])('displays the provider-independent reason %s without a toast issue', (reason, label, detail) => {
+        const health: SchemaRemoteTrainerHealth = {
+            ...startingHealth,
+            status: 'degraded',
+            reason_code: reason,
+            issues: [],
+        };
+        expect(healthLabel(health)).toBe(label);
+        expect(healthDescription(health)).toContain(detail);
+    });
+
     it('shows the current startup phase instead of a generic status', () => {
         expect(healthLabel(startingHealth)).toBe('Starting: Pulling trainer image');
         expect(healthLabel({ ...startingHealth, reason_code: null })).toBe('Starting');
@@ -44,6 +61,12 @@ describe('remote-trainer-health-utils starting status', () => {
         ).toContain('incomplete dpkg transactions');
         expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toBe(
             'Host installation supports Ubuntu 24.04 or Ubuntu 26.04 only.'
+        );
+    });
+
+    it('explains a remote port collision and how to resolve it', () => {
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'remote_port_in_use' })).toBe(
+            'The remote port is already in use on the SSH host. Go to Settings → Training Targets, edit this trainer, and choose another remote port under Advanced settings.'
         );
     });
 

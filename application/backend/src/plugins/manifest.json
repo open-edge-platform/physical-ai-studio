@@ -1,5 +1,63 @@
 [
   {
+    "id": "physicalai-so101-plugin",
+    "name": "SO101 Robot Plugin",
+    "description": "SO101 robot integrations.",
+    "repo_url": "https://github.com/openvinotoolkit/physicalai",
+    "install_source": "physicalai-so101-plugin>=0.2.0",
+    "robots": [
+      {
+        "type": "SO101_Follower",
+        "display_name": "SO101 Follower",
+        "role": "follower"
+      },
+      {
+        "type": "SO101_Leader",
+        "display_name": "SO101 Leader",
+        "role": "leader"
+      },
+      {
+        "type": "BimanualSO101_Follower",
+        "display_name": "Bimanual SO101 Follower",
+        "role": "follower"
+      },
+      {
+        "type": "BimanualSO101_Leader",
+        "display_name": "Bimanual SO101 Leader",
+        "role": "leader"
+      }
+    ]
+  },
+  {
+    "id": "physicalai-trossen-plugin",
+    "name": "Trossen WidowX AI Robot Plugin",
+    "description": "Trossen WidowX AI robot integrations.",
+    "repo_url": "https://github.com/openvinotoolkit/physicalai",
+    "install_source": "physicalai-trossen-plugin>=0.2.0",
+    "robots": [
+      {
+        "type": "Trossen_WidowXAI_Follower",
+        "display_name": "Trossen WidowX AI Follower",
+        "role": "follower"
+      },
+      {
+        "type": "Trossen_WidowXAI_Leader",
+        "display_name": "Trossen WidowX AI Leader",
+        "role": "leader"
+      },
+      {
+        "type": "Trossen_Bimanual_WidowXAI_Follower",
+        "display_name": "Trossen Bimanual WidowX AI Follower",
+        "role": "follower"
+      },
+      {
+        "type": "Trossen_Bimanual_WidowXAI_Leader",
+        "display_name": "Trossen Bimanual WidowX AI Leader",
+        "role": "leader"
+      }
+    ]
+  },
+  {
     "id": "physicalai-rebot-b601-plugin",
     "name": "ReBot Robot Plugin",
     "description": "ReBot B601 robot integrations.",
@@ -39,25 +97,6 @@
         "type": "StarArm_102_FL_Follower",
         "display_name": "Star Arm 102-FL Follower",
         "role": "follower"
-      }
-    ]
-  },
-  {
-    "id": "physicalai-bimanual-so101-plugin",
-    "name": "Bimanual SO-101 Robot Plugin",
-    "description": "Bimanual twin SO-101 arms for learning from demonstration.",
-    "repo_url": "https://github.com/openvinotoolkit/physicalai",
-    "install_source": "physicalai-bimanual-so101-plugin>=0.5.0",
-    "robots": [
-      {
-        "type": "BimanualSO101_Follower",
-        "display_name": "Bimanual SO101 Follower",
-        "role": "follower"
-      },
-      {
-        "type": "BimanualSO101_Leader",
-        "display_name": "Bimanual SO101 Leader",
-        "role": "leader"
       }
     ]
   },

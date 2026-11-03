@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 from shutil import copytree
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,5 +35,6 @@ class SnapshotService:
         copytree(source, destination)
 
     @staticmethod
-    def generate_snapshot_folder_name() -> str:
-        return time.strftime("snapshot_%Y-%m-%d_%H-%M-%S")
+    def generate_snapshot_folder_name(job_id: UUID) -> str:
+        """Generate a snapshot folder name unique to the training job."""
+        return f"{time.strftime('snapshot_%Y-%m-%d_%H-%M-%S')}_{job_id}"
