@@ -10,17 +10,17 @@ export const HOTKEY_ACTIONS: Record<HotkeyActionId, HotkeyActionDefinition> = {
     'recording.start_episode': {
         label: 'Start episode',
         scope: 'Recording',
-        defaultCombo: 'ArrowRight',
+        defaultCombo: ' ',
     },
     'recording.accept_episode': {
-        label: 'Accept episode',
+        label: 'Save episode',
         scope: 'Recording',
-        defaultCombo: 'ArrowRight',
+        defaultCombo: 'Enter',
     },
     'recording.discard_episode': {
         label: 'Discard episode',
         scope: 'Recording',
-        defaultCombo: 'ArrowLeft',
+        defaultCombo: 'Backspace',
     },
 };
 

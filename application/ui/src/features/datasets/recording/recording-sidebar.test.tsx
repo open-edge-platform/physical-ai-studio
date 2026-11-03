@@ -1,0 +1,446 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+import { useState } from 'react';
+
+import { rs } from '@rstest/core';
+import { act, fireEvent, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { HttpResponse } from 'msw';
+
+import { http } from '../../../api/utils';
+import { server } from '../../../msw-node-setup';
+import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
+import { getMockedEpisodes } from '../../../test-utils/mocks/mock-episode';
+import {
+    getMockedRuntimeMutation,
+    getMockedRuntimeSession,
+    getMockedRuntimeSessionState,
+} from '../../../test-utils/mocks/mock-runtime-session';
+import { getMockedSettings } from '../../../test-utils/mocks/mock-settings';
+import { render } from '../../../test-utils/render';
+import { useRuntimeSession } from '../../robots/runtime-session-provider';
+import { RecordingProvider } from './recording-provider';
+import { RecordingSidebar } from './recording-sidebar';
+
+rs.mock('../../robots/runtime-session-provider', () => ({
+    useRuntimeSession: rs.fn(),
+}));
+
+const PROJECT_ID = 'project-1';
+const DATASET_ID = 'dataset-1';
+
+type SessionOverrides = Parameters<typeof getMockedRuntimeSession>[0];
+
+interface Session {
+    isRecording?: boolean;
+    episodesRecorded?: number;
+    startPending?: boolean;
+    savePending?: boolean;
+    discardPending?: boolean;
+    defaultTask?: string;
+}
+
+const startEpisode = getMockedRuntimeMutation();
+const saveEpisode = getMockedRuntimeMutation();
+const discardEpisode = getMockedRuntimeMutation();
+
+const buildSession = ({
+    isRecording = false,
+    episodesRecorded = 0,
+    startPending = false,
+    savePending = false,
+    discardPending = false,
+    defaultTask = 'pick the cube',
+}: Session): SessionOverrides => ({
+    dataset: getMockedDataset({ id: DATASET_ID, project_id: PROJECT_ID, default_task: defaultTask }),
+    state: getMockedRuntimeSessionState({ is_recording: isRecording, episodes_recorded: episodesRecorded }),
+    startEpisode: { ...startEpisode, isPending: startPending },
+    saveEpisode: { ...saveEpisode, isPending: savePending },
+    discardEpisode: { ...discardEpisode, isPending: discardPending },
+});
+
+const applySession = (session: Session) => {
+    rs.mocked(useRuntimeSession).mockReturnValue(getMockedRuntimeSession(buildSession(session)));
+};
+
+const Harness = ({ initial }: { initial: Session }) => {
+    const [, setSession] = useState(initial);
+
+    const changeSession = (session: Session) => {
+        applySession(session);
+        setSession(session);
+    };
+
+    return (
+        <>
+            <button onClick={() => changeSession({ isRecording: true })}>simulate recording started</button>
+            <button onClick={() => changeSession({ isRecording: false, episodesRecorded: 1 })}>
+                simulate recording stopped
+            </button>
+            <RecordingProvider>
+                <RecordingSidebar />
+            </RecordingProvider>
+        </>
+    );
+};
+
+const renderSidebar = (
+    initial: Session = {},
+    {
+        episodes = getMockedEpisodes([]),
+        bindings = {},
+    }: { episodes?: ReturnType<typeof getMockedEpisodes>; bindings?: Record<string, string> } = {}
+) => {
+    server.use(
+        http.get('/api/dataset/{dataset_id}/episodes', () => HttpResponse.json(episodes)),
+        http.get('/api/settings', () => HttpResponse.json(getMockedSettings({ hotkeys: { bindings } }))),
+        http.get('/api/runtime/sessions', () => HttpResponse.json([]))
+    );
+
+    applySession(initial);
+
+    return render(<Harness initial={initial} />, {
+        route: `/projects/${PROJECT_ID}/datasets/${DATASET_ID}/record`,
+        path: '/projects/:project_id/datasets/:dataset_id/record',
+    });
+};
+
+describe('RecordingSidebar', () => {
+    beforeEach(() => {
+        rs.clearAllMocks();
+        // Spectrum renders a tray-style combobox at <= 700px. jsdom's screen is 0.
+        Object.defineProperty(window.screen, 'width', { configurable: true, value: 1280 });
+    });
+
+    afterEach(() => {
+        rs.useRealTimers();
+        Object.defineProperty(window.screen, 'width', { configurable: true, value: 0 });
+    });
+
+    describe('episode section', () => {
+        it.each([
+            { name: 'starts at E1 for an empty dataset', recorded: 0, indices: [], expected: 'E1' },
+            {
+                name: 'continues after the episodes already in the dataset and this session',
+                recorded: 2,
+                indices: [0, 1],
+                expected: 'E5',
+            },
+        ])('$name', async ({ recorded, indices, expected }) => {
+            renderSidebar(
+                { episodesRecorded: recorded },
+                { episodes: getMockedEpisodes(indices.map((episode_index) => ({ episode_index }))) }
+            );
+
+            expect(await screen.findByText(expected)).toBeInTheDocument();
+            expect(screen.getByText('Next episode')).toBeInTheDocument();
+        });
+
+        it('labels the episode as recording while recording', async () => {
+            renderSidebar({ isRecording: true });
+
+            expect(await screen.findByText('Recording')).toBeInTheDocument();
+            expect(screen.queryByText('Next episode')).not.toBeInTheDocument();
+        });
+
+        it('labels the episode as saving while the save request is pending', async () => {
+            renderSidebar({ isRecording: true, savePending: true });
+
+            expect(await screen.findByText('Saving…')).toBeInTheDocument();
+        });
+    });
+
+    describe('task picker', () => {
+        it('starts with the dataset default task', async () => {
+            renderSidebar({ defaultTask: 'stack the blocks' });
+
+            expect(await screen.findByRole('combobox', { name: /task/i })).toHaveValue('stack the blocks');
+        });
+
+        it('offers the default task and the unique tasks of recorded episodes', async () => {
+            const user = userEvent.setup();
+            renderSidebar(
+                { defaultTask: 'pick the cube' },
+                {
+                    episodes: getMockedEpisodes([
+                        { episode_index: 0, tasks: ['pick the cube', 'stack the blocks'] },
+                        { episode_index: 1, tasks: ['stack the blocks', 'open the drawer'] },
+                    ]),
+                }
+            );
+
+            await user.click(await screen.findByRole('button', { name: /show suggestions/i }));
+
+            const options = await screen.findAllByRole('option');
+            expect(options.map((option) => option.textContent)).toEqual([
+                'pick the cube',
+                'stack the blocks',
+                'open the drawer',
+            ]);
+        });
+
+        it('cannot be edited while recording', async () => {
+            renderSidebar({ isRecording: true });
+
+            expect(await screen.findByRole('combobox', { name: /task/i })).toHaveAttribute('readonly');
+        });
+
+        it('blocks starting an episode and explains why when the task is empty', async () => {
+            const user = userEvent.setup();
+            renderSidebar();
+
+            await user.clear(await screen.findByRole('combobox', { name: /task/i }));
+            await user.keyboard('{Escape}');
+
+            expect(screen.getByRole('button', { name: /start episode/i })).toBeDisabled();
+            expect(await screen.findByText('A task is required in order to record.')).toBeInTheDocument();
+        });
+    });
+
+    describe('idle controls', () => {
+        it('starts an episode with the current task', async () => {
+            const user = userEvent.setup();
+            renderSidebar({ defaultTask: 'pick the cube' });
+
+            const task = await screen.findByRole('combobox', { name: /task/i });
+            await user.clear(task);
+            await user.type(task, 'wipe the table');
+            await user.keyboard('{Escape}');
+            await user.click(screen.getByRole('button', { name: /start episode/i }));
+
+            expect(startEpisode.mutate).toHaveBeenCalledTimes(1);
+            expect(startEpisode.mutate).toHaveBeenCalledWith('wipe the table');
+        });
+
+        it('offers only start, not save or discard', async () => {
+            renderSidebar();
+
+            expect(await screen.findByRole('button', { name: /start episode/i })).toBeEnabled();
+            expect(screen.queryByRole('button', { name: /save episode/i })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /discard/i })).not.toBeInTheDocument();
+        });
+
+        it('shows the effective hotkeys in the helper text and next to the timer', async () => {
+            renderSidebar();
+
+            expect(
+                await screen.findByText('After the episode: Save (Enter) or Discard (Backspace).')
+            ).toBeInTheDocument();
+            expect(screen.getByText('Space')).toBeInTheDocument();
+        });
+    });
+
+    describe('recording controls', () => {
+        it('offers save and discard instead of start', async () => {
+            renderSidebar({ isRecording: true });
+
+            expect(await screen.findByRole('button', { name: /save episode/i })).toBeEnabled();
+            expect(screen.getByRole('button', { name: /discard/i })).toBeEnabled();
+            expect(screen.queryByRole('button', { name: /start episode/i })).not.toBeInTheDocument();
+        });
+
+        it.each([
+            { action: 'save', button: /save episode/i, called: saveEpisode, other: discardEpisode },
+            { action: 'discard', button: /discard/i, called: discardEpisode, other: saveEpisode },
+        ])('the $action button sends only the $action request', async ({ button, called, other }) => {
+            const user = userEvent.setup();
+            renderSidebar({ isRecording: true });
+
+            await user.click(await screen.findByRole('button', { name: button }));
+
+            expect(called.mutate).toHaveBeenCalledTimes(1);
+            expect(other.mutate).not.toHaveBeenCalled();
+        });
+
+        it('disables discard while saving', async () => {
+            renderSidebar({ isRecording: true, savePending: true });
+
+            expect(await screen.findByRole('button', { name: /discard/i })).toBeDisabled();
+        });
+    });
+
+    describe('hotkeys', () => {
+        it('starts an episode with Space', async () => {
+            renderSidebar({ defaultTask: 'pick the cube' });
+            await screen.findByRole('button', { name: /start episode/i });
+
+            fireEvent.keyDown(document.body, { key: ' ' });
+
+            expect(startEpisode.mutate).toHaveBeenCalledWith('pick the cube');
+        });
+
+        it('does not start with Space when the task is empty', async () => {
+            const user = userEvent.setup();
+            renderSidebar();
+            await user.clear(await screen.findByRole('combobox', { name: /task/i }));
+            await user.tab();
+
+            fireEvent.keyDown(document.body, { key: ' ' });
+
+            expect(startEpisode.mutate).not.toHaveBeenCalled();
+        });
+
+        it('does not start with Space while a start request is pending', async () => {
+            renderSidebar({ startPending: true });
+            await screen.findByRole('combobox', { name: /task/i });
+
+            fireEvent.keyDown(document.body, { key: ' ' });
+
+            expect(startEpisode.mutate).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            { key: 'Enter', action: 'saves', called: saveEpisode, other: discardEpisode },
+            { key: 'Backspace', action: 'discards', called: discardEpisode, other: saveEpisode },
+        ])('$action with $key while recording', async ({ key, called, other }) => {
+            renderSidebar({ isRecording: true });
+            await screen.findByRole('button', { name: /save episode/i });
+
+            fireEvent.keyDown(document.body, { key });
+
+            expect(called.mutate).toHaveBeenCalledTimes(1);
+            expect(other.mutate).not.toHaveBeenCalled();
+        });
+
+        it('does not save or discard when not recording', async () => {
+            renderSidebar();
+            await screen.findByRole('button', { name: /start episode/i });
+
+            fireEvent.keyDown(document.body, { key: 'Enter' });
+            fireEvent.keyDown(document.body, { key: 'Backspace' });
+
+            expect(saveEpisode.mutate).not.toHaveBeenCalled();
+            expect(discardEpisode.mutate).not.toHaveBeenCalled();
+        });
+
+        it.each([{ pending: 'savePending' }, { pending: 'discardPending' }] as const)(
+            'does not save or discard while $pending',
+            async ({ pending }) => {
+                renderSidebar({ isRecording: true, [pending]: true });
+                await screen.findByText('E1');
+
+                fireEvent.keyDown(document.body, { key: 'Enter' });
+                fireEvent.keyDown(document.body, { key: 'Backspace' });
+
+                expect(saveEpisode.mutate).not.toHaveBeenCalled();
+                expect(discardEpisode.mutate).not.toHaveBeenCalled();
+            }
+        );
+
+        it('edits the task text instead of discarding when Backspace is pressed in the task field', async () => {
+            const user = userEvent.setup();
+            renderSidebar({ defaultTask: 'pick the cube' });
+
+            const task = await screen.findByRole('combobox', { name: /task/i });
+            await user.click(task);
+            await user.keyboard('{Backspace}');
+
+            expect(task).toHaveValue('pick the cub');
+            expect(discardEpisode.mutate).not.toHaveBeenCalled();
+        });
+
+        it('does not start when Space is pressed on a focused button', async () => {
+            renderSidebar();
+            const robotsOrOtherButton = await screen.findByRole('button', { name: /start episode/i });
+
+            fireEvent.keyDown(robotsOrOtherButton, { key: ' ' });
+
+            expect(startEpisode.mutate).not.toHaveBeenCalled();
+        });
+
+        it('shows and uses custom bindings', async () => {
+            renderSidebar(
+                { isRecording: true },
+                {
+                    bindings: {
+                        'recording.start_episode': 'X',
+                        'recording.accept_episode': 'S',
+                        'recording.discard_episode': 'Shift+ArrowRight',
+                    },
+                }
+            );
+
+            expect(await screen.findByText('After the episode: Save (S) or Discard (Shift+→).')).toBeInTheDocument();
+            expect(screen.getByText('X')).toBeInTheDocument();
+
+            fireEvent.keyDown(document.body, { key: 'Enter' });
+            fireEvent.keyDown(document.body, { key: 'Backspace' });
+            expect(saveEpisode.mutate).not.toHaveBeenCalled();
+            expect(discardEpisode.mutate).not.toHaveBeenCalled();
+
+            fireEvent.keyDown(document.body, { key: 's' });
+            expect(saveEpisode.mutate).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('timer', () => {
+        const startRecording = async () => {
+            fireEvent.click(screen.getByRole('button', { name: /start episode/i }));
+            fireEvent.click(screen.getByRole('button', { name: 'simulate recording started' }));
+            await screen.findByRole('button', { name: /save episode/i });
+        };
+
+        const advance = (ms: number) =>
+            act(async () => {
+                rs.advanceTimersByTime(ms);
+            });
+
+        it('shows 00:00 when idle', async () => {
+            renderSidebar();
+
+            expect(await screen.findByText('00:00')).toBeInTheDocument();
+        });
+
+        it('counts only from when the backend confirms the recording', async () => {
+            renderSidebar();
+            await screen.findByText('00:00');
+            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+
+            fireEvent.click(screen.getByRole('button', { name: /start episode/i }));
+            await advance(3_000);
+            expect(screen.getByText('00:00')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'simulate recording started' }));
+            await advance(3_000);
+            expect(screen.getByText('00:03')).toBeInTheDocument();
+        });
+
+        it('starts counting when the session reports an ongoing recording', async () => {
+            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+            renderSidebar({ isRecording: true });
+            await screen.findByRole('button', { name: /save episode/i });
+
+            await advance(5_000);
+
+            expect(screen.getByText('00:05')).toBeInTheDocument();
+        });
+
+        it('resets to 00:00 once the recording stops', async () => {
+            renderSidebar();
+            await screen.findByText('00:00');
+            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+            await startRecording();
+            await advance(4_000);
+            expect(screen.getByText('00:04')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'simulate recording stopped' }));
+
+            expect(screen.getByText('00:00')).toBeInTheDocument();
+        });
+
+        it('keeps counting when saving fails and the recording continues', async () => {
+            renderSidebar();
+            await screen.findByText('00:00');
+            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+            await startRecording();
+            await advance(2_000);
+
+            fireEvent.click(screen.getByRole('button', { name: /save episode/i }));
+            await advance(1_000);
+
+            expect(saveEpisode.mutate).toHaveBeenCalledTimes(1);
+            expect(screen.getByText('00:03')).toBeInTheDocument();
+        });
+    });
+});
