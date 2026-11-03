@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import datetime
-import multiprocessing as mp
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -31,22 +30,27 @@ from services.training_backends import (
 )
 from services.training_service import TrainingTrackingDispatcher
 from settings import get_settings
-from workers.base import BaseProcessWorker
+from workers.base import ProcessWorker
 
 if TYPE_CHECKING:
+    import multiprocessing as mp
     from multiprocessing.synchronize import Event as EventClass
 
 
-class TrainingWorker(BaseProcessWorker):
-    ROLE = "TrainingWorker"
-
+class TrainingWorker(ProcessWorker[None]):
     def __init__(self, job_id: UUID, stop_event: EventClass, cancel_event: EventClass, event_queue: mp.Queue):
-        super().__init__(stop_event=stop_event)
+        # Not a daemon: training may start processes of its own (dataloaders).
+        super().__init__(name=f"TrainingWorker-{job_id}", daemon=False)
         self.job_id = job_id
+        self.shutdown_event = stop_event
         self.queue = event_queue
         self.cancel_event = cancel_event
 
-    async def run_loop(self) -> None:
+    def should_stop(self) -> bool:
+        """Stop on the worker's own stop or the scheduler's shutdown."""
+        return super().should_stop() or self.shutdown_event.is_set()
+
+    async def run_loop(self, context: None = None) -> None:  # noqa: ARG002
         """Execute only the job assigned by the scheduler, then exit."""
         if self.should_stop():
             return
@@ -128,7 +132,6 @@ class TrainingWorker(BaseProcessWorker):
         base_model: Model | None = None,
     ) -> None:
         settings = get_settings()
-        dispatcher_stop_event = mp.Event()
         async with get_async_db_session_ctx() as session:
             await JobService(session, RemoteTrainerService(session)).update_job(
                 job=job,
@@ -141,7 +144,6 @@ class TrainingWorker(BaseProcessWorker):
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
             event_queue=self.queue,
-            interrupt_event=dispatcher_stop_event,
             update_progress=self._update_training_progress,
         )
         interrupted = False
@@ -191,7 +193,7 @@ class TrainingWorker(BaseProcessWorker):
             # Stop the dispatcher and let it flush queued progress BEFORE writing
             # the terminal status. Otherwise a late RUNNING progress update can
             # land after the terminal write and revert the job (stuck at 95%).
-            dispatcher_stop_event.set()
+            dispatcher.request_stop()
             if dispatcher.is_alive():
                 dispatcher.join(timeout=10)
 

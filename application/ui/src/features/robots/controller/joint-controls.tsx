@@ -7,9 +7,9 @@ import { radToDeg } from 'three/src/math/MathUtils.js';
 import { getRobotConnectionErrorTitle } from '../../../api/errors';
 import { useLoadModelQuery } from '../robot-models-context';
 import { InlineAlert } from '../setup-wizard/shared/inline-alert';
-import { useSynchronizeModelJoints } from '../use-joint-state';
 import { useRobot, useRobotId } from '../use-robot';
 import { useRobotObservations } from '../use-robot-observations';
+import { useSynchronizeModelJoints } from '../use-synchronize-model-joints';
 
 type JointState = {
     name: string;
