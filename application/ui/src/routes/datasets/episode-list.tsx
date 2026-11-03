@@ -1,11 +1,12 @@
-import { Activity, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 
-import { Checkbox, Flex, Loading, Size, View, type Selection } from '@geti-ui/ui';
+import { Checkbox, Flex, Size, View, type Selection } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
 import { fetchClient } from '../../api/client';
 import { VirtualizedGridLayout } from '../../components/virtualized-grid-layout/virtualized-grid-layout';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { EpisodeThumbnail } from '../../features/datasets/episodes/episode-thumbnail/episode-thumbnail';
 import { EpisodeSummary, useDataset } from './dataset-provider';
 
 import classes from './episode-list.module.css';
@@ -18,57 +19,6 @@ interface EpisodeListProps {
     thumbnailCamera?: string;
     isThumbnailCameraLoading?: boolean;
 }
-
-interface EpisodeThumbnailProps {
-    src: string | undefined;
-    alt: string;
-    isLoading: boolean;
-    videoUrl: string | undefined;
-}
-
-const EpisodeThumbnail = ({ src, alt, isLoading, videoUrl }: EpisodeThumbnailProps) => {
-    const [failed, setFailed] = useState(false);
-    const [isHovered, setIsHovered] = useState(false);
-    const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    if (src === undefined && isLoading) {
-        return (
-            <div className={classes.episodeImagePlaceholder}>
-                <Loading isIndeterminate size='S' aria-label='Loading thumbnail' />
-            </div>
-        );
-    }
-
-    if (src === undefined || failed) {
-        return (
-            <div role='img' aria-label={alt} className={classes.episodeImagePlaceholder}>
-                No preview
-            </div>
-        );
-    }
-
-    const handlePointerEnter = () => {
-        hoverTimeoutRef.current = setTimeout(() => {
-            setIsHovered(true);
-        }, 500);
-    };
-
-    const handlePointerLeave = () => {
-        setIsHovered(false);
-        hoverTimeoutRef.current && clearTimeout(hoverTimeoutRef.current);
-    };
-
-    return (
-        <div onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
-            <Activity mode={isHovered && videoUrl ? 'visible' : 'hidden'}>
-                <video src={videoUrl} className={classes.episodeImage} autoPlay muted loop />
-            </Activity>
-            <Activity mode={!isHovered || !videoUrl ? 'visible' : 'hidden'}>
-                <img alt={alt} src={src} className={classes.episodeImage} onError={() => setFailed(true)} />
-            </Activity>
-        </div>
-    );
-};
 
 const episodeGridLayoutOptions = {
     minItemSize: new Size(200, 180),
@@ -135,17 +85,20 @@ export const EpisodeList = ({
                                       },
                                   });
 
-                        const videoUrl =
-                            thumbnailCamera === undefined
+                        const episodeVideo =
+                            thumbnailCamera === undefined ? undefined : episode.videos[thumbnailCamera];
+
+                        const previewVideo =
+                            episodeVideo === undefined
                                 ? undefined
-                                : fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
-                                      params: {
-                                          path: {
-                                              dataset_id,
-                                              video_path: episode.videos[thumbnailCamera]?.path,
-                                          },
-                                      },
-                                  });
+                                : {
+                                      url: fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
+                                          params: { path: { dataset_id, video_path: episodeVideo.path } },
+                                      }),
+                                      start: episodeVideo.start,
+                                      end: episodeVideo.end,
+                                      fps: episode.fps,
+                                  };
 
                         return (
                             <View
@@ -158,7 +111,7 @@ export const EpisodeList = ({
                                     alt={`Camera frame of ${episode.episode_index}`}
                                     src={thumbnailSrc}
                                     isLoading={isThumbnailCameraLoading}
-                                    videoUrl={videoUrl}
+                                    video={previewVideo}
                                 />
                                 <Flex
                                     alignItems={'center'}
