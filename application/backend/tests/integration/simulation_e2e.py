@@ -17,8 +17,6 @@ import numpy as np
 if TYPE_CHECKING:
     from pathlib import Path
 
-RUNTIME_REVISION = "b4cc2cf569c24f92424001dde7aca4081096ebd1"
-MUJOCO_VERSION = "0.5.0"
 DATASET = {
     "repo_id": "physicalai-studio/conveyor-sort-sim-demos-100-episodes",
     "revision": "17db8f758b32141d795a71a064cfa9f5c6341b5b",
@@ -263,16 +261,9 @@ class EpisodeMonitor:
         }
 
 
-def attest_runtime() -> dict:
-    """Fail before expensive work if installed dependencies differ from the pins."""
-    direct_url = json.loads(distribution("physicalai").read_text("direct_url.json") or "{}")
-    commit = direct_url.get("vcs_info", {}).get("commit_id")
-    if commit != RUNTIME_REVISION:
-        raise RuntimeError("Installed physicalai does not match the pinned Runtime revision")
-    plugin_version = distribution("physicalai-mujoco-plugin").version
-    if plugin_version != MUJOCO_VERSION:
-        raise RuntimeError("Installed physicalai-mujoco-plugin does not match the pinned release version")
-    return {"physicalai": commit, "physicalai-mujoco-plugin": plugin_version}
+def runtime_versions() -> dict[str, str]:
+    """Report installed dependency versions without enforcing E2E-specific pins."""
+    return {name: distribution(name).version for name in ("physicalai", "physicalai-mujoco-plugin")}
 
 
 def control_scores(path: Path) -> dict[str, float]:

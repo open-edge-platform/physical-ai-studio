@@ -14,7 +14,7 @@ runs:
       working-directory: application/backend
       run: |
         uv sync --frozen --extra tests --extra sim-e2e --extra cuda
-        uv run --no-sync python -c 'from tests.integration.simulation_e2e import attest_runtime; print(attest_runtime())'
+        uv run --no-sync python -c 'from tests.integration.simulation_e2e import runtime_versions; print(runtime_versions())'
     - name: Fetch pinned recording
       shell: bash
       working-directory: application/backend

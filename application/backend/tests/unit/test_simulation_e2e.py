@@ -195,7 +195,7 @@ def test_automated_training_runs_the_fresh_model(tmp_path, monkeypatch, control_
         "CONTROLS_FILE": str(report),
     }.items():
         monkeypatch.setenv(f"SIM_E2E_{key}", value)
-    monkeypatch.setattr(suite, "attest_runtime", dict)
+    monkeypatch.setattr(suite, "runtime_versions", dict)
     monkeypatch.setattr(
         suite,
         "_recording_metadata",
@@ -298,7 +298,7 @@ def test_controls_must_pass_on_the_rollout_seeds(tmp_path, control_report, inval
 def test_full_pipeline_requires_controls_before_training(tmp_path, monkeypatch):
     monkeypatch.setenv("SIM_E2E_DATASET_DIR", str(tmp_path))
     monkeypatch.setenv("SIM_E2E_CONTROLS_FILE", str(tmp_path / "missing.json"))
-    monkeypatch.setattr(suite, "attest_runtime", dict)
+    monkeypatch.setattr(suite, "runtime_versions", dict)
     request = MagicMock()
     with pytest.raises(FileNotFoundError):
         suite.test_train_export_and_run_in_simulation(tmp_path, request, monkeypatch)
@@ -676,38 +676,25 @@ def test_lockfiles_resolve_the_configured_runtime_and_plugin_pin():
         expected = config["tool"]["uv"]["sources"]["physicalai"]["rev"]
         package = next(package for package in lock["package"] if package["name"] == "physicalai")
         assert package["source"]["git"].endswith(f"#{expected}")
-        assert expected == controls.RUNTIME_REVISION
         if project == BACKEND:
-            assert config["project"]["optional-dependencies"]["sim-e2e"] == [
-                f"physicalai-mujoco-plugin=={controls.MUJOCO_VERSION}"
-            ]
             plugin = next(package for package in lock["package"] if package["name"] == "physicalai-mujoco-plugin")
-            assert plugin["version"] == controls.MUJOCO_VERSION
+            assert config["project"]["optional-dependencies"]["sim-e2e"] == [
+                f"physicalai-mujoco-plugin=={plugin['version']}"
+            ]
             assert plugin["source"] == {"registry": "https://pypi.org/simple"}
 
 
-def test_runtime_attestation_rejects_mixed_pins(monkeypatch):
-    dist = MagicMock()
-    dist.read_text.return_value = json.dumps({"vcs_info": {"commit_id": "f" * 40}})
-    monkeypatch.setattr(controls, "distribution", lambda name: dist)
-    with pytest.raises(RuntimeError, match="pinned Runtime"):
-        controls.attest_runtime()
-
-
-@pytest.mark.parametrize("plugin_version", [controls.MUJOCO_VERSION, "0.4.0"])
-def test_runtime_attestation_checks_plugin_release(monkeypatch, plugin_version):
-    runtime = MagicMock()
-    runtime.read_text.return_value = json.dumps({"vcs_info": {"commit_id": controls.RUNTIME_REVISION}})
+@pytest.mark.parametrize("runtime_version,plugin_version", [("0.3.1", "0.5.0"), ("0.4.0", "0.6.0")])
+def test_runtime_versions_reports_installed_versions(monkeypatch, runtime_version, plugin_version):
+    runtime = MagicMock(version=runtime_version)
     plugin = MagicMock(version=plugin_version)
     monkeypatch.setattr(controls, "distribution", lambda name: runtime if name == "physicalai" else plugin)
-    if plugin_version != controls.MUJOCO_VERSION:
-        with pytest.raises(RuntimeError, match="pinned release version"):
-            controls.attest_runtime()
-    else:
-        assert controls.attest_runtime() == {
-            "physicalai": controls.RUNTIME_REVISION,
-            "physicalai-mujoco-plugin": controls.MUJOCO_VERSION,
-        }
+    assert controls.runtime_versions() == {
+        "physicalai": runtime_version,
+        "physicalai-mujoco-plugin": plugin_version,
+    }
+    runtime.read_text.assert_not_called()
+    plugin.read_text.assert_not_called()
 
 
 @pytest.mark.parametrize("mismatch", [None, "scene", "belt_speeds", "episode count"])

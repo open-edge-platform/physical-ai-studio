@@ -38,10 +38,10 @@ from tests.integration.simulation_e2e import (
     DATASET,
     SEEDS,
     EpisodeMonitor,
-    attest_runtime,
     command,
     control_scores,
     prepare_episode,
+    runtime_versions,
     score,
     timing_passes,
     wait_health,
@@ -398,7 +398,7 @@ def test_train_export_and_run_in_simulation(
         "source_sha": os.environ.get("GITHUB_SHA"),
         "dataset_repo_id": recording_entry["repo_id"],
         "dataset_revision": recording_entry["revision"],
-        "runtime_commits": attest_runtime(),
+        "runtime_versions": runtime_versions(),
         "workflow": "application_jobs_runtime_recipe",
     }
     (output / "provenance.json").write_text(json.dumps(provenance))
@@ -457,7 +457,7 @@ def test_simulator_controls(tmp_path: Path) -> None:
     """The scripted expert must beat no-action on identical seeded episodes."""
     if "SIM_E2E_HTTP_URL" not in os.environ:
         pytest.skip("Set SIM_E2E_HTTP_URL to opt in to simulator controls")
-    commits = attest_runtime()
+    versions = runtime_versions()
     url = os.environ["SIM_E2E_HTTP_URL"]
     output = Path(os.environ.get("SIM_E2E_OUTPUT_DIR", str(tmp_path)))
     output.mkdir(parents=True, exist_ok=True)
@@ -484,7 +484,7 @@ def test_simulator_controls(tmp_path: Path) -> None:
                     {
                         **results,
                         "status": "incomplete",
-                        "runtime_commits": commits,
+                        "runtime_versions": versions,
                         "source_sha": os.environ.get("GITHUB_SHA"),
                     }
                 )
@@ -495,7 +495,7 @@ def test_simulator_controls(tmp_path: Path) -> None:
                 {
                     **results,
                     "status": "passed" if passed else "failed",
-                    "runtime_commits": commits,
+                    "runtime_versions": versions,
                     "source_sha": os.environ.get("GITHUB_SHA"),
                 }
             )
