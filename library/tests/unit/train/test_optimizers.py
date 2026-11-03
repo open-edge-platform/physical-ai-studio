@@ -95,3 +95,32 @@ class TestAdamW:
         assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-6)
         assert optimizer.state[params[0]]["step"].item() == 2
         assert optimizer.state[params[0]]["compensation"].dtype == torch.bfloat16
+
+    def test_generator_param_groups_keep_all_params(self) -> None:
+        model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.Linear(4, 4).bfloat16())
+        optimizer = adamw([{"params": model[0].parameters()}, {"params": model[1].parameters()}], lr=1e-3)
+        assert [len(group["params"]) for group in optimizer.param_groups] == [2, 2]
+
+        fp32_only = adamw([{"params": model[0].parameters()}], lr=1e-3)
+        assert len(fp32_only.param_groups[0]["params"]) == 2
+
+    def test_unsupported_options_raise_for_bfloat16(self) -> None:
+        assert isinstance(adamw(_params(torch.bfloat16), lr=1e-3, amsgrad=False, foreach=False), BF16AdamW)
+        with pytest.raises(ValueError, match="amsgrad"):
+            adamw(_params(torch.bfloat16), lr=1e-3, amsgrad=True)
+
+    def test_default_beta2_tracks_float32_second_moment(self) -> None:
+        params = _params(torch.bfloat16)
+        optimizer = adamw(params, lr=1e-5)  # default betas (0.9, 0.999)
+        for _ in range(2000):
+            params[0].grad = torch.ones_like(params[0])
+            optimizer.step()
+
+        state = optimizer.state[params[0]]
+        assert state["exp_avg"].dtype == torch.bfloat16
+        assert state["exp_avg_sq"].dtype == torch.float32
+        torch.testing.assert_close(state["exp_avg_sq"], torch.full_like(state["exp_avg_sq"], 1 - 0.999**2000))
+
+        restored = adamw(params, lr=1e-5)
+        restored.load_state_dict(optimizer.state_dict())
+        assert torch.equal(restored.state[params[0]]["exp_avg_sq"], state["exp_avg_sq"])

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 # Elements per chunk for the bf16 update; bounds the fp32 temporaries for large embeddings.
 _CHUNK_NUMEL = 1 << 24
+# Moments with an EMA weight (1 - beta) below this stay fp32: bf16's 8-bit mantissa rounds their updates away.
+_MIN_BF16_EMA_WEIGHT = 2**-5
 
 
 def adamw(params: ParamsT, **kwargs: Any) -> torch.optim.Optimizer:  # noqa: ANN401
@@ -30,18 +32,34 @@ def adamw(params: ParamsT, **kwargs: Any) -> torch.optim.Optimizer:  # noqa: ANN
 
     Args:
         params: Parameters or parameter groups, as for ``torch.optim.AdamW``.
-        **kwargs: ``torch.optim.AdamW`` options. ``fused`` is ignored for bf16 parameters.
+        **kwargs: ``torch.optim.AdamW`` options. With bf16 parameters, ``fused`` and ``foreach``
+            are ignored and ``amsgrad``, ``maximize``, ``capturable`` and ``differentiable`` must
+            be left at their defaults.
 
     Returns:
         The optimizer.
+
+    Raises:
+        ValueError: If an unsupported option is enabled and a parameter is bf16.
     """
-    param_list: list[Any] = list(params)
-    groups = (item["params"] if isinstance(item, dict) else item for item in param_list)
-    tensors = (p for group in groups for p in ([group] if isinstance(group, torch.Tensor) else group))
-    if not any(getattr(p, "dtype", None) == torch.bfloat16 for p in tensors):  # skips names in named params
+    # Materialize generator groups (e.g. ``model.parameters()``) so the dtype scan doesn't consume them.
+    param_list: list[Any] = [
+        {**item, "params": _as_list(item["params"])} if isinstance(item, dict) else item for item in params
+    ]
+    groups = (item["params"] if isinstance(item, dict) else [item] for item in param_list)
+    if not any(getattr(p, "dtype", None) == torch.bfloat16 for group in groups for p in group):  # skips names
         return torch.optim.AdamW(param_list, **kwargs)
     kwargs.pop("fused", None)
+    kwargs.pop("foreach", None)
+    enabled = [key for key in ("amsgrad", "maximize", "capturable", "differentiable") if kwargs.pop(key, False)]
+    if enabled:
+        msg = f"BF16AdamW does not support {enabled}; set them to False or train with non-bf16 weights."
+        raise ValueError(msg)
     return BF16AdamW(param_list, **kwargs)
+
+
+def _as_list(params: Any) -> list[Any]:  # noqa: ANN401
+    return [params] if isinstance(params, torch.Tensor) else list(params)
 
 
 class BF16AdamW(torch.optim.Optimizer):
@@ -50,7 +68,10 @@ class BF16AdamW(torch.optim.Optimizer):
     Each bf16 update is computed in fp32 on ``weight + compensation``, rounded to bf16, and
     the rounding residual is stored in a bf16 ``compensation`` buffer for the next step. The
     weights follow the fp32-weight trajectory at 2 extra bytes per bf16 parameter. Other
-    parameters use torch's foreach AdamW. Optimizer state stays in the parameter dtype.
+    parameters use torch's foreach AdamW.
+
+    Moments of bf16 parameters are bf16 unless their beta is too close to 1 for bf16 to hold
+    the EMA update (e.g. the default ``beta2=0.999``); those moments are kept in fp32.
     """
 
     def __init__(
@@ -63,6 +84,18 @@ class BF16AdamW(torch.optim.Optimizer):
     ) -> None:
         """Initialize the optimizer with ``torch.optim.AdamW`` defaults."""
         super().__init__(params, {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay})
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Load state, keeping fp32 moments that torch would cast to the bf16 parameter dtype."""
+        super().load_state_dict(state_dict)
+        saved_ids = (i for group in state_dict["param_groups"] for i in group["params"])
+        params = (p for group in self.param_groups for p in group["params"])
+        for param_id, p in zip(saved_ids, params, strict=True):
+            saved = state_dict["state"].get(param_id, {})
+            for key in ("exp_avg", "exp_avg_sq"):
+                value = saved.get(key)
+                if isinstance(value, torch.Tensor) and value.dtype == torch.float32 and p.dtype != torch.float32:
+                    self.state[p][key] = value.to(device=p.device, copy=True)
 
     @torch.no_grad()
     def step(self, closure: Callable[[], float] | None = None) -> float | None:  # pyrefly: ignore[bad-override]
@@ -81,8 +114,8 @@ class BF16AdamW(torch.optim.Optimizer):
                 state = self.state[p]
                 if not state:
                     state["step"] = torch.tensor(0.0)
-                    state["exp_avg"] = torch.zeros_like(p)
-                    state["exp_avg_sq"] = torch.zeros_like(p)
+                    state["exp_avg"] = torch.zeros_like(p, dtype=_moment_dtype(p, group["betas"][0]))
+                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=_moment_dtype(p, group["betas"][1]))
                 if p.dtype == torch.bfloat16 and "compensation" not in state:
                     state["compensation"] = torch.zeros_like(p)
             for p in params:
@@ -131,12 +164,19 @@ class BF16AdamW(torch.optim.Optimizer):
             chunks = iter([tensors])
         for weight, grad_chunk, compensation, exp_avg, exp_avg_sq in chunks:
             grad32 = grad_chunk.float()
+            # fp32 moments are updated in place (``.float()`` returns them); bf16 ones via the copies.
             exp_avg32 = exp_avg.float().lerp_(grad32, 1 - beta1)
             exp_avg_sq32 = exp_avg_sq.float().lerp_(grad32.square(), 1 - beta2)
             exp_avg.copy_(exp_avg32)
             exp_avg_sq.copy_(exp_avg_sq32)
-            denom = exp_avg_sq32.sqrt_().div_(bias_correction2_sqrt).add_(group["eps"])
+            denom = exp_avg_sq32.sqrt().div_(bias_correction2_sqrt).add_(group["eps"])
             weight32 = weight.float().add_(compensation.float()).mul_(decay)
             weight32.addcdiv_(exp_avg32, denom, value=-step_size)
             weight.copy_(weight32)
             compensation.copy_(weight32.sub_(weight.float()))
+
+
+def _moment_dtype(p: torch.Tensor, beta: float) -> torch.dtype:
+    if p.dtype == torch.bfloat16 and 1 - beta < _MIN_BF16_EMA_WEIGHT:
+        return torch.float32
+    return p.dtype
