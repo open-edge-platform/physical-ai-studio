@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect } from '@rstest/core';
+import { afterAll, afterEach, expect, rs } from '@rstest/core';
 import * as jestDomMatchers from '@testing-library/jest-dom/matchers';
 
 import { server } from './msw-node-setup';
@@ -14,6 +14,19 @@ class ResizeObserverStub {
     disconnect() {}
 }
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
+
+// jsdom has no canvas 2D context, which uPlot needs to draw; stub the charts out.
+rs.mock('uplot', () => {
+    class UPlotStub {
+        static sync = () => ({ sub() {}, unsub() {}, pub() {}, plots: [] });
+        setData() {}
+        setSize() {}
+        redraw() {}
+        destroy() {}
+    }
+
+    return { default: UPlotStub };
+});
 
 // Start MSW at module-evaluation time so that globalThis.fetch is patched before
 // any test-file import (e.g. src/api/client.ts) captures it via
