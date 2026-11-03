@@ -191,6 +191,39 @@ describe('TrainModelDialog', () => {
         expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('My model');
     });
 
+    it('shows the name above the summary on training parameters and in the summary afterwards', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        await screen.findByLabelText(/Gripper/i, { selector: 'button' });
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        expect(screen.queryByText('Name')).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        const summary = screen.getByText('Device');
+        expect(name.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        await user.clear(name);
+        await user.type(name, 'My training run');
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        expect(screen.getByText('Name')).toBeInTheDocument();
+        expect(screen.getByText('My training run')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        const restoredName = screen.getByRole('textbox', { name: /Name/ });
+        expect(restoredName).toHaveValue('My training run');
+        await user.type(restoredName, ' updated');
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByText('My training run updated')).toBeInTheDocument();
+    });
+
     it.each(['', '   '])('blocks progress when the name is blank (%j)', async (value) => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

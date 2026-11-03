@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Key, Text, View } from '@geti-ui/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Key, Text, TextField, View } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
@@ -451,8 +451,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             <Divider />
             <Content width={'700px'}>
                 <Flex direction='column' gap='size-200' width='100%'>
+                    {activeStep === 'training-parameters' && (
+                        <TextField label='Name' value={name} onChange={setCustomName} isRequired width='100%' />
+                    )}
+
                     {activeStep !== 'setup' && (
                         <TrainingSummaryNote
+                            name={activeStep === 'export' ? name : undefined}
                             device={summaryDevice}
                             dataset={selectedDatasetName}
                             policy={selectedPolicyName}
@@ -495,8 +500,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
                         {activeStep === 'training-parameters' && (
                             <TrainingParameters
-                                name={name}
-                                onNameChange={setCustomName}
                                 maxEpochs={maxEpochs}
                                 onMaxEpochsChange={setMaxEpochs}
                                 batchSize={batchSize}
