@@ -35,7 +35,7 @@ export const RerunSettingsForm = ({ rerun }: RerunSettingsFormProps) => {
     return (
         <SettingsSection
             title='Rerun visualization'
-            description='Log runtime sessions to Rerun. Changes apply to new sessions; existing sessions are unchanged.'
+            description='Log model runs from Play until Stop. Changes apply to new runs; active runs are unchanged.'
             isDirty={dirty}
             isPending={patchMutation.isPending}
             saved={saved}
@@ -64,7 +64,7 @@ export const RerunSettingsForm = ({ rerun }: RerunSettingsFormProps) => {
                         isDisabled={!values.enabled}
                         onChange={(open_viewer) => update({ open_viewer })}
                     >
-                        Open the native viewer on session startup
+                        Open the native viewer when a model run starts
                     </Checkbox>
                     <Text>
                         By default, Rerun runs in the background on the backend host without opening a window. Open a

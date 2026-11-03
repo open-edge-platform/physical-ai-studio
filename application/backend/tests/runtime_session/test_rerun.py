@@ -17,9 +17,10 @@ from runtime_session.controls.model import ModelControl
 from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening
 from runtime_session.rerun import _background_server as background_server
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
-from schemas.runtime_session import ExecutionConfig, ModelControlConfig, SessionState, StateMessage
+from schemas.runtime_session import ExecutionConfig, ModelControlConfig, SessionState, StateMessage, TeleopControlConfig
 from settings import RerunSettings
 
+from .fixtures import make_environment
 from .test_model import _FarModel
 
 
@@ -32,6 +33,19 @@ def store():
 
 def _paths(recording: MagicMock) -> list[str]:
     return [call.args[0] for call in recording.log.call_args_list]
+
+
+@pytest.fixture
+async def model_session(new_session):
+    session = await new_session()
+    await session.load_environment(make_environment(cameras=0))
+
+    def build(config, store, _leader, _model, _bus, *, observer):
+        return ModelControl(store, _FarModel(), config, observer=observer)
+
+    with patch("runtime_session.session.build_control", side_effect=build):
+        yield session
+        await session.stop()
 
 
 async def test_spawn_uses_explicit_port_and_a_recording_per_session() -> None:
@@ -91,13 +105,14 @@ def test_an_existing_server_is_borrowed_not_started_or_stopped() -> None:
         start.assert_not_called()
 
 
-async def test_disabled_logging_does_not_start_an_observer(new_session, monkeypatch, tmp_path) -> None:
+async def test_disabled_logging_does_not_start_an_observer(model_session, monkeypatch, tmp_path) -> None:
     from settings import merge_user_settings
 
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     merge_user_settings({"rerun": {"enabled": False}})
     with patch("runtime_session.session.RerunObserver") as observer:
-        session = await new_session()
+        session = model_session
+        await session.set_control(ModelControlConfig())
     observer.assert_not_called()
     assert session._observer is None
     assert session.state().rerun_url is None
@@ -125,16 +140,21 @@ def test_browser_link_matches_sdk_version_and_session_connection(settings: Rerun
     assert parse_qs(url.query) == {"url": [stream_url]}
 
 
-async def test_session_viewer_link_keeps_its_startup_settings(new_session, monkeypatch, tmp_path) -> None:
+async def test_session_viewer_link_keeps_its_startup_settings(model_session, monkeypatch, tmp_path) -> None:
     from settings import merge_user_settings
 
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     merge_user_settings({"rerun": {"spawn_port": 1234}})
-    session = await new_session()
+    session = model_session
+    await session.set_control(ModelControlConfig())
     initial_url = session.state().rerun_url
     assert parse_qs(urlsplit(initial_url).query)["url"] == ["rerun+http://127.0.0.1:1234/proxy"]
     merge_user_settings({"rerun": {"spawn_port": 4321}})
     assert session.state().rerun_url == initial_url
+    await session.set_control(None)
+    assert session.state().rerun_url is None
+    await session.set_control(ModelControlConfig())
+    assert parse_qs(urlsplit(session.state().rerun_url).query)["url"] == ["rerun+http://127.0.0.1:4321/proxy"]
 
 
 def test_samples_targets_and_latest_images_only_when_changed(store: Store) -> None:
@@ -269,29 +289,31 @@ async def test_real_sdk_accepts_blueprint_images_and_prediction_columns(store: S
         assert stream.read(flush=True)
 
 
-async def test_viewer_start_failure_does_not_prevent_session_use(new_session) -> None:
+async def test_viewer_start_failure_does_not_prevent_session_use(model_session) -> None:
+    session = model_session
     with patch("runtime_session.rerun._background_server", side_effect=RuntimeError("cannot start")):
-        session = await new_session()
+        await session.set_control(ModelControlConfig())
     assert session._observer is None
+    assert session.state().control.type == "model"
     assert session.state().session_id == session.id
     await session.stop()
     assert session.finished.is_set()
 
 
-async def test_session_detaches_store_and_joins_observer_on_close(new_session, fake_cameras) -> None:
-    from .fixtures import make_environment
-
-    session = await new_session()
+async def test_session_joins_observer_on_close(model_session) -> None:
+    session = model_session
+    await session.set_control(ModelControlConfig())
     observer = session._observer
-    await session.load_environment(make_environment())
     assert observer._store is session.store
     await session.stop()
     assert observer._store is None
+    assert session._observer is None
     assert not observer.is_alive()
 
 
-async def test_logging_failure_does_not_close_the_session(new_session) -> None:
-    session = await new_session()
+async def test_logging_failure_does_not_close_the_session(model_session) -> None:
+    session = model_session
+    await session.set_control(ModelControlConfig())
     observer = session._observer
     with patch.object(observer, "_sample", side_effect=RuntimeError("viewer failed")):
         async with asyncio.timeout(5):
@@ -299,3 +321,65 @@ async def test_logging_failure_does_not_close_the_session(new_session) -> None:
     assert observer.failure is not None
     assert not session.closed.is_set()
     await session.stop()
+
+
+async def test_opening_session_loading_environment_and_teleop_do_not_start_rerun(new_session) -> None:
+    with patch("runtime_session.session.RerunObserver") as observer:
+        session = await new_session()
+        await session.load_environment(make_environment(cameras=0))
+        await session.set_control(TeleopControlConfig())
+        await session.set_control(None)
+        await session.stop()
+    observer.assert_not_called()
+    assert session.state().rerun_url is None
+
+
+async def test_play_stop_play_creates_separate_recordings(model_session) -> None:
+    session = model_session
+    assert session._observer is None
+    await session.set_control(ModelControlConfig())
+    first = session._observer
+    assert first.is_alive()
+    assert first._store is session.store
+    first_id = rr.get_recording_id(first._recording)
+    assert session.state().rerun_url is not None
+
+    await session.set_control(None)
+    assert not first.is_alive()
+    assert session._observer is None
+    assert session.state().rerun_url is None
+
+    await session.set_control(ModelControlConfig())
+    second = session._observer
+    assert second is not first
+    assert second.is_alive()
+    assert rr.get_recording_id(second._recording) != first_id
+
+
+async def test_control_start_failure_stops_recording(model_session) -> None:
+    session = model_session
+    observers = []
+
+    def refuse(*_args, observer, **_kwargs):
+        observers.append(observer)
+        raise ValueError("cannot start control")
+
+    with (
+        patch("runtime_session.session.build_control", side_effect=refuse),
+        pytest.raises(ValueError, match="cannot start control"),
+    ):
+        await session.set_control(ModelControlConfig())
+    assert len(observers) == 1
+    assert not observers[0].is_alive()
+    assert session._observer is None
+    assert session.state().rerun_url is None
+
+
+@pytest.mark.parametrize("command", ["unload_environment", "reload_environment", "unload_model"])
+async def test_unloading_or_reloading_stops_recording(model_session, command: str) -> None:
+    session = model_session
+    await session.set_control(ModelControlConfig())
+    observer = session._observer
+    await getattr(session, command)()
+    assert not observer.is_alive()
+    assert session._observer is None

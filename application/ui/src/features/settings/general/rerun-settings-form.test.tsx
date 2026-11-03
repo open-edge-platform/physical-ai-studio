@@ -13,9 +13,11 @@ describe('RerunSettingsForm', () => {
         render(<RerunSettingsForm rerun={getMockedRerunSettings()} />);
 
         expect(screen.getByRole('checkbox', { name: 'Enable Rerun logging' })).toBeChecked();
-        expect(screen.getByRole('checkbox', { name: 'Open the native viewer on session startup' })).not.toBeChecked();
+        expect(
+            screen.getByRole('checkbox', { name: 'Open the native viewer when a model run starts' })
+        ).not.toBeChecked();
         expect(screen.getByRole('textbox', { name: /Local Rerun port/ })).toHaveValue('9,876');
-        expect(screen.getByText(/Changes apply to new sessions/)).toBeInTheDocument();
+        expect(screen.getByText(/Changes apply to new runs/)).toBeInTheDocument();
     });
 
     it('saves opting into the native viewer', async () => {
@@ -28,7 +30,7 @@ describe('RerunSettingsForm', () => {
         );
         const user = userEvent.setup();
         render(<RerunSettingsForm rerun={getMockedRerunSettings()} />);
-        await user.click(screen.getByRole('checkbox', { name: 'Open the native viewer on session startup' }));
+        await user.click(screen.getByRole('checkbox', { name: 'Open the native viewer when a model run starts' }));
         await user.click(screen.getByRole('button', { name: 'Save' }));
         expect(await screen.findByText('Saved')).toBeInTheDocument();
         expect(body).toEqual({ rerun: getMockedRerunSettings({ open_viewer: true }) });
