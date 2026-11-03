@@ -478,7 +478,7 @@ class RuntimeSession:
     async def _watched_control(self, config: ControlConfig, environment: Environment) -> AsyncIterator[Control]:
         try:
             if isinstance(config, ModelControlConfig):
-                await self._start_observer(environment.store)
+                await self._start_observer(environment.store, hz=config.hz)
             control = build_control(
                 config, environment.store, environment.leader, self._model.value, self.bus, observer=self._observer
             )
@@ -490,12 +490,12 @@ class RuntimeSession:
                 observer.set_store(None)
                 await observer.__aexit__(None, None, None)
 
-    async def _start_observer(self, store: Store) -> None:
+    async def _start_observer(self, store: Store, *, hz: float) -> None:
         """Start a fresh recording for this model run; visualization is best-effort."""
         rerun_settings = get_settings().rerun
         if not rerun_settings.enabled:
             return
-        observer = RerunObserver(f"{self.id}-{uuid4().hex}", settings=rerun_settings)
+        observer = RerunObserver(f"{self.id}-{uuid4().hex}", settings=rerun_settings, hz=hz)
         observer.set_store(store)
         try:
             await observer.__aenter__()

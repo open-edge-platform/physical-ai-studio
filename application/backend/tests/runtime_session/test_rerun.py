@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import time
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -11,12 +12,15 @@ import httpx
 import numpy as np
 import pytest
 import rerun as rr
-from physicalai.runtime.events import InferenceEvent, MetricsEvent
+from physicalai.runtime import RerunCallback
+from physicalai.runtime.callbacks.gpu_stats import GpuDeviceStats, GpuStatsSample
+from physicalai.runtime.callbacks.system_monitor import SystemStats, SystemStatsSample
+from physicalai.runtime.events import InferenceEvent, MetricsEvent, TickEvent
 
-from runtime_session.controls.model import ModelControl
+from runtime_session.controls.model import ModelControl, _Observation
 from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening
 from runtime_session.rerun import _background_server as background_server
-from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
+from runtime_session.store import STATE, FeatureSpec, ImageSpec, Store
 from schemas.runtime_session import ExecutionConfig, ModelControlConfig, SessionState, StateMessage, TeleopControlConfig
 from settings import RerunSettings
 
@@ -31,8 +35,32 @@ def store():
     store.unlink()
 
 
-def _paths(recording: MagicMock) -> list[str]:
-    return [call.args[0] for call in recording.log.call_args_list]
+def _paths(log: MagicMock) -> list[str]:
+    return [call.args[0] for call in log.call_args_list]
+
+
+def _tick(*, step: int = 0, timestamp: float | None = None) -> TickEvent:
+    return TickEvent(
+        session_id="callback",
+        step=step,
+        timestamp=timestamp if timestamp is not None else time.time(),
+        robot_state=_Observation(np.array([1.0, 2.0]), time.monotonic()),
+        camera_frames={},
+        action_sent=np.array([3.0, 4.0]),
+        loop_duration_s=0.01,
+        sleep_time_s=0.04,
+        stale_obs=False,
+    )
+
+
+@pytest.fixture
+async def callback_observer(store: Store):
+    observer = RerunObserver("callback", hz=20)
+    observer.set_store(store)
+    with patch("physicalai.runtime.callbacks.rerun.LocalSystemMonitor") as monitor:
+        monitor.return_value.poll.return_value = None
+        async with observer.lifecycle():
+            yield observer
 
 
 @pytest.fixture
@@ -60,6 +88,41 @@ async def test_spawn_uses_explicit_port_and_a_recording_per_session() -> None:
             assert rr.get_recording_id(second._recording) == "second"
             assert rr.get_global_data_recording() is None
         assert [call.kwargs["port"] for call in spawn.call_args_list] == [9876, 9876]
+
+
+async def test_runtime_callback_routes_each_threads_logs_to_its_own_recording() -> None:
+    seen = {}
+    global_recording = rr.get_global_data_recording()
+
+    def capture(_callback, event):
+        seen[event.session_id] = rr.get_recording_id()
+
+    with patch("rerun.init") as init, patch.object(RerunCallback, "on_tick", autospec=True, side_effect=capture):
+        async with RerunObserver("first") as first, RerunObserver("second") as second:
+            for observer in (first, second):
+                observer.control_events(30, 0).emit_tick(replace(_tick(), session_id=observer.session_id))
+            async with asyncio.timeout(5):
+                while len(seen) < 2:  # noqa: ASYNC110
+                    await asyncio.sleep(0.02)
+            assert seen == {"first": "first", "second": "second"}
+            assert rr.get_global_data_recording() is global_recording
+        init.assert_not_called()
+
+
+async def test_runtime_callback_supplies_joint_styles_and_blueprint(store: Store) -> None:
+    observer = RerunObserver("styles", hz=50)
+    observer.set_store(store)
+    with patch("rerun.log") as log, patch("rerun.send_blueprint") as blueprint:
+        async with observer.lifecycle():
+            assert observer._callback._fps == 50
+            assert observer._callback._joint_names == ["shoulder", "gripper"]
+            assert observer._callback._camera_names == ["wrist"]
+            styles = {call.args[0]: call.args[1] for call in log.call_args_list if call.kwargs.get("static")}
+            assert isinstance(styles["robot/actions"], rr.SeriesLines)
+            assert isinstance(styles["robot/predicted"], rr.SeriesPoints)
+            assert isinstance(styles["robot/joints"], rr.SeriesLines)
+            blueprint.assert_called_once()
+            assert blueprint.call_args.kwargs == {"make_active": True, "make_default": True}
 
 
 async def test_default_starts_headless_and_connect_mode_never_spawns() -> None:
@@ -157,84 +220,86 @@ async def test_session_viewer_link_keeps_its_startup_settings(model_session, mon
     assert parse_qs(urlsplit(session.state().rerun_url).query)["url"] == ["rerun+http://127.0.0.1:4321/proxy"]
 
 
-def test_samples_targets_and_latest_images_only_when_changed(store: Store) -> None:
-    observer = RerunObserver("sample")
-    recording = observer._recording = MagicMock()
+async def test_runtime_callback_logs_ticks_and_caps_latest_images(callback_observer, store: Store) -> None:
+    observer = callback_observer
     now = time.monotonic()
-    store.write(STATE, [1, 2], timestamp=now)
-    store.write(ACTION, [3, 4], timestamp=now + 1)
     store.write_observation("wrist", np.zeros((4, 4, 3), dtype=np.uint8), timestamp=now)
-    observer.set_store(store)
-    observer._sample()
-    assert "robot/joints" in _paths(recording)
-    assert "robot/targets" in _paths(recording)
-    assert "camera/wrist" in _paths(recording)
-    recording.reset_mock()
-    observer._sample()
-    recording.log.assert_not_called()
-
-    # Images are capped independently of joints, even if a camera updates faster.
-    store.write(STATE, [2, 3], timestamp=now + 0.01)
-    store.write_observation("wrist", np.ones((4, 4, 3), dtype=np.uint8), timestamp=now + 0.01)
-    observer._sample()
-    assert _paths(recording) == ["robot/joints"]
-    observer._next_images = 0
-    observer._sample()
-    assert _paths(recording)[-1] == "camera/wrist"
-
-
-def test_detaching_releases_store_before_unlink_and_reconfigures_a_replacement(store: Store) -> None:
-    observer = RerunObserver("replace")
-    observer._recording = MagicMock()
-    observer.set_store(store)
-    observer._sample()
-    observer.set_store(None)
-    observer._sample()
-    replacement = Store.create(FeatureSpec(("other",)), uuid4().hex)
-    try:
-        replacement.write(STATE, [42], timestamp=time.monotonic())
-        observer.set_store(replacement)
-        observer._sample()
-        assert observer._last_store is replacement
-        assert observer._recording.send_blueprint.call_count == 2
-        observer.set_store(None)
-    finally:
-        replacement.unlink()
-    # The observer never touches a detached mapping again.
-    observer._sample()
-
-
-def test_prediction_offset_rate_and_grace_period(store: Store) -> None:
-    observer = RerunObserver("infer")
-    recording = observer._recording = MagicMock()
-    events = observer.control_events(hz=20, grace_s=5)
-    events.emit_inference(
-        InferenceEvent("infer", time.time(), latency_s=0.1, offset=1, chunk=np.array([[1, 2], [3, 4], [5, 6]]))
-    )
-    events.emit_metrics(MetricsEvent("infer", 0, time.time(), {"queue_remaining": 2}))
-    with patch("rerun.TimeColumn", wraps=rr.TimeColumn) as column:
+    events = observer.control_events(20, 0)
+    with patch("rerun.log") as log:
+        events.emit_tick(_tick())
         observer._drain_events()
-    np.testing.assert_allclose(
-        column.call_args.kwargs["duration"], events.ready_at - observer._origin + np.arange(2) / 20
-    )
-    assert "inference/latency_ms" in _paths(recording)
-    assert "queue/remaining" in _paths(recording)
-    assert list(observer._latencies) == [100]
+        assert "robot/joints" in _paths(log)
+        assert "robot/actions" in _paths(log)
+        assert "camera/wrist" in _paths(log)
+        assert "runtime/loop_duration_s" in _paths(log)
+        log.reset_mock()
+
+        store.write_observation("wrist", np.ones((4, 4, 3), dtype=np.uint8), timestamp=now + 0.01)
+        events.emit_tick(_tick(step=1))
+        observer._drain_events()
+        assert "robot/joints" in _paths(log)
+        assert "camera/wrist" not in _paths(log)
+
+        observer._next_images = 0
+        events.emit_tick(_tick(step=2))
+        observer._drain_events()
+        assert "camera/wrist" in _paths(log)
+
+
+async def test_detaching_releases_store_before_unlink(callback_observer, store: Store) -> None:
+    observer = callback_observer
+    store.write_observation("wrist", np.zeros((4, 4, 3), dtype=np.uint8), timestamp=time.monotonic())
+    frames = observer._camera_frames()
+    observer.set_store(None)
+    store.write_observation("wrist", np.ones((4, 4, 3), dtype=np.uint8), timestamp=time.monotonic())
+    assert not frames["wrist"].data.any()  # No shared-memory view escapes the copy.
+    with patch.object(store, "read_observation", side_effect=AssertionError("detached store was read")):
+        observer._next_images = 0
+        assert observer._camera_frames() == {}
+
+
+async def test_prediction_offset_rate_and_grace_period(callback_observer) -> None:
+    observer = callback_observer
+    assert isinstance(observer._callback, RerunCallback)
+    events = observer.control_events(hz=20, grace_s=5)
+    chunk = np.array([[1, 2], [3, 4], [5, 6]])
+    now = time.time()
+    events.emit_tick(_tick(step=10, timestamp=now))
+    events.emit_inference(InferenceEvent("callback", now, latency_s=0.1, offset=1, chunk=chunk))
+    chunk[:] = -1  # Executor-owned arrays must not change a queued visualization.
+    np.testing.assert_array_equal(observer._events[-1].chunk, [[3, 4], [5, 6]])
+    events.emit_metrics(MetricsEvent("infer", 0, time.time(), {"queue_remaining": 2}))
+    with patch("rerun.TimeColumn", wraps=rr.TimeColumn) as column, patch("rerun.log") as log:
+        observer._drain_events()
+    np.testing.assert_allclose(column.call_args_list[0].kwargs["sequence"], [110, 111])
+    np.testing.assert_allclose(column.call_args_list[1].kwargs["timestamp"], events.ready_at + np.arange(2) / 20)
+    assert observer._callback._last_step == 10
+    assert "inference/latency_ms" in _paths(log)
+    assert "queue/remaining" in _paths(log)
+    assert "runtime/monitoring" in _paths(log)
+    assert list(observer._callback._latencies) == [0.1]
 
 
 @pytest.mark.parametrize("mode", ["sync", "async"])
-async def test_model_control_emits_predictions_and_queue_depth(store: Store, mode: str) -> None:
-    observer = RerunObserver("model")
-    observer._recording = MagicMock()
+async def test_model_control_emits_predictions_ticks_and_queue_depth(
+    callback_observer, store: Store, mode: str
+) -> None:
+    observer = callback_observer
     store.write(STATE, [1, 2], timestamp=time.monotonic())
     config = ModelControlConfig(hz=100, grace_s=0, execution=ExecutionConfig(mode=mode))
     async with ModelControl(store, _FarModel(), config, observer=observer):  # type: ignore[arg-type]
         async with asyncio.timeout(5):
-            while not any(isinstance(item[0], InferenceEvent) for item in observer._events):  # noqa: ASYNC110
+            while not any(isinstance(item, InferenceEvent) for item in observer._events):  # noqa: ASYNC110
                 await asyncio.sleep(0.02)
-    observer._drain_events()
-    assert "inference/latency_ms" in _paths(observer._recording)
-    assert "queue/remaining" in _paths(observer._recording)
+    ticks = [event for event in observer._events if isinstance(event, TickEvent)]
+    assert ticks and ticks[0].step == 0
+    assert ticks[0].robot_state.joint_positions.tolist() == [1, 2]
+    assert ticks[0].action_sent is not None
+    with patch("rerun.log") as log:
+        observer._drain_events()
+    assert "inference/latency_ms" in _paths(log)
+    assert "queue/remaining" in _paths(log)
+    assert "robot/actions" in _paths(log)
 
 
 def test_event_buffer_is_bounded() -> None:
@@ -243,46 +308,59 @@ def test_event_buffer_is_bounded() -> None:
     for step in range(1000):
         events.emit_metrics(MetricsEvent("bounded", step, time.time(), {"queue_remaining": step}))
     assert len(observer._events) == 64
-    assert observer._events[-1][0].step == 999
+    assert observer._events[-1].step == 999
 
 
-def test_stopping_model_control_clears_live_predictions_and_queue() -> None:
-    observer = RerunObserver("hold")
-    observer._recording = MagicMock()
+async def test_session_events_are_logged_alongside_runtime_events(callback_observer) -> None:
+    observer = callback_observer
     observer.emit_session(StateMessage(data=SessionState(session_id="hold")))
-    observer._drain_events()
-    assert _paths(observer._recording) == ["robot/predicted", "queue", "runtime/lifecycle"]
+    with patch("rerun.log") as log:
+        observer._drain_events()
+    assert _paths(log) == ["runtime/session"]
 
 
-def test_system_metrics_are_throttled_and_identify_the_backend_process() -> None:
-    observer = RerunObserver("system")
-    observer._recording = MagicMock()
-    with patch("runtime_session.rerun.psutil.Process") as process:
-        process.return_value.cpu_percent.return_value = 200
-        process.return_value.memory_info.return_value.rss = 10 * 2**20
-        with patch("runtime_session.rerun.psutil.cpu_count", return_value=4):
-            observer._sample_system()  # prime counters
-            observer._sample_system()  # not due
-            observer._recording.log.assert_not_called()
-            observer._next_system = 0
-            observer._sample_system()
-    values = {call.args[0]: call.args[1] for call in observer._recording.log.call_args_list}
-    assert "runtime/host/cpu_percent" in values
-    assert values["runtime/studio/cpu_percent"] == rr.Scalars(50)
-    assert values["runtime/studio/rss_mib"] == rr.Scalars(10)
+async def test_runtime_callback_owns_system_gpu_monitoring_and_cleanup(callback_observer) -> None:
+    observer = callback_observer
+    monitor = observer._callback._system_monitor
+    monitor.reset.assert_called_once_with()
+    monitor.poll.return_value = SystemStatsSample(
+        system=SystemStats(25, 50, 8 * 2**30, 16 * 2**30, 10, 100 * 2**20),
+        gpu=GpuStatsSample(devices=[GpuDeviceStats("Intel", "0", 75, 512, 2048, 40)]),
+    )
+    observer.control_events(20, 0).emit_tick(_tick())
+    with patch("rerun.log") as log:
+        observer._drain_events()
+    assert "runtime/utilization/cpu/host" in _paths(log)
+    assert "runtime/utilization/cpu/process" in _paths(log)
+    assert "runtime/utilization/gpu/intel_0" in _paths(log)
+    assert "runtime/monitoring" in _paths(log)
+
+
+async def test_callback_cleanup_and_disconnect_run_even_when_logging_fails() -> None:
+    observer = RerunObserver("cleanup")
+    with (
+        patch("physicalai.runtime.callbacks.rerun.LocalSystemMonitor") as monitor,
+        patch("rerun.RecordingStream.disconnect") as disconnect,
+        patch.object(RerunCallback, "on_tick", side_effect=RuntimeError("logging failed")),
+    ):
+        with pytest.raises(RuntimeError, match="logging failed"):
+            async with observer.lifecycle():
+                observer.control_events(30, 0).emit_tick(_tick())
+        monitor.return_value.close.assert_called_once_with()
+        disconnect.assert_called_once_with()
 
 
 async def test_real_sdk_accepts_blueprint_images_and_prediction_columns(store: Store) -> None:
     observer = RerunObserver("sdk")
+    observer.set_store(store)
     async with observer.lifecycle():
         stream = observer._recording.binary_stream()
-        store.write(STATE, [1, 2], timestamp=time.monotonic())
         store.write_observation("wrist", np.zeros((4, 4, 3), dtype=np.uint8), timestamp=time.monotonic())
-        observer.set_store(store)
         rr.set_strict_mode(True)
         try:
-            observer._sample()
+            observer.control_events(30, 0).emit_tick(_tick())
             observer.control_events(30, 0).emit_inference(InferenceEvent("sdk", time.time(), 0.01, 0, np.zeros((3, 2))))
+            observer.control_events(30, 0).emit_inference(InferenceEvent("sdk", time.time(), 0.02, 3, np.zeros((3, 2))))
             observer._drain_events()
         finally:
             rr.set_strict_mode(False)
@@ -315,7 +393,7 @@ async def test_logging_failure_does_not_close_the_session(model_session) -> None
     session = model_session
     await session.set_control(ModelControlConfig())
     observer = session._observer
-    with patch.object(observer, "_sample", side_effect=RuntimeError("viewer failed")):
+    with patch.object(observer._callback, "on_tick", side_effect=RuntimeError("viewer failed")):
         async with asyncio.timeout(5):
             await observer.wait_stopped()
     assert observer.failure is not None

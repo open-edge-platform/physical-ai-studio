@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource, SyncExecution
+from physicalai.runtime.events import TickEvent
 
 from runtime_session.controls.base import Control
 from runtime_session.store import ACTION, STATE
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
     import numpy as np
 
     from runtime_session.model import ProcessModel
-    from runtime_session.rerun import RerunObserver
+    from runtime_session.rerun import RerunObserver, _ModelEvents
     from runtime_session.store import Store
     from schemas.runtime_session import ModelControlConfig
 
@@ -64,21 +65,39 @@ class ModelControl(Control):
         self.grace_s = config.grace_s
         self.started_at = 0.0
         self._observer = observer
+        self._events: _ModelEvents | None = None
 
     def on_start(self) -> None:
         self.started_at = time.monotonic()
-        events = self._observer.control_events(self.hz, self.grace_s) if self._observer is not None else None
+        self._events = self._observer.control_events(self.hz, self.grace_s) if self._observer is not None else None
         session_id = self._observer.session_id if self._observer is not None else ""
-        self.source.connect(bus=cast("Any", events), session_id=session_id)
+        self.source.connect(bus=cast("Any", self._events), session_id=session_id)
 
     def on_stop(self) -> None:
         self.source.disconnect()
 
     def on_tick(self) -> None:
+        started = time.monotonic()
         state = self.store.read(STATE)
         if state is None:
             return  # nothing to infer from until the follower is measured
-        action = self.source.update(_Observation(state.value, state.timestamp), {}, self.step)
-        self.step += 1
+        observation = _Observation(state.value, state.timestamp)
+        action = self.source.update(observation, {}, self.step)
         due = max(time.monotonic() + 1 / self.hz, self.started_at + self.grace_s)
         self.store.write(ACTION, action, timestamp=due)
+        if self._events is not None:
+            duration = time.monotonic() - started
+            self._events.emit_tick(
+                TickEvent(
+                    session_id=self._events.observer.session_id,
+                    step=self.step,
+                    timestamp=time.time(),
+                    robot_state=cast("Any", observation),
+                    camera_frames={},  # The observer copies the latest frames off the control thread.
+                    action_sent=action.copy(),  # A target; the robot worker owns interpolation.
+                    loop_duration_s=duration,
+                    sleep_time_s=max(0.0, 1 / self.hz - duration),
+                    stale_obs=started - state.timestamp > 2 / self.hz,
+                )
+            )
+        self.step += 1
