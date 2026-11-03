@@ -127,6 +127,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const [currentStep, setCurrentStep] = useState<WizardStep>('setup');
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
+    const [customName, setCustomName] = useState<string | undefined>(baseModel?.name);
     const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
     const remoteTrainerId =
         targetId === null || targetId === LOCAL_TARGET_ID ? undefined : targetRawId(String(targetId));
@@ -264,9 +265,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // Surfaced when the final remote-trainer health check or job submission fails.
     const [submitError, setSubmitError] = useState<string | null>(null);
 
+    const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
+    const name = customName ?? selectedPolicyName;
+
     // Everything the job needs is picked on the setup step, so that is the only
     // step that can block progress; the later steps are free to be skipped through.
     const isSetupIncomplete =
+        !name.trim() ||
         !selectedDataset ||
         !selectedPolicy ||
         policiesUnavailable ||
@@ -307,7 +312,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
               }`;
     const selectedDatasetName =
         datasets.find((dataset) => dataset.id === selectedDataset?.toString())?.name ?? 'No dataset';
-    const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
 
     const goToStep = (offset: number) => {
         const nextStep = steps[currentStepIndex + offset];
@@ -324,7 +328,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
         const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !selectedPolicy || selectedTarget === null) {
+        if (!name.trim() || !dataset_id || !selectedPolicy || selectedTarget === null) {
             return;
         }
 
@@ -369,8 +373,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     return;
                 }
             }
-
-            const name = baseModel?.name ?? selectedPolicyName;
 
             const commonPayload = {
                 dataset_id,
@@ -463,6 +465,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     <View minHeight='size-3600'>
                         {activeStep === 'setup' && (
                             <SetupStep
+                                name={name}
+                                onNameChange={setCustomName}
                                 datasets={datasets}
                                 selectedDataset={selectedDataset}
                                 onSelectedDatasetChange={setSelectedDataset}

@@ -164,6 +164,79 @@ const goToSmolVlaTrainingParameters = async (user: ReturnType<typeof userEvent.s
 };
 
 describe('TrainModelDialog', () => {
+    it('defaults the name to the selected policy until the user edits it', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        const name = await screen.findByRole('textbox', { name: /Name/ });
+        await waitFor(() => expect(name).toHaveValue('ACT'));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        expect(name).toHaveValue('SmolVLA');
+
+        await user.clear(name);
+        await user.type(name, 'My model');
+        await user.click(screen.getByLabelText('Select ACT policy'));
+        expect(name).toHaveValue('My model');
+
+        await user.click(screen.getByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('My model');
+    });
+
+    it.each(['', '   '])('blocks progress when the name is blank (%j)', async (value) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        await user.clear(name);
+        if (value) {
+            await user.type(name, value);
+        }
+
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it.each([
+        { model: undefined, customName: undefined, expectedName: 'ACT' },
+        { model: undefined, customName: 'My new model', expectedName: 'My new model' },
+        { model: baseModel, customName: undefined, expectedName: baseModel.name },
+        { model: baseModel, customName: 'My retrained model', expectedName: 'My retrained model' },
+    ])('submits the model name $expectedName', async ({ model, customName, expectedName }) => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | undefined;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog({ baseModel: model });
+        const name = await screen.findByRole('textbox', { name: /Name/ });
+        await waitFor(() => expect(name).toHaveValue(model?.name ?? 'ACT'));
+        if (customName !== undefined) {
+            await user.clear(name);
+            await user.type(name, customName);
+        }
+        if (model === undefined) {
+            await user.click(screen.getByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        }
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toMatchObject({ model_name: expectedName }));
+    });
+
     it('does not submit a remote job when the final health check fails', async () => {
         const user = userEvent.setup();
         let healthCheckCount = 0;
