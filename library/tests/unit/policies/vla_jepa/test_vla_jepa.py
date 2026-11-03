@@ -118,13 +118,99 @@ def test_configure_model_is_idempotent(tiny_config: VLAJEPAConfig) -> None:
     """Repeated Lightning construction hooks preserve weights and object identity."""
     policy = VLAJEPA.from_config(tiny_config)
     model = policy.model
+    preprocessor, postprocessor = policy._preprocessor, policy._postprocessor
+    queue = policy._action_queue
+    queued_action = torch.ones(3)
+    queue.append(queued_action)
     weights = {name: value.clone() for name, value in model.state_dict().items()}
     with patch("physicalai.policies.vla_jepa.policy.resolve_pretrained") as resolve:
         policy.configure_model()
     assert policy.model is model
+    assert policy.config is tiny_config
+    assert policy._preprocessor is preprocessor
+    assert policy._postprocessor is postprocessor
+    assert policy._action_queue is queue
+    assert queue[0] is queued_action
     resolve.assert_not_called()
     for name, value in policy.model.state_dict().items():
         torch.testing.assert_close(value, weights[name])
+
+
+@pytest.mark.parametrize("use_lora", [False, True])
+@pytest.mark.parametrize("changed_stats", [False, True])
+def test_setup_defers_processor_refresh(
+    tiny_config: VLAJEPAConfig,
+    observation: Observation,
+    *,
+    use_lora: bool,
+    changed_stats: bool,
+) -> None:
+    """Dataset setup only adopts features; configuration refreshes changed statistics."""
+    config = replace(tiny_config, lora_enabled=use_lora, lora_rank=2)
+    policy = VLAJEPA.from_config(config).eval()
+    model = policy.model
+    parameters = [id(parameter) for parameter in model.parameters()]
+    preprocessor, postprocessor = policy._preprocessor, policy._postprocessor
+    queue = policy._action_queue
+    queued_action = torch.ones(3)
+    queue.append(queued_action)
+    inputs, outputs = config.input_features, config.output_features
+    if changed_stats:
+        inputs = [inputs[0], replace(inputs[1], normalization_data=NormalizationParameters(mean=[2.0] * 2, std=[2.0] * 2))]
+        outputs = [replace(outputs[0], normalization_data=NormalizationParameters(min=[0.0] * 3, max=[4.0] * 3))]
+    dataset = MagicMock(spec=Dataset)
+    dataset.observation_features = {str(feature.name): feature for feature in inputs}
+    dataset.action_features = {str(feature.name): feature for feature in outputs}
+    policy._trainer = SimpleNamespace(datamodule=SimpleNamespace(train_dataset=dataset))
+    with (
+        patch("physicalai.policies.vla_jepa.policy.VLAJEPAPreprocessor") as create_preprocessor,
+        patch("physicalai.policies.vla_jepa.policy.VLAJEPAPostprocessor") as create_postprocessor,
+    ):
+        policy.setup("fit")
+    create_preprocessor.assert_not_called()
+    create_postprocessor.assert_not_called()
+    assert policy._preprocessor is preprocessor
+    assert policy._postprocessor is postprocessor
+    with (
+        patch.object(VLAJEPAModel, "from_config") as create_model,
+        patch.object(model, "load_weights") as load_weights,
+        patch.object(policy, "_inject_lora") as inject_lora,
+    ):
+        policy.configure_model()
+    create_model.assert_not_called()
+    load_weights.assert_not_called()
+    inject_lora.assert_not_called()
+    assert policy.model is model
+    assert [id(parameter) for parameter in model.parameters()] == parameters
+    assert (policy._preprocessor is not preprocessor) == changed_stats
+    assert (policy._postprocessor is not postprocessor) == changed_stats
+    assert not policy._preprocessor.training
+    assert not policy._postprocessor.training
+    assert policy._action_queue is queue
+    assert queue[0] is queued_action
+    processed = policy._preprocessor(observation.to_dict())
+    expected_state = (observation.state - 2) / 2 if changed_stats else observation.state
+    torch.testing.assert_close(processed["state"], expected_state[:, None])
+    expected_actions = torch.full((2, 3, 3), 2.0 if changed_stats else 0.0)
+    torch.testing.assert_close(policy._postprocessor(torch.zeros(2, 3, 3)), expected_actions)
+    if not changed_stats:
+        assert policy.config is config
+
+
+@pytest.mark.parametrize("missing_processor", ["_preprocessor", "_postprocessor"])
+def test_configure_model_repairs_missing_processors(tiny_config: VLAJEPAConfig, missing_processor: str) -> None:
+    """Missing processors can be repaired without replacing model parameters."""
+    policy = VLAJEPA.from_config(tiny_config).eval()
+    model = policy.model
+    parameters = [id(parameter) for parameter in model.parameters()]
+    setattr(policy, missing_processor, None)
+    policy.configure_model()
+    assert policy.model is model
+    assert [id(parameter) for parameter in model.parameters()] == parameters
+    assert isinstance(policy._preprocessor, VLAJEPAPreprocessor)
+    assert isinstance(policy._postprocessor, VLAJEPAPostprocessor)
+    assert not policy._preprocessor.training
+    assert not policy._postprocessor.training
 
 
 def test_action_queue_and_reset(tiny_config: VLAJEPAConfig, observation: Observation) -> None:

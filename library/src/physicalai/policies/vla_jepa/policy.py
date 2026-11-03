@@ -143,6 +143,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         self._weights_path: Path | None = None
         self._preprocessor: VLAJEPAPreprocessor | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
         self._postprocessor: VLAJEPAPostprocessor | None = None
+        self._processor_config: VLAJEPAConfig | None = None
         self.save_hyperparameters(
             ignore=[
                 "input_features",
@@ -256,13 +257,13 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         )
 
     def configure_model(self) -> None:
-        """Materialize the resolved architecture once, without downloading artifacts.
+        """Build the model once and synchronize missing or stale processors offline.
 
         Raises:
             ValueError: If architecture or processor assets are unresolved.
             RuntimeError: If the LoRA targets match no supported modules.
         """
-        if self.model is not None or self.config is None:
+        if self.config is None:
             return
         config = self.config
         if not config.qwen_config or not config.tokenizer_json or not config.chat_template:
@@ -271,36 +272,40 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         if config.enable_world_model and (not config.world_model_config or not config.video_processor_config):
             msg = "JEPA-assisted training requires resolved encoder and video-processor configuration."
             raise ValueError(msg)
-        model = VLAJEPAModel.from_config(config)
-        preprocessor = VLAJEPAPreprocessor(config)
-        postprocessor = VLAJEPAPostprocessor(config)
-        if self._weights_path is not None:
-            model.load_weights(self._weights_path, reinitialize_projections=self.reinitialize_projections)
-        if self.gradient_checkpointing:
-            model.enable_gradient_checkpointing()
-        if self.train_action_head_only:
-            model.freeze_backbone()
-        if self.compile_model:
-            model.predict_action_chunk = torch.compile(model.predict_action_chunk)
-        self.model = model
-        try:
-            if config.use_lora:
-                self._inject_lora()
-        except RuntimeError:
-            self.model = None
-            raise
+        preprocessor, postprocessor = self._preprocessor, self._postprocessor
+        if config != self._processor_config or preprocessor is None or postprocessor is None:
+            preprocessor = VLAJEPAPreprocessor(config).to(self.device).train(self.training)
+            postprocessor = VLAJEPAPostprocessor(config).to(self.device).train(self.training)
+        if self.model is None:
+            model = VLAJEPAModel.from_config(config)
+            if self._weights_path is not None:
+                model.load_weights(self._weights_path, reinitialize_projections=self.reinitialize_projections)
+            if self.gradient_checkpointing:
+                model.enable_gradient_checkpointing()
+            if self.train_action_head_only:
+                model.freeze_backbone()
+            if self.compile_model:
+                model.predict_action_chunk = torch.compile(model.predict_action_chunk)
+            self.model = model
+            try:
+                if config.use_lora:
+                    self._inject_lora()
+            except RuntimeError:
+                self.model = None
+                raise
+            self._weights_path = None
+            self.train(self.training)
+            self._n_action_steps = config.n_action_steps
+            self._action_queue: deque[Tensor] = deque(maxlen=config.n_action_steps)
         self._preprocessor = preprocessor
         self._postprocessor = postprocessor
-        self._weights_path = None
-        self.train(self.training)
+        self._processor_config = config
         self.input_features = config.input_features
         self.output_features = config.output_features
         self.chunk_size = config.chunk_size
         self.n_action_steps = config.n_action_steps
         self.enable_world_model = config.enable_world_model
         self.world_model_loss_weight = config.world_model_loss_weight
-        self._n_action_steps = config.n_action_steps
-        self._action_queue: deque[Tensor] = deque(maxlen=config.n_action_steps)
 
     def setup(self, stage: str) -> None:
         """Resolve training features before Lightning materializes the architecture.
@@ -332,10 +337,8 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             )
             raise ValueError(msg)
         config = replace(self.config, input_features=inputs, output_features=outputs)
-        if self.model is not None:
-            self._preprocessor = VLAJEPAPreprocessor(config).to(self.device)
-            self._postprocessor = VLAJEPAPostprocessor(config).to(self.device)
-        self.config = config
+        if config != self.config:
+            self.config = config
         self.input_features, self.output_features = inputs, outputs
 
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
