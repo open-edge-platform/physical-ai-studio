@@ -32,7 +32,7 @@ const jointLabel = (key: string) => (key.endsWith('.pos') ? key.slice(0, -4) : k
 
 const LiveViewer = ({ robotType, joints }: { robotType: SchemaRobotType; joints: Record<string, number> | null }) => {
     const jointList = useMemo(() => Object.entries(joints ?? {}).map(([name, value]) => ({ name, value })), [joints]);
-    useSynchronizeModelJoints(jointList, robotType);
+    useSynchronizeModelJoints(jointList, { type: robotType });
 
     return (
         <View
