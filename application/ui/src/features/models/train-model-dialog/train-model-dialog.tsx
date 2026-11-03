@@ -122,7 +122,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             : []),
     ];
 
-    const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
 
     const [currentStep, setCurrentStep] = useState<WizardStep>('setup');
@@ -145,6 +144,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     );
     const { datasets, id: projectId } = useProject();
 
+    const defaultDatasetId = baseModel?.dataset_id ?? (datasets.length === 1 ? datasets[0].id : null) ?? null;
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
     const { data: selectedDatasetEpisodes } = $api.useQuery(
         'get',
