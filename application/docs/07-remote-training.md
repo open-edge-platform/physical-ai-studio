@@ -89,15 +89,15 @@ The EC2 instance keeps running after training finishes. Delete its CloudFormatio
 
 ## AWS Batch provider
 
-The **AWS Provider** training target submits one-off training jobs to AWS Batch. Studio supports one AWS provider with the fixed name **AWS Provider**. Studio uses the selected named AWS profile on its backend host to assume the configured Studio role.
+The **AWS Provider** training target submits one-off training jobs to AWS Batch. Studio uses the selected named AWS profile on its backend host to assume the configured Studio role.
 
 For cloud-based remote training, the Hugging Face token may be exposed in logs depending on your cloud provider settings. We recommend using short-lived tokens scoped to the access required for training.
 
 The supplied stack scales compute to zero when idle. Keep it deployed for future training jobs; storage charges still apply.
 
 1. Open **Settings**, then **Training Targets**, and select **AWS Provider**.
-2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in one of the template's supported `DeploymentRegion` options (defaults to `us-east-1`), or use an existing deployment. Wait for stack creation to complete and copy `ConfigurationUri` from its **Outputs** tab.
-3. Paste that output into **S3 configuration file URI**, then select **Next**. Use the configuration file URI, not just the bucket URL.
+2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in one of the supported regions (**US East (N. Virginia)** `us-east-1`, **US West (Oregon)** `us-west-2`, or **Europe (Frankfurt)** `eu-central-1`), or use an existing deployment. Wait for stack creation to complete and copy `ConfigurationUri` from its **Outputs** tab.
+3. Enter a **Name** for the training target and paste `ConfigurationUri` into **S3 configuration file URI**, then select **Next**. Use the configuration file URI, not just the bucket URL.
 4. In **Connect to AWS remote training stack**, select an **AWS profile** that is configured and authenticated on the Studio backend host. The information button explains credential setup.
 5. Select **Connect**. Studio reads and validates the configuration using the selected profile, then saves the target. If it fails, an error toast explains recovery and the form preserves your inputs. **Back** returns to the URI without discarding your profile selection.
 

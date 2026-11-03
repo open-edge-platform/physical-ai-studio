@@ -18,10 +18,12 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
+from physicalai.config import Config
+from physicalai.inference import InferenceModel
 from tests.integration import simulation_e2e as controls
 from tests.integration import test_simulation_e2e as suite
 
-from runtime.config_builder import policy_source_fragment, policy_source_from_fragment
+from services.runtime_export import policy_source_fragment
 
 ROOT = Path(__file__).resolve().parents[4]
 BACKEND = ROOT / "application/backend"
@@ -344,7 +346,7 @@ def test_trial_reconnects_the_application_source_without_replaying_warmup(tmp_pa
         np.ones((100, 6), dtype=np.float32),
         np.full((100, 6), 2, dtype=np.float32),
     ]
-    monkeypatch.setattr("physicalai.inference.InferenceModel", MagicMock(return_value=model))
+    monkeypatch.setattr(InferenceModel, "__new__", staticmethod(lambda cls, **kwargs: model))
     robot = MagicMock()
     robot.joint_names = [f"joint_{index}" for index in range(6)]
     robot.get_observation.return_value = SimpleNamespace(state=np.zeros(6), joint_positions=np.zeros(6), images=None)
@@ -368,7 +370,7 @@ def test_trial_reconnects_the_application_source_without_replaying_warmup(tmp_pa
     def load_recipe(_path):
         fragment = policy_source_fragment(export_dir="unused", backend="torch", device="cpu", task="Sort")
         return suite.RobotRuntime(
-            robot=robot, action_source=policy_source_from_fragment(fragment), cameras={"wrist": camera}, fps=30
+            robot=robot, action_source=Config.from_dict(fragment).instantiate(), cameras={"wrist": camera}, fps=30
         )
 
     monkeypatch.setattr(suite.RobotRuntime, "from_config", load_recipe)

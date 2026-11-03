@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 from physicalai.config import Config
 
-from runtime.config_builder import _shared_camera_config
 from schemas.project_camera import IPCamera, IPCameraPayload
+from services.runtime_export import _shared_camera_config
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 

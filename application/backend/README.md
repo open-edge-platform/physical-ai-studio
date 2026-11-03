@@ -41,7 +41,7 @@ keeps the API event loop free to drain worker events while joining processes.
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13
 - [uv](https://github.com/astral-sh/uv) package manager
 
 ### Install Dependencies
