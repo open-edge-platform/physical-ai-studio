@@ -1,4 +1,4 @@
-import { Flex, Item, Key, Picker, StatusLight, Text, TextField } from '@geti-ui/ui';
+import { Flex, Item, Key, Picker, StatusLight, Text } from '@geti-ui/ui';
 
 import { SchemaAvailablePolicy, SchemaDeviceInfo, SchemaProjectInput } from '../../../api/openapi-spec';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
@@ -8,8 +8,6 @@ import { PolicySelection } from './policy-selection';
 import { TrainingTargetOption } from './train-model-dialog';
 
 interface SetupStepProps {
-    name: string;
-    onNameChange: (value: string) => void;
     datasets: SchemaProjectInput['datasets'];
     selectedDataset: Key | null;
     onSelectedDatasetChange: (value: Key | null) => void;
@@ -32,8 +30,6 @@ interface SetupStepProps {
 }
 
 export const SetupStep = ({
-    name,
-    onNameChange,
     datasets,
     selectedDataset,
     onSelectedDatasetChange,
@@ -61,8 +57,6 @@ export const SetupStep = ({
                 again.
             </InlineAlert>
         )}
-
-        <TextField label='Name' value={name} onChange={onNameChange} isRequired width='100%' />
 
         <Picker label='Dataset' selectedKey={selectedDataset} onSelectionChange={onSelectedDatasetChange} width='100%'>
             {datasets.map((dataset) => (

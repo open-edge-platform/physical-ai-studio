@@ -268,10 +268,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
     const name = customName ?? selectedPolicyName;
 
-    // Everything the job needs is picked on the setup step, so that is the only
-    // step that can block progress; the later steps are free to be skipped through.
+    // Setup selections must remain valid throughout the wizard.
     const isSetupIncomplete =
-        !name.trim() ||
         !selectedDataset ||
         !selectedPolicy ||
         policiesUnavailable ||
@@ -296,6 +294,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const isStepBlocked =
         isSetupIncomplete ||
+        ((activeStep === 'training-parameters' || activeStep === 'export') && !name.trim()) ||
         // Checked on every step from the mapping on, not just its own: the dataset's
         // cameras can finish loading after Next was pressed and turn the mapping invalid.
         (hasFeatureMapping && activeStep !== 'setup' && featureMapping.error !== null) ||
@@ -465,8 +464,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     <View minHeight='size-3600'>
                         {activeStep === 'setup' && (
                             <SetupStep
-                                name={name}
-                                onNameChange={setCustomName}
                                 datasets={datasets}
                                 selectedDataset={selectedDataset}
                                 onSelectedDatasetChange={setSelectedDataset}
@@ -498,6 +495,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
                         {activeStep === 'training-parameters' && (
                             <TrainingParameters
+                                name={name}
+                                onNameChange={setCustomName}
                                 maxEpochs={maxEpochs}
                                 onMaxEpochsChange={setMaxEpochs}
                                 batchSize={batchSize}

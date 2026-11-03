@@ -170,20 +170,24 @@ describe('TrainModelDialog', () => {
 
         renderDialog();
 
-        const name = await screen.findByRole('textbox', { name: /Name/ });
-        await waitFor(() => expect(name).toHaveValue('ACT'));
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('textbox', { name: /Name/ })).toHaveValue('ACT');
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+        const name = screen.getByRole('textbox', { name: /Name/ });
         expect(name).toHaveValue('SmolVLA');
 
         await user.clear(name);
         await user.type(name, 'My model');
-        await user.click(screen.getByLabelText('Select ACT policy'));
-        expect(name).toHaveValue('My model');
-
-        await user.click(screen.getByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(screen.getByRole('button', { name: 'Next' }));
         await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByLabelText('Select ACT policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
         expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('My model');
     });
 
@@ -193,6 +197,7 @@ describe('TrainModelDialog', () => {
 
         renderDialog({ baseModel });
         await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
 
         const name = screen.getByRole('textbox', { name: /Name/ });
         await user.clear(name);
@@ -200,6 +205,12 @@ describe('TrainModelDialog', () => {
             await user.type(name, value);
         }
 
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue(value);
         expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
@@ -220,17 +231,18 @@ describe('TrainModelDialog', () => {
         );
 
         renderDialog({ baseModel: model });
+        if (model === undefined) {
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        }
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
         const name = await screen.findByRole('textbox', { name: /Name/ });
         await waitFor(() => expect(name).toHaveValue(model?.name ?? 'ACT'));
         if (customName !== undefined) {
             await user.clear(name);
             await user.type(name, customName);
         }
-        if (model === undefined) {
-            await user.click(screen.getByRole('button', { name: /select…/i }));
-            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        }
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
         await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 

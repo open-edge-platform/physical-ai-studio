@@ -11,6 +11,7 @@ import {
     Slider,
     Switch,
     Text,
+    TextField,
 } from '@geti-ui/ui';
 
 export const MIN_BATCH_SIZE_EXPONENT = 0;
@@ -43,6 +44,8 @@ export const PRECISION_LABELS: Record<string, string> = {
 };
 
 interface TrainingParametersProps {
+    name: string;
+    onNameChange: (value: string) => void;
     maxEpochs: number;
     onMaxEpochsChange: (value: number) => void;
     batchSize: number;
@@ -81,6 +84,8 @@ interface TrainingParametersProps {
 }
 
 export const TrainingParameters = ({
+    name,
+    onNameChange,
     maxEpochs,
     onMaxEpochsChange,
     batchSize,
@@ -116,6 +121,7 @@ export const TrainingParameters = ({
     onSnapflowDistillEpochsChange,
 }: TrainingParametersProps) => (
     <Flex direction='column' gap='size-150' width='100%'>
+        <TextField label='Name' value={name} onChange={onNameChange} isRequired width='100%' />
         <Flex direction='row' gap='size-150' width='100%'>
             <Flex direction='row' gap='size-300' width='100%'>
                 <Slider
