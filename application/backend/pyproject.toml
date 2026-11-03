@@ -14,7 +14,7 @@ dependencies = [
   "eclipse-zenoh==1.9.0",
   "msgpack==1.2.1",
   "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
-  "lerobot[dataset,feetech]==0.6.0",
+  "lerobot[dataset,feetech]>=0.6.0",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
@@ -74,18 +74,21 @@ cpu = [
     "torch>=2.11,<2.15",
     "torchvision>=0.26,<0.30",
     "torchcodec>=0.11",
+    "torchao>=0.18.0,<0.19",
     "physicalai-train[executorch]",
 ]
 cuda = [
     "torch>=2.11,<2.15",
     "torchvision>=0.26,<0.30",
     "torchcodec>=0.11",
+    "torchao>=0.18.0,<0.19",
     "physicalai-train[executorch]",
 ]
 xpu = [
-    "torch>=2.11,<2.12",
-    "torchvision>=0.26,<0.27",
-    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torch>=2.11,<2.15",
+    "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
+    "torchao>=0.18.0,<0.19; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 tests = [
@@ -132,13 +135,18 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
+lerobot = { git = "https://github.com/huggingface/lerobot.git", rev = "06f78b6c46670d0372b9a0f1544574c6b84a0df8" }
 physicalai-train = { path = "../../library", editable = true }
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
-# Keep torchao on PyPI for all extras.
-# The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
-# be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
-# producing incompatible torch/torchao combinations at runtime.
-torchao = { index = "pypi" }
+# Route torchao per extra like torch: with unsafe-best-match, an unrouted torchao would pick
+# the XPU index's `+xpu` build even for cpu/cuda installs.
+torchao = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    # The cu130 index only publishes linux x86_64 torchao wheels.
+    { index = "pytorch-cu130", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pypi", extra = "cuda", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
 # PyPI's Linux torchcodec wheel is CUDA-built (needs libnvrtc), so route it per extra like torch.
 torchcodec = [
     { index = "pytorch-cpu", extra = "cpu" },
@@ -214,9 +222,6 @@ override-dependencies = [
     ] },
     # Locked torch is 2.14, which only executorch 1.5.x runs on (see the library's executorch extra).
     "executorch>=1.5.0,<1.6",
-    # Mirrors executorch 1.5's own torchao range. Needed only so the `pypi` source above
-    # applies: uv ignores sources for transitive deps unless they are overridden.
-    "torchao>=0.18.0,<0.19",
 ]
 conflicts = [
     [
