@@ -108,6 +108,11 @@ target actions, latest camera frames, model predictions, queue depth, inference
 latency, and host/Studio CPU and memory usage. Visualization failures do not stop
 the session. Actions are targets rather than the robot's interpolated commands;
 camera frames are not guaranteed to be the inputs to a particular inference.
+Visualization uses Runtime's `RerunCallback`, including its joint colors,
+prediction markers, action/queue timeline windows, and CPU/GPU monitoring sidebar.
+Studio dispatches control events on a bounded observer thread and caps latest
+camera frames at 10 Hz. Each run has a thread-local recording so simultaneous
+sessions cannot send visualization data into one another's streams.
 
 Under **Settings → General → Rerun visualization**, enable or disable logging,
 opt into opening the native viewer, change the local port, or select connect mode
