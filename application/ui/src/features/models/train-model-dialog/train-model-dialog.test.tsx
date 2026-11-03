@@ -5,6 +5,7 @@ import { HttpResponse } from 'msw';
 import { SchemaModel } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
 import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
 import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
 import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
@@ -40,21 +41,16 @@ const baseModel = {
     policy: 'act',
 } as SchemaModel;
 
-const mockProjectWithRemoteTrainer = () => {
+const testDataset = getMockedDataset({ id: datasetId, name: 'Test dataset', project_id: projectId });
+const otherDataset = getMockedDataset({ id: 'other-dataset', name: 'Other dataset', project_id: projectId });
+
+const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) => {
     server.use(
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
                 id: projectId,
                 name: 'Test project',
-                datasets: [
-                    {
-                        id: datasetId,
-                        name: 'Test dataset',
-                        default_task: 'test',
-                        project_id: projectId,
-                        environment_id: 'ad5c311d-bdd7-4a1c-ad27-26c2775901e9',
-                    },
-                ],
+                datasets,
             })
         ),
         http.get('/api/system/devices/training', () =>
@@ -164,6 +160,36 @@ const goToSmolVlaTrainingParameters = async (user: ReturnType<typeof userEvent.s
 };
 
 describe('TrainModelDialog', () => {
+    it('automatically selects the only dataset when the dialog opens', async () => {
+        mockProjectWithRemoteTrainer([testDataset]);
+
+        renderDialog();
+
+        expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent(testDataset.name);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    });
+
+    it.each([{ datasets: [] }, { datasets: [testDataset, otherDataset] }])(
+        'leaves dataset selection empty with $datasets.length datasets',
+        async ({ datasets }) => {
+            mockProjectWithRemoteTrainer(datasets);
+
+            renderDialog();
+
+            expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent('Select…');
+            expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+        }
+    );
+
+    it('keeps the base model dataset selected when retraining', async () => {
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel: { ...baseModel, dataset_id: otherDataset.id } });
+
+        expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent(otherDataset.name);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    });
+
     it('defaults the name to the selected policy until the user edits it', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();
@@ -303,7 +329,7 @@ describe('TrainModelDialog', () => {
 
         renderDialog();
 
-        // A new model starts with no dataset selected, and Train is a no-op without one.
+        // Multiple datasets require an explicit selection.
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
