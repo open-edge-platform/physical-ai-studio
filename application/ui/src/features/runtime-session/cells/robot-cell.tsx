@@ -48,7 +48,7 @@ export const TeleopSwitch = () => {
 
 const LiveRobot = ({ robot }: { robot: AvailableSchemaRobot }) => {
     const joints = useSessionJoints();
-    useSynchronizeModelJoints(joints, robot.type);
+    useSynchronizeModelJoints(joints, robot);
 
     return <RobotViewer robot={robot} />;
 };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Key, Text, View } from '@geti-ui/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Key, Text, TextField, View } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
@@ -127,6 +127,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const [currentStep, setCurrentStep] = useState<WizardStep>('setup');
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
+    const [customName, setCustomName] = useState<string | undefined>(baseModel?.name);
     const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
     const remoteTrainerId =
         targetId === null || targetId === LOCAL_TARGET_ID ? undefined : targetRawId(String(targetId));
@@ -264,8 +265,10 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // Surfaced when the final remote-trainer health check or job submission fails.
     const [submitError, setSubmitError] = useState<string | null>(null);
 
-    // Everything the job needs is picked on the setup step, so that is the only
-    // step that can block progress; the later steps are free to be skipped through.
+    const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
+    const name = customName ?? selectedPolicyName;
+
+    // Setup selections must remain valid throughout the wizard.
     const isSetupIncomplete =
         !selectedDataset ||
         !selectedPolicy ||
@@ -291,6 +294,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const isStepBlocked =
         isSetupIncomplete ||
+        ((activeStep === 'training-parameters' || activeStep === 'export') && !name.trim()) ||
         // Checked on every step from the mapping on, not just its own: the dataset's
         // cameras can finish loading after Next was pressed and turn the mapping invalid.
         (hasFeatureMapping && activeStep !== 'setup' && featureMapping.error !== null) ||
@@ -307,7 +311,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
               }`;
     const selectedDatasetName =
         datasets.find((dataset) => dataset.id === selectedDataset?.toString())?.name ?? 'No dataset';
-    const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
 
     const goToStep = (offset: number) => {
         const nextStep = steps[currentStepIndex + offset];
@@ -324,7 +327,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
         const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !selectedPolicy || selectedTarget === null) {
+        if (!name.trim() || !dataset_id || !selectedPolicy || selectedTarget === null) {
             return;
         }
 
@@ -369,8 +372,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     return;
                 }
             }
-
-            const name = baseModel?.name ?? selectedPolicyName;
 
             const commonPayload = {
                 dataset_id,
@@ -450,8 +451,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             <Divider />
             <Content width={'700px'}>
                 <Flex direction='column' gap='size-200' width='100%'>
+                    {activeStep === 'training-parameters' && (
+                        <TextField label='Name' value={name} onChange={setCustomName} isRequired width='100%' />
+                    )}
+
                     {activeStep !== 'setup' && (
                         <TrainingSummaryNote
+                            name={activeStep === 'export' ? name : undefined}
                             device={summaryDevice}
                             dataset={selectedDatasetName}
                             policy={selectedPolicyName}
