@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Activity, useMemo, useRef, useState } from 'react';
 
 import { Checkbox, Flex, Loading, Size, View, type Selection } from '@geti-ui/ui';
 import { clsx } from 'clsx';
@@ -23,10 +23,13 @@ interface EpisodeThumbnailProps {
     src: string | undefined;
     alt: string;
     isLoading: boolean;
+    videoUrl: string | undefined;
 }
 
-const EpisodeThumbnail = ({ src, alt, isLoading }: EpisodeThumbnailProps) => {
+const EpisodeThumbnail = ({ src, alt, isLoading, videoUrl }: EpisodeThumbnailProps) => {
     const [failed, setFailed] = useState(false);
+    const [isHovered, setIsHovered] = useState(false);
+    const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     if (src === undefined && isLoading) {
         return (
@@ -44,7 +47,27 @@ const EpisodeThumbnail = ({ src, alt, isLoading }: EpisodeThumbnailProps) => {
         );
     }
 
-    return <img alt={alt} src={src} className={classes.episodeImage} onError={() => setFailed(true)} />;
+    const handlePointerEnter = () => {
+        hoverTimeoutRef.current = setTimeout(() => {
+            setIsHovered(true);
+        }, 500);
+    };
+
+    const handlePointerLeave = () => {
+        setIsHovered(false);
+        hoverTimeoutRef.current && clearTimeout(hoverTimeoutRef.current);
+    };
+
+    return (
+        <div onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+            <Activity mode={isHovered && videoUrl ? 'visible' : 'hidden'}>
+                <video src={videoUrl} className={classes.episodeImage} autoPlay muted loop />
+            </Activity>
+            <Activity mode={!isHovered || !videoUrl ? 'visible' : 'hidden'}>
+                <img alt={alt} src={src} className={classes.episodeImage} onError={() => setFailed(true)} />
+            </Activity>
+        </div>
+    );
 };
 
 const episodeGridLayoutOptions = {
@@ -112,6 +135,18 @@ export const EpisodeList = ({
                                       },
                                   });
 
+                        const videoUrl =
+                            thumbnailCamera === undefined
+                                ? undefined
+                                : fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
+                                      params: {
+                                          path: {
+                                              dataset_id,
+                                              video_path: episode.videos[thumbnailCamera]?.path,
+                                          },
+                                      },
+                                  });
+
                         return (
                             <View
                                 UNSAFE_className={clsx(classes.episodeItem, {
@@ -123,6 +158,7 @@ export const EpisodeList = ({
                                     alt={`Camera frame of ${episode.episode_index}`}
                                     src={thumbnailSrc}
                                     isLoading={isThumbnailCameraLoading}
+                                    videoUrl={videoUrl}
                                 />
                                 <Flex
                                     alignItems={'center'}
