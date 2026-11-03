@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from runtime_session.bus import Bus
     from runtime_session.model import ProcessModel
+    from runtime_session.rerun import RerunObserver
     from runtime_session.store import Store
     from schemas.runtime_session import ControlConfig
 
@@ -26,6 +27,7 @@ def build_control(
     leader: Robot | None,
     model: ProcessModel | None = None,
     bus: Bus | None = None,
+    observer: RerunObserver | None = None,
 ) -> Control:
     """Raises ``ValueError`` when the session cannot run ``config``.
 
@@ -34,7 +36,7 @@ def build_control(
     if isinstance(config, ModelControlConfig):
         if model is None:
             raise ValueError("Load a model first")
-        return ModelControl(store, model, config)
+        return ModelControl(store, model, config, observer=observer)
     if leader is None:
         raise ValueError("Teleoperation needs a connected leader arm; connect one and reload the environment")
     return TeleopControl(store, leader, config, bus)

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     import numpy as np
 
     from runtime_session.model import ProcessModel
+    from runtime_session.rerun import RerunObserver
     from runtime_session.store import Store
     from schemas.runtime_session import ModelControlConfig
 
@@ -45,7 +46,9 @@ class ModelControl(Control):
     model keeps running on the measured state meanwhile.
     """
 
-    def __init__(self, store: Store, model: ProcessModel, config: ModelControlConfig) -> None:
+    def __init__(
+        self, store: Store, model: ProcessModel, config: ModelControlConfig, *, observer: RerunObserver | None = None
+    ) -> None:
         if model.inputs.state_size != len(store.spec.joint_names):
             raise ValueError("The loaded model does not fit the follower")
         super().__init__(store, config, name="ModelControl", hz=config.hz)
@@ -60,11 +63,13 @@ class ModelControl(Control):
         self.step = 0
         self.grace_s = config.grace_s
         self.started_at = 0.0
+        self._observer = observer
 
     def on_start(self) -> None:
         self.started_at = time.monotonic()
-        # Without callbacks there is no bus to give it; executors only emit to one they have.
-        self.source.connect(bus=cast("Any", None), session_id="")
+        events = self._observer.control_events(self.hz, self.grace_s) if self._observer is not None else None
+        session_id = self._observer.session_id if self._observer is not None else ""
+        self.source.connect(bus=cast("Any", events), session_id=session_id)
 
     def on_stop(self) -> None:
         self.source.disconnect()
