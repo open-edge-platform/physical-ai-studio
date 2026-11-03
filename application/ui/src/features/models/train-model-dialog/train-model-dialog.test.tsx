@@ -164,6 +164,124 @@ const goToSmolVlaTrainingParameters = async (user: ReturnType<typeof userEvent.s
 };
 
 describe('TrainModelDialog', () => {
+    it('defaults the name to the selected policy until the user edits it', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('textbox', { name: /Name/ })).toHaveValue('ACT');
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        expect(name).toHaveValue('SmolVLA');
+
+        await user.clear(name);
+        await user.type(name, 'My model');
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByLabelText('Select ACT policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('My model');
+    });
+
+    it('shows the name above the summary on training parameters and in the summary afterwards', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        await screen.findByLabelText(/Gripper/i, { selector: 'button' });
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        expect(screen.queryByText('Name')).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        const summary = screen.getByText('Device');
+        expect(name.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        await user.clear(name);
+        await user.type(name, 'My training run');
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        expect(screen.getByText('Name')).toBeInTheDocument();
+        expect(screen.getByText('My training run')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        const restoredName = screen.getByRole('textbox', { name: /Name/ });
+        expect(restoredName).toHaveValue('My training run');
+        await user.type(restoredName, ' updated');
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByText('My training run updated')).toBeInTheDocument();
+    });
+
+    it.each(['', '   '])('blocks progress when the name is blank (%j)', async (value) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        await user.clear(name);
+        if (value) {
+            await user.type(name, value);
+        }
+
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue(value);
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it.each([
+        { model: undefined, customName: undefined, expectedName: 'ACT' },
+        { model: undefined, customName: 'My new model', expectedName: 'My new model' },
+        { model: baseModel, customName: undefined, expectedName: baseModel.name },
+        { model: baseModel, customName: 'My retrained model', expectedName: 'My retrained model' },
+    ])('submits the model name $expectedName', async ({ model, customName, expectedName }) => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | undefined;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog({ baseModel: model });
+        if (model === undefined) {
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        }
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        const name = await screen.findByRole('textbox', { name: /Name/ });
+        await waitFor(() => expect(name).toHaveValue(model?.name ?? 'ACT'));
+        if (customName !== undefined) {
+            await user.clear(name);
+            await user.type(name, customName);
+        }
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toMatchObject({ model_name: expectedName }));
+    });
+
     it('does not submit a remote job when the final health check fails', async () => {
         const user = userEvent.setup();
         let healthCheckCount = 0;

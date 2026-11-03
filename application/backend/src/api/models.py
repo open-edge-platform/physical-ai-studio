@@ -9,6 +9,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from physicalai.config import Config
 from physicalai.export.backends import ExportBackend
+from pydantic import BaseModel, StringConstraints
 from sse_starlette import EventSourceResponse
 from starlette import status
 from starlette.background import BackgroundTask
@@ -115,6 +116,21 @@ async def get_model_by_id(
         training_summary=training_summary,
         hparams=hparams,
     )
+
+
+class ModelNameUpdate(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+@router.patch("/{model_id}")
+async def update_model(
+    model_id: UUID,
+    payload: ModelNameUpdate,
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+) -> Model:
+    """Update a model's display name without changing its files or training history."""
+    model = await model_service.get_model_by_id(model_id)
+    return await model_service.update_model(model, payload.model_dump())
 
 
 @router.get("/{model_id}/tasks")
