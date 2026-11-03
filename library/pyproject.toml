@@ -251,7 +251,7 @@ explicit = false
 # PyTorch sources configuration
 [tool.uv.sources]
 lerobot = { git = "https://github.com/huggingface/lerobot.git", rev = "06f78b6c46670d0372b9a0f1544574c6b84a0df8" }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ee381b7b7643d173e9b6b74e8702fa6e800b2943" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cu130" },

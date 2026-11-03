@@ -11,8 +11,6 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
   "physicalai[capture, transport]~=0.3.0",
-  "eclipse-zenoh==1.9.0",
-  "msgpack==1.2.1",
   "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
   "lerobot[dataset,feetech]>=0.6.2",
   "numpy",
@@ -136,7 +134,7 @@ explicit = false
 [tool.uv.sources]
 lerobot = { git = "https://github.com/huggingface/lerobot.git", rev = "06f78b6c46670d0372b9a0f1544574c6b84a0df8" }
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ee381b7b7643d173e9b6b74e8702fa6e800b2943" }
 # Route torchao per extra like torch: with unsafe-best-match, an unrouted torchao would pick
 # the XPU index's `+xpu` build even for cpu/cuda installs.
 torchao = [
