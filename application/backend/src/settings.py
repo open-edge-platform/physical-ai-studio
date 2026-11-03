@@ -11,6 +11,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, JsonConfigSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
@@ -127,7 +128,45 @@ class VideoRecordingSettings(BaseModel):
     preset: str | None = Field(default=None)
 
 
-_USER_CONFIG_GROUPS: tuple[str, ...] = ("video_recording", "trainer", "huggingface", "hotkeys")
+class RerunSettings(BaseModel):
+    """Visualization defaults applied when a runtime session opens."""
+
+    enabled: bool = True
+    mode: Literal["spawn", "connect"] = "spawn"
+    open_viewer: bool = False
+    spawn_port: int = Field(default=9876, ge=1, le=65535)
+    connect_addr: str = "127.0.0.1:9876"
+
+    @field_validator("connect_addr")
+    @classmethod
+    def validate_connect_addr(cls, value: str) -> str:
+        """Accept host:port or a Rerun gRPC proxy URL, without credentials."""
+        value = value.strip()
+        url = value if "://" in value else f"rerun+http://{value}"
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme not in {"rerun+http", "rerun+https"}
+            or not parsed.hostname
+            or parsed.port is None
+            or not 1 <= parsed.port <= 65535
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/proxy"}
+            or parsed.query
+            or parsed.fragment
+            or any(char.isspace() for char in value)
+        ):
+            raise ValueError("Use host:port or rerun+http(s)://host:port/proxy")
+        return value
+
+    @property
+    def connect_url(self) -> str:
+        """Return the canonical gRPC URL expected by the Rerun SDK."""
+        url = self.connect_addr if "://" in self.connect_addr else f"rerun+http://{self.connect_addr}"
+        return url.rstrip("/") if url.endswith("/proxy") else f"{url}/proxy"
+
+
+_USER_CONFIG_GROUPS: tuple[str, ...] = ("video_recording", "trainer", "huggingface", "hotkeys", "rerun")
 
 
 def _storage_key(field_name: str) -> str:
@@ -298,6 +337,7 @@ class Settings(BaseSettings):
     hotkeys: HotkeySettings = HotkeySettings()
     # User-configurable video encoding for dataset recordings.
     video_recording: VideoRecordingSettings = VideoRecordingSettings()
+    rerun: RerunSettings = RerunSettings()
 
     # Managed SSH trainers require a loopback-bound backend; see
     # `core.security.ssh_network_exposure`. The UI warns that SSH access has

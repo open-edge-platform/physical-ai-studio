@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import time
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -11,9 +12,11 @@ import rerun as rr
 from physicalai.runtime.events import InferenceEvent, MetricsEvent
 
 from runtime_session.controls.model import ModelControl
-from runtime_session.rerun import RerunObserver
+from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening
+from runtime_session.rerun import _background_server as background_server
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
 from schemas.runtime_session import ExecutionConfig, ModelControlConfig, SessionState, StateMessage
+from settings import RerunSettings
 
 from .test_model import _FarModel
 
@@ -31,12 +34,60 @@ def _paths(recording: MagicMock) -> list[str]:
 
 async def test_spawn_uses_explicit_port_and_a_recording_per_session() -> None:
     with patch("rerun.spawn") as spawn:
-        async with RerunObserver("first") as first, RerunObserver("second") as second:
+        settings = RerunSettings(open_viewer=True)
+        async with (
+            RerunObserver("first", settings=settings) as first,
+            RerunObserver("second", settings=settings) as second,
+        ):
             assert first._recording is not second._recording
             assert rr.get_recording_id(first._recording) == "first"
             assert rr.get_recording_id(second._recording) == "second"
             assert rr.get_global_data_recording() is None
         assert [call.kwargs["port"] for call in spawn.call_args_list] == [9876, 9876]
+
+
+async def test_default_starts_headless_and_connect_mode_never_spawns() -> None:
+    with patch("rerun.spawn") as spawn, patch("rerun.RecordingStream.connect_grpc") as connect:
+        async with RerunObserver("background"):
+            connect.assert_called_with("rerun+http://127.0.0.1:9876/proxy")
+        async with RerunObserver("remote", settings=RerunSettings(mode="connect", connect_addr="host:1234")):
+            connect.assert_called_with("rerun+http://host:1234/proxy")
+        spawn.assert_not_called()
+
+
+def test_real_headless_server_is_shared_and_reaped_after_the_last_session() -> None:
+    with socket.socket() as available:
+        available.bind(("127.0.0.1", 0))
+        port = available.getsockname()[1]
+    with background_server(port):
+        process = _BACKGROUND_SERVERS[port].process
+        assert process.poll() is None
+        assert _listening(port)
+        with background_server(port):
+            assert _BACKGROUND_SERVERS[port].process is process
+            assert _BACKGROUND_SERVERS[port].users == 2
+        assert process.poll() is None
+    assert process.poll() is not None
+    assert port not in _BACKGROUND_SERVERS
+    assert not _listening(port)
+
+
+def test_an_existing_server_is_borrowed_not_started_or_stopped() -> None:
+    with patch("runtime_session.rerun._listening", return_value=True), patch("subprocess.Popen") as start:
+        with background_server(12345):
+            assert 12345 not in _BACKGROUND_SERVERS
+        start.assert_not_called()
+
+
+async def test_disabled_logging_does_not_start_an_observer(new_session, monkeypatch, tmp_path) -> None:
+    from settings import merge_user_settings
+
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    merge_user_settings({"rerun": {"enabled": False}})
+    with patch("runtime_session.session.RerunObserver") as observer:
+        session = await new_session()
+    observer.assert_not_called()
+    assert session._observer is None
 
 
 def test_samples_targets_and_latest_images_only_when_changed(store: Store) -> None:
@@ -172,7 +223,7 @@ async def test_real_sdk_accepts_blueprint_images_and_prediction_columns(store: S
 
 
 async def test_viewer_start_failure_does_not_prevent_session_use(new_session) -> None:
-    with patch("rerun.spawn", side_effect=RuntimeError("no display")):
+    with patch("runtime_session.rerun._background_server", side_effect=RuntimeError("cannot start")):
         session = await new_session()
     assert session._observer is None
     assert session.state().session_id == session.id

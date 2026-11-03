@@ -7,21 +7,26 @@ not necessarily the frames used by an inference.
 
 from __future__ import annotations
 
+import socket
+import subprocess
+import sys
 import threading
 import time
 from collections import deque
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
+from importlib.resources import files
 from typing import TYPE_CHECKING
 
 import numpy as np
 import psutil
 
 from runtime_session.store import ACTION, STATE
+from settings import RerunSettings
 from workers.base import ThreadWorker
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
 
     from physicalai.runtime.events import InferenceEvent, MetricsEvent
     from rerun import RecordingStream
@@ -30,6 +35,76 @@ if TYPE_CHECKING:
     from schemas.runtime_session import ErrorMessage, StateMessage
 
 _SPAWN_LOCK = threading.Lock()
+_BACKGROUND_SERVERS: dict[int, _BackgroundServer] = {}
+
+
+@dataclass
+class _BackgroundServer:
+    process: subprocess.Popen[bytes]
+    users: int = 0
+
+
+def _listening(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+            return True
+    except OSError:
+        return False
+
+
+def _stop_server(process: subprocess.Popen[bytes]) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+@contextmanager
+def _background_server(port: int) -> Iterator[None]:
+    """Share a loopback-only headless server; stop ours when its last session closes."""
+    with _SPAWN_LOCK:
+        server = _BACKGROUND_SERVERS.get(port)
+        if server is None and not _listening(port):
+            process = subprocess.Popen(  # noqa: S603 - fixed executable and flags; port is validated
+                [
+                    str(files("rerun_cli").joinpath("rerun.exe" if sys.platform == "win32" else "rerun")),
+                    "--serve-grpc",
+                    "--bind",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--server-memory-limit",
+                    "256MiB",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            try:
+                deadline = time.monotonic() + 10
+                while not _listening(port):
+                    if process.poll() is not None or time.monotonic() >= deadline:
+                        raise RuntimeError(f"Rerun background server could not start on port {port}")
+                    time.sleep(0.05)
+            except BaseException:
+                _stop_server(process)
+                raise
+            server = _BackgroundServer(process)
+            _BACKGROUND_SERVERS[port] = server
+        if server is not None:
+            server.users += 1
+    try:
+        yield
+    finally:
+        with _SPAWN_LOCK:
+            if server is not None:
+                server.users -= 1
+                if server.users == 0:
+                    _stop_server(server.process)
+                    del _BACKGROUND_SERVERS[port]
 
 
 @dataclass(frozen=True)
@@ -48,9 +123,10 @@ class _ModelEvents:
 class RerunObserver(ThreadWorker[None]):
     """Sample a session at 30 Hz, with images capped at 10 Hz, off the API loop."""
 
-    def __init__(self, session_id: str) -> None:
+    def __init__(self, session_id: str, *, settings: RerunSettings | None = None) -> None:
         super().__init__(name=f"RerunObserver-{session_id}")
         self.session_id = session_id
+        self.settings = settings or RerunSettings()
         self._origin = time.monotonic()
         self._lock = threading.Lock()
         self._store: Store | None = None
@@ -83,19 +159,26 @@ class RerunObserver(ThreadWorker[None]):
         import rerun as rr
 
         self._recording = rr.RecordingStream("physicalai-studio", recording_id=self.session_id)
-        try:
-            # The SDK reuses a viewer already listening on this port.
-            with _SPAWN_LOCK:
-                rr.spawn(port=9876, recording=self._recording)
-            self._recording.log("runtime/lifecycle", rr.TextLog("Session started"))
-            yield
-        finally:
+        with ExitStack() as stack:
             try:
-                self._drain_events()
-                self._recording.set_time("session", duration=time.monotonic() - self._origin)
-                self._recording.log("runtime/lifecycle", rr.TextLog("Session stopped"))
+                if self.settings.mode == "connect":
+                    self._recording.connect_grpc(self.settings.connect_url)
+                elif self.settings.open_viewer:
+                    # The SDK reuses a viewer already listening on this port.
+                    with _SPAWN_LOCK:
+                        rr.spawn(port=self.settings.spawn_port, recording=self._recording)
+                else:
+                    stack.enter_context(_background_server(self.settings.spawn_port))
+                    self._recording.connect_grpc(f"rerun+http://127.0.0.1:{self.settings.spawn_port}/proxy")
+                self._recording.log("runtime/lifecycle", rr.TextLog("Session started"))
+                yield
             finally:
-                self._recording.disconnect()
+                try:
+                    self._drain_events()
+                    self._recording.set_time("session", duration=time.monotonic() - self._origin)
+                    self._recording.log("runtime/lifecycle", rr.TextLog("Session stopped"))
+                finally:
+                    self._recording.disconnect()
 
     async def run_loop(self, context: None) -> None:  # noqa: ARG002
         while not self.should_stop():

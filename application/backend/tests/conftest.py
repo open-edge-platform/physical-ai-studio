@@ -3,6 +3,7 @@
 import os
 import shutil
 import tempfile
+from contextlib import nullcontext
 
 os.environ.setdefault("AWS_ENABLED", "true")
 
@@ -38,6 +39,8 @@ from schemas.model import Model
 def no_rerun_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep runtime tests from opening a native viewer on the developer's desktop."""
     monkeypatch.setattr("rerun.spawn", lambda **_kwargs: None)
+    monkeypatch.setattr("runtime_session.rerun._background_server", lambda _port: nullcontext())
+    monkeypatch.setattr("rerun.RecordingStream.connect_grpc", lambda *_args, **_kwargs: None)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:

@@ -5,7 +5,7 @@ import pytest
 import build_info as build_info_module
 import settings as settings_module
 from build_info import get_build_info
-from settings import Settings, get_default_storage_dir, load_user_settings_file, merge_user_settings
+from settings import RerunSettings, Settings, get_default_storage_dir, load_user_settings_file, merge_user_settings
 
 
 def test_default_storage_dir_uses_xdg_data_home(monkeypatch, tmp_path: Path) -> None:
@@ -164,3 +164,37 @@ def test_video_recording_settings_are_loaded_from_json(monkeypatch, tmp_path: Pa
 
     settings = Settings()
     assert settings.video_recording.preset == "cpu-h264"
+
+
+def test_rerun_defaults_to_background_logging() -> None:
+    settings = RerunSettings()
+    assert settings.enabled
+    assert settings.mode == "spawn"
+    assert not settings.open_viewer
+    assert settings.spawn_port == 9876
+
+
+def test_rerun_settings_persist_merge_and_reset(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    merge_user_settings({"rerun": {"mode": "connect", "connect_addr": "host:1234"}})
+    merge_user_settings({"rerun": {"enabled": False}})
+    assert Settings().rerun == RerunSettings(mode="connect", connect_addr="host:1234", enabled=False)
+    merge_user_settings({"rerun": None})
+    assert Settings().rerun == RerunSettings()
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536])
+def test_rerun_rejects_invalid_spawn_ports(port: int) -> None:
+    with pytest.raises(ValueError):
+        RerunSettings(spawn_port=port)
+
+
+@pytest.mark.parametrize("addr", ["", "host", "host:0", "host:65536", "http://host:9876", "host:9876/path", "a b:123"])
+def test_rerun_rejects_invalid_connection_addresses(addr: str) -> None:
+    with pytest.raises(ValueError):
+        RerunSettings(connect_addr=addr)
+
+
+@pytest.mark.parametrize("addr", ["host:1234", "rerun+http://host:1234/proxy", "rerun+http://host:1234"])
+def test_rerun_normalizes_connection_addresses(addr: str) -> None:
+    assert RerunSettings(connect_addr=addr).connect_url == "rerun+http://host:1234/proxy"
