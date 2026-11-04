@@ -11,6 +11,8 @@ from api.dependencies import get_robot_catalog_service
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
 from db import get_async_db_session_ctx
+from runtime_session.registry import RuntimeSessionRegistry
+from runtime_session.store import sweep_stale_blocks
 from schemas.remote_trainer import SshConnection
 from services import remote_trainer_tunnel_manager
 from services.camera_claims import CameraClaimRegistry
@@ -82,6 +84,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # In-memory on purpose: see CameraClaimRegistry. Keyed by fingerprint so
     # aliased project rows for the same physical device share one pin.
     app.state.camera_claim_registry = CameraClaimRegistry()
+    app.state.runtime_session_registry = RuntimeSessionRegistry()
 
     # The one simulation Studio starts for a simulated robot. Owned by this
     # process, not a session worker, so it outlives sessions; stopped below.
@@ -104,6 +107,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
+    # No session is live yet, so any session block in shared memory is left over from a crash.
+    sweep_stale_blocks()
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
 
@@ -133,6 +138,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Ideally RobotHardwareManager would have a shutdown_all method too.
     # For now, we assume active workers unregistering will trigger releases.
 
+    await app.state.runtime_session_registry.close_all()
     # Keep draining worker events while shutdown waits for child processes to exit.
     await asyncio.to_thread(app_scheduler.shutdown)
     app.state.event_processor.shutdown()

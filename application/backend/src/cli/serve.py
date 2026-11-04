@@ -48,8 +48,23 @@ def start_server(host: str, port: int) -> None:
 
 
 @click.command()
-@click.option("--host", default=lambda: get_settings().host, show_default=True)
-@click.option("--port", default=lambda: get_settings().port, show_default=True, type=int)
+@click.option(
+    "--host",
+    default=lambda: get_settings().host,
+    show_default=True,
+    help="Bind address (HOST setting). Keep loopback unless network exposure is intended.",
+)
+@click.option(
+    "--port", default=lambda: get_settings().port, show_default=True, type=int, help="HTTP port (PORT setting)."
+)
 def serve(host: str, port: int) -> None:
-    """Start the Physical AI Studio web application."""
+    """Run migrations and start the Studio web application.
+
+    Uses the configured local storage and database. Startup can modify them.
+    Studio's API has no authentication model; do not expose it to untrusted networks.
+
+    \b
+    Example:
+      physicalai-studio serve --host 127.0.0.1 --port 7861
+    """
     start_server(host, port)
