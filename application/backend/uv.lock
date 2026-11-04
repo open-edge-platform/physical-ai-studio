@@ -3061,6 +3061,9 @@ cuda = [
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
     { name = "torchvision", version = "0.26.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
 ]
+sim-e2e = [
+    { name = "physicalai-mujoco-plugin" },
+]
 tests = [
     { name = "httpx" },
     { name = "pytest" },
@@ -3113,9 +3116,10 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=ee381b7b7643d173e9b6b74e8702fa6e800b2943" },
-    { name = "physicalai-mujoco-plugin", specifier = ">=0.5.0" },
+    { name = "physicalai-mujoco-plugin", specifier = "~=0.5.0" },
+    { name = "physicalai-mujoco-plugin", marker = "extra == 'sim-e2e'", specifier = "==0.5.0" },
     { name = "physicalai-so101-plugin", specifier = "~=0.2.0" },
-    { name = "physicalai-studio-plugin", specifier = ">=0.5.0" },
+    { name = "physicalai-studio-plugin", specifier = "~=0.5.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
     { name = "physicalai-train", extras = ["molmoact2", "pi05", "rldx1", "smolvla", "xr0"], editable = "../../library" },
@@ -3143,7 +3147,7 @@ requires-dist = [
     { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
     { name = "websockets" },
 ]
-provides-extras = ["cpu", "cuda", "xpu", "tests"]
+provides-extras = ["cpu", "cuda", "xpu", "sim-e2e", "tests"]
 
 [package.metadata.requires-dev]
 all = [
