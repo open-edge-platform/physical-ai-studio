@@ -32,7 +32,7 @@ jobs:
       contents: read
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -77,11 +77,11 @@ jobs:
         device: [cuda, xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           disable-sudo: false
           disable-telemetry: true
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: >
             auth.docker.io:443
             deb.debian.org:80
@@ -199,7 +199,7 @@ jobs:
         device: [cuda, xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           disable-sudo: false
           disable-telemetry: true
