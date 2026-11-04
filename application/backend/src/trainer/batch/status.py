@@ -14,6 +14,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from trainer.schemas import TrainerJobStatus
+from training.log_format import render_progress_log
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,6 +53,10 @@ class StatusReporter:
 
     def report(self, progress: int, message: str | None, extra_info: dict[str, Any] | None) -> None:
         """``ProgressFn``-compatible callback for ``run_training_job``."""
+        if extra_info is not None:
+            line = render_progress_log(extra_info)
+            if line is not None:
+                logger.info(line)
         self._write(TrainerJobStatus.RUNNING, progress, message, extra_info, force=False)
 
     def finish(self, status: TrainerJobStatus, *, progress: int, message: str | None = None) -> None:

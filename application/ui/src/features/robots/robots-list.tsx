@@ -5,16 +5,11 @@ import { clsx } from 'clsx';
 import { NavLink, useNavigate, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
-import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
+import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { paths } from '../../paths';
 import { useProjectId } from '../projects/use-project';
-import {
-    sessionActivity,
-    sessionForRobot,
-    sessionStatusVariant,
-    useRuntimeSessions,
-} from '../runtime-sessions/use-runtime-sessions';
+import { sessionForRobot, useRuntimeSessions } from '../runtime-sessions/runtime-sessions';
 import {
     ROBOT_SIMULATION_STATUS_LABEL,
     RobotSimulationLaunch,
@@ -78,7 +73,7 @@ const useDeleteRobot = (robot: SchemaRobot) => {
                     }
                 },
                 onError: (error) => {
-                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
+                    if (isResourceInUseError(error)) {
                         toast.info(getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.');
                         return;
                     }
@@ -183,18 +178,6 @@ const SimulationChips = ({ launch }: { launch: RobotSimulationLaunch }) => (
     </div>
 );
 
-export const SessionStatus = ({ session }: { session: SchemaRuntimeSessionInfo | undefined }) => {
-    if (session === undefined) {
-        return null;
-    }
-
-    return (
-        <StatusLight variant={sessionStatusVariant(session)}>
-            <View>Session · {sessionActivity(session)}</View>
-        </StatusLight>
-    );
-};
-
 export const ConnectionStatus = ({
     status,
     isUnavailable = false,
@@ -272,7 +255,11 @@ const RobotListItem = ({
                         ) : (
                             <ConnectionStatus status={status} isUnavailable={isUnavailable} />
                         )}
-                        <SessionStatus session={session} />
+                        {session !== undefined && (
+                            <StatusLight variant='notice'>
+                                In use · {session.environment_name ?? 'runtime session'}
+                            </StatusLight>
+                        )}
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>
@@ -323,8 +310,6 @@ export const RobotsList = () => {
         suspense: false,
     });
 
-    // Sessions are host-wide, so this is one query for the page rather than one
-    // per row. A session name is rt-<robot id>, which makes the match exact.
     const { data: runtimeSessions } = useRuntimeSessions();
 
     return (

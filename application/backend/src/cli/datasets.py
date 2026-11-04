@@ -10,16 +10,29 @@ import click
 
 @click.group()
 def datasets() -> None:
-    """Dataset management commands."""
+    """Import LeRobot v3 datasets from local folders.
+
+    For Hugging Face repositories, use hf dataset instead. Local-folder imports
+    require an environment association; Hub imports create a temporary empty one.
+    """
 
 
 @datasets.command("import-dir")
-@click.option("--source-dir", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--project-id", required=True, type=click.UUID)
-@click.option("--environment-id", required=True, type=click.UUID)
-@click.option("--dataset-name", required=True, type=str)
-@click.option("--default-task", type=str, default="", show_default=True)
-@click.option("--move/--copy", default=False, show_default=True)
+@click.option(
+    "--source-dir",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Existing LeRobot v3 dataset directory containing meta/ and data/.",
+)
+@click.option("--project-id", required=True, type=click.UUID, help="Existing target Studio project UUID.")
+@click.option(
+    "--environment-id", required=True, type=click.UUID, help="Existing environment UUID in the target project."
+)
+@click.option("--dataset-name", required=True, type=str, help="Display name for the imported dataset.")
+@click.option(
+    "--default-task", type=str, default="", show_default=True, help="Default task description stored in Studio."
+)
+@click.option("--move/--copy", default=False, show_default=True, help="Move removes the source; copy keeps it intact.")
 def import_dir(
     source_dir: Path,
     project_id: UUID,
@@ -32,6 +45,15 @@ def import_dir(
 
     Unlike the UI's ZIP-upload import flow, this reads the dataset straight off disk,
     so it's suited for large local datasets already staged on the backend host.
+
+    Requires an existing project and environment. Copies files by default;
+    --move removes the source directory on success. Unlike hf dataset import,
+    this command has no --dry-run, --json, or resumable-transfer interface.
+
+    \b
+    Example (replace the UUID placeholders):
+      physicalai-studio datasets import-dir --source-dir ./dataset \\
+        --project-id PROJECT_UUID --environment-id ENVIRONMENT_UUID --dataset-name "My data"
     """
     from db import get_async_db_session_ctx
     from schemas import Dataset
