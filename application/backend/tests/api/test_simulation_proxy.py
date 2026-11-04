@@ -256,7 +256,9 @@ def test_the_viewer_websocket_passes_messages_both_ways(studio: Studio, viewer: 
         socket.send_text("text")
         assert socket.receive_text() == "text"
 
-    assert viewer.closed.wait(5.0), "the upstream stayed open after the browser left"
+        # Leave while the app runs: the test client's exit cancels it without a disconnect.
+        socket.close()
+        assert viewer.closed.wait(5.0), "the upstream stayed open after the browser left"
     assert viewer.subprotocols == [PROTOCOL]
 
 
