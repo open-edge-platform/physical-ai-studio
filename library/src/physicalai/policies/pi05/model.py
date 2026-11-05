@@ -19,6 +19,7 @@ from transformers.cache_utils import DynamicCache
 
 from physicalai.data.constants import (
     IMAGE_MASKS,
+    NOISE,
     RTC_EXECUTION_HORIZON,
     RTC_INFERENCE_DELAY,
     RTC_MAX_GUIDANCE_WEIGHT,
@@ -1200,6 +1201,8 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
                 TOKENIZED_PROMPT, and TOKENIZED_PROMPT_MASK. When ``self.enable_rtc``
                 is True, also expects RTC keys: ``prev_chunk_left_over``,
                 ``inference_delay``, ``max_guidance_weight``, and ``execution_horizon``.
+                An optional ``noise`` tensor of shape ``(B, chunk_size, max_action_dim)``
+                replaces the sampled start noise.
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
@@ -1230,11 +1233,15 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
                 "rtc_prev_action_chunk": self._pad_prev_chunk(batch[PREV_CHUNK_LEFT_OVER]),
             }
 
+        # An exported graph takes the start noise as an input: OpenVINO's GPU plugin
+        # returns the same values from in-graph random ops on every call, and its
+        # ONNX frontend skews RandomNormalLike. Torch inference leaves it unset.
         actions = self.sample_actions(
             images,
             img_masks,
             tokens,
             masks,
+            noise=batch.get(NOISE),
             **rtc_kwargs,
         )
 

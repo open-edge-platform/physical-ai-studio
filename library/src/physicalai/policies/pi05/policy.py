@@ -18,7 +18,7 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
-from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+from physicalai.data.constants import NOISE, RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
@@ -910,6 +910,30 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         return schema
 
     @property
+    def _export_noise_shape(self) -> tuple[int, int]:
+        """Per-sample shape of the flow-matching start noise the exported graph takes."""
+        return (self.config.chunk_size, self.config.max_action_dim)
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        """Add the start noise to the traced inputs so it becomes a graph input.
+
+        Sampling inside the graph does not survive OpenVINO: its ONNX frontend
+        decomposes ``RandomNormalLike`` with both uniform draws on the same seed,
+        and its GPU plugin returns identical values from random ops on every call.
+        The runtime ``pi05`` preprocessor draws the noise instead (``noise_shape``).
+
+        Returns:
+            The preprocessed tensor sample, plus ``noise`` when random input noise is
+            enabled, or ``None`` if the policy has no sample input.
+        """
+        sample = super()._get_default_export_input_sample()
+        if sample is None or not self.config.use_random_input_noise:
+            return sample
+        batch_size = sample[STATE].shape[0]
+        sample[NOISE] = torch.randn(batch_size, *self._export_noise_shape, device=self.device)
+        return sample
+
+    @property
     def outputs_schema(self) -> list[InferenceFeature] | None:
         """Describe the policy's model output for export.
 
@@ -954,17 +978,21 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         if self.rtc_enabled:
             normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
 
+        pi05_spec_args: dict[str, Any] = {
+            "image_resolution": self.config.image_resolution,
+            "empty_cameras": self.config.empty_cameras,
+        }
+        if self.config.use_random_input_noise:
+            # The exported graph takes the start noise as an input; the runtime draws it.
+            pi05_spec_args["noise_shape"] = self._export_noise_shape
+
         base_preproc_specs = [
             ComponentSpec(
                 type="normalize",
                 stats=normalize_stats,
                 mode=self.config.normalization_mode.lower(),
             ),
-            ComponentSpec(
-                type="pi05",
-                image_resolution=self.config.image_resolution,
-                empty_cameras=self.config.empty_cameras,
-            ),
+            ComponentSpec(type="pi05", **pi05_spec_args),
         ]
         postproc_specs = [
             ComponentSpec(
