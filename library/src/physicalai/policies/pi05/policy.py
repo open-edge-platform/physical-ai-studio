@@ -18,7 +18,13 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
-from physicalai.data.constants import NOISE, RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+from physicalai.data.constants import (
+    NOISE,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    TOKENIZED_PROMPT,
+)
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
@@ -42,6 +48,8 @@ from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
 from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
 
 if TYPE_CHECKING:
+    from os import PathLike
+
     from physicalai.data import Observation
 
     from .preprocessor import Pi05Postprocessor, Pi05Preprocessor
@@ -914,24 +922,52 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         """Per-sample shape of the flow-matching start noise the exported graph takes."""
         return (self.config.chunk_size, self.config.max_action_dim)
 
-    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
-        """Add the start noise to the traced inputs so it becomes a graph input.
+    def _with_export_noise(self, sample: dict[str, torch.Tensor] | None) -> dict[str, torch.Tensor] | None:
+        """Add the start noise to a traced input sample so it becomes a graph input.
 
         Sampling inside the graph does not survive OpenVINO: its ONNX frontend
         decomposes ``RandomNormalLike`` with both uniform draws on the same seed,
         and its GPU plugin returns identical values from random ops on every call.
         The runtime ``pi05`` preprocessor draws the noise instead (``noise_shape``).
 
+        Args:
+            sample: The preprocessed tensors to trace with, or ``None``.
+
         Returns:
-            The preprocessed tensor sample, plus ``noise`` when random input noise is
-            enabled, or ``None`` if the policy has no sample input.
+            The sample with ``noise`` added when random input noise is enabled and
+            the sample has none yet; otherwise the sample unchanged.
         """
-        sample = super()._get_default_export_input_sample()
-        if sample is None or not self.config.use_random_input_noise:
+        if sample is None or not self.config.use_random_input_noise or NOISE in sample:
             return sample
-        batch_size = sample[STATE].shape[0]
-        sample[NOISE] = torch.randn(batch_size, *self._export_noise_shape, device=self.device)
-        return sample
+        batch_size = sample[TOKENIZED_PROMPT].shape[0]
+        return {**sample, NOISE: torch.randn(batch_size, *self._export_noise_shape, device=self.device)}
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        """Return the default traced input sample, with the start noise as an input.
+
+        Returns:
+            The preprocessed tensor sample (see :meth:`_with_export_noise`), or ``None``
+            if the policy has no sample input.
+        """
+        return self._with_export_noise(super()._get_default_export_input_sample())
+
+    def to_onnx(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict,
+    ) -> None:
+        """Export to ONNX, adding the start noise to an explicit ``input_sample`` too."""
+        super().to_onnx(output_path, self._with_export_noise(input_sample), **export_kwargs)
+
+    def to_openvino(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict,
+    ) -> None:
+        """Export to OpenVINO, adding the start noise to an explicit ``input_sample`` too."""
+        super().to_openvino(output_path, self._with_export_noise(input_sample), **export_kwargs)
 
     @property
     def outputs_schema(self) -> list[InferenceFeature] | None:
