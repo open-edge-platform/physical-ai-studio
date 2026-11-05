@@ -338,6 +338,10 @@ class Settings(BaseSettings):
     # User-configurable video encoding for dataset recordings.
     video_recording: VideoRecordingSettings = VideoRecordingSettings()
     rerun: RerunSettings = RerunSettings()
+    # Docker publishes this listener on host loopback; native installs stay loopback-only.
+    rerun_bind_host: Literal["127.0.0.1", "0.0.0.0"] = Field(  # noqa: S104  # nosec B104
+        default="127.0.0.1", alias="RERUN_BIND_HOST"
+    )
 
     # Managed SSH trainers require a loopback-bound backend; see
     # `core.security.ssh_network_exposure`. The UI warns that SSH access has

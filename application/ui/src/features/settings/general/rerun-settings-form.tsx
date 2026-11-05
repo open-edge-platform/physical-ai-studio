@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { Checkbox, Item, NumberField, Picker, Text, TextField } from '@geti-ui/ui';
+import { isEqual } from 'lodash-es';
 
 import { SchemaRerunSettings } from '../../../api/openapi-spec';
 import { SettingsSection } from './settings-section';
@@ -11,12 +12,12 @@ type RerunSettingsFormProps = { rerun: SchemaRerunSettings };
 export const RerunSettingsForm = ({ rerun }: RerunSettingsFormProps) => {
     const patchMutation = useSettingsPatch();
     const [values, setValues] = useState(rerun);
-    const [dirty, setDirty] = useState(false);
+    const [savedValues, setSavedValues] = useState(rerun);
     const [saved, setSaved] = useState(false);
+    const dirty = !isEqual(values, savedValues);
 
     const update = (patch: Partial<SchemaRerunSettings>) => {
         setValues((current) => ({ ...current, ...patch }));
-        setDirty(true);
         setSaved(false);
     };
 
@@ -25,7 +26,7 @@ export const RerunSettingsForm = ({ rerun }: RerunSettingsFormProps) => {
             { body: { rerun: values } },
             {
                 onSuccess: () => {
-                    setDirty(false);
+                    setSavedValues(values);
                     setSaved(true);
                 },
             }

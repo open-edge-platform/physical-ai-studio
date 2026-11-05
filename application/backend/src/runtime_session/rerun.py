@@ -17,13 +17,13 @@ from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, replace
 from importlib.resources import files  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from physicalai.capture.frame import Frame
 from physicalai.runtime import RerunCallback
 from physicalai.runtime.events import InferenceEvent, LifecycleEvent, MetricsEvent, TickEvent
 
-from settings import RerunSettings
+from settings import RerunSettings, get_settings
 from workers.base import ThreadWorker
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from runtime_session.store import Store
     from schemas.runtime_session import ErrorMessage, StateMessage
 
-_SPAWN_LOCK = threading.Lock()
+_SPAWN_LOCK = threading.RLock()
 _BACKGROUND_SERVERS: dict[int, _BackgroundServer] = {}
 
 
@@ -62,18 +62,18 @@ def _stop_server(process: subprocess.Popen[bytes]) -> None:
 
 
 @contextmanager
-def _background_server(port: int) -> Iterator[None]:
-    """Share a loopback-only headless server; stop ours when its last session closes."""
+def _background_server(port: int, *, spawn: bool = True) -> Iterator[None]:
+    """Lease a Studio-owned server, optionally starting one; never own external servers."""
     with _SPAWN_LOCK:
         server = _BACKGROUND_SERVERS.get(port)
-        if server is None and not _listening(port):
+        if server is None and spawn and not _listening(port):
             # Fixed packaged executable and flags; RerunSettings validates the port.
             process = subprocess.Popen(  # noqa: S603  # nosec B603
                 [
                     str(files("rerun_cli").joinpath("rerun.exe" if sys.platform == "win32" else "rerun")),
                     "--serve-grpc",
                     "--bind",
-                    "127.0.0.1",
+                    get_settings().rerun_bind_host,
                     "--port",
                     str(port),
                     "--server-memory-limit",
@@ -109,22 +109,37 @@ def _background_server(port: int) -> Iterator[None]:
 
 
 @dataclass(frozen=True)
+class _Prediction:
+    event: InferenceEvent
+    step: int
+
+
+@dataclass
 class _ModelEvents:
     observer: RerunObserver
     hz: float
     ready_at: float
+    step: int = 0
 
     def emit_inference(self, event: InferenceEvent) -> None:
         # Executors have already consumed the offset; plot only the remaining actions.
         chunk = event.chunk[event.offset :]
+        # Only the intentional grace period adds steps. Slow inference does not
+        # advance the control loop, so elapsed wall time cannot supply its step.
+        delay_steps = max(0, round((self.ready_at - event.timestamp) * self.hz) - 1)
+        timestamp = max(event.timestamp + 1 / self.hz, self.ready_at)
         self.observer._events.append(
-            replace(event, chunk=chunk.copy(), offset=0, timestamp=max(event.timestamp + 1 / self.hz, self.ready_at))
+            _Prediction(
+                replace(event, chunk=chunk.copy(), offset=0, timestamp=timestamp),
+                self.step + delay_steps,
+            )
         )
 
     def emit_metrics(self, event: MetricsEvent) -> None:
         self.observer._events.append(event)
 
     def emit_tick(self, event: TickEvent) -> None:
+        self.step = event.step + 1
         self.observer._events.append(event)
 
 
@@ -142,22 +157,16 @@ class _SessionRerunCallback(RerunCallback):
         self._multiplier = 1
         self._joint_names = metadata["joint_names"]
         self._camera_names = metadata["camera_names"]
-        self._tick_timestamp = time.time()
         self._initialized = True
         self._send_series_styles()
         self._send_default_blueprint()
 
-    def on_tick(self, event: TickEvent) -> None:
-        """Keep the wall/step correspondence for Studio's initial action grace period."""
-        self._tick_timestamp = event.timestamp
-        super().on_tick(event)
-
-    def on_inference(self, event: InferenceEvent) -> None:
+    def on_prediction(self, prediction: _Prediction) -> None:
         """Align predictions with the delayed targets without duplicating their rendering."""
         last_step = self._last_step
-        self._last_step += max(0, round((event.timestamp - self._tick_timestamp) * self._fps) - 1)
+        self._last_step = prediction.step - 1
         try:
-            super().on_inference(event)
+            super().on_inference(prediction.event)
         finally:
             self._last_step = last_step
 
@@ -173,7 +182,7 @@ class RerunObserver(ThreadWorker[None]):
         self._lock = threading.Lock()
         self._store: Store | None = None
         self._next_images = 0.0
-        self._events: deque[InferenceEvent | MetricsEvent | TickEvent | StateMessage | ErrorMessage] = deque(maxlen=64)
+        self._events: deque[_Prediction | MetricsEvent | TickEvent | StateMessage | ErrorMessage] = deque(maxlen=64)
         self._recording: RecordingStream
         self._callback: _SessionRerunCallback
 
@@ -210,10 +219,19 @@ class RerunObserver(ThreadWorker[None]):
         with ExitStack() as stack:
             try:
                 if self.settings.mode == "connect":
+                    address = urlsplit(self.settings.connect_url)
+                    port = address.port
+                    if (
+                        address.scheme == "rerun+http"
+                        and address.hostname in {"127.0.0.1", "localhost"}
+                        and port is not None
+                    ):
+                        stack.enter_context(_background_server(port, spawn=False))
                     self._recording.connect_grpc(self.settings.connect_url)
                 elif self.settings.open_viewer:
                     # The SDK reuses a viewer already listening on this port.
                     with _SPAWN_LOCK:
+                        stack.enter_context(_background_server(self.settings.spawn_port, spawn=False))
                         rr.spawn(port=self.settings.spawn_port, recording=self._recording)
                 else:
                     stack.enter_context(_background_server(self.settings.spawn_port))
@@ -282,7 +300,7 @@ class RerunObserver(ThreadWorker[None]):
                 self._callback.on_tick(replace(event, camera_frames=self._camera_frames()))
             elif isinstance(event, MetricsEvent):
                 self._callback.on_metrics(event)
-            elif isinstance(event, InferenceEvent):
-                self._callback.on_inference(event)
+            elif isinstance(event, _Prediction):
+                self._callback.on_prediction(event)
             else:
                 rr.log("runtime/session", rr.TextLog(event.model_dump_json()))

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import time
+from contextlib import ExitStack
 from dataclasses import replace
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
@@ -18,7 +19,7 @@ from physicalai.runtime.callbacks.system_monitor import SystemStats, SystemStats
 from physicalai.runtime.events import InferenceEvent, MetricsEvent, TickEvent
 
 from runtime_session.controls.model import ModelControl, _Observation
-from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening
+from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening, _Prediction
 from runtime_session.rerun import _background_server as background_server
 from runtime_session.session import RuntimeSession
 from runtime_session.store import STATE, FeatureSpec, ImageSpec, Store
@@ -268,7 +269,9 @@ async def test_prediction_offset_rate_and_grace_period(callback_observer) -> Non
     events.emit_tick(_tick(step=10, timestamp=now))
     events.emit_inference(InferenceEvent("callback", now, latency_s=0.1, offset=1, chunk=chunk))
     chunk[:] = -1  # Executor-owned arrays must not change a queued visualization.
-    np.testing.assert_array_equal(observer._events[-1].chunk, [[3, 4], [5, 6]])
+    prediction = observer._events[-1]
+    assert isinstance(prediction, _Prediction)
+    np.testing.assert_array_equal(prediction.event.chunk, [[3, 4], [5, 6]])
     events.emit_metrics(MetricsEvent("infer", 0, time.time(), {"queue_remaining": 2}))
     with patch("rerun.TimeColumn", wraps=rr.TimeColumn) as column, patch("rerun.log") as log:
         observer._drain_events()
@@ -290,7 +293,7 @@ async def test_model_control_emits_predictions_ticks_and_queue_depth(
     config = ModelControlConfig(hz=100, grace_s=0, execution=ExecutionConfig(mode=mode))
     async with ModelControl(store, _FarModel(), config, observer=observer):  # type: ignore[arg-type]
         async with asyncio.timeout(5):
-            while not any(isinstance(item, InferenceEvent) for item in observer._events):  # noqa: ASYNC110
+            while not any(isinstance(item, _Prediction) for item in observer._events):  # noqa: ASYNC110
                 await asyncio.sleep(0.02)
     ticks = [event for event in observer._events if isinstance(event, TickEvent)]
     assert ticks and ticks[0].step == 0
@@ -301,6 +304,92 @@ async def test_model_control_emits_predictions_ticks_and_queue_depth(
     assert "inference/latency_ms" in _paths(log)
     assert "queue/remaining" in _paths(log)
     assert "robot/actions" in _paths(log)
+
+
+@pytest.mark.parametrize("grace_remaining", [0, 0.5])
+async def test_slow_sync_inference_aligns_predictions_to_the_actual_control_step(
+    callback_observer, store: Store, grace_remaining: float
+) -> None:
+    observer = callback_observer
+    store.write(STATE, [1, 2], timestamp=time.monotonic())
+    control = ModelControl(store, _FarModel(), ModelControlConfig(hz=20), observer=observer)
+    control.on_start()
+    control.step = 7
+    observer._callback.on_tick(_tick(step=6, timestamp=100))
+    assert control._events is not None
+    control._events.ready_at = 105 + grace_remaining
+
+    def slow_update(*_args):
+        # Five seconds have elapsed since the last tick, but only one step runs.
+        control._events.emit_inference(InferenceEvent("callback", 105, 5, 0, np.zeros((2, 2))))
+        return np.array([3.0, 4.0])
+
+    try:
+        with patch.object(control.source, "update", side_effect=slow_update):
+            control.on_tick()
+        with patch("rerun.TimeColumn", wraps=rr.TimeColumn) as column:
+            observer._drain_events()
+        start_step = 7 + max(0, round(grace_remaining * 20) - 1)
+        np.testing.assert_array_equal(column.call_args_list[0].kwargs["sequence"], [start_step, start_step + 1])
+        assert observer._callback._last_step == 7
+    finally:
+        control.on_stop()
+
+
+@pytest.mark.parametrize("mode", ["connect", "native"])
+async def test_connect_and_native_runs_lease_a_studio_owned_server(mode: str) -> None:
+    settings = RerunSettings(mode="connect") if mode == "connect" else RerunSettings(open_viewer=True)
+    process = MagicMock()
+    with (
+        patch("runtime_session.rerun._background_server", background_server),
+        patch("runtime_session.rerun._listening", side_effect=[False, True]),
+        patch("subprocess.Popen", return_value=process) as spawn,
+    ):
+        with ExitStack() as headless:
+            headless.enter_context(background_server(9876))
+            async with RerunObserver("lease", settings=settings):
+                assert _BACKGROUND_SERVERS[9876].users == 2
+                headless.close()
+                assert _BACKGROUND_SERVERS[9876].users == 1
+                process.terminate.assert_not_called()
+        process.terminate.assert_called_once_with()
+        assert 9876 not in _BACKGROUND_SERVERS
+        spawn.assert_called_once()
+
+
+@pytest.mark.parametrize("address", ["127.0.0.1:9876", "localhost:9876", "remote:9876"])
+async def test_connect_mode_never_starts_or_owns_an_external_server(address: str) -> None:
+    with (
+        patch("runtime_session.rerun._background_server", background_server),
+        patch("runtime_session.rerun._listening", return_value=False),
+        patch("subprocess.Popen") as spawn,
+    ):
+        async with RerunObserver("external", settings=RerunSettings(mode="connect", connect_addr=address)):
+            assert 9876 not in _BACKGROUND_SERVERS
+        spawn.assert_not_called()
+
+
+def test_background_server_uses_the_deployment_bind_host(monkeypatch) -> None:
+    monkeypatch.setenv("RERUN_BIND_HOST", "0.0.0.0")
+    with (
+        patch("runtime_session.rerun._listening", side_effect=[False, True]),
+        patch("subprocess.Popen") as spawn,
+        background_server(12345),
+    ):
+        argv = spawn.call_args.args[0]
+        assert argv[argv.index("--bind") + 1] == "0.0.0.0"
+        assert argv[argv.index("--port") + 1] == "12345"
+
+
+def test_compose_publishes_rerun_only_on_host_loopback() -> None:
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).parents[3] / "docker/docker-compose.yaml").read_text())
+    for service in compose["services"].values():
+        assert "127.0.0.1:${RERUN_PORT:-9876}:${RERUN_PORT:-9876}" in service["ports"]
+        assert "RERUN_BIND_HOST=0.0.0.0" in service["environment"]
 
 
 def test_event_buffer_is_bounded() -> None:

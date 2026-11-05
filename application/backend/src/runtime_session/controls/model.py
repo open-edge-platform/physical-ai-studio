@@ -82,6 +82,8 @@ class ModelControl(Control):
         if state is None:
             return  # nothing to infer from until the follower is measured
         observation = _Observation(state.value, state.timestamp)
+        if self._events is not None:
+            self._events.step = self.step
         action = self.source.update(observation, {}, self.step)
         due = max(time.monotonic() + 1 / self.hz, self.started_at + self.grace_s)
         self.store.write(ACTION, action, timestamp=due)
