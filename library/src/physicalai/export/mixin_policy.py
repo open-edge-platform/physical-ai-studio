@@ -576,8 +576,7 @@ class ExportablePolicyMixin:
                 - ``"portable"``: Portable mode — no delegation, uses ExecuTorch portable ops.
                 - ``"xnnpack"``: XNNPACK delegation — optimized CPU kernels for ARM/x86.
                   Works out-of-the-box with ``pip install executorch``.
-                - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for export and a
-                  custom-built ExecuTorch runtime with OpenVINO backend for inference.
+                - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for the export.
             delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
                 supports ``{"device": "CPU"}`` (or other supported target device) and
                 ``{"compress_weights": True}`` to compress weights to INT8 symmetric with
