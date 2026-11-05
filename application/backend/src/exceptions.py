@@ -16,6 +16,7 @@ class ResourceType(StrEnum):
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
     PLUGIN = "Plugin"
+    RUNTIME_SESSION = "Runtime session"
 
 
 class BaseException(Exception):
@@ -260,21 +261,34 @@ class CameraSettingsConflictError(BaseException):
         )
 
 
-class RuntimeSessionBusyError(BaseException):
-    """Raised when a live runtime session already holds the robot being asked for."""
+class DeviceInUseError(BaseException):
+    """Raised when a runtime session holds the robot or camera being asked for."""
 
-    def __init__(self, *, robot_name: str | None = None, pid: int | None = None) -> None:
-        subject = f"Robot {robot_name!r} is" if robot_name else "This robot is"
-        holder = f" (pid {pid})" if pid is not None else ""
-        message = (
-            f"{subject} already in use by a running session{holder}. "
-            "Stop that session, or wait for it to disconnect, then try again."
-        )
+    def __init__(self, *, device: str, holder: str) -> None:
         super().__init__(
-            message=message,
-            error_code="runtime_session_busy",
+            message=f"{device} is in use by {holder}. Close that session, then try again.",
+            error_code="device_in_use",
             http_status=http.HTTPStatus.LOCKED,
         )
+
+
+class RuntimeSessionCommandError(BaseException):
+    """Raised when a runtime session command does not fit the session's state."""
+
+    def __init__(self, message: str, *, error_code: str = "invalid_session_command") -> None:
+        super().__init__(message=message, error_code=error_code, http_status=http.HTTPStatus.CONFLICT)
+
+
+class IncompatiblePartsError(RuntimeSessionCommandError):
+    """Raised when a load would leave loaded parts unable to work, and was not asked to unload them.
+
+    ``data["parts"]`` lists each part (``part``, ``name``, ``reasons``) for the client to confirm unloading.
+    """
+
+    def __init__(self, parts: list[dict[str, object]]) -> None:
+        names = ", ".join(f"{part['part']} {part['name']!r}" for part in parts)
+        super().__init__(f"This would unload {names}, which no longer fits.", error_code="incompatible_parts")
+        self.data = {"parts": parts}
 
 
 class RobotDeviceAlreadyOwnedError(BaseException):
@@ -358,6 +372,35 @@ def _format_camera_keys(keys: list[str]) -> str:
     if not keys:
         return "none"
     return ", ".join(f"`{key}`" for key in keys)
+
+
+class RobotCalibrationRequiredError(BaseException):
+    """Raised when robot calibration needs operator attention before connection."""
+
+    def __init__(self, *, reason: str, calibration_path: str | None = None) -> None:
+        if reason == "missing":
+            message = (
+                "Robot calibration file not found. "
+                "Set Calibration directory to the folder containing this robot's calibration file, "
+                "or calibrate it in a terminal, then reconnect."
+            )
+        elif reason == "invalid":
+            message = (
+                "Robot calibration file is invalid or empty. "
+                "Verify or regenerate calibration in a terminal, then reconnect."
+            )
+        else:
+            message = (
+                "Saved calibration does not match the robot's motor settings. "
+                "Verify or reapply calibration in a terminal, then reconnect."
+            )
+        if calibration_path:
+            message = f"{message} Calibration file: {calibration_path}"
+        super().__init__(
+            message=message,
+            error_code="robot_calibration_required",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
 
 
 class SharedRobotTransportError(BaseException):
@@ -551,6 +594,17 @@ class TrainerContainerLaunchError(BaseException):
             message=f"Could not start the trainer container on remote server '{server_name}'{extra}.",
             error_code="trainer_container_launch_failed",
             http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class AwsFeatureDisabledError(BaseException):
+    """Raised when the AWS integration is disabled."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="The AWS provider is disabled. Set AWS_ENABLED=true to enable it.",
+            error_code="aws_feature_unavailable",
+            http_status=http.HTTPStatus.SERVICE_UNAVAILABLE,
         )
 
 

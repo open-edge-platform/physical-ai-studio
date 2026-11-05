@@ -1,0 +1,36 @@
+# SO-101 fine-tuning recipe from library/train_local_xr0.py (SMOKE_TEST=False).
+# From library/, pass the local dataset path at launch:
+# physicalai fit --config configs/physicalai/xr0/so101/default.yaml --data.init_args.root=/path/to/dataset
+# Device, logging, validation cadence, and checkpoints use Trainer defaults.
+# Studio's training UI submits a job payload; it does not read this YAML.
+model:
+  class_path: physicalai.policies.XR0
+  init_args:
+    pretrained_name_or_path: XiaomiRobotics/Xiaomi-Robotics-0-Pretrain
+    vlm_attn_implementation: sdpa
+    gradient_checkpointing: true
+    dtype: float32 # Keep FP32 weights while using BF16 mixed precision below.
+    chunk_size: 30
+    n_action_steps: 10
+    normalization_mode: MEAN_STD
+    normalize_state: false
+    augment_images: true
+    action_mode: absolute
+    action_stats_max_batches: 3000
+    optimizer_lr: 0.00005
+    optimizer_weight_decay: 0.01
+    scheduler_warmup_steps: 2000
+    scheduler_decay_steps: 30000
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    train_batch_size: 8
+    val_split: 0.05
+    val_split_seed: 42
+    data_format: physicalai
+
+trainer:
+  max_steps: 30000
+  precision: bf16-mixed
+  accumulate_grad_batches: 4

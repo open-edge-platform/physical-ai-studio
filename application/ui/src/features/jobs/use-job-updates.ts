@@ -1,11 +1,14 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import { useEffect } from 'react';
+
 import { useQueryClient } from '@tanstack/react-query';
 import useWebSocket from 'react-use-websocket';
 
-import { fetchClient } from '../../api/client';
+import { $api, fetchClient } from '../../api/client';
 import { SchemaTrainJob } from '../../api/openapi-spec';
+import { issueToasts } from '../../components/notification/issue-toasts';
 import { notify } from '../../components/notification/notification.component';
 import { JOBS_QUERY_KEY, SchemaJob, useJobCache } from './use-job-cache';
 
@@ -28,6 +31,14 @@ const isTrainJob = (job: SchemaJob): job is SchemaTrainJob => job.type === 'trai
 export const useJobUpdates = (project_id?: string) => {
     const client = useQueryClient();
     const { addJob } = useJobCache();
+    const { data: jobs } = $api.useQuery('get', '/api/jobs');
+    useEffect(() => {
+        if (!jobs) return;
+        issueToasts.replaceSource(
+            'jobs',
+            jobs.flatMap((job) => job.issues)
+        );
+    }, [jobs]);
 
     const onMessage = ({ data }: WebSocketEventMap['message']) => {
         const message_data = JSON.parse(data);
@@ -46,7 +57,7 @@ export const useJobUpdates = (project_id?: string) => {
 
         const isCurrentProject = project_id !== undefined && job.project_id === project_id;
 
-        if (isCurrentProject && job.message && job.status === 'running') {
+        if (isCurrentProject && job.message && job.status === 'running' && job.issues.length === 0) {
             notify('info', job.message);
         }
 

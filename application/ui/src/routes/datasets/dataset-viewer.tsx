@@ -19,6 +19,8 @@ import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panel
 
 import { $api } from '../../api/client';
 import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
+import { ThumbnailCameraMenu } from '../../features/datasets/thumbnail-camera/thumbnail-camera-menu';
+import { useThumbnailCamera } from '../../features/datasets/thumbnail-camera/use-thumbnail-camera';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../paths';
 import { pluralize } from '../../utils';
@@ -37,6 +39,12 @@ export const DatasetViewer = () => {
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
     const [activeEpisodeIndex, setActiveEpisodeIndex] = useActiveEpisode();
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+    const {
+        cameras,
+        thumbnailCamera,
+        isLoading: isThumbnailCameraLoading,
+        changeThumbnailCamera,
+    } = useThumbnailCamera(dataset.id!);
 
     const { data: environment } = $api.useSuspenseQuery(
         'get',
@@ -138,19 +146,28 @@ export const DatasetViewer = () => {
                                 </DialogTrigger>
                             </Flex>
                         )}
-                        <ActionButton
-                            isQuiet
-                            aria-label={`Sort by episode number: ${sortOrder} first`}
-                            onPress={() => setSortOrder((order) => (order === 'newest' ? 'oldest' : 'newest'))}
-                        >
-                            <SortUpDown />
-                        </ActionButton>
+                        <Flex alignItems='center'>
+                            <ThumbnailCameraMenu
+                                cameras={cameras}
+                                selectedKey={thumbnailCamera}
+                                onChange={changeThumbnailCamera}
+                            />
+                            <ActionButton
+                                isQuiet
+                                aria-label={`Sort by episode number: ${sortOrder} first`}
+                                onPress={() => setSortOrder((order) => (order === 'newest' ? 'oldest' : 'newest'))}
+                            >
+                                <SortUpDown />
+                            </ActionButton>
+                        </Flex>
                     </Flex>
                     <EpisodeList
                         episodes={episodes}
                         onSelect={setActiveEpisodeIndex}
                         currentEpisode={activeEpisodeIndex}
                         sortOrder={sortOrder}
+                        thumbnailCamera={thumbnailCamera}
+                        isThumbnailCameraLoading={isThumbnailCameraLoading}
                     />
                 </Panel>
             </Group>

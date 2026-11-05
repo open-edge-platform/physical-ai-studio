@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |-
   Creates a Physical AI Studio remote trainer with a GPU EC2 instance and a 100 GiB EBS volume.
-  Charges vary by selected training policy and AWS Region.
+  Deploy in us-east-1 (N. Virginia). Charges vary by selected training policy.
   Delete the entire stack after training to stop charges and remove its resources.
 
 Metadata:
@@ -32,7 +32,7 @@ Parameters:
       - ACT (g4dn.2xlarge)
       - Pi0.5 (g6e.2xlarge)
       - SmolVLA (g4dn.2xlarge)
-      - MolmoAct2 (p5.4xlarge)
+      - MolmoAct2 (g7e.8xlarge)
     Description: |-
       Select the policy you plan to train. Its recommended GPU instance is shown in parentheses.
       Pricing: Review the current On-Demand price in this AWS Region.
@@ -69,8 +69,17 @@ Mappings:
       InstanceType: g6e.2xlarge
     SmolVLA (g4dn.2xlarge):
       InstanceType: g4dn.2xlarge
-    MolmoAct2 (p5.4xlarge):
-      InstanceType: p5.4xlarge
+    MolmoAct2 (g7e.8xlarge):
+      InstanceType: g7e.8xlarge
+
+Rules:
+  SupportedRegion:
+    Assertions:
+      - Assert:
+          Fn::Equals:
+            - Ref: AWS::Region
+            - us-east-1
+        AssertDescription: Deploy this stack in us-east-1 (N. Virginia).
 
 Conditions:
   AllowSshFromAnywhere: !Equals [!Ref StudioIpAddress, 0.0.0.0]

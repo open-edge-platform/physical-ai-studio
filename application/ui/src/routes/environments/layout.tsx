@@ -1,6 +1,4 @@
-import { Suspense } from 'react';
-
-import { ActionButton, Flex, Grid, Heading, Item, Loading, Menu, MenuTrigger, minmax, toast, View } from '@geti-ui/ui';
+import { ActionButton, Flex, Grid, Heading, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useParams } from 'react-router';
@@ -9,6 +7,7 @@ import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
 import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
+import { CollapsibleSidebarLayout } from '../../components/collapsible-sidebar-layout/collapsible-sidebar-layout';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../paths';
 
@@ -101,50 +100,34 @@ export const EnvironmentsList = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <AddResourceButton to={paths.project.environments.new({ project_id })}>
-                Configure new environment
-            </AddResourceButton>
+            {environmentsQuery.data.map((environment) => {
+                const to = paths.project.environments.show({ project_id, environment_id: environment.id });
 
-            <Flex direction='column' gap='size-200'>
-                {environmentsQuery.data.map((environment) => {
-                    const to = paths.project.environments.show({ project_id, environment_id: environment.id });
-
-                    return (
-                        <NavLink key={environment.id} to={to}>
-                            {({ isActive }) => {
-                                return <EnvironmentListItem environment={environment} isActive={isActive} />;
-                            }}
-                        </NavLink>
-                    );
-                })}
-            </Flex>
+                return (
+                    <NavLink key={environment.id} to={to}>
+                        {({ isActive }) => {
+                            return <EnvironmentListItem environment={environment} isActive={isActive} />;
+                        }}
+                    </NavLink>
+                );
+            })}
         </Flex>
     );
 };
 
 export const Layout = () => {
+    const { project_id } = useProjectId();
+
     return (
-        <Grid
-            areas={['environments controls']}
-            columns={['size-6000', minmax(0, '1fr')]}
-            rows={[minmax(0, '1fr')]}
-            height={'100%'}
-            minHeight={0}
+        <CollapsibleSidebarLayout
+            toolbar={
+                <AddResourceButton to={paths.project.environments.new({ project_id })}>
+                    Configure new environment
+                </AddResourceButton>
+            }
+            sidebar={<EnvironmentsList />}
         >
-            <View gridArea='environments' backgroundColor={'gray-100'} padding='size-400'>
-                <EnvironmentsList />
-            </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0} minWidth={0} overflow='auto'>
-                <Suspense
-                    fallback={
-                        <Grid width='100%' height='100%'>
-                            <Loading mode='inline' />
-                        </Grid>
-                    }
-                >
-                    <Outlet />
-                </Suspense>
-            </View>
-        </Grid>
+            <Outlet />
+        </CollapsibleSidebarLayout>
     );
 };

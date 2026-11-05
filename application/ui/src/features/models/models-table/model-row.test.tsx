@@ -21,11 +21,12 @@ import { ModelRow } from './model-row';
  * The stub resolves the stream immediately so the async iterator in
  * `fetchSSE` terminates without hanging the test.
  */
-class ImmediatelyClosingEventSource {
+class ImmediatelyClosingEventSource extends EventTarget {
     onmessage: ((event: { data: string }) => void) | null = null;
     onerror: (() => void) | null = null;
 
     constructor() {
+        super();
         queueMicrotask(() => this.onmessage?.({ data: 'DONE' }));
     }
 
@@ -52,6 +53,7 @@ const model: SchemaModel = {
 };
 
 const trainingJob: SchemaTrainJob = {
+    issues: [],
     id: 'job-1',
     project_id: 'project-1',
     progress: 100,
@@ -270,7 +272,7 @@ describe('ModelRow', () => {
         expect(screen.queryByRole('tab', { name: 'Model formats' })).not.toBeInTheDocument();
     });
 
-    it('shows Logs, Download, Retrain, Delete in the overflow menu, with Logs disabled when train_job_id is absent', async () => {
+    it('shows Logs, Download, Retrain, Rename, Delete in the overflow menu, with Logs disabled when train_job_id is absent', async () => {
         const user = userEvent.setup();
         renderModelRow({ modelOverride: { train_job_id: null } });
 
@@ -279,11 +281,25 @@ describe('ModelRow', () => {
         expect(screen.getByRole('menuitem', { name: 'Logs' })).toBeInTheDocument();
         expect(screen.getByRole('menuitem', { name: 'Download' })).toBeInTheDocument();
         expect(screen.getByRole('menuitem', { name: 'Retrain' })).toBeInTheDocument();
+        expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
         expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
         expect(screen.getByRole('menuitem', { name: 'Logs' }).closest('[aria-disabled]')).toHaveAttribute(
             'aria-disabled',
             'true'
         );
+    });
+
+    it('opens the rename dialog from the overflow menu and closes it on cancel', async () => {
+        const user = userEvent.setup();
+        renderModelRow();
+
+        await user.click(screen.getByRole('button', { name: 'options' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Rename' }));
+
+        expect(await screen.findByRole('dialog', { name: 'Rename model' })).toBeInTheDocument();
+        expect(screen.getByRole('textbox', { name: /Model name/ })).toHaveValue(model.name);
+        await user.click(screen.getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Rename model' })).not.toBeInTheDocument());
     });
 
     it('renders the Run model button', () => {

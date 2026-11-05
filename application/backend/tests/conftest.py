@@ -4,6 +4,8 @@ import os
 import shutil
 import tempfile
 
+os.environ.setdefault("AWS_ENABLED", "true")
+
 # Isolate the test session from the developer's real Studio storage/database.
 #
 # `db/engine.py` builds its SQLAlchemy engines from `settings.get_settings()` at
@@ -137,3 +139,7 @@ def test_dataset():
             "environment_id": "7656679b-25fe-4af5-a19d-73e7df16f384",
         }
     )
+
+
+# Loaded after this module, so after STORAGE_DIR is set above.
+pytest_plugins = ["tests.runtime_session.fixtures"]

@@ -1,11 +1,13 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
 import { TrainingRow } from './job-table';
 
-const baseJob: SchemaTrainJob = {
+const baseJob = getMockedTrainJob({
     id: 'f1b3f8f0-1c1a-4b1a-9c1a-1c1a1c1a1c1a',
     status: 'failed',
     progress: 0,
@@ -13,12 +15,8 @@ const baseJob: SchemaTrainJob = {
     start_time: null,
     end_time: null,
     extra_info: {},
-    payload: {
-        training_target: 'local',
-        model_name: 'Test model',
-        policy: 'act',
-    },
-} as unknown as SchemaTrainJob;
+    payload: getMockedTrainJobPayload({ model_name: 'Test model' }),
+});
 
 const renderRow = (job: SchemaTrainJob) =>
     render(<TrainingRow trainJob={job} onInterrupt={() => undefined} onViewLogs={() => undefined} />, {

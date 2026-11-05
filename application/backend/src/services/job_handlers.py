@@ -10,11 +10,12 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, or_
 
+from core.security import require_aws_feature_active
 from db.schema import JobDB
 from exceptions import InvalidJobStateError
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import ImportStep
-from schemas.job import DatasetImportJob, TrainingTarget, TrainJobPayloadAdapter
+from schemas.job import DatasetImportJob, RemoteTrainJobPayload, TrainingTarget, TrainJobPayloadAdapter
 from services.training_targets import target_key
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 
     from schemas import Job
     from services.job_service import JobService
-    from workers.base import BaseProcessWorker
+    from workers.base import ProcessWorker
 
 
 class JobHandler(ABC):
@@ -57,7 +58,7 @@ class JobHandler(ABC):
     @abstractmethod
     def create_worker(
         self, job_id: UUID, stop_event: EventClass, cancel_event: EventClass | None, queue: mp.Queue
-    ) -> BaseProcessWorker:
+    ) -> ProcessWorker:
         """Construct the worker inside its child process."""
 
     def claim_filters(self) -> list[ColumnElement[bool]]:
@@ -125,7 +126,7 @@ class TrainingJobHandler(JobHandler):
 
     def create_worker(
         self, job_id: UUID, stop_event: EventClass, cancel_event: EventClass | None, queue: mp.Queue
-    ) -> BaseProcessWorker:
+    ) -> ProcessWorker:
         if cancel_event is None:
             raise ValueError("Training jobs require a cancellation event")
         from workers.training_worker import TrainingWorker
@@ -140,6 +141,19 @@ class TrainingJobHandler(JobHandler):
                 func.json_extract(JobDB.payload, "$.remote_job_id").is_(None),
             )
         ]
+
+    async def interrupt(self, job: Job, service: JobService, signal_cancel: Callable[[UUID], None]) -> Job | None:
+        if (
+            isinstance(job.payload, RemoteTrainJobPayload)
+            and job.payload.remote_trainer_url
+            and job.payload.remote_trainer_url.startswith("aws-batch://")
+        ):
+            require_aws_feature_active()
+            await service.update_remote_job_state(job.id, cancel_requested=True)
+            if job.payload.remote_job_id is not None or job.status == JobStatus.RUNNING:
+                signal_cancel(job.id)
+                return None
+        return await super().interrupt(job, service, signal_cancel)
 
     async def recover(self, job: Job, service: JobService) -> Job:
         from services.training_service import TrainingService
@@ -184,7 +198,7 @@ class DatasetImportJobHandler(JobHandler):
         stop_event: EventClass,
         cancel_event: EventClass | None,  # noqa: ARG002
         queue: mp.Queue,
-    ) -> BaseProcessWorker:
+    ) -> ProcessWorker:
         from workers.dataset_import_worker import DatasetImportWorker
 
         return DatasetImportWorker(job_id, stop_event, queue)

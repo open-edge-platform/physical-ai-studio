@@ -26,10 +26,11 @@ class FakeWebSocket extends EventTarget {
     send() {}
 }
 
-class ImmediatelyClosingEventSource {
+class ImmediatelyClosingEventSource extends EventTarget {
     onmessage: ((event: { data: string }) => void) | null = null;
     onerror: (() => void) | null = null;
     constructor() {
+        super();
         queueMicrotask(() => this.onmessage?.({ data: 'DONE' }));
     }
     close() {}
@@ -38,8 +39,6 @@ class ImmediatelyClosingEventSource {
 const mockApi = () => {
     server.use(
         http.get('/api/jobs', () => HttpResponse.json([])),
-        http.get('/api/runtime/sessions/count', () => HttpResponse.json({ count: 0 })),
-        http.get('/api/runtime/sessions', () => HttpResponse.json([])),
         http.get('/api/logs/sources', () =>
             HttpResponse.json([{ id: 'application', name: 'Application', type: 'application', created_at: null }])
         )

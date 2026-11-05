@@ -9,7 +9,7 @@ vision-language-action model (Qwen3-VL-4B backbone + DiT action expert).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from physicalai.config import Config
@@ -27,7 +27,7 @@ class XR0Config(Config):
         vlm_attn_implementation: Attention backend for the VLM. Defaults to
             ``"sdpa"``.
         dtype: Precision for model weights. Options: ``"bfloat16"``,
-            ``"float16"``, ``"float32"``. Defaults to ``"bfloat16"``.
+            ``"float16"``, ``"float32"``. Defaults to ``"float32"``.
         n_obs_steps: Number of observation steps to use. Defaults to 1. Unused:
             XR0 always conditions on the single current observation; kept only
             for config parity with other policies.
@@ -61,6 +61,11 @@ class XR0Config(Config):
             (256, 256).
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to
             256.
+        image_key_view_map: Mapping from dataset image key to canonical XR0 view
+            name (``"ego"``, ``"base"``, ``"wrist_left"`` or ``"wrist_right"``).
+            Keys must match the flattened batch image keys (e.g.
+            ``"images.top_camera"``). The prompt uses canonical view order.
+            Defaults to an empty mapping, keeping the dataset's names and order.
         gradient_checkpointing: Enable gradient checkpointing for memory
             optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
@@ -83,12 +88,21 @@ class XR0Config(Config):
             per-step delta relative to the current state (``action[t] - state``),
             matching the pretrained XR0 flow head's delta prior; the inverse
             (``delta + state``) is applied at inference. Delta mode requires
-            per-timestep delta stats supplied via ``action_delta_mean`` /
-            ``action_delta_std``.
+            per-timestep delta stats supplied via ``action_mean`` /
+            ``action_std``.
         normalization_mode: Normalization method for state/action features.
             ``"QUANTILES"`` maps data to [-1, 1] using the 1st and 99th
             percentiles; ``"MEAN_STD"`` uses zero-mean unit-variance
             normalization. Defaults to ``"QUANTILES"``.
+        optimizer_type: Which AdamW implementation to use. ``"adamw8bit"``
+            (default) and ``"adamw4bit"`` are torchao's low-bit variants, which
+            keep the Adam moments quantized and cut optimizer memory roughly 2x
+            and 4x respectively versus fp32 moments. Both also apply stochastic
+            rounding to the parameter update when ``dtype="bfloat16"``, without
+            which updates smaller than half a bf16 ULP round away and large
+            parameters never move. ``"adamw"`` selects :class:`torch.optim.AdamW`.
+            The low-bit variants require the ``torchao`` dependency; without it
+            training falls back to ``"adamw"`` with a warning.
         optimizer_lr: Learning rate for the optimizer. Defaults to 1e-4.
         optimizer_betas: Beta coefficients for Adam optimizer. Defaults to
             (0.9, 0.95).
@@ -113,7 +127,7 @@ class XR0Config(Config):
 
     vlm_model_id: str = "Qwen/Qwen3-VL-4B-Instruct"
     vlm_attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "sdpa"
-    dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16"
+    dtype: Literal["bfloat16", "float16", "float32"] = "float32"
 
     n_obs_steps: int = 1
     chunk_size: int = 30
@@ -138,6 +152,7 @@ class XR0Config(Config):
 
     image_resolution: tuple[int, int] = (256, 256)
     tokenizer_max_length: int = 256
+    image_key_view_map: dict[str, str] = field(default_factory=dict)
 
     gradient_checkpointing: bool = True
     compile_model: bool = False
@@ -151,6 +166,7 @@ class XR0Config(Config):
 
     normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
 
+    optimizer_type: Literal["adamw", "adamw4bit", "adamw8bit"] = "adamw8bit"
     optimizer_lr: float = 1.0e-4
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
     optimizer_eps: float = 1e-8
@@ -176,6 +192,10 @@ class XR0Config(Config):
 
         if self.dtype not in {"bfloat16", "float16", "float32"}:
             msg = f"Invalid dtype: {self.dtype}"
+            raise ValueError(msg)
+
+        if self.optimizer_type not in {"adamw", "adamw4bit", "adamw8bit"}:
+            msg = f"Invalid optimizer_type: {self.optimizer_type}"
             raise ValueError(msg)
 
         if self.dit_hidden_size % self.dit_head_dim != 0:

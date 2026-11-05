@@ -16,6 +16,7 @@ export const getMockedTrainJob = (overrides: Partial<SchemaTrainJob> = {}): Sche
         end_time: null,
         created_at: '2026-07-14T09:00:00Z',
         extra_info: {},
+        issues: [],
         ...overrides,
         payload: getMockedTrainJobPayload(overrides.payload as never),
     }) as SchemaTrainJob;

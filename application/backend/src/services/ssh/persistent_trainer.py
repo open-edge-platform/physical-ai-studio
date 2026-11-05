@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Final
 from core.backend_instance import get_backend_instance_id
 from exceptions import TrainerContainerLaunchError
 from schemas.hardware import DeviceType
-from schemas.remote_trainer import RemoteTrainer
+from schemas.remote_trainer import RemoteTrainer, SshConnection
 from services.ssh import docker_ops
 from services.ssh.connection import AliasTarget, DirectTarget
 from services.ssh.docker_ops import verify_image_signature
@@ -48,6 +48,34 @@ _launch_failure: dict[UUID, str] = {}
 # multi-gigabyte first pull; past this, "unreachable" is reported as what it
 # actually is - something a user should look into, not silently wait out.
 _STARTUP_GRACE_PERIOD: Final = timedelta(minutes=15)
+
+_PROXY_VARIABLES: Final = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+)
+
+
+async def _proxy_environment_args(transport: SshTransport) -> list[str]:
+    """Forward remote proxy variables by name without retrieving their values."""
+    result = await transport.run_command(
+        [
+            "sh",
+            "-c",
+            'for name do if printenv "$name" >/dev/null; then printf "%s\\n" "$name"; fi; done',
+            "_",
+            *_PROXY_VARIABLES,
+        ]
+    )
+    if not result.ok:
+        raise ValueError("Could not check the SSH host proxy environment")
+    present = set(result.stdout.splitlines())
+    return [f"--env={name}" for name in _PROXY_VARIABLES if name in present]
 
 
 def get_launch_phase(remote_trainer_id: UUID) -> str | None:
@@ -95,9 +123,12 @@ def _container_name(trainer_id: object) -> str:
 
 
 def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
-    if remote_trainer.ssh_host_alias:
-        return AliasTarget(remote_trainer.ssh_host_alias)
-    connection = remote_trainer.ssh_connection
+    ssh = remote_trainer.connection
+    if not isinstance(ssh, SshConnection):
+        raise ValueError("Trainer is not an SSH trainer")
+    if ssh.ssh_host_alias:
+        return AliasTarget(ssh.ssh_host_alias)
+    connection = ssh.ssh_connection
     if connection is None:
         raise ValueError("SSH trainer has no configured host")
     return DirectTarget(connection.hostname, connection.port, connection.user, connection.identity_file)
@@ -105,13 +136,11 @@ def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
 
 async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:  # noqa: PLR0915
     """Ensure an SSH trainer has a running container."""
-    if remote_trainer.connection_mode.value != "ssh":
+    if not isinstance(remote_trainer.connection, SshConnection):
         return
     settings = get_settings()
     target = _ssh_target(remote_trainer)
-    remote_port = remote_trainer.ssh_remote_port
-    if remote_port is None:
-        raise ValueError("SSH trainer has no configured remote port")
+    remote_port = remote_trainer.connection.ssh_remote_port
     name = _container_name(remote_trainer.id)
     _launch_started_at[remote_trainer.id] = datetime.now(UTC)
     _launch_failure.pop(remote_trainer.id, None)
@@ -167,6 +196,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
                 render_gid=(None if device is DeviceType.CUDA else await resolve_render_group_gid(transport)),
                 shm_size_gb=settings.ssh_trainer_shm_size_gb,
             )
+            argv[2:2] = await _proxy_environment_args(transport)
             # The tunnel needs a stable loopback port for the reusable trainer container.
             argv[argv.index("127.0.0.1::8001")] = f"127.0.0.1:{remote_port}:8001"
             _launch_phase[remote_trainer.id] = "Starting trainer container"
@@ -197,7 +227,7 @@ def clear_launch_state(remote_trainer_id: UUID) -> None:
 
 async def stop(remote_trainer: RemoteTrainer, *, remove_volume: bool = True) -> None:
     """Remove the container, retaining its volume when reconfiguring a trainer."""
-    if remote_trainer.connection_mode.value != "ssh":
+    if not isinstance(remote_trainer.connection, SshConnection):
         return
     settings = get_settings()
     async with SshTransport(_ssh_target(remote_trainer), settings) as transport:

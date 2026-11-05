@@ -56,7 +56,7 @@ remote reattachment can legitimately leave a job pending.
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13
 - [uv](https://github.com/astral-sh/uv) package manager
 
 ### Install Dependencies

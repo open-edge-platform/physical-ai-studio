@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pydantic import SecretStr
 
-from services.training_backends._log_format import render_progress_log
 from settings import get_settings
+from training.log_format import render_progress_log
 
 if TYPE_CHECKING:
     from physicalai.train.callbacks import ReportFn

@@ -5,6 +5,7 @@ import { AlertDialog, Checkbox, Flex, Text } from '@geti-ui/ui';
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
 import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
+import { issueToasts } from '../../../components/notification/issue-toasts';
 
 import classes from './remote-trainer-form/remote-trainer-form.module.css';
 
@@ -35,29 +36,29 @@ export const DeleteRemoteTrainerDialog = ({ remoteTrainer, onDeleted, onCancel }
                 },
             },
             {
-                onSuccess: onDeleted,
+                onSuccess: () => {
+                    issueToasts.removeSource(`trainer:${remoteTrainer.id}`);
+                    onDeleted();
+                },
             }
         );
     };
 
     return (
         <AlertDialog
-            title='Delete remote trainer'
+            title='Remove training target'
             variant='warning'
-            primaryActionLabel={forgetLocally ? 'Force delete' : 'Delete'}
-            cancelLabel='Close'
+            primaryActionLabel={forgetLocally ? 'Force remove' : 'Remove'}
+            cancelLabel='Cancel'
             onCancel={onCancel}
             onPrimaryAction={remove}
             isPrimaryActionDisabled={deleteMutation.isPending}
         >
             <Flex direction='column' gap='size-150'>
-                <Text>
-                    Delete {remoteTrainer.name}? Submitted remote jobs retain their pinned endpoint URL and are not
-                    changed.
-                </Text>
+                <Text>Remove {remoteTrainer.name}?</Text>
                 {deleteMutation.isPending && (
                     <Text>
-                        Deleting trainer…{' '}
+                        Removing training target…{' '}
                         {remoteTrainer.connection_mode === 'ssh' &&
                             !forgetLocally &&
                             'SSH cleanup may take a while if the host is unreachable.'}
@@ -70,7 +71,7 @@ export const DeleteRemoteTrainerDialog = ({ remoteTrainer, onDeleted, onCancel }
                         onChange={setForgetLocally}
                         isDisabled={deleteMutation.isPending}
                     >
-                        Force delete locally without cleaning up the remote container and volume. Stop pending or
+                        Force remove locally without cleaning up the remote container and volume. Stop pending or
                         running jobs first.
                     </Checkbox>
                 )}

@@ -2,6 +2,11 @@
     color: var(--spectrum-global-color-static-red-600);
 }
 
+.helperText {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-700);
+}
+
 .modeFields {
     display: flex;
     flex-direction: column;

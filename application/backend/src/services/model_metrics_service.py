@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import json
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -35,6 +36,7 @@ class ModelMetricsService:
             async with await anyio.open_file(path, encoding="utf-8") as f:
                 header_line = await f.readline()
                 headers = next(csv.reader([header_line]))
+                yield ServerSentEvent(event="issues", data="[]")
                 headers = [header.replace("/", "_") for header in headers]
 
                 while True:
@@ -73,8 +75,70 @@ class ModelMetricsService:
             logger.debug("Remote metrics stream closed for {}", remote_job_id)
 
     @staticmethod
+    async def tail_batch_csv_file(trainer_url: str, job_id: str) -> AsyncGenerator[ServerSentEvent]:
+        """Stream successive metric snapshots published by a Batch trainer to S3."""
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        from services.aws_auth_service import authentication_issue, operational_authentication_issue
+        from services.aws_batch import _make_session, aws_batch_connection_from_url
+
+        connection = aws_batch_connection_from_url(trainer_url)
+        client, session_created, rows_sent, needs_issue_snapshot = None, 0.0, 0, True
+        try:
+            while True:
+                try:
+                    if client is None or time.monotonic() - session_created > 600:
+                        session = await asyncio.to_thread(_make_session, connection)
+                        client = session.client("s3")
+                        session_created = time.monotonic()
+                    response = await asyncio.to_thread(
+                        client.get_object, Bucket=connection.bucket, Key=f"jobs/{job_id}/metrics.csv"
+                    )
+                    body = response["Body"]
+                    try:
+                        contents = (await asyncio.to_thread(body.read)).decode("utf-8")
+                    finally:
+                        body.close()
+                except (BotoCoreError, ClientError) as error:
+                    if issue := authentication_issue(error, connection.profile_name):
+                        client = None
+                        needs_issue_snapshot = True
+                        yield ServerSentEvent(
+                            event="issues", data=json.dumps([operational_authentication_issue(issue).model_dump()])
+                        )
+                        await asyncio.sleep(5)
+                        continue
+                    if not isinstance(error, ClientError) or error.response["Error"]["Code"] not in {
+                        "NoSuchKey",
+                        "404",
+                    }:
+                        raise
+                    contents = ""
+                lines = contents.splitlines(keepends=True)
+                if lines and not lines[-1].endswith("\n"):
+                    lines.pop()
+                rows = list(csv.DictReader(lines))
+                if needs_issue_snapshot:
+                    yield ServerSentEvent(event="issues", data="[]")
+                    needs_issue_snapshot = False
+                for row in rows[rows_sent:]:
+                    data = {
+                        key.replace("/", "_"): ModelMetricsService._parse_value(value) for key, value in row.items()
+                    }
+                    yield ServerSentEvent(data=json.dumps(data))
+                rows_sent = max(rows_sent, len(rows))
+                await asyncio.sleep(5)
+        except (BotoCoreError, ClientError) as error:
+            logger.warning("Batch metrics stream failed for {}: {}", job_id, error)
+        except asyncio.CancelledError:
+            logger.debug("Batch metrics stream cancelled for {}", job_id)
+        except GeneratorExit:
+            logger.debug("Batch metrics stream closed for {}", job_id)
+
+    @staticmethod
     async def empty_metrics_stream() -> AsyncGenerator[ServerSentEvent]:
         """Yield a terminal SSE event for sources with no log file yet."""
+        yield ServerSentEvent(event="issues", data="[]")
         yield ServerSentEvent(data="DONE")
 
     @staticmethod

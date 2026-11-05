@@ -114,3 +114,8 @@ def policy_catalog(classes: dict[str, tuple[type, list[str]]]) -> PolicyCatalog:
         available=[_STUDIO_POLICIES[name] for name in classes],
         backends={name: backends for name, (_, backends) in classes.items()},
     )
+
+
+def declared_policy_catalog(backends: dict[str, list[str]]) -> PolicyCatalog:
+    """Describe an image's declared capabilities without importing local policies."""
+    return PolicyCatalog(available=[_STUDIO_POLICIES[name] for name in backends], backends=backends)

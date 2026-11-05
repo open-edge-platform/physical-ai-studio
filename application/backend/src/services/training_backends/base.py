@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from schemas import Job, Model, Snapshot
+    from schemas.aws_auth import AwsAuthenticationIssue
     from schemas.job import TrainJobPayload
 
 
@@ -82,6 +83,7 @@ class TrainingContext:
     on_remote_job_id: Callable[[UUID], Awaitable[None]] | None = None
     should_suspend: Callable[[], bool] = field(default=lambda: False)
     should_cancel_job: Callable[[], bool] = field(default=lambda: False)
+    on_authentication_issue: Callable[[AwsAuthenticationIssue | None], Awaitable[None]] | None = None
 
 
 @runtime_checkable

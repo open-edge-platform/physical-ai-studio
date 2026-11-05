@@ -17,6 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../../api/client';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
+import { showIssueError } from '../../../components/notification/issue-toasts';
 import { notify } from '../../../components/notification/notification.component';
 import { Table } from '../../../components/table/table';
 import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
@@ -31,7 +32,13 @@ import { JobRowContent } from './job-row-content';
 
 import classes from './job-table.module.css';
 
-const TrainerCell = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
+const TrainerCell = ({ job }: { job: SchemaTrainJob }) => {
+    const { payload } = job;
+    const batch = job.extra_info?.aws_batch;
+    const image =
+        typeof batch === 'object' && batch !== null && 'image' in batch && typeof batch.image === 'string'
+            ? batch.image
+            : undefined;
     const remoteId = payload.training_target === 'remote' ? payload.remote_trainer_id : null;
     const { health } = useRemoteTrainerHealth(remoteId);
     const { data: remoteTrainers = [] } = $api.useQuery(
@@ -59,20 +66,40 @@ const TrainerCell = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
         <Flex direction='column' data-testid='trainer-cell'>
             <Text>{remoteId && trainer !== 'Remote' ? `Remote · ${trainer}` : trainer || '-'}</Text>
             {showDevice && <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>}
+            {image && <Text UNSAFE_className={classes.rowInfo}>Trainer image: {image}</Text>}
         </Flex>
     );
 };
 
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
+    const issue = job.issues[0];
     const disconnected =
         job.payload.training_target === 'remote' && job.message === 'Trainer unreachable; waiting to reconnect';
+    const isBatch =
+        job.payload.training_target === 'remote' && job.payload.remote_trainer_url?.startsWith('aws-batch://');
+    const batchLabels: Record<string, string> = {
+        SUBMITTED: 'Submitted',
+        PENDING: 'Pending',
+        RUNNABLE: 'Waiting for compute',
+        STARTING: 'Starting',
+        RUNNING: 'Training',
+        SUCCEEDED: 'Finishing',
+        FAILED: 'Failed',
+    };
+    const batchState = job.message?.match(/^AWS Batch ([A-Z]+):/)?.[1];
     if (job.status === 'running') {
         return (
             <Flex direction={'column'} gap={'size-50'}>
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
-                    {disconnected ? (
+                    {issue ? (
+                        <SingleBadge color='var(--spectrum-global-color-orange-600)' text={issue.title} />
+                    ) : disconnected ? (
                         <SingleBadge color='var(--spectrum-global-color-orange-600)' text='Connection lost' />
+                    ) : isBatch && batchState ? (
+                        <span title={job.message}>
+                            <SplitBadge first='AWS Batch' second={batchLabels[batchState] ?? 'Running'} />
+                        </span>
                     ) : (
                         <SplitBadge first={job.status} second={job.message} />
                     )}
@@ -136,6 +163,9 @@ const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLog
         if (action === 'logs') {
             onViewLogs();
         }
+        if (action === 'issues') {
+            trainJob.issues.forEach(showIssueError);
+        }
         if (action === 'delete') {
             deleteJobMutation.mutate({
                 params: { path: { job_id: trainJob.id! } },
@@ -153,6 +183,7 @@ const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLog
             </ActionButton>
             <Menu onAction={onAction} disabledKeys={disabledKeys}>
                 <Item key='logs'>Logs</Item>
+                {trainJob.issues.length > 0 ? <Item key='issues'>Issue details</Item> : null}
                 <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>
@@ -182,7 +213,7 @@ export const TrainingRow = ({
                 <Text>{trainJob.payload.policy.toUpperCase()}</Text>
                 <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
                 <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
-                <TrainerCell payload={trainJob.payload} />
+                <TrainerCell job={trainJob} />
                 <div />
                 <View>
                     <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
@@ -213,7 +244,7 @@ export const TrainingRow = ({
             <Text>{trainJob.payload.policy.toUpperCase()}</Text>
             <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
             <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
-            <TrainerCell payload={trainJob.payload} />
+            <TrainerCell job={trainJob} />
             <div onClick={(e) => e.stopPropagation()}>
                 {(trainJob.status === 'running' || trainJob.status === 'pending') && (
                     <DialogTrigger>

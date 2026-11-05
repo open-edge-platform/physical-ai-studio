@@ -133,10 +133,10 @@ def worker(stop_event, cancel_event, event_queue):
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
-    # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
-    # private stop event; _should_interrupt() also reads the per-job event.
+    # Mirror ProcessWorker/TrainingWorker wiring: should_stop() reads the
+    # private and the scheduler's stop events; _should_interrupt() also reads the per-job event.
     w._stop_event = stop_event
-    w._interrupt_event = mp.Event()
+    w.shutdown_event = mp.Event()
     w.cancel_event = cancel_event
     w.queue = event_queue
     return w
@@ -420,11 +420,15 @@ class TestTraining:
             assert statuses == [JobStatus.PENDING]
 
     @pytest.mark.anyio
-    async def test_context_wires_reattach_fields_from_payload(self, worker, tmp_path):
+    @pytest.mark.parametrize(("cancel_requested", "signal_cancel"), [(False, False), (True, False), (False, True)])
+    async def test_context_wires_reattach_fields_from_payload(self, worker, tmp_path, cancel_requested, signal_cancel):
         """The context carries the persisted remote_job_id and a suspend predicate."""
-        payload = _make_payload(compile_model=False)
+        payload = _make_remote_payload()
+        payload.cancel_requested = cancel_requested
         remote_job_id = uuid4()
         payload.remote_job_id = remote_job_id
+        if signal_cancel:
+            worker.cancel_event.set()
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
@@ -436,6 +440,7 @@ class TestTraining:
             # Evaluate the shutdown predicate while training is active, before the
             # finally-block sets the interrupt event to stop the dispatcher.
             captured["suspend_during_train"] = context.should_suspend()
+            captured["cancel_during_train"] = context.should_cancel_job()
 
         backend = MagicMock()
         backend.train = AsyncMock(side_effect=_capture)
@@ -464,7 +469,9 @@ class TestTraining:
         # is distinct from a per-job cancel (interrupt_event). No stop was requested
         # during training, so it is False.
         assert captured["suspend_during_train"] is False
+        assert captured["cancel_during_train"] is (cancel_requested or signal_cancel)
         assert context.on_remote_job_id is not None
+        assert context.on_authentication_issue is not None
 
     @pytest.mark.anyio
     async def test_persist_remote_job_id_updates_payload(self, worker, tmp_path):
@@ -576,7 +583,7 @@ class TestAssignedJob:
 
     @pytest.mark.anyio
     async def test_shutdown_before_start_does_not_run_job(self, worker) -> None:
-        worker._interrupt_event.set()
+        worker.shutdown_event.set()
         with patch.object(worker, "_run_training_job", AsyncMock()) as run_job:
             await worker.run_loop()
         run_job.assert_not_awaited()

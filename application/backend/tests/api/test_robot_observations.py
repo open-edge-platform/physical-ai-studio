@@ -1,59 +1,25 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from physicalai.robot import RobotDeviceAlreadyOwned
 
-from api.dependencies import get_robot_client_factory, get_robot_service
+from api.dependencies import get_robot_client_factory, get_robot_service, get_runtime_session_registry
 from main import app
-from runtime.features import feature_names
+from robots.features import feature_names
+from tests.workers.fake_robot import FakeRobot, sent_actions
+from workers.robot_worker import RobotRecipe, claim_robot
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
 PROJECT_ID = uuid4()
 ROBOT_ID = uuid4()
 JOINT_NAMES = ["shoulder_pan", "shoulder_lift"]
-
-
-@dataclass
-class FakeObservation:
-    joint_positions: np.ndarray
-    timestamp: float = 1.0
-    sensor_data: dict | None = None
-    images: dict | None = None
-
-
-@dataclass
-class FakeSharedRobot:
-    joint_names: list[str]
-    observation: FakeObservation
-    connect_error: Exception | None = None
-    connect_calls: int = 0
-    disconnect_calls: int = 0
-    _connected: bool = field(default=False, init=False)
-
-    def connect(self) -> None:
-        self.connect_calls += 1
-        if self.connect_error is not None:
-            raise self.connect_error
-        self._connected = True
-
-    def disconnect(self) -> None:
-        self.disconnect_calls += 1
-        self._connected = False
-
-    def get_observation(self) -> FakeObservation:
-        return self.observation
-
-    def is_connected(self) -> bool:
-        return self._connected
 
 
 class _StubRobot:
@@ -80,21 +46,19 @@ def _url(*, fps: int | None = 30) -> str:
 
 
 @pytest.fixture
-def shared_robot() -> FakeSharedRobot:
-    return FakeSharedRobot(
-        joint_names=list(JOINT_NAMES),
-        observation=FakeObservation(joint_positions=np.array([12.3, 0.0])),
-    )
+def driver(tmp_path: Path) -> FakeRobot:
+    return FakeRobot(str(tmp_path / "actions.jsonl"), JOINT_NAMES, [12.3, 0.0])
 
 
 @pytest.fixture
-def factory(mock_robot_client_factory, shared_robot: FakeSharedRobot):
-    mock_robot_client_factory.build_shared_robot = AsyncMock(return_value=(shared_robot, object()))
+def factory(mock_robot_client_factory, driver: FakeRobot):
+    mock_robot_client_factory.build_robot_driver = AsyncMock(return_value=(driver, object()))
     return mock_robot_client_factory
 
 
 @pytest.fixture
-def client(factory) -> Iterator[TestClient]:
+def client(factory, registry) -> Iterator[TestClient]:
+    app.dependency_overrides[get_runtime_session_registry] = lambda: registry
     app.dependency_overrides[get_robot_service] = lambda: _StubRobotService(_StubRobot())
     app.dependency_overrides[get_robot_client_factory] = lambda: factory
     try:
@@ -109,7 +73,7 @@ def test_http_get_is_a_websocket_upgrade_stub(client: TestClient) -> None:
     assert response.status_code == 426
 
 
-def test_stream_emits_named_joint_features(client: TestClient, factory, shared_robot: FakeSharedRobot) -> None:
+def test_stream_emits_named_joint_features(client: TestClient, factory, driver: FakeRobot, tmp_path: Path) -> None:
     messages: list[dict] = []
 
     with client.websocket_connect(_url()) as websocket:
@@ -123,46 +87,34 @@ def test_stream_emits_named_joint_features(client: TestClient, factory, shared_r
     assert events["observation"]["event"] == "observation"
     assert list(events["observation"]["data"]) == expected_keys
     assert events["observation"]["data"] == {"shoulder_pan.pos": 12.3, "shoulder_lift.pos": 0.0}
-    factory.build_shared_robot.assert_called_once()
-    assert shared_robot.connect_calls == 1
+    # Observe-only: nothing was ever sent to the robot.
+    assert sent_actions(tmp_path / "actions.jsonl") == []
 
 
-def test_stream_reports_connect_failure_as_an_error_frame(client: TestClient, shared_robot: FakeSharedRobot) -> None:
-    shared_robot.connect_error = RobotDeviceAlreadyOwned(
-        "ignored",
-        phase="device_lock_contention",
-        device_ids=("serial:ttyACM0",),
-    )
+def test_stream_reports_connect_failure_as_an_error_frame(client: TestClient, driver: FakeRobot, factory) -> None:
+    failing = FakeRobot(driver.log, JOINT_NAMES, [0.0, 0.0], fail_connect=True)
+    factory.build_robot_driver = AsyncMock(return_value=(failing, object()))
 
     with client.websocket_connect(_url()) as websocket:
         payload = websocket.receive_json()
 
     assert payload["event"] == "error"
+    assert payload["error_code"] == "robot_connection_failed"
+    assert "Failed to open serial port" in payload["message"]
+
+
+def test_stream_refuses_a_robot_that_is_already_held(client: TestClient, driver: FakeRobot) -> None:
+    with claim_robot(RobotRecipe.from_driver(uuid4(), driver)), client.websocket_connect(_url()) as websocket:
+        payload = websocket.receive_json()
+
+    assert payload["event"] == "error"
     assert payload["error_code"] == "robot_device_already_owned"
-    assert "serial:ttyACM0" in payload["message"]
-    assert shared_robot.disconnect_calls == 1
+    assert f"fake:{driver.log}" in payload["message"]
 
 
-def test_stream_disconnects_the_shared_robot_on_close(client: TestClient, shared_robot: FakeSharedRobot) -> None:
+def test_stream_releases_the_robot_on_close(client: TestClient, driver: FakeRobot) -> None:
     with client.websocket_connect(_url()) as websocket:
         websocket.receive_json()
 
-    assert shared_robot.disconnect_calls == 1
-
-
-def test_stream_does_not_create_a_runtime_session(client: TestClient) -> None:
-    # Patch both the definition and the name bound in the owner: an in-process
-    # import of RuntimeProcessHost would otherwise miss the source-module patch.
-    with (
-        patch("runtime.transport.lock.SessionNameLock") as lock_cls,
-        patch("runtime.hosts.process_host.RuntimeProcessHost") as host_src,
-        patch("runtime.owner.RuntimeProcessHost") as host_bound,
-        patch("runtime.owner.RuntimeSessionOwner") as owner_cls,
-        client.websocket_connect(_url()) as websocket,
-    ):
-        websocket.receive_json()
-
-    lock_cls.assert_not_called()
-    host_src.assert_not_called()
-    host_bound.assert_not_called()
-    owner_cls.assert_not_called()
+    with claim_robot(RobotRecipe.from_driver(ROBOT_ID, driver)):
+        pass

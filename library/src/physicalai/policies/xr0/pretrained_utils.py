@@ -22,10 +22,13 @@ import logging
 # Only referenced for pickle.UnpicklingError in an except clause; never used to deserialize.
 import pickle  # noqa: S403  # nosec B403
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from safetensors.torch import load_file
+
+from physicalai.data.constants import ACTION, STATE
+from physicalai.devices.utils import get_device
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -349,32 +352,35 @@ def _load_json_artifact(pretrained_name_or_path: str | Path, filename: str, **kw
 def extract_xr0_dataset_stats(
     pretrained_name_or_path: str | Path,
     robot_type: str | None = None,
+    chunk_size: int | None = None,
     **kwargs: object,
 ) -> dict[str, dict[str, object]] | None:
     """Extract action-normalization stats from a pretrained XR0 checkpoint.
 
-    The source publishes per-robot action ``mean`` / ``std`` in the processor's
-    ``preprocessor_config.json`` under ``action_config``. The stats are stored
-    per action-timestep but are time-invariant, so they reduce to a single
-    per-dimension vector. Only the leading dimensions with ``std > 1e-5`` are
-    active (mirroring the source ``get_action_mask``); trailing padding
-    dimensions are dropped so the postprocessor emits the true action size
-    (e.g. 7 for LIBERO).
+    Load per-timestep action mean/std from ``preprocessor_config.json``.
+    Trim dimensions after the last with ``std > 1e-5``. If the requested
+    ``chunk_size`` differs, repeat rows only when the stats are time-invariant.
 
     Args:
         pretrained_name_or_path: Local checkpoint dir/file or HuggingFace repo id.
         robot_type: Which ``action_config`` entry to use. Defaults to the sole
             entry (or the first, when several are present).
+        chunk_size: Expected number of action timesteps. ``None`` keeps the
+            published length.
         **kwargs: Optional ``huggingface_hub`` download options.
 
     Returns:
-        A ``dataset_stats`` dict ``{"action": {...}}`` consumable by
+        A ``dataset_stats`` dict ``{"action": {...}}`` whose ``mean`` / ``std``
+        are per-timestep ``(T, real_dim)`` arrays (``shape`` stays the action
+        width ``(real_dim,)``), consumable by
         :func:`~physicalai.policies.xr0.preprocessor.make_xr0_preprocessors`,
         or ``None`` if no ``action_config`` is available.
 
     Raises:
         KeyError: If ``robot_type`` is not present in the checkpoint's
             ``action_config``.
+        ValueError: If the published stats vary over time but their length does
+            not match ``chunk_size``.
     """
     import numpy as np  # noqa: PLC0415
 
@@ -392,24 +398,165 @@ def extract_xr0_dataset_stats(
         raise KeyError(msg)
 
     entry = action_config[robot_type]
-    mean = np.asarray(entry["mean"], dtype=np.float64)
-    std = np.asarray(entry["std"], dtype=np.float64)
+    mean = np.atleast_2d(np.asarray(entry["mean"], dtype=np.float64))
+    std = np.atleast_2d(np.asarray(entry["std"], dtype=np.float64))
 
-    # Collapse the (time-invariant) per-timestep dimension to a per-dim vector.
-    if mean.ndim > 1:
-        mean = mean.reshape(-1, mean.shape[-1])[0]
-        std = std.reshape(-1, std.shape[-1])[0]
+    if chunk_size is not None and mean.shape[0] != chunk_size:
+        time_invariant = bool((mean == mean[0]).all() and (std == std[0]).all())
+        if not time_invariant:
+            msg = (
+                f"checkpoint publishes {mean.shape[0]} timesteps of action stats that vary over time, "
+                f"but the policy predicts {chunk_size} timesteps"
+            )
+            raise ValueError(msg)
+        mean = np.repeat(mean[:1], chunk_size, axis=0)
+        std = np.repeat(std[:1], chunk_size, axis=0)
 
-    active = np.nonzero(std > _ACTION_ACTIVE_STD)[0]
+    active = np.nonzero(std.max(axis=0) > _ACTION_ACTIVE_STD)[0]
     real_dim = int(active[-1]) + 1 if active.size else int(mean.shape[-1])
-    mean = mean[:real_dim]
-    std = std[:real_dim]
+    mean = mean[:, :real_dim]
+    std = std[:, :real_dim]
 
     return {
         ACTION: {
             "name": ACTION,
+            # ``shape`` describes the action feature itself (its width); the
+            # mean/std arrays carry the extra per-timestep axis.
             "shape": (real_dim,),
             "mean": mean.tolist(),
             "std": std.tolist(),
         },
     }
+
+
+def _feature_tensor(value: Any) -> torch.Tensor:  # noqa: ANN401
+    """Coerce an observation field (tensor or single-entry dict) to a tensor.
+
+    Returns:
+        The tensor held by ``value``.
+
+    Raises:
+        TypeError: If no tensor can be recovered from ``value``.
+    """
+    if isinstance(value, torch.Tensor):
+        return value
+    if isinstance(value, dict):
+        for sub in value.values():
+            if isinstance(sub, torch.Tensor):
+                return sub
+    msg = f"expected a tensor (or dict containing one), got {type(value)!r}"
+    raise TypeError(msg)
+
+
+_TEMPORAL_STATE_NDIM = 3
+_BATCHED_ACTION_NDIM = 2
+
+
+def compute_action_chunk_stats(  # noqa: PLR0914
+    datamodule: Any,  # noqa: ANN401
+    *,
+    chunk_size: int,
+    action_dim: int,
+    max_action_dim: int = 32,
+    action_mode: Literal["absolute", "delta"] = "absolute",
+    max_batches: int | None = None,
+    subset_size: int | None = None,
+    setup_stage: str | None = "fit",
+    device: str | torch.device | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute per-timestep action mean/std over a training dataset.
+
+    Reads the train dataloader once, including padded episode endings. Computes
+    mean and std for each action timestep: raw actions in ``"absolute"`` mode,
+    or actions minus the current state in ``"delta"`` mode. Uses float64 while
+    accumulating on the selected device, then returns CPU float32 stats padded
+    with mean 0 and std 1.
+
+    Chunk the datamodule first with
+    :func:`physicalai.train.utils.reformat_dataset_to_match_policy`.
+
+    Args:
+        datamodule: A Lightning datamodule exposing ``train_dataloader()`` (and an
+            optional ``setup`` method) yielding batched observations with ``state``
+            and ``action`` fields.
+        chunk_size: Number of action steps per chunk (the temporal dimension).
+        action_dim: True (unpadded) action dimension of the dataset.
+        max_action_dim: Padded action dimension of the returned buffers.
+        action_mode: ``"absolute"`` (default) accumulates the raw action;
+            ``"delta"`` subtracts the current state from the action target.
+        max_batches: Optional cap on the number of batches to consume (for a quick
+            estimate). ``None`` consumes the full train set.
+        subset_size: Optional number of samples to use from the start of the
+            train dataloader. ``None`` uses all samples (subject to ``max_batches``).
+        setup_stage: Stage passed to ``datamodule.setup(...)`` before iterating.
+            Pass ``None`` to skip setup (e.g. when already set up).
+        device: Compute device. Defaults to CUDA or XPU when available, otherwise CPU.
+
+    Returns:
+        A ``(mean, std)`` tuple of ``(chunk_size, max_action_dim)`` float32 tensors.
+
+    Raises:
+        ValueError: If ``subset_size`` is not positive, the dataset yields no
+            samples, or an action chunk has the wrong temporal dimension.
+    """
+    if subset_size is not None and subset_size <= 0:
+        msg = "subset_size must be positive"
+        raise ValueError(msg)
+
+    if setup_stage is not None and hasattr(datamodule, "setup"):
+        datamodule.setup(setup_stage)
+
+    compute_device = get_device() if device is None else torch.device(device)
+    sum_1 = torch.zeros(chunk_size, action_dim, dtype=torch.float64, device=compute_device)
+    sum_2 = torch.zeros(chunk_size, action_dim, dtype=torch.float64, device=compute_device)
+    count = 0
+
+    for index, batch in enumerate(datamodule.train_dataloader()):
+        if max_batches is not None and index >= max_batches:
+            break
+
+        action_field = batch.action if hasattr(batch, "action") else batch[ACTION]
+        action = _feature_tensor(action_field)
+        if subset_size is not None:
+            action = action[: subset_size - count]
+        action = action.to(device=compute_device, dtype=torch.float64)
+        if action.ndim == _BATCHED_ACTION_NDIM:  # (B, D) -> (B, 1, D)
+            action = action.unsqueeze(1)
+        if action.shape[1] != chunk_size:
+            msg = (
+                f"action chunk has temporal dim {action.shape[1]}, expected chunk_size={chunk_size}; "
+                "call reformat_dataset_to_match_policy(policy, datamodule) first"
+            )
+            raise ValueError(msg)
+        target = action[..., :action_dim]
+
+        if action_mode == "delta":
+            state_field = batch.state if hasattr(batch, "state") else batch[STATE]
+            state = _feature_tensor(state_field)[: action.shape[0]].to(device=compute_device, dtype=torch.float64)
+            if state.ndim == _TEMPORAL_STATE_NDIM:  # (B, T, D) -> current (last) frame
+                state = state[:, -1, :]
+            # Do not modify the dataset's action tensor through ``target``.
+            target = target.clone()
+            overlap = min(action_dim, state.shape[-1])
+            target[..., :overlap] -= state[..., :overlap].unsqueeze(1)
+
+        sum_1 += target.sum(dim=0)
+        sum_2 += (target * target).sum(dim=0)
+        count += target.shape[0]
+        if subset_size is not None and count >= subset_size:
+            break
+
+    if count == 0:
+        msg = "no samples found while computing action chunk stats"
+        raise ValueError(msg)
+
+    mean = sum_1 / count
+    var = (sum_2 / count - mean * mean).clamp_min(0.0)
+    std = var.sqrt()
+
+    mean_full = torch.zeros(chunk_size, max_action_dim, dtype=torch.float32)
+    std_full = torch.ones(chunk_size, max_action_dim, dtype=torch.float32)
+    width = min(action_dim, max_action_dim)
+    mean_full[:, :width] = mean[:, :width].to(device="cpu", dtype=torch.float32)
+    std_full[:, :width] = std[:, :width].to(device="cpu", dtype=torch.float32)
+    return mean_full, std_full

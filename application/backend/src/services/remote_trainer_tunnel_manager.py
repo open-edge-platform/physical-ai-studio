@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from core.security import get_ssh_feature_availability
+from schemas.remote_trainer import SshConnection
 from services.ssh.connection import DirectTarget
 from services.ssh.transport import SshTransport, open_transport
 from services.ssh.tunnel import SshTunnel
@@ -45,7 +46,7 @@ async def sync_tunnel(
     """
     async with _lock:
         await _close_locked(remote_trainer.id)
-        if remote_trainer.ssh_host_alias is None and remote_trainer.ssh_connection is None:
+        if not isinstance(remote_trainer.connection, SshConnection):
             return
         if not get_ssh_feature_availability().active:
             logger.warning(
@@ -70,20 +71,14 @@ async def start_all(remote_trainers: list[RemoteTrainer]) -> None:
     opening. Feature-gating is left entirely to `sync_tunnel`.
     """
     for remote_trainer in remote_trainers:
-        if remote_trainer.ssh_host_alias is not None or remote_trainer.ssh_connection is not None:
+        if isinstance(remote_trainer.connection, SshConnection):
             try:
                 await sync_tunnel(remote_trainer, retry_on_failure=True)
             except Exception as error:
-                if remote_trainer.ssh_host_alias is not None:
-                    connection_name = remote_trainer.ssh_host_alias
-                elif remote_trainer.ssh_connection is not None:
-                    connection_name = remote_trainer.ssh_connection.hostname
-                else:
-                    continue
                 logger.warning(
                     "Failed to restore SSH tunnel for trainer '{}' via '{}': {}",
                     remote_trainer.name,
-                    connection_name,
+                    remote_trainer.connection.host_name,
                     error,
                 )
 
@@ -102,12 +97,13 @@ async def _open_locked(
     retry_on_failure: bool = False,
 ) -> None:
     settings = get_settings()
-    alias = remote_trainer.ssh_host_alias
-    connection = remote_trainer.ssh_connection
-    remote_port = remote_trainer.ssh_remote_port
-    local_port = remote_trainer.ssh_local_port
-    if (alias is None and connection is None) or remote_port is None:
+    ssh = remote_trainer.connection
+    if not isinstance(ssh, SshConnection):
         return
+    alias = ssh.ssh_host_alias
+    connection = ssh.ssh_connection
+    remote_port = ssh.ssh_remote_port
+    local_port = ssh.ssh_local_port
     if alias is not None:
         connection_name = alias
         open_ssh_transport = partial(

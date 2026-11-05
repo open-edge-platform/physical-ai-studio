@@ -1,7 +1,10 @@
 import datetime
+import json
 from collections.abc import Callable
+from enum import Enum, auto
 from uuid import UUID
 
+from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,11 +18,16 @@ from exceptions import (
 )
 from repositories import JobRepository
 from schemas import Job
+from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import JobStatus, JobType
 from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services.job_handlers import get_job_handler
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
+
+
+class _Unset(Enum):
+    VALUE = auto()
 
 
 class JobService:
@@ -85,6 +93,43 @@ class JobService:
     async def cancel_pending_job(self, job_id: UUID, job_type: JobType) -> Job | None:
         """Cancel an unclaimed job without overwriting a worker's claim."""
         return await get_job_handler(job_type).cancel_pending(job_id, self)
+
+    async def update_remote_job_state(
+        self,
+        job_id: UUID,
+        *,
+        authentication_issue: AwsAuthenticationIssue | _Unset | None = _Unset.VALUE,
+        cancel_requested: bool | None = None,
+        remote_job_id: UUID | None = None,
+        snapshot_id: UUID | None = None,
+    ) -> Job:
+        """Update worker-owned state without overwriting a concurrent cancellation request."""
+        job = await self.get_job_by_id(job_id)
+        if not isinstance(job.payload, RemoteTrainJobPayload):
+            raise ValueError("Remote state requires a remote training job")
+        values: list = []
+        if authentication_issue is not _Unset.VALUE:
+            values.extend(
+                [
+                    "$.authentication_issue",
+                    func.json(authentication_issue.model_dump_json() if authentication_issue else "null"),
+                ]
+            )
+        if cancel_requested is not None:
+            values.extend(["$.cancel_requested", func.json(json.dumps(cancel_requested))])
+        if remote_job_id is not None:
+            values.extend(["$.remote_job_id", str(remote_job_id)])
+        if snapshot_id is not None:
+            values.extend(["$.snapshot_id", str(snapshot_id)])
+        if not values:
+            return job
+        await self.session.execute(
+            update(JobDB).where(JobDB.id == str(job_id)).values(payload=func.json_set(JobDB.payload, *values)),
+            execution_options={"synchronize_session": False},
+        )
+        await self.session.commit()
+        self.session.expire_all()
+        return await self.get_job_by_id(job_id)
 
     async def claim_pending_train_job(self, job_id: UUID) -> Job | None:
         """Claim a training job before preparation unless it has already been canceled."""
@@ -152,7 +197,13 @@ class JobService:
             updates["extra_info"] = extra_info
         if status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}:
             updates["end_time"] = datetime.datetime.now(tz=datetime.UTC)
-        return await self.repo.update(job, updates)
+        await self.session.execute(
+            update(JobDB).where(JobDB.id == str(job_id)).values(**updates),
+            execution_options={"synchronize_session": False},
+        )
+        await self.session.commit()
+        self.session.expire_all()
+        return await self.get_job_by_id(job_id)
 
     async def update_job(self, job: Job, update: dict) -> Job:
         return await self.repo.update(job, update)
