@@ -1,5 +1,6 @@
 """Exercise the Batch execution path with mocked AWS clients."""
 
+import re
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -302,9 +303,19 @@ async def test_submission_rejects_expired_profile_before_creating_job(connection
 
 def test_policy_routes_match_existing_cloudformation_mapping() -> None:
     path = Path(__file__).resolve().parents[3] / "cloudformation" / "remote-trainer.yaml"
-    mapping = yaml.load(path.read_text(), Loader=yaml.BaseLoader)["Mappings"]["PolicyInstanceType"]
+    template = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+    mapping = template["Mappings"]["PolicyInstanceType"]
+    parameter = template["Parameters"]["TrainingPolicy"]
+    assert all(re.fullmatch(r"[A-Za-z0-9.-]+", key) for key in mapping)
+    assert set(parameter["AllowedValues"]) == set(mapping)
+    assert parameter["Default"] in mapping
+    assert template["Resources"]["TrainerInstance"]["Properties"]["InstanceType"] == [
+        "PolicyInstanceType",
+        "TrainingPolicy",
+        "InstanceType",
+    ]
     assert {
-        label.split(" (")[0].lower().replace(".", ""): value["InstanceType"] for label, value in mapping.items()
+        label.split("-", 1)[0].lower().replace(".", ""): value["InstanceType"] for label, value in mapping.items()
     } == POLICY_INSTANCE_TYPES
 
 
