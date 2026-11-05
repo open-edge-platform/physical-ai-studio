@@ -137,6 +137,7 @@ export const EpisodeThumbnail = ({ src, alt, isLoading, video }: EpisodeThumbnai
                     playsInline
                     onLoadedMetadata={handleLoadedMetadata}
                     onEnded={handleEnded}
+                    onError={() => setIsPreviewing(false)}
                 />
             ) : (
                 <img alt={alt} src={src} className={classes.episodeImage} onError={() => setFailed(true)} />
