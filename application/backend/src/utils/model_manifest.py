@@ -4,7 +4,7 @@
 """Dependency-light policy manifest rules shared by local and Hub imports."""
 
 from collections.abc import Mapping
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 
 EXPORT_BACKENDS = ("torch", "openvino", "onnx", "executorch")
 SUPPORTED_POLICIES = frozenset({"act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"})
@@ -22,7 +22,7 @@ def manifest_artifact(manifest: Mapping[str, object], backend: str, label: str) 
     if not isinstance(artifact, str) or not artifact.strip():
         raise ValueError(f"Manifest '{label}' is missing non-empty 'model.artifacts.{backend}' entry")
     path = PurePosixPath(artifact)
-    if path.is_absolute() or ".." in path.parts:
+    if path.is_absolute() or ".." in path.parts or "\\" in artifact or PureWindowsPath(artifact).drive:
         raise ValueError(f"Manifest '{label}' contains unsafe {backend} artifact path '{artifact}'")
     return artifact
 

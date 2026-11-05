@@ -162,7 +162,7 @@ class Inspection(JsonRecord):
                 raise ValueError("Saved inspection importability disagrees with its errors")
         return value
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # mypy does not support decorated properties.
     @property
     def importable(self) -> bool:
         """Derive compatibility from errors rather than maintaining a second flag."""

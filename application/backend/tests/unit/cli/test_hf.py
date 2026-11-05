@@ -523,6 +523,51 @@ def test_resumed_export_rejects_source_changes(environment, imported_asset):
     assert json.loads(env.hub.repos["owner/copy"]["studio.json"])["status"] == "uploading"
 
 
+@pytest.mark.parametrize(
+    ("update", "remote_status", "stale", "expected"),
+    [
+        (False, "complete", False, "nonempty"),
+        (True, "complete", True, "stale"),
+        (True, "uploading", False, "Another transfer"),
+        (True, "complete", False, None),
+        (False, None, False, "nonempty"),
+    ],
+)
+def test_resumed_export_rechecks_remote_ownership(environment, imported_asset, update, remote_status, stale, expected):
+    env, asset = environment, imported_asset
+    env.hub.fail_upload = True
+    options = ["--update"] if update else []
+    result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, *options, "--json")
+    assert result.exit_code == 1, result.output
+    transfer_id = json.loads(result.stdout)["error"]["transfer_id"]
+    state = ExportState.load(UUID(transfer_id), asset.kind)
+    assert state.phase == "uploading"
+
+    remote = env.hub.repos["owner/copy"]
+    if remote_status is None:
+        del remote["studio.json"]
+    else:
+        metadata = json.loads(remote["studio.json"])
+        metadata.update(transfer_id=str(uuid4()), status=remote_status)
+        remote["studio.json"] = json.dumps(metadata).encode()
+    if stale:
+        remote["stale-payload.bin"] = b"old"
+    before = remote.copy()
+    uploaded = env.hub.uploaded.copy()
+
+    resumed = invoke(asset.kind, "export", "--resume", transfer_id, "--json")
+    if expected:
+        assert resumed.exit_code == 1, resumed.output
+        assert expected in resumed.stdout
+        assert remote == before
+        assert env.hub.uploaded == uploaded
+    else:
+        assert resumed.exit_code == 0, resumed.output
+        metadata = json.loads(remote["studio.json"])
+        assert metadata["transfer_id"] == transfer_id
+        assert metadata["status"] == "complete"
+
+
 def test_saved_export_retains_version_one_fingerprint_arrays(environment, imported_asset):
     asset = imported_asset
     result = invoke(asset.kind, "export", "owner/copy", f"--{asset.kind}-id", asset.id, "--json")

@@ -106,11 +106,13 @@ def fingerprint_files(root: Path, names: list[str]) -> dict[str, FileFingerprint
     return result
 
 
-def _remote_destination(api: HfApi, kind: ResourceKind, repo_id: str, names: list[str], update: bool) -> set[str]:
+def _remote_destination(
+    api: HfApi, kind: ResourceKind, repo_id: str, names: list[str], update: bool, *, revision: str | None = None
+) -> set[str]:
     from huggingface_hub.errors import RepositoryNotFoundError
 
     try:
-        remote = set(api.list_repo_files(repo_id, repo_type=kind))
+        remote = set(api.list_repo_files(repo_id, repo_type=kind, revision=revision))
     except RepositoryNotFoundError:
         return set()
     payload = remote - CARDS_AND_LICENSES - {".gitattributes", "studio.json"}
@@ -206,6 +208,10 @@ def _upload_payload(state: ExportState) -> None:
         return
     if descriptor.get("status") == "uploading" and descriptor.get("transfer_id") != state.transfer_id:
         raise ValueError("Another transfer owns this incomplete remote export. Resume that transfer first.")
+    if descriptor.get("transfer_id") != state.transfer_id:
+        # Resume state does not authorize overwriting a replacement export. Check
+        # the same revision used as the parent of the ownership claim below.
+        _remote_destination(api, kind, repo_id, state.files, state.update, revision=head)
     metadata = _export_metadata(state, "uploading")
     api.upload_file(
         repo_id=repo_id,
