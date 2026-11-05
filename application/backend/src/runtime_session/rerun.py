@@ -8,14 +8,14 @@ images are the latest store frames, not necessarily those used by an inference.
 from __future__ import annotations
 
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import threading
 import time
 from collections import deque
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, replace
-from importlib.resources import files
+from importlib.resources import files  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
@@ -67,7 +67,8 @@ def _background_server(port: int) -> Iterator[None]:
     with _SPAWN_LOCK:
         server = _BACKGROUND_SERVERS.get(port)
         if server is None and not _listening(port):
-            process = subprocess.Popen(  # noqa: S603 - fixed executable and flags; port is validated
+            # Fixed packaged executable and flags; RerunSettings validates the port.
+            process = subprocess.Popen(  # noqa: S603  # nosec B603
                 [
                     str(files("rerun_cli").joinpath("rerun.exe" if sys.platform == "win32" else "rerun")),
                     "--serve-grpc",
@@ -133,6 +134,8 @@ class _SessionRerunCallback(RerunCallback):
     The observer owns the connection and binds its RecordingStream to its thread.
     Initialization and prediction timing adapt to Studio; all rendering stays in RerunCallback.
     """
+
+    _last_step: int
 
     def _init_rerun(self, session_id: str, metadata: dict[str, Any]) -> None:  # noqa: ARG002
         self._fps = metadata["fps"]
