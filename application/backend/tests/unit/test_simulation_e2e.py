@@ -749,7 +749,15 @@ def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
     assert upload["if"] == "always()"
     assert upload["with"]["name"] == "training-outputs-act"
     assert upload["with"]["retention-days"] == "2"
-    assert steps[-1]["with"]["name"] == "sim-full-act"
+    evidence = next(step for step in steps if step.get("id") == "evidence")
+    assert evidence["with"]["name"] == "sim-full-act"
+    summary = steps[-1]
+    assert summary["name"] == "Publish simulation job summary"
+    assert summary["if"] == "always()"
+    assert summary["env"]["SIM_E2E_ARTIFACT_URL"] == "${{ steps.evidence.outputs.artifact-url }}"
+    assert summary["env"]["SIM_E2E_CONTROLS_OUTCOME"] == f"${{{{ steps.{controls_step['id']}.outcome }}}}"
+    assert summary["env"]["SIM_E2E_TRAINING_OUTCOME"] == f"${{{{ steps.{training_step['id']}.outcome }}}}"
+    assert summary["run"] == "python3 .github/scripts/simulation_summary.py"
 
 
 def _workflow_python(path, step):
