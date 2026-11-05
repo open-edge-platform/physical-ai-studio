@@ -15,11 +15,13 @@ preprocessor gets ``noise_shape`` so the runtime draws fresh N(0, 1) noise on ev
 call. No checkpoint or re-export is needed, and the weights are saved unchanged.
 
     python -m physicalai.policies.pi05.noise_input EXPORT_DIR [--out DIR] [--no-backup]
+    python -m physicalai.policies.pi05.noise_input EXPORT_DIR --restore
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import gc
 import hashlib
 import inspect
@@ -304,7 +306,7 @@ def convert_openvino_export(
     if out is not None:
         _require_empty(out)
     elif backup:
-        keep = Path(backup_dir) if backup_dir is not None else export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
+        keep = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
         _require_empty(keep)
 
     noise_shape, replaced_ops = _replace_noise_with_input(model)
@@ -332,6 +334,55 @@ def convert_openvino_export(
     return ConversionResult(ConversionStatus.CONVERTED, export_dir, noise_shape, replaced_ops, keep)
 
 
+def default_backup_dir(export_dir: Path | str) -> Path:
+    """Return where an in-place conversion keeps the replaced files by default: ``<export_dir>.orig``."""
+    export_dir = Path(export_dir)
+    return export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
+
+
+def has_backup(export_dir: Path | str, backup_dir: Path | str | None = None) -> bool:
+    """Return whether a backup that :func:`restore_openvino_export` can put back exists."""
+    backup = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
+    try:
+        graph_name = json.loads((backup / MANIFEST_NAME).read_text())["model"]["artifacts"]["openvino"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return all((backup / name).is_file() for name in _rewritten_names(graph_name))
+
+
+def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | None = None) -> Path:
+    """Undo an in-place :func:`convert_openvino_export` by moving the backed-up files back.
+
+    The backup folder is removed once it is empty.
+
+    Args:
+        export_dir: The converted OpenVINO export folder.
+        backup_dir: Where the conversion kept the replaced files (default ``<export_dir>.orig``).
+
+    Returns:
+        The backup folder the files came from.
+
+    Raises:
+        FileNotFoundError: If the export folder does not exist, or the backup is missing or incomplete.
+    """
+    export_dir = Path(export_dir)
+    backup = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
+    if not export_dir.is_dir():
+        msg = f"no export folder {export_dir}"
+        raise FileNotFoundError(msg)
+    if not has_backup(export_dir, backup):
+        msg = f"no complete backup in {backup} (graph, weights and manifest)"
+        raise FileNotFoundError(msg)
+    graph_name = json.loads((backup / MANIFEST_NAME).read_text())["model"]["artifacts"]["openvino"]
+    names = _rewritten_names(graph_name)
+    for name in names:
+        (backup / name).replace(export_dir / name)
+    _refresh_checksums(export_dir, names)
+    with contextlib.suppress(OSError):
+        backup.rmdir()
+    return backup
+
+
 def main(argv: list[str] | None = None) -> None:
     """Command line entry point: ``python -m physicalai.policies.pi05.noise_input``."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -344,7 +395,12 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="in place: keep them here (default EXPORT_DIR.orig)",
     )
+    parser.add_argument("--restore", action="store_true", help="undo an in-place conversion from its backup")
     args = parser.parse_args(argv)
+    if args.restore:
+        backup = restore_openvino_export(args.export_dir, args.backup_dir)
+        print(f"restored: {args.export_dir} (from {backup})")  # noqa: T201
+        return
     result = convert_openvino_export(args.export_dir, args.out, backup=not args.no_backup, backup_dir=args.backup_dir)
     print(f"{result.status.value}: {result.export_dir} (noise_shape {list(result.noise_shape)})")  # noqa: T201
     if result.backup_dir is not None:

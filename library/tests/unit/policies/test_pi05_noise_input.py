@@ -18,7 +18,9 @@ from physicalai.policies.pi05.noise_input import (
     BACKUP_SUFFIX,
     ConversionStatus,
     convert_openvino_export,
+    has_backup,
     main,
+    restore_openvino_export,
 )
 
 if TYPE_CHECKING:
@@ -192,4 +194,52 @@ class TestConvertOpenVINOExportErrors:
 
         with pytest.raises(FileExistsError, match="not empty"):
             convert_openvino_export(export_dir)
+        assert "RandomUniform" in _op_types(export_dir / "pi05.xml")
+
+
+class TestRestoreOpenVINOExport:
+    """Undoing an in-place conversion."""
+
+    def test_restores_original_files(self, export_dir: Path) -> None:
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        convert_openvino_export(export_dir)
+        assert has_backup(export_dir)
+
+        backup = restore_openvino_export(export_dir)
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
+        assert not backup.exists()
+        assert not has_backup(export_dir)
+
+    def test_restores_from_backup_dir_and_refreshes_checksums(self, export_dir: Path, tmp_path: Path) -> None:
+        (export_dir / "SHA256SUMS").write_text(f"{'0' * 64}  pi05.xml\n")
+        convert_openvino_export(export_dir, backup_dir=tmp_path / "kept")
+
+        restore_openvino_export(export_dir, tmp_path / "kept")
+
+        digest = hashlib.sha256((export_dir / "pi05.xml").read_bytes()).hexdigest()
+        assert (export_dir / "SHA256SUMS").read_text() == f"{digest}  pi05.xml\n"
+        assert "RandomUniform" in _op_types(export_dir / "pi05.xml")
+
+    def test_without_backup(self, export_dir: Path) -> None:
+        convert_openvino_export(export_dir, backup=False)
+
+        with pytest.raises(FileNotFoundError, match="no complete backup"):
+            restore_openvino_export(export_dir)
+
+    def test_incomplete_backup_changes_nothing(self, export_dir: Path) -> None:
+        convert_openvino_export(export_dir)
+        backup = export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
+        (backup / "pi05.bin").unlink()
+
+        with pytest.raises(FileNotFoundError, match="no complete backup"):
+            restore_openvino_export(export_dir)
+        assert "RandomUniform" not in _op_types(export_dir / "pi05.xml")
+
+    def test_main_restore(self, export_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        convert_openvino_export(export_dir)
+
+        main([str(export_dir), "--restore"])
+
+        assert capsys.readouterr().out.startswith("restored:")
         assert "RandomUniform" in _op_types(export_dir / "pi05.xml")

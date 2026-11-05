@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,6 +12,9 @@ import click
 
 if TYPE_CHECKING:
     from physicalai.policies.base import Policy
+
+    from schemas import Model, TrainJob
+    from schemas.dataset import Dataset
 
 
 @click.group()
@@ -186,6 +190,7 @@ def export(model_id: UUID, backends: tuple[str, ...]) -> None:
 
 
 NOISE_BACKUP_DIRNAME = "noise-input-backup"
+NOISE_FIX_SUFFIX = " (noise fix)"
 
 
 def _get_model_dir(model_id: UUID) -> Path:
@@ -220,76 +225,143 @@ def _resolve_openvino_export(target: str) -> tuple[Path, Path | None]:
     return path, None
 
 
-def _studio_models() -> list[tuple[UUID, str, str, Path]]:
-    """Return the id, label (name, version, date) and folder of every Studio model, oldest first."""
+def _studio_models() -> "list[Model]":
+    """Return every Studio model, oldest first."""
     from db import get_async_db_session_ctx
     from services.model_service import ModelService
 
-    async def get_models() -> list[tuple[UUID, str, str, Path]]:
+    async def get_models() -> "list[Model]":
         async with get_async_db_session_ctx() as session:
-            found = await ModelService(session).get_model_list()
-        found.sort(key=lambda model: (model.created_at is None, model.created_at))
-        return [
-            (
-                model.id,
-                model.name,
-                f"v{model.version}" + (f", {model.created_at:%Y-%m-%d}" if model.created_at else ""),
-                Path(model.path).expanduser(),
-            )
-            for model in found
-        ]
+            return await ModelService(session).get_model_list()
 
-    return asyncio.run(get_models())
+    found = asyncio.run(get_models())
+    return sorted(found, key=lambda model: (model.created_at is None, model.created_at))
 
 
-def _noise_status(export_dir: Path) -> str | None:
-    """Return whether a pi05 export still samples its noise in-graph, or None if it is not pi05."""
+def _noise_status(model_dir: Path) -> str | None:
+    """Describe a Studio model's pi05 OpenVINO export, or return None if it has none."""
+    from physicalai.policies.pi05.noise_input import has_backup
+
+    from training.job import EXPORTS_DIRNAME
+
+    export_dir = model_dir / EXPORTS_DIRNAME / "openvino"
     try:
         manifest = json.loads((export_dir / "manifest.json").read_text())
     except (OSError, ValueError):
         return None
     for spec in manifest.get("model", {}).get("preprocessors", []):
         if spec.get("type") == "pi05" or "pi05" in str(spec.get("class_path", "")).lower():
-            return "already fixed" if "noise_shape" in spec.get("init_args", spec) else "needs fix"
+            if "noise_shape" not in spec.get("init_args", spec):
+                return "needs fix"
+            return "fixed, restorable" if has_backup(export_dir, model_dir / NOISE_BACKUP_DIRNAME) else "fixed"
     return None
 
 
-def _choose_studio_model() -> Path:
-    """List the Studio pi05 models with an OpenVINO export and ask which one to convert."""
-    from training.job import EXPORTS_DIRNAME
-
+def _choose_studio_model(*, restorable_only: bool) -> Path:
+    """List the Studio pi05 models with an OpenVINO export and ask which one to use."""
     rows = []
-    for model_id, name, details, model_dir in _studio_models():
-        status = _noise_status(model_dir / EXPORTS_DIRNAME / "openvino")
-        if status is not None:
-            rows.append((model_id, name, details, model_dir, status))
+    for model in _studio_models():
+        model_dir = Path(model.path).expanduser()
+        status = _noise_status(model_dir)
+        if status is None or (restorable_only and status != "fixed, restorable"):
+            continue
+        created = f", {model.created_at:%Y-%m-%d}" if model.created_at else ""
+        rows.append((f"{model.name} (v{model.version}{created})  [{status}]  {model.id}", model_dir))
     if not rows:
-        raise click.ClickException("No Studio pi05 model has an OpenVINO export.")
+        what = "fixed in place with a backup" if restorable_only else "with an OpenVINO export"
+        raise click.ClickException(f"No Studio pi05 model {what}.")
 
-    click.echo("Studio pi05 models with an OpenVINO export:")
-    for index, (model_id, name, details, _, status) in enumerate(rows, start=1):
-        click.echo(f"  {index:>2}. {name} ({details})  [{status}]  {model_id}")
-    choice = click.prompt("Model to convert", type=click.IntRange(1, len(rows)))
-    return rows[choice - 1][3]
+    click.echo(
+        "Studio pi05 models fixed in place with a backup:"
+        if restorable_only
+        else "Studio pi05 models with an OpenVINO export:"
+    )
+    for index, (label, _) in enumerate(rows, start=1):
+        click.echo(f"  {index:>2}. {label}")
+    choice = click.prompt("Restore model" if restorable_only else "Model to fix", type=click.IntRange(1, len(rows)))
+    return rows[choice - 1][1]
+
+
+async def _get_dataset(dataset_id: UUID) -> "Dataset":
+    from db import get_async_db_session_ctx
+    from services.dataset_service import DatasetService
+
+    async with get_async_db_session_ctx() as session:
+        return await DatasetService(session).get_dataset_by_id(dataset_id)
+
+
+async def _persist_import(job: "TrainJob", model: "Model") -> "Model":
+    from db import get_async_db_session_ctx
+    from services.job_service import JobService
+    from services.model_service import ModelService
+
+    async with get_async_db_session_ctx() as session:
+        saved_job = await JobService(session).create_job(job)
+        return await ModelService(session).create_model(model.model_copy(update={"train_job_id": saved_job.id}))
+
+
+def _copy_as_fixed_model(model_dir: Path, export_dir: Path) -> None:
+    """Add the fixed export as a new Studio model next to the original, which stays as it is."""
+    from physicalai.policies.pi05.noise_input import ConversionStatus, convert_openvino_export
+
+    from services.model_import_service import ModelImportService
+    from settings import get_settings
+
+    matches = [model for model in _studio_models() if Path(model.path).expanduser().resolve() == model_dir.resolve()]
+    if not matches:
+        raise click.ClickException(f"--copy needs a Studio model; {model_dir} is not one")
+    original = matches[0]
+    if original.dataset_id is None:
+        raise click.ClickException(f"Model {original.id} has no dataset; use --out and models import-dir instead")
+
+    staging = get_settings().models_dir / f".noise-fix-{original.id}"
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        result = convert_openvino_export(export_dir, staging / "openvino")
+        if result.status is ConversionStatus.ALREADY_CONVERTED:
+            raise click.ClickException(f"{original.name} already takes the noise as input; nothing to copy")
+        service = ModelImportService(get_dataset=_get_dataset, persist_import=_persist_import)
+        copy = asyncio.run(
+            service.import_model_directory(
+                source_dir=staging,
+                project_id=original.project_id,
+                dataset_id=original.dataset_id,
+                model_name=f"{original.name}{NOISE_FIX_SUFFIX}",
+                move=True,
+                version=original.version,
+            )
+        )
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    click.echo(f"Added model: {copy.name}  {copy.id}")
+    click.echo(f"Original left as it is: {original.name}  {original.id}")
 
 
 @models.command("fix-pi05-noise")
 @click.argument("target", required=False)
 @click.option(
+    "--copy",
+    "as_copy",
+    is_flag=True,
+    help=f"Studio models: add the fixed version as a new model named '<name>{NOISE_FIX_SUFFIX}' "
+    "and leave the original as it is.",
+)
+@click.option("--restore", is_flag=True, help="Undo an in-place fix from its backup.")
+@click.option(
     "--out",
     "output_dir",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="Write the converted export to this new folder instead of converting in place.",
+    help="Write the fixed export to this new folder instead of fixing in place.",
 )
 @click.option(
     "--backup/--no-backup",
     default=True,
     show_default=True,
     help=f"In place: keep the replaced files, in the model folder's {NOISE_BACKUP_DIRNAME}/ "
-    "for a Studio model, else in EXPORT_DIR.orig/.",
+    "for a Studio model, else in EXPORT_DIR.orig/. --restore needs them.",
 )
-def fix_pi05_noise(target: str | None, output_dir: Path | None, backup: bool) -> None:
+def fix_pi05_noise(target: str | None, as_copy: bool, restore: bool, output_dir: Path | None, backup: bool) -> None:
     """Make an older pi05 OpenVINO export draw fresh start noise on every call.
 
     pi05 models exported before the start noise became a model input sample it
@@ -300,32 +372,54 @@ def fix_pi05_noise(target: str | None, output_dir: Path | None, backup: bool) ->
 
     TARGET is a Studio model UUID, a Studio model folder, or an OpenVINO export
     folder (with manifest.json). Without TARGET, the command lists the Studio
-    pi05 models that have an OpenVINO export and asks which one to convert.
-    Studio models are converted in place and keep their id and name; reload the
-    model in a running Studio afterwards.
+    pi05 models and asks which one to use.
+
+    By default the model is fixed in place and keeps its id and name; reload it in
+    a running Studio afterwards. --copy adds the fixed version as a new Studio
+    model instead, to compare the two side by side. --restore undoes an in-place
+    fix.
 
     \b
     Examples:
       physicalai-studio models fix-pi05-noise
       physicalai-studio models fix-pi05-noise MODEL_UUID
+      physicalai-studio models fix-pi05-noise --copy MODEL_UUID
+      physicalai-studio models fix-pi05-noise --restore
     """
-    from physicalai.policies.pi05.noise_input import ConversionStatus, convert_openvino_export, runtime_draws_noise
+    from physicalai.policies.pi05.noise_input import (
+        ConversionStatus,
+        convert_openvino_export,
+        restore_openvino_export,
+        runtime_draws_noise,
+    )
 
+    if as_copy + restore + (output_dir is not None) > 1:
+        raise click.UsageError("Use only one of --copy, --restore and --out.")
     if target is None:
-        target = str(_choose_studio_model())
+        target = str(_choose_studio_model(restorable_only=restore))
     export_dir, model_dir = _resolve_openvino_export(target)
     backup_dir = model_dir / NOISE_BACKUP_DIRNAME if model_dir is not None else None
+
     try:
-        result = convert_openvino_export(export_dir, output_dir, backup=backup, backup_dir=backup_dir)
+        if restore:
+            source = restore_openvino_export(export_dir, backup_dir)
+            click.echo(f"Restored: {export_dir} (from {source})")
+            return
+        if as_copy:
+            if model_dir is None:
+                raise click.ClickException(f"--copy needs a Studio model; {target} is not one")
+            _copy_as_fixed_model(model_dir, export_dir)
+        else:
+            result = convert_openvino_export(export_dir, output_dir, backup=backup, backup_dir=backup_dir)
+            if result.status is ConversionStatus.ALREADY_CONVERTED:
+                click.echo(f"Already takes the noise as input: {result.export_dir}")
+            else:
+                click.echo(f"Fixed: {result.export_dir} (noise_shape {list(result.noise_shape)})")
+                if result.backup_dir is not None:
+                    click.echo(f"Original files kept in: {result.backup_dir} (undo with --restore)")
     except (FileNotFoundError, FileExistsError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    if result.status is ConversionStatus.ALREADY_CONVERTED:
-        click.echo(f"Already takes the noise as input: {result.export_dir}")
-    else:
-        click.echo(f"Converted: {result.export_dir} (noise_shape {list(result.noise_shape)})")
-        if result.backup_dir is not None:
-            click.echo(f"Original files kept in: {result.backup_dir}")
     if not runtime_draws_noise():
         click.echo(
             "Warning: the installed physicalai runtime cannot draw the noise yet "
