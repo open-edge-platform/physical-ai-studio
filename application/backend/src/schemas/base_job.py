@@ -10,6 +10,7 @@ from schemas.base import BaseIDModel, UTCDatetime
 class JobType(StrEnum):
     TRAINING = "training"
     DATASET_IMPORT = "dataset_import"
+    OPTIMIZE_MODEL = "optimize_model"
 
 
 class JobStatus(StrEnum):

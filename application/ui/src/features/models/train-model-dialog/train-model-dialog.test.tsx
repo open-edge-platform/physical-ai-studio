@@ -40,6 +40,7 @@ const baseModel = {
     name: 'Test model',
     dataset_id: datasetId,
     policy: 'act',
+    optimization: null,
 } as SchemaModel;
 
 const testDataset = getMockedDataset({ id: datasetId, name: 'Test dataset', project_id: projectId });

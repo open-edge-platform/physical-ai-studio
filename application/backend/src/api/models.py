@@ -15,6 +15,7 @@ from starlette import status
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
+    AsyncSessionDep,
     EnvironmentServiceDep,
     get_dataset_service,
     get_job_service,
@@ -30,9 +31,11 @@ from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Model, ModelDetailResponse
-from schemas.job import TrainJob
+from schemas.job import OptimizeModelJob, TrainJob
+from schemas.job_response import JobResponse
 from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
 from services.environment_service import EnvironmentService
+from services.model_optimization_service import ModelOptimizationService
 from services.runtime_export import (
     RUNTIME_FPS,
     build_runtime_config,
@@ -116,6 +119,12 @@ async def get_model_by_id(
         training_summary=training_summary,
         hparams=hparams,
     )
+
+
+@router.post("/{model_id}/optimize", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
+async def optimize_model(model_id: UUID, session: AsyncSessionDep) -> OptimizeModelJob:
+    """Queue a separate OpenVINO model with symmetric INT8-compressed weights."""
+    return await ModelOptimizationService(session).submit(model_id)
 
 
 class ModelNameUpdate(BaseModel):

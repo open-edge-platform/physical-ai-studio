@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import {
     ActionButton,
+    Badge,
     Button,
     DialogContainer,
     DialogTrigger,
@@ -74,7 +75,10 @@ export const ModelRow = ({
             : null;
 
     // Disable logs if we don't know the training job
-    const disabledKeys = !model.train_job_id ? ['logs'] : [];
+    const disabledKeys = [
+        ...(!model.train_job_id ? ['logs'] : []),
+        ...(model.optimization !== null ? ['retrain'] : []),
+    ];
 
     const version = model.version ?? 1;
 
@@ -82,6 +86,7 @@ export const ModelRow = ({
         <Table.ExpandableRow id={model.id} label={model.name} detail={<ModelRowContent model={model} />}>
             <Flex alignItems='center' gap='size-100'>
                 <Text>{model.name}</Text>
+                {model.optimization !== null && <Badge variant='neutral'>INT8 symmetric weights</Badge>}
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
                 <PeftBadge isEnabled={model.lora_enabled} isDora={model.lora_use_dora} />
                 <SnapflowBadge isEnabled={model.snapflow_enabled} />

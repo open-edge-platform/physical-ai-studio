@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ from db.schema import Base, ProjectDB
 from exceptions import InvalidJobStateError
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload, ImportStep
-from schemas.job import DatasetImportJob
+from schemas.job import DatasetImportJob, LocalTrainJobPayload, OptimizeModelJob, OptimizeModelJobPayload, TrainJob
 from services.job_handlers import get_job_handler
 from services.job_service import JobService
 
@@ -105,6 +106,51 @@ async def test_generic_interruption_cannot_fake_import_cancellation(jobs, step, 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("optimization_first", [True, False])
+async def test_shared_local_slot_uses_submission_order_across_job_types(jobs, optimization_first):
+    service, project_id = jobs
+    older = datetime(2026, 1, 1, tzinfo=UTC)
+    newer = datetime(2026, 1, 2, tzinfo=UTC)
+    optimization = OptimizeModelJob(
+        project_id=project_id,
+        payload=OptimizeModelJobPayload(model_id=uuid4()),
+        created_at=older if optimization_first else newer,
+    )
+    training = TrainJob(
+        project_id=project_id,
+        payload=LocalTrainJobPayload(project_id=project_id, dataset_id=uuid4(), policy="act", model_name="test"),
+        created_at=newer if optimization_first else older,
+    )
+    review = import_job(project_id, ImportStep.AWAITING_USER_REVIEW)
+    upload = import_job(project_id, ImportStep.AWAITING_ARCHIVE_UPLOAD)
+    runnable_import = import_job(project_id, ImportStep.QUEUED_FOR_DETECTION)
+    # Deliberately insert in the opposite order to the requested FIFO order.
+    for job in (training, optimization, review, upload, runnable_import):
+        await service.create_job(job)
+
+    @asynccontextmanager
+    async def session_scope():
+        yield service.session
+
+    with (
+        patch("core.scheduler.get_async_db_session_ctx", session_scope),
+        patch("core.scheduler.mp.Queue"),
+        patch("core.scheduler.mp.Process"),
+    ):
+        scheduler = Scheduler()
+        try:
+            await scheduler._schedule_jobs()
+            expected = optimization if optimization_first else training
+            assert scheduler.processes["local"][1].id == expected.id
+            assert scheduler.processes["dataset_import"][1].id == runnable_import.id
+            assert len(scheduler.processes) == 2
+            assert (await service.get_job_by_id(runnable_import.id)).status == JobStatus.PENDING
+        finally:
+            scheduler.processes.clear()
+            scheduler.shutdown()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("assigned_step", "current_step", "failed"),
     [
@@ -156,6 +202,7 @@ async def test_reaping_import_distinguishes_next_step_from_unclaimed_assignment(
     [
         (JobType.TRAINING, "workers.training_worker.TrainingWorker", True),
         (JobType.DATASET_IMPORT, "workers.dataset_import_worker.DatasetImportWorker", False),
+        (JobType.OPTIMIZE_MODEL, "workers.model_optimization_worker.ModelOptimizationWorker", True),
     ],
 )
 def test_registered_handler_constructs_its_worker(job_type, worker_path, cancelable):
@@ -169,7 +216,7 @@ def test_registered_handler_constructs_its_worker(job_type, worker_path, cancela
         worker.assert_called_once_with(*expected_args)
 
 
-@pytest.mark.parametrize("job_type", [JobType.TRAINING])
+@pytest.mark.parametrize("job_type", [JobType.TRAINING, JobType.OPTIMIZE_MODEL])
 def test_cooperative_worker_requires_cancellation_event(job_type):
     with pytest.raises(ValueError, match="require a cancellation event"):
         get_job_handler(job_type).create_worker(uuid4(), MagicMock(), None, MagicMock())

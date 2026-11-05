@@ -12,7 +12,14 @@ class ModelMapper(IBaseMapper):
         return ModelDB(
             **db_schema.model_dump(
                 mode="json",
-                exclude={"available_backends", "lora_enabled", "lora_use_dora", "snapflow_enabled", "created_at"},
+                exclude={
+                    "available_backends",
+                    "lora_enabled",
+                    "lora_use_dora",
+                    "snapflow_enabled",
+                    "optimization",
+                    "created_at",
+                },
             ),
             created_at=db_schema.created_at,
         )

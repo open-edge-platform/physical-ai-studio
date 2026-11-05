@@ -6,15 +6,18 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
+
 from exceptions import InvalidArchiveError
 from schemas import Model, TrainJob
 from schemas.base_job import JobStatus
 from schemas.dataset import Dataset
 from schemas.job import LocalTrainJobPayload
+from schemas.model import ModelOptimizationInfo
 from settings import get_settings
 
-# Imported models must retain the checkpoint needed to resume training. Logger
-# artifacts are optional and deployment exports may target any supported backend.
+# Full training models retain their checkpoint; explicitly optimized packages
+# are inference-only. Logger artifacts are optional for either kind.
 _REQUIRED_FILES = ("model.ckpt",)
 _EXPORT_BACKENDS = ("torch", "openvino", "onnx", "executorch")
 _SUPPORTED_POLICIES = frozenset({"act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"})
@@ -88,7 +91,7 @@ class ModelImportService:
 
         reader = DirectoryModelReader(source_dir)
         source_is_exports_dir = self._is_exports_directory(reader)
-        policy = self._inspect_model(reader, source_is_exports_dir=source_is_exports_dir)
+        policy, optimization = self._inspect_model(reader, source_is_exports_dir=source_is_exports_dir)
 
         try:
             destination = model_dir / "exports" if source_is_exports_dir else model_dir
@@ -103,6 +106,7 @@ class ModelImportService:
                 dataset=dataset,
                 model_name=model_name,
                 policy=policy,
+                optimization=optimization,
                 base_model_id=base_model_id,
                 version=version,
             )
@@ -117,6 +121,7 @@ class ModelImportService:
         dataset: Dataset,
         model_name: str,
         policy: str,
+        optimization: ModelOptimizationInfo | None,
         base_model_id: UUID | None,
         version: int,
     ) -> Model:
@@ -151,7 +156,7 @@ class ModelImportService:
             # from what was actually used for training (possibly on another machine).
             snapshot_id=None,
             policy=policy,
-            properties={},
+            properties={"optimization": optimization.model_dump(mode="json")} if optimization is not None else {},
             train_job_id=job.id,
             parent_model_id=base_model_id,
             version=version,
@@ -163,13 +168,10 @@ class ModelImportService:
         """Return whether the reader is rooted at an ``exports`` directory."""
         return any(reader.file_exists(f"{backend}/manifest.json") for backend in _EXPORT_BACKENDS)
 
-    def _inspect_model(self, reader: ModelReader, *, source_is_exports_dir: bool) -> str:
-        """Validate model structure and infer policy."""
-        if not source_is_exports_dir:
-            for required in _REQUIRED_FILES:
-                if not reader.file_exists(required):
-                    raise InvalidArchiveError(f"Model is missing required file '{required}'")
-
+    def _inspect_model(
+        self, reader: ModelReader, *, source_is_exports_dir: bool
+    ) -> tuple[str, ModelOptimizationInfo | None]:
+        """Validate model structure and read policy identity and optimization metadata."""
         for backend in _EXPORT_BACKENDS:
             manifest_path = f"{backend}/manifest.json" if source_is_exports_dir else f"exports/{backend}/manifest.json"
             if not reader.file_exists(manifest_path):
@@ -182,7 +184,20 @@ class ModelImportService:
                 manifest_path,
                 source_is_exports_dir=source_is_exports_dir,
             )
-            return self._infer_policy(manifest, manifest_path)
+            studio = manifest.get("studio", {})
+            if not isinstance(studio, dict):
+                raise InvalidArchiveError(f"Manifest '{manifest_path}' field 'studio' must be an object")
+            optimization = None
+            if "optimization" in studio:
+                try:
+                    optimization = ModelOptimizationInfo.model_validate(studio["optimization"])
+                except ValidationError as exc:
+                    raise InvalidArchiveError(f"Manifest '{manifest_path}' has invalid optimization metadata") from exc
+            if not source_is_exports_dir and optimization is None:
+                for required in _REQUIRED_FILES:
+                    if not reader.file_exists(required):
+                        raise InvalidArchiveError(f"Model is missing required file '{required}'")
+            return self._infer_policy(manifest, manifest_path), optimization
 
         raise InvalidArchiveError("Model is missing a supported export manifest under 'exports/'")
 

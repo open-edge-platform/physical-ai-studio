@@ -16,6 +16,7 @@ import { DownloadIcon } from '@geti-ui/ui/icons';
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
+import { OptimizeModel } from './optimize-model';
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
@@ -98,7 +99,13 @@ const ModelFormatSize = ({ exportDetail }: { exportDetail: BackendExportDetail |
     );
 };
 
-const ModelPrecision = ({ exportDetail }: { exportDetail: BackendExportDetail | undefined }) => {
+const ModelPrecision = ({
+    exportDetail,
+    isOptimized,
+}: {
+    exportDetail: BackendExportDetail | undefined;
+    isOptimized: boolean;
+}) => {
     if (exportDetail === undefined) {
         return (
             <Flex direction='column' gap='size-10'>
@@ -108,11 +115,10 @@ const ModelPrecision = ({ exportDetail }: { exportDetail: BackendExportDetail | 
         );
     }
 
-    // At the moment we only support FP16 models
     return (
         <Flex direction='column' gap='size-10'>
             <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Precision</Text>
-            <Text>FP16</Text>
+            <Text>{isOptimized ? 'INT8 symmetric weights' : 'Original'}</Text>
         </Flex>
     );
 };
@@ -153,9 +159,9 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                 <Divider size='S' />
 
                 <View paddingX='size-200'>
-                    <Flex gap='size-400' marginTop='size-100' width='100%'>
+                    <Flex gap='size-400' marginTop='size-100' width='100%' wrap='wrap'>
                         <ModelFormatSize exportDetail={exportDetail} />
-                        <ModelPrecision exportDetail={exportDetail} />
+                        <ModelPrecision exportDetail={exportDetail} isOptimized={model.optimization !== null} />
                         {isAvailable && (
                             <View marginStart='auto' alignSelf={'center'}>
                                 <Flex gap='size-100'>
@@ -199,6 +205,11 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                             </View>
                         )}
                     </Flex>
+                    {isAvailable && backendType === 'openvino' && model.optimization === null && (
+                        <View marginTop='size-200'>
+                            <OptimizeModel modelId={model.id!} />
+                        </View>
+                    )}
                 </View>
             </Flex>
         </View>
