@@ -105,6 +105,14 @@ with a `host:port` or `rerun+http(s)://host:port/proxy` address. Settings are pe
 in the user settings JSON and apply to new model runs, not ones already running.
 The viewer and connection address are relative to the backend host, not the browser.
 
+Docker Compose binds the headless Rerun server to the container's interfaces
+(`RERUN_BIND_HOST=0.0.0.0`) and publishes port 9876 **only on Docker host loopback**.
+Connect a viewer on the Docker host to `rerun+http://127.0.0.1:9876/proxy`.
+Keep the native-viewer option off in Docker. If you change the local Rerun port in
+Studio, set `RERUN_PORT` to the same value in Docker's `.env` and recreate the
+container. Native deployments default to `RERUN_BIND_HOST=127.0.0.1`.
+Rerun has no authentication; do not publish this port on a public interface.
+
 To change the host/port:
 
 ```bash

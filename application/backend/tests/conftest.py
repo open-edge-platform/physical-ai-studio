@@ -40,7 +40,7 @@ from schemas.model import Model
 def no_rerun_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep runtime tests from opening a native viewer on the developer's desktop."""
     monkeypatch.setattr("rerun.spawn", lambda **_kwargs: None)
-    monkeypatch.setattr("runtime_session.rerun._background_server", lambda _port: nullcontext())
+    monkeypatch.setattr("runtime_session.rerun._background_server", lambda _port, **_kwargs: nullcontext())
     monkeypatch.setattr("rerun.RecordingStream.connect_grpc", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("physicalai.runtime.callbacks.system_monitor.collect_gpu_stats", GpuStatsSample)
 

@@ -8,6 +8,16 @@ from build_info import get_build_info
 from settings import RerunSettings, Settings, get_default_storage_dir, load_user_settings_file, merge_user_settings
 
 
+def test_rerun_listener_is_loopback_only_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("RERUN_BIND_HOST", raising=False)
+    assert Settings().rerun_bind_host == "127.0.0.1"
+
+
+def test_rerun_listener_bind_host_is_deployment_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("RERUN_BIND_HOST", "0.0.0.0")
+    assert Settings().rerun_bind_host == "0.0.0.0"
+
+
 def test_default_storage_dir_uses_xdg_data_home(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(settings_module.sys, "platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
