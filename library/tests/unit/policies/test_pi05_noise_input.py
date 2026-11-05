@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -216,14 +219,34 @@ class TestRestoreOpenVINOExport:
         assert not backup.exists()
         assert not has_backup(export_dir)
 
-    def test_restores_from_backup_dir_and_refreshes_checksums(self, export_dir: Path, tmp_path: Path) -> None:
-        (export_dir / "SHA256SUMS").write_text(f"{'0' * 64}  pi05.xml\n")
+    def test_restores_from_backup_dir_with_checksums(self, export_dir: Path, tmp_path: Path) -> None:
+        checksums = f"{hashlib.sha256((export_dir / 'pi05.xml').read_bytes()).hexdigest()}  pi05.xml\n"
+        (export_dir / "SHA256SUMS").write_text(checksums)
         convert_openvino_export(export_dir, backup_dir=tmp_path / "kept")
+        assert (export_dir / "SHA256SUMS").read_text() != checksums
 
         restore_openvino_export(export_dir, tmp_path / "kept")
 
-        digest = hashlib.sha256((export_dir / "pi05.xml").read_bytes()).hexdigest()
-        assert (export_dir / "SHA256SUMS").read_text() == f"{digest}  pi05.xml\n"
+        assert (export_dir / "SHA256SUMS").read_text() == checksums
+        assert "RandomUniform" in _op_types(export_dir / "pi05.xml")
+        assert not (tmp_path / "kept").exists()
+
+    def test_restores_into_an_export_missing_files(self, export_dir: Path) -> None:
+        original = (export_dir / "pi05.xml").read_bytes()
+        convert_openvino_export(export_dir)
+        (export_dir / "pi05.xml").unlink()
+
+        restore_openvino_export(export_dir)
+
+        assert (export_dir / "pi05.xml").read_bytes() == original
+
+    def test_relative_export_path(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(export_dir)
+
+        result = convert_openvino_export(".")
+        restore_openvino_export(".")
+
+        assert result.backup_dir == export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
         assert "RandomUniform" in _op_types(export_dir / "pi05.xml")
 
     def test_without_backup(self, export_dir: Path) -> None:
@@ -319,50 +342,104 @@ class TestConversionManifests:
 
 
 class TestFailures:
-    """A failure while swapping files leaves a complete export and, for restore, a complete backup."""
+    """A failure, or the process dying, never leaves the export without a complete set of files."""
 
     @staticmethod
-    def _fail_on(monkeypatch: pytest.MonkeyPatch, source_parent: str, name: str) -> None:
-        real_move = noise_input.shutil.move
+    def _fail_replace(monkeypatch: pytest.MonkeyPatch, source_parent: str, name: str) -> None:
+        real_replace = Path.replace
 
-        def move(src: Path, dst: Path) -> object:
-            if Path(src).parent.name == source_parent and Path(src).name == name:
+        def replace(self: Path, target: Path) -> Path:
+            if self.parent.name == source_parent and self.name == name:
                 msg = "disk full"
                 raise OSError(msg)
-            return real_move(src, dst)
+            return real_replace(self, target)
 
-        monkeypatch.setattr(noise_input.shutil, "move", move)
+        monkeypatch.setattr(Path, "replace", replace)
 
-    def test_conversion_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize("backup", [True, False])
+    def test_conversion_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch, backup: bool) -> None:
         original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
-        self._fail_on(monkeypatch, ".noise-input-new", "pi05.bin")
+        self._fail_replace(monkeypatch, ".noise-input-new", "pi05.bin")
 
         with pytest.raises(OSError, match="disk full"):
-            convert_openvino_export(export_dir)
+            convert_openvino_export(export_dir, backup=backup)
 
         assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
         assert not export_dir.with_name(export_dir.name + BACKUP_SUFFIX).exists()
 
-    def test_conversion_without_backup_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_checksum_failure_changes_nothing(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        (export_dir / "SHA256SUMS").write_text(f"{'0' * 64}  pi05.xml\n")
         original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
-        self._fail_on(monkeypatch, ".noise-input-new", "manifest.json")
+
+        def fail(*_args: object) -> None:
+            msg = "disk full"
+            raise OSError(msg)
+
+        monkeypatch.setattr(noise_input, "_write_checksums", fail)
 
         with pytest.raises(OSError, match="disk full"):
             convert_openvino_export(export_dir, backup=False)
 
         assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
 
-    def test_restore_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_restore_failure_keeps_the_backup(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         convert_openvino_export(export_dir)
-        converted = {path.name: path.read_bytes() for path in export_dir.iterdir()}
-        backup = export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
-        self._fail_on(monkeypatch, backup.name, "pi05.bin")
+        self._fail_replace(monkeypatch, ".noise-input-swap", "pi05.bin")
 
         with pytest.raises(OSError, match="disk full"):
             restore_openvino_export(export_dir)
+        monkeypatch.undo()
 
-        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == converted
         assert has_backup(export_dir)
+        restore_openvino_export(export_dir)
+        assert "RandomUniform" in _op_types(export_dir / "pi05.xml")
+
+    def test_killed_during_conversion(self, export_dir: Path) -> None:
+        """The process dies after the first file is swapped in: the backup is complete and restores."""
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        script = textwrap.dedent(
+            f"""
+            import os
+            from pathlib import Path
+            from physicalai.policies.pi05.noise_input import convert_openvino_export
+
+            real_replace = Path.replace
+
+            def replace(self, target):
+                result = real_replace(self, target)
+                if self.parent.name == ".noise-input-new":
+                    os._exit(3)
+                return result
+
+            Path.replace = replace
+            convert_openvino_export({str(export_dir)!r})
+            """,
+        )
+        killed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True)  # noqa: S603
+        assert killed.returncode == 3, killed.stderr.decode()
+
+        assert sorted(original) == sorted(path.name for path in export_dir.iterdir() if path.is_file())
+        assert has_backup(export_dir)
+        restore_openvino_export(export_dir)
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir() if path.is_file()} == original
+
+    def test_checksums_symlink_target_is_not_written(self, export_dir: Path, tmp_path: Path) -> None:
+        outside = tmp_path / "outside_sums"
+        outside.write_text(f"{'0' * 64}  pi05.xml\n")
+        (export_dir / "SHA256SUMS").symlink_to(outside)
+
+        convert_openvino_export(export_dir)
+        restore_openvino_export(export_dir)
+
+        assert outside.read_text() == f"{'0' * 64}  pi05.xml\n"
+
+    def test_backup_inside_the_export(self, export_dir: Path) -> None:
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+
+        with pytest.raises(ValueError, match="must be outside the export"):
+            convert_openvino_export(export_dir, backup_dir=export_dir / ".noise-input-new")
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
 
     def test_backup_with_artifact_outside_the_folder(self, export_dir: Path, tmp_path: Path) -> None:
         convert_openvino_export(export_dir)

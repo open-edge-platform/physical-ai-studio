@@ -219,6 +219,7 @@ def _resolve_openvino_export(target: str) -> tuple[Path, Path | None]:
             path = _get_model_dir(model_id)
         except Exception as exc:
             raise click.ClickException(f"Model {model_id} not found: {exc}") from exc
+    path = path.resolve()
     studio_export = path / EXPORTS_DIRNAME / "openvino"
     if studio_export.is_dir():
         return studio_export, path

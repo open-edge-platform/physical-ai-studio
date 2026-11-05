@@ -265,6 +265,19 @@ def test_export_folder_target_is_treated_as_its_studio_model(model_dir: Path) ->
     assert "noise" not in _input_names(export_dir)
 
 
+@pytest.mark.parametrize(("cwd", "target"), [("exports", "openvino"), ("exports/openvino", ".")])
+def test_relative_export_targets(model_dir: Path, monkeypatch: pytest.MonkeyPatch, cwd: str, target: str) -> None:
+    monkeypatch.chdir(model_dir / cwd)
+
+    fixed = _run(target)
+    restored = _run(target, "--restore")
+
+    assert fixed.exit_code == 0, fixed.output
+    assert restored.exit_code == 0, restored.output
+    assert sorted(path.name for path in model_dir.iterdir()) == ["exports"]
+    assert sorted(path.name for path in (model_dir / "exports").iterdir()) == ["openvino"]
+
+
 def test_failed_import_saves_neither_job_nor_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The job and the model go in one transaction: a model the database rejects leaves no job behind."""
 

@@ -26,6 +26,7 @@ import gc
 import hashlib
 import inspect
 import json
+import os
 import shutil
 from dataclasses import dataclass
 from enum import StrEnum
@@ -41,7 +42,8 @@ MANIFEST_NAME = "manifest.json"
 CHECKSUMS_NAME = "SHA256SUMS"  # optional `sha256sum` listing some copies of an export carry
 BACKUP_SUFFIX = ".orig"  # default backup folder: <export_dir>.orig next to the export
 _STAGED_DIRNAME = ".noise-input-new"  # new files, written completely before anything is replaced
-_ASIDE_DIRNAME = ".noise-input-old"  # replaced files while swapping, when no backup is kept
+_ASIDE_DIRNAME = ".noise-input-old"  # the replaced files while converting, when no backup is kept
+_SCRATCH_DIRNAME = ".noise-input-swap"  # links renamed over the export's files one at a time
 _RANDOM_OP = "RandomUniform"
 # Ops OpenVINO builds Box-Muller from; the search for the noise stays inside these.
 _ELEMENTWISE = {"Add", "Subtract", "Multiply", "Divide", "Log", "Cos", "Sin", "Sqrt", "Power", "Negative", "Convert"}
@@ -296,22 +298,21 @@ def _read_export(export_dir: Path) -> tuple[dict[str, Any], dict[str, Any], Path
     return manifest, _pi05_args(manifest), graph_path
 
 
-def _refresh_checksums(folder: Path, names: list[str]) -> None:
-    """Update the lines of an existing ``SHA256SUMS`` that list the rewritten files."""
-    checksums = folder / CHECKSUMS_NAME
-    if not checksums.is_file():
-        return
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 24), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _write_checksums(source: Path, files_dir: Path, names: list[str], dest: Path) -> None:
+    """Write ``source`` (a ``SHA256SUMS``) to ``dest`` with the lines for ``names`` hashed from ``files_dir``."""
     lines = []
-    for line in checksums.read_text().splitlines():
+    for line in source.read_text(encoding="utf-8").splitlines():
         name = line.split(maxsplit=1)[-1].lstrip("*") if line.strip() else ""
-        if name in names:
-            digest = hashlib.sha256()
-            with (folder / name).open("rb") as f:
-                for block in iter(lambda: f.read(1 << 24), b""):
-                    digest.update(block)
-            line = f"{digest.hexdigest()}  {name}"  # noqa: PLW2901
-        lines.append(line)
-    checksums.write_text("\n".join(lines) + "\n")
+        lines.append(f"{_sha256(files_dir / name)}  {name}" if name in names else line)
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _save(model: ov.Model, manifest: dict[str, Any], folder: Path, graph_name: str) -> None:
@@ -326,9 +327,34 @@ def _rewritten_names(graph_name: str) -> list[str]:
     return [graph_name, Path(graph_name).with_suffix(".bin").name, MANIFEST_NAME]
 
 
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """Give ``dst`` the content of ``src``: a hard link (instant, no extra disk) where possible."""
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+
+
+def _replace_from(source: Path, target: Path, names: list[str], scratch: Path) -> None:
+    """Replace ``target/name`` with the content of ``source/name`` for each name, leaving ``source`` complete.
+
+    Each file is linked into ``scratch`` first and then renamed over the target, so
+    every target file is either the old or the new one at any moment, even if the
+    process is killed.
+    """
+    scratch.mkdir(parents=True, exist_ok=True)
+    try:
+        for name in names:
+            _link_or_copy(source / name, scratch / name)
+        for name in names:
+            (scratch / name).replace(target / name)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def _copy_other_files(export_dir: Path, output_dir: Path, graph_name: str) -> None:
     """Copy everything in the export except the files the conversion rewrites."""
-    skipped = {*_rewritten_names(graph_name), _STAGED_DIRNAME, _ASIDE_DIRNAME}
+    skipped = {*_rewritten_names(graph_name), _STAGED_DIRNAME, _ASIDE_DIRNAME, _SCRATCH_DIRNAME}
     items = [item for item in export_dir.iterdir() if item.name not in skipped]
     output_dir.mkdir(parents=True, exist_ok=True)
     for item in items:
@@ -343,39 +369,6 @@ def _overlaps(a: Path, b: Path) -> bool:
     return a == b or a.is_relative_to(b) or b.is_relative_to(a)
 
 
-def _swap(target: Path, incoming: Path, aside: Path, names: list[str]) -> None:
-    """Move ``names`` from ``target`` to ``aside``, then from ``incoming`` to ``target``.
-
-    On any failure every file goes back where it was, so ``target`` keeps a complete
-    set of files.
-
-    Raises:
-        RuntimeError: If putting the files back fails too; the message says where they are.
-    """
-    moved_aside: list[str] = []
-    moved_in: list[str] = []
-    try:
-        aside.mkdir(parents=True, exist_ok=True)
-        for name in names:
-            shutil.move(target / name, aside / name)
-            moved_aside.append(name)
-        for name in names:
-            shutil.move(incoming / name, target / name)
-            moved_in.append(name)
-    except BaseException as exc:
-        try:
-            for name in moved_in:
-                shutil.move(target / name, incoming / name)
-            for name in moved_aside:
-                shutil.move(aside / name, target / name)
-        except BaseException as rollback_exc:
-            msg = f"swapping files in {target} failed and could not be undone: files are in {aside} and {incoming}"
-            raise RuntimeError(msg) from rollback_exc
-        with contextlib.suppress(OSError):
-            aside.rmdir()
-        raise exc from None
-
-
 def convert_openvino_export(
     export_dir: Path | str,
     output_dir: Path | str | None = None,
@@ -385,11 +378,13 @@ def convert_openvino_export(
 ) -> ConversionResult:
     """Make a pi05 OpenVINO export take its start noise as a ``noise`` input.
 
-    In place by default: the original graph, weights and manifest are moved to a
-    backup folder (``<export_dir>.orig`` unless ``backup_dir`` is given) before the
-    new ones take their place; moving them back restores the export. With
-    ``output_dir`` the converted export is written there and the source is left
-    untouched. An export that already takes the noise as input is left as it is.
+    In place by default: the original graph, weights and manifest (and
+    ``SHA256SUMS``, if any) are kept in a backup folder (``<export_dir>.orig`` unless
+    ``backup_dir`` is given) that is complete before any file of the export changes,
+    and :func:`restore_openvino_export` puts them back. Each file is then replaced
+    with an atomic rename, so the export never lacks a file. With ``output_dir`` the
+    converted export is written there and the source is left untouched. An export
+    that already takes the noise as input is left as it is.
 
     Args:
         export_dir: OpenVINO export folder (``manifest.json`` plus the graph it names).
@@ -401,11 +396,12 @@ def convert_openvino_export(
         What was done and where the resulting export is.
 
     Raises:
-        ValueError: If the export is not a pi05 export with in-graph noise.
+        ValueError: If the export is not a pi05 export with in-graph noise, or the
+            output or backup folder overlaps the export.
     """
     import openvino as ov  # noqa: PLC0415
 
-    export_dir = Path(export_dir)
+    export_dir = Path(export_dir).resolve()
     manifest, pi05_args, graph_path = _read_export(export_dir)
     model = ov.Core().read_model(graph_path)
     existing = _noise_input_shape(model)
@@ -418,19 +414,7 @@ def convert_openvino_export(
         msg = f"{graph_path} samples no start noise (exported with use_random_input_noise=False?)"
         raise ValueError(msg)
 
-    out = Path(output_dir) if output_dir is not None else None
-    keep: Path | None = None
-    if out is not None:
-        if _overlaps(out, export_dir):
-            msg = f"the output folder {out} must be outside the export {export_dir}, and the other way round"
-            raise ValueError(msg)
-        _require_empty(out)
-    elif backup:
-        keep = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
-        _require_empty(keep)
-    aside = keep if keep is not None else export_dir / _ASIDE_DIRNAME
-    _require_empty(aside)
-
+    out, keep, aside = _target_folders(export_dir, output_dir, backup=backup, backup_dir=backup_dir)
     noise_shape, replaced_ops = _replace_noise_with_input(model)
     pi05_args["noise_shape"] = list(noise_shape)
     graph_name = graph_path.name
@@ -438,30 +422,89 @@ def convert_openvino_export(
     if out is not None:
         _copy_other_files(export_dir, out, graph_name)
         _save(model, manifest, out, graph_name)
-        _refresh_checksums(out, names)
+        if (out / CHECKSUMS_NAME).is_file():
+            _write_checksums(out / CHECKSUMS_NAME, out, names, out / CHECKSUMS_NAME)
         return ConversionResult(ConversionStatus.CONVERTED, out, noise_shape, replaced_ops)
 
-    # Write the new files completely before touching the originals.
     staged_dir = export_dir / _STAGED_DIRNAME
     shutil.rmtree(staged_dir, ignore_errors=True)
     staged_dir.mkdir()
     try:
+        # Write every new file, the checksums included, before touching the export.
         _save(model, manifest, staged_dir, graph_name)
-        # Release the original weights (memory-mapped by read_model) before moving them.
+        if (export_dir / CHECKSUMS_NAME).is_file():
+            _write_checksums(export_dir / CHECKSUMS_NAME, staged_dir, names, staged_dir / CHECKSUMS_NAME)
+            names = [*names, CHECKSUMS_NAME]
+        # Release the original weights (memory-mapped by read_model) before replacing them.
         del model
         gc.collect()
-        _swap(export_dir, staged_dir, aside, names)
+        _swap_in(export_dir, staged_dir, aside, names)
+    except BaseException:
+        if keep is not None:
+            shutil.rmtree(keep, ignore_errors=True)
+        raise
     finally:
         shutil.rmtree(staged_dir, ignore_errors=True)
-    if keep is None:
-        shutil.rmtree(aside, ignore_errors=True)
-    _refresh_checksums(export_dir, names)
+        if keep is None:
+            shutil.rmtree(aside, ignore_errors=True)
     return ConversionResult(ConversionStatus.CONVERTED, export_dir, noise_shape, replaced_ops, keep)
+
+
+def _target_folders(
+    export_dir: Path,
+    output_dir: Path | str | None,
+    *,
+    backup: bool,
+    backup_dir: Path | str | None,
+) -> tuple[Path | None, Path | None, Path]:
+    """Check the folders a conversion writes to.
+
+    Returns:
+        The output folder (or None), the backup folder (or None), and where the
+        originals go while swapping.
+
+    Raises:
+        ValueError: If the output or backup folder overlaps the export.
+    """
+    out = Path(output_dir).resolve() if output_dir is not None else None
+    keep: Path | None = None
+    if out is not None:
+        if _overlaps(out, export_dir):
+            msg = f"the output folder {out} must be outside the export {export_dir}, and the other way round"
+            raise ValueError(msg)
+        _require_empty(out)
+    elif backup:
+        keep = Path(backup_dir).resolve() if backup_dir is not None else default_backup_dir(export_dir)
+        if _overlaps(keep, export_dir):
+            msg = f"the backup folder {keep} must be outside the export {export_dir}, and the other way round"
+            raise ValueError(msg)
+        _require_empty(keep)
+    aside = keep if keep is not None else export_dir / _ASIDE_DIRNAME
+    _require_empty(aside)
+    return out, keep, aside
+
+
+def _swap_in(export_dir: Path, staged_dir: Path, aside: Path, names: list[str]) -> None:
+    """Replace the export's files with the staged ones, keeping the originals in ``aside``.
+
+    ``aside`` gets a complete copy of the originals (hard links) before any of them
+    changes. Each file is then replaced with one atomic rename, so the export never
+    lacks a file; on failure the originals are put back the same way.
+    """
+    aside.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        _link_or_copy(export_dir / name, aside / name)
+    try:
+        for name in names:
+            (staged_dir / name).replace(export_dir / name)
+    except BaseException:
+        _replace_from(aside, export_dir, names, export_dir / _SCRATCH_DIRNAME)
+        raise
 
 
 def default_backup_dir(export_dir: Path | str) -> Path:
     """Return where an in-place conversion keeps the replaced files by default: ``<export_dir>.orig``."""
-    export_dir = Path(export_dir)
+    export_dir = Path(export_dir).resolve()
     return export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
 
 
@@ -481,10 +524,11 @@ def has_backup(export_dir: Path | str, backup_dir: Path | str | None = None) -> 
 
 
 def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | None = None) -> Path:
-    """Undo an in-place :func:`convert_openvino_export` by moving the backed-up files back.
+    """Undo an in-place :func:`convert_openvino_export` from its backup.
 
-    If moving fails, the converted files stay in place and the backup stays complete.
-    The backup folder is removed once it is empty.
+    Each export file is replaced with an atomic rename, also when the export lacks
+    it, and the backup stays complete until every file is back, so a failed or
+    interrupted restore can simply be run again. The backup folder is then removed.
 
     Args:
         export_dir: The converted OpenVINO export folder.
@@ -496,8 +540,8 @@ def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | Non
     Raises:
         FileNotFoundError: If the export folder does not exist, or the backup is missing or incomplete.
     """
-    export_dir = Path(export_dir)
-    backup = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
+    export_dir = Path(export_dir).resolve()
+    backup = Path(backup_dir).resolve() if backup_dir is not None else default_backup_dir(export_dir)
     if not export_dir.is_dir():
         msg = f"no export folder {export_dir}"
         raise FileNotFoundError(msg)
@@ -506,11 +550,11 @@ def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | Non
         msg = f"no complete backup in {backup} (graph, weights and manifest)"
         raise FileNotFoundError(msg)
     names = _rewritten_names(graph_name)
-    aside = export_dir / _ASIDE_DIRNAME
-    _require_empty(aside)
-    _swap(export_dir, backup, aside, names)
-    shutil.rmtree(aside, ignore_errors=True)
-    _refresh_checksums(export_dir, names)
+    if (backup / CHECKSUMS_NAME).is_file():
+        names.append(CHECKSUMS_NAME)
+    _replace_from(backup, export_dir, names, export_dir / _SCRATCH_DIRNAME)
+    for name in names:
+        (backup / name).unlink()
     with contextlib.suppress(OSError):
         backup.rmdir()
     return backup
