@@ -65,6 +65,17 @@ async def test_every_start_of_teleop_has_its_own_grace_period(store: Store, tmp_
         assert store.read(ACTION).timestamp > time.monotonic() + 4.0
 
 
+def test_teleop_tells_a_leader_that_asks_where_the_follower_is(store: Store, tmp_path: Path) -> None:
+    leader = _leader(tmp_path)
+    seen: list[list[float]] = []
+    leader.observe_follower = lambda positions: seen.append(list(positions))  # type: ignore[attr-defined]
+    control = TeleopControl(store, leader, TeleopControlConfig(grace_s=0))
+    control.on_start()
+    control.on_tick()
+    assert seen == [[0.0, 10.0]]  # the follower's measured joints, before the leader is read
+    assert store.read(ACTION).value.tolist() == [5.0, 6.0]
+
+
 def test_teleop_refuses_a_leader_with_other_joints(store: Store, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="do not match"):
         TeleopControl(store, _leader(tmp_path, ["elbow", "gripper"]), TeleopControlConfig())

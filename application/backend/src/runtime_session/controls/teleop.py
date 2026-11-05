@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from robots.features import feature_names
 from runtime_session.controls.base import Control
-from runtime_session.store import ACTION
+from runtime_session.store import ACTION, STATE
 
 if TYPE_CHECKING:
     from physicalai.robot import Robot
@@ -22,6 +22,10 @@ class TeleopControl(Control):
     each command is stamped due at the end of the grace period: the robot worker
     closes the gap over it rather than jumping. It tracks the leader the whole
     time, so the follower is on it when the grace period ends.
+
+    A leader that computes its pose from where the follower is (a VR headset
+    leader solving the follower's joints) has an ``observe_follower`` method:
+    before every reading it gets the follower's latest measured joints.
     """
 
     def __init__(self, store: Store, leader: Robot, config: TeleopControlConfig, bus: Bus | None = None) -> None:
@@ -39,6 +43,11 @@ class TeleopControl(Control):
         self.started_at = time.monotonic()
 
     def on_tick(self) -> None:
+        observe = getattr(self.leader, "observe_follower", None)
+        if callable(observe):
+            state = self.store.read(STATE)
+            if state is not None:
+                observe(state.value)
         observation = self.leader.get_observation()
         due = max(observation.timestamp + 1 / self.hz, self.started_at + self.grace_s)
         self.store.write(ACTION, observation.joint_positions, timestamp=due)
