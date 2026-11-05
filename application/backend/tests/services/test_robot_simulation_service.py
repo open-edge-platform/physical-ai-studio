@@ -4,7 +4,6 @@
 """RobotSimulationService against a fake simulation HTTP API."""
 
 import asyncio
-import contextlib
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,23 +18,27 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import services.robot_simulation_service as module
-from db.schema import Base, EnvironmentCameraDB, ProjectDB, ProjectEnvironmentDB
+from db.schema import Base, EnvironmentCameraDB, EnvironmentRobotDB, ProjectDB, ProjectEnvironmentDB, ProjectRobotDB
 from exceptions import (
+    ResourceInUseError,
+    ResourceNotFoundError,
+    ResourceType,
     SimulationCommandUnavailableError,
     SimulationInvalidRequestError,
-    SimulationMovedError,
     SimulationNotRunningError,
+    SimulationNotServingError,
     SimulationNotSupportedError,
 )
+from repositories.project_camera_repo import ProjectCameraRepository
 from repositories.project_environment_repo import ProjectEnvironmentRepository
 from robots.catalog.registry import RobotCatalogRegistry
+from robots.robot_service import RobotService as RealRobotService
 from schemas.environment import CameraEnvironmentConfiguration, Environment
-from schemas.project_camera import IPCamera
+from schemas.project_camera import IPCamera, IPCameraPayload, SimulationCamera, SimulationCameraPayload
 from schemas.simulation import Simulation, SimulationStatus
 from services.environment_service import EnvironmentService
 from services.project_camera_service import ProjectCameraService
 from services.robot_simulation_service import RobotSimulationService
-from services.simulation_manager import _move_simulation_cameras
 
 PROJECT_ID = uuid4()
 ROBOT_ID = uuid4()
@@ -78,13 +81,17 @@ def transport(responses: dict[str, Any]) -> httpx.MockTransport:
 
 @pytest.fixture
 def robot(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    robot = SimpleNamespace(id=ROBOT_ID, name="Sim arm", type="Sim_Follower", payload=Payload(), others=[])
+    robot = SimpleNamespace(
+        id=ROBOT_ID, name="Sim arm", type="Sim_Follower", payload=Payload(), others=[], deleted=False
+    )
 
     class FakeRobotService:
         def __init__(self, session: Any, registry: Any) -> None:
             pass
 
         async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Any:
+            if robot.deleted:
+                raise ResourceNotFoundError(ResourceType.ROBOT, str(robot_id))
             return robot
 
         async def get_robot_list(self, project_id: UUID) -> list[Any]:
@@ -96,12 +103,7 @@ def robot(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 def fake_manager(state: Any) -> SimpleNamespace:
     """The parts of ``SimulationManager`` the service uses; *state* returns the manager's state."""
-
-    @contextlib.asynccontextmanager
-    async def updating_robot(project_id: UUID, robot_id: UUID):
-        yield False
-
-    return SimpleNamespace(state=state, updating_robot=updating_robot)
+    return SimpleNamespace(state=state)
 
 
 def service(
@@ -114,7 +116,7 @@ def service(
         )
     )
     manager = fake_manager(lambda: state or Simulation())
-    session = SimpleNamespace(rollback=AsyncMock(), expire_all=lambda: None)
+    session = SimpleNamespace(rollback=AsyncMock(), commit=AsyncMock(), expire_all=lambda: None)
     return RobotSimulationService(session, registry, manager, transport=transport(responses))  # type: ignore[arg-type]
 
 
@@ -226,11 +228,9 @@ def environment_store(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             id=uuid4(), name="Env", robots=[], cameras=[CameraEnvironmentConfiguration(camera_id=uuid4())]
         ),
         "created": [],
-        "deleted": [],
         "existing": [],
         "linked": [],
-        "updated_cameras": [],
-        "fail_update": False,
+        "fail_link": False,
     }
 
     class FakeEnvironmentRepository:
@@ -240,64 +240,51 @@ def environment_store(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         async def get_by_id(self, environment_id: UUID) -> Any:
             return store["environment"]
 
-        async def add_cameras(
-            self,
-            environment_id: UUID,
-            camera_ids: list[UUID],
-            *,
-            new_cameras: list[IPCamera] = (),  # type: ignore[assignment]
-            changed_cameras: list[IPCamera] = (),  # type: ignore[assignment]
-        ) -> None:
-            # All or nothing, like the one transaction of the real repository.
-            if store["fail_update"]:
+        async def link_cameras(self, environment_id: UUID, camera_ids: list[UUID]) -> None:
+            if store["fail_link"]:
                 raise RuntimeError("database is gone")
-            store["created"].extend(new_cameras)
-            store["updated_cameras"].extend(changed_cameras)
             store["linked"].extend(camera_ids)
 
     class FakeCameraService:
         def __init__(self, *args: Any) -> None:
             pass
 
-        async def get_camera_list(self, project_id: UUID) -> list[IPCamera]:
+        async def get_camera_list(self, project_id: UUID) -> list[Any]:
             return store["existing"]
 
-        async def create_camera(self, project_id: UUID, camera: IPCamera) -> IPCamera:
+        async def get_camera_by_id(self, project_id: UUID, camera_id: UUID) -> Any:
+            return next(camera for camera in [*store["existing"], *store["created"]] if camera.id == camera_id)
+
+    class FakeCameraRepository:
+        def __init__(self, *args: Any) -> None:
+            pass
+
+        async def add_if_absent(self, camera: Any) -> None:
             store["created"].append(camera)
-            return camera
-
-        async def update_camera(self, project_id: UUID, camera: IPCamera, commit: bool = True) -> IPCamera:
-            store["updated_cameras"].append(camera)
-            return camera
-
-        async def delete_camera(self, project_id: UUID, camera_id: UUID) -> None:
-            store["deleted"].append(camera_id)
 
     monkeypatch.setattr(module, "ProjectEnvironmentRepository", FakeEnvironmentRepository)
     monkeypatch.setattr(module, "ProjectCameraService", FakeCameraService)
+    monkeypatch.setattr(module, "ProjectCameraRepository", FakeCameraRepository)
     return store
 
 
-async def test_adding_cameras_creates_ip_cameras_on_the_streams(
+async def test_adding_cameras_creates_simulation_cameras(
     robot: SimpleNamespace, environment_store: dict[str, Any]
 ) -> None:
     environment = environment_store["environment"]
 
     created = await service(sim_api(EXTERNAL)).add_cameras(PROJECT_ID, environment.id, ROBOT_ID, ["wrist", "wrist"])
 
-    assert [
-        (c.name, c.hardware_name, c.payload.url, c.payload.width, c.payload.fps, c.fingerprint) for c in created
-    ] == [
+    assert [(c.driver, c.name, c.hardware_name, c.payload, c.fingerprint) for c in created] == [
         (
+            "simulation",
             "Sim arm wrist",
-            "Sim arm wrist",
-            f"{EXTERNAL}/cameras/wrist/mjpeg",
-            640,
-            30,
-            {"url": f"{EXTERNAL}/cameras/wrist/mjpeg"},
+            "wrist",
+            SimulationCameraPayload(robot_id=ROBOT_ID, camera="wrist"),
+            {"robot_id": str(ROBOT_ID), "camera": "wrist"},
         )
     ]
-    assert created[0].payload.simulation_robot_id == ROBOT_ID
+    assert environment_store["created"] == created
     assert environment_store["linked"] == [created[0].id]
 
 
@@ -309,7 +296,7 @@ async def test_a_new_camera_takes_the_given_name_or_the_default_for_a_blank_one(
         PROJECT_ID, environment_store["environment"].id, ROBOT_ID, ["wrist"], {"wrist": given}
     )
 
-    assert [(c.name, c.hardware_name) for c in created] == [(expected, expected)]
+    assert [c.name for c in created] == [expected]
 
 
 async def test_a_name_for_a_camera_that_is_not_added_is_refused(
@@ -337,117 +324,98 @@ async def test_adding_cameras_needs_a_running_simulation(
         await service({}).add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"])
 
 
-def _owned_camera(url: str, owner: UUID | None) -> IPCamera:
-    return IPCamera(
+def _simulation_camera(robot_id: UUID, camera: str, name: str = "cam") -> SimulationCamera:
+    return SimulationCamera(
         id=uuid4(),
-        name=url,
-        fingerprint={"url": url},
-        hardware_name=None,
-        payload={"url": url, "simulation_robot_id": owner},
+        name=name,
+        fingerprint={"robot_id": str(robot_id), "camera": camera},
+        hardware_name=camera,
+        payload=SimulationCameraPayload(robot_id=robot_id, camera=camera),
     )
-
-
-async def _move(cameras: list[IPCamera]) -> list[IPCamera]:
-    updates: list[IPCamera] = []
-
-    class FakeCameraService:
-        async def get_camera_list(self, project_id: UUID) -> list[IPCamera]:
-            return cameras
-
-        async def update_camera(self, project_id: UUID, camera: IPCamera, commit: bool = True) -> None:
-            updates.append(camera)
-
-    await _move_simulation_cameras(FakeCameraService(), PROJECT_ID, ROBOT_ID, STUDIO)  # type: ignore[arg-type]
-    return updates
-
-
-async def test_moving_the_simulation_rewrites_its_camera_urls_from_any_address() -> None:
-    cameras = [
-        _owned_camera(f"{EXTERNAL}/cameras/wrist/mjpeg", ROBOT_ID),
-        _owned_camera("http://127.0.0.1:56100/cameras/overview/mjpeg", ROBOT_ID),
-        _owned_camera(f"{STUDIO}/cameras/top/mjpeg", ROBOT_ID),  # already there
-        _owned_camera("rtsp://192.168.1.100:554/stream1", ROBOT_ID),  # not a simulation stream
-    ]
-
-    updates = await _move(cameras)
-
-    assert [(c.id, c.payload.url, c.fingerprint, c.payload.simulation_robot_id) for c in updates] == [
-        (cameras[0].id, f"{STUDIO}/cameras/wrist/mjpeg", {"url": f"{STUDIO}/cameras/wrist/mjpeg"}, ROBOT_ID),
-        (cameras[1].id, f"{STUDIO}/cameras/overview/mjpeg", {"url": f"{STUDIO}/cameras/overview/mjpeg"}, ROBOT_ID),
-    ]
-
-
-async def test_moving_the_simulation_leaves_another_robots_cameras_on_the_same_address() -> None:
-    mine = _owned_camera(f"{EXTERNAL}/cameras/wrist/mjpeg", ROBOT_ID)
-    theirs = _owned_camera(f"{EXTERNAL}/cameras/overview/mjpeg", uuid4())
-
-    updates = await _move([mine, theirs])
-
-    assert [c.id for c in updates] == [mine.id]
-
-
-async def test_a_camera_of_no_robot_never_moves() -> None:
-    assert await _move([_owned_camera(f"{EXTERNAL}/cameras/wrist/mjpeg", None)]) == []
 
 
 def _ip_camera(url: str) -> IPCamera:
     return IPCamera(id=uuid4(), name="cam", fingerprint={"url": url}, hardware_name="cam", payload={"url": url})
 
 
-async def test_a_camera_of_the_robot_already_on_the_stream_is_reused(
+async def test_the_robots_camera_the_project_has_is_reused_under_its_own_name(
     robot: SimpleNamespace, environment_store: dict[str, Any]
 ) -> None:
-    existing = _owned_camera(f"{EXTERNAL}/cameras/wrist/mjpeg", ROBOT_ID)
+    existing = _simulation_camera(ROBOT_ID, "wrist", "Old name")
     environment_store["existing"] = [existing]
 
     cameras = await service(sim_api(EXTERNAL)).add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"], {"wrist": "New"})
 
-    assert [(camera.id, camera.name) for camera in cameras] == [(existing.id, existing.name)]
-    assert environment_store["created"] == []
-    assert environment_store["updated_cameras"] == []
-    assert environment_store["linked"] == [existing.id]
-
-
-async def test_a_camera_of_no_robot_on_the_stream_is_reused_and_becomes_the_robots(
-    robot: SimpleNamespace, environment_store: dict[str, Any]
-) -> None:
-    existing = _ip_camera(f"{EXTERNAL}/cameras/wrist/mjpeg")
-    environment_store["existing"] = [existing]
-
-    cameras = await service(sim_api(EXTERNAL)).add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"])
-
-    assert [(camera.id, camera.payload.simulation_robot_id) for camera in cameras] == [(existing.id, ROBOT_ID)]
-    assert [(c.id, c.payload.simulation_robot_id) for c in environment_store["updated_cameras"]] == [
-        (existing.id, ROBOT_ID)
-    ]
+    assert [(camera.id, camera.name) for camera in cameras] == [(existing.id, "Old name")]
     assert environment_store["created"] == []
     assert environment_store["linked"] == [existing.id]
 
 
-async def test_another_robots_camera_on_the_stream_is_not_reused(
-    robot: SimpleNamespace, environment_store: dict[str, Any]
-) -> None:
-    # The other robot's simulation ran on this port before, and moves its camera when it restarts.
-    theirs = _owned_camera(f"{EXTERNAL}/cameras/wrist/mjpeg", uuid4())
-    environment_store["existing"] = [theirs]
+@pytest.mark.parametrize(
+    "other",
+    [
+        _simulation_camera(uuid4(), "wrist"),  # another robot's camera of the same name
+        _ip_camera(f"{EXTERNAL}/cameras/wrist/mjpeg"),  # an IP camera on the stream: left as it is
+    ],
+)
+async def test_no_other_camera_is_reused(robot: SimpleNamespace, environment_store: dict[str, Any], other: Any) -> None:
+    environment_store["existing"] = [other]
 
     cameras = await service(sim_api(EXTERNAL)).add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"])
 
-    assert [camera.id for camera in cameras] == [camera.id for camera in environment_store["created"]]
-    assert cameras[0].id != theirs.id
-    assert cameras[0].payload.simulation_robot_id == ROBOT_ID
-    assert environment_store["updated_cameras"] == []
-    assert environment_store["linked"] == [cameras[0].id]
+    assert cameras == environment_store["created"]
+    assert cameras[0].id != other.id
 
 
-async def test_a_failure_keeps_no_new_camera(robot: SimpleNamespace, environment_store: dict[str, Any]) -> None:
-    environment_store["fail_update"] = True
+async def test_a_failure_rolls_the_new_cameras_back(robot: SimpleNamespace, environment_store: dict[str, Any]) -> None:
+    environment_store["fail_link"] = True
+    simulations = service(sim_api(EXTERNAL))
 
     with pytest.raises(RuntimeError):
-        await service(sim_api(EXTERNAL)).add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"])
+        await simulations.add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"])
 
-    assert environment_store["created"] == []
-    assert environment_store["linked"] == []
+    simulations._session.rollback.assert_awaited_once()  # type: ignore[attr-defined]
+
+
+async def test_a_simulation_camera_streams_from_where_its_simulation_runs_now(robot: SimpleNamespace) -> None:
+    probes = 0
+    responses = sim_api(STUDIO)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal probes
+        url = str(request.url)
+        probes += url == f"{STUDIO}/cameras"
+        return httpx.Response(200, json=responses[url]) if url in responses else httpx.Response(404)
+
+    state = Simulation(status=SimulationStatus.RUNNING, robot_id=ROBOT_ID, http_url=STUDIO)
+    simulations = service({}, state)
+    simulations._transport = httpx.MockTransport(handle)
+    wrist = _simulation_camera(ROBOT_ID, "wrist", "Wrist")
+    other = _ip_camera("rtsp://192.168.1.100:554/stream1")
+
+    resolved = await simulations.resolve_cameras(PROJECT_ID, [wrist, other, wrist])
+
+    assert resolved[1] is other
+    assert resolved[0] == resolved[2]
+    assert isinstance(resolved[0], IPCamera)
+    assert (resolved[0].id, resolved[0].name, resolved[0].fingerprint, resolved[0].hardware_name) == (
+        wrist.id,
+        "Wrist",
+        wrist.fingerprint,
+        "wrist",
+    )
+    assert resolved[0].payload == IPCameraPayload(url=f"{STUDIO}/cameras/wrist/mjpeg", width=640, height=480, fps=30)
+    assert probes == 1
+
+
+async def test_a_simulation_camera_needs_its_simulation_running(robot: SimpleNamespace) -> None:
+    with pytest.raises(SimulationNotRunningError, match="Start the simulation of 'Sim arm'"):
+        await service({}).resolve_cameras(PROJECT_ID, [_simulation_camera(ROBOT_ID, "wrist")])
+
+
+async def test_a_simulation_camera_the_simulation_no_longer_has_is_refused(robot: SimpleNamespace) -> None:
+    with pytest.raises(SimulationNotServingError, match="no camera 'overview'"):
+        await service(sim_api(EXTERNAL)).resolve_cameras(PROJECT_ID, [_simulation_camera(ROBOT_ID, "overview")])
 
 
 async def test_listing_returns_the_running_simulations_of_simulated_robots(robot: SimpleNamespace) -> None:
@@ -515,7 +483,9 @@ def two_camera_api(on_cameras_probe: Any) -> httpx.MockTransport:
     return httpx.MockTransport(handle)
 
 
-async def add_with_database(session: Any, transport: httpx.MockTransport, name: str | list[str]) -> list[IPCamera]:
+async def add_with_database(
+    session: Any, transport: httpx.MockTransport, name: str | list[str]
+) -> list[SimulationCamera]:
     launch = SimpleNamespace(owner_name=lambda payload: payload.name)
     registry = SimpleNamespace(get_definition=lambda robot_type: SimpleNamespace(simulation=launch))
     manager = fake_manager(Simulation)
@@ -545,7 +515,7 @@ async def test_concurrent_additions_to_an_environment_keep_each_others_cameras(
 
     transport = two_camera_api(wait_for_the_other)
 
-    async def add(name: str) -> list[IPCamera]:
+    async def add(name: str) -> list[SimulationCamera]:
         async with studio_db() as session:
             return await add_with_database(session, transport, name)
 
@@ -553,6 +523,40 @@ async def test_concurrent_additions_to_an_environment_keep_each_others_cameras(
     await add("wrist")  # already in the environment
 
     assert await linked_cameras(studio_db) == sorted([str(wrist[0].id), str(overview[0].id)])
+
+
+async def test_concurrent_additions_of_the_same_camera_make_one_camera(robot: SimpleNamespace, studio_db: Any) -> None:
+    # Both additions find no camera of the robot before either creates one.
+    both_probing = asyncio.Barrier(2)
+
+    async def wait_for_the_other() -> None:
+        await asyncio.wait_for(both_probing.wait(), 5.0)
+
+    transport = two_camera_api(wait_for_the_other)
+
+    async def add() -> list[SimulationCamera]:
+        async with studio_db() as session:
+            return await add_with_database(session, transport, "wrist")
+
+    first, second = await asyncio.gather(add(), add())
+
+    async with studio_db() as session:
+        stored = await ProjectCameraService(session, RobotCatalogRegistry()).get_camera_list(PROJECT_ID)
+    assert [camera.id for camera in stored] == [first[0].id] == [second[0].id]
+    assert await linked_cameras(studio_db) == [str(first[0].id)]
+
+
+async def test_a_robot_deleted_during_an_addition_keeps_no_camera(robot: SimpleNamespace, studio_db: Any) -> None:
+    async def delete_the_robot() -> None:
+        robot.deleted = True
+
+    async with studio_db() as session:
+        with pytest.raises(ResourceNotFoundError):
+            await add_with_database(session, two_camera_api(delete_the_robot), "wrist")
+
+    async with studio_db() as session:
+        assert await ProjectCameraService(session, RobotCatalogRegistry()).get_camera_list(PROJECT_ID) == []
+    assert await linked_cameras(studio_db) == []
 
 
 async def test_adding_cameras_keeps_a_change_made_to_the_environment_meanwhile(
@@ -582,47 +586,11 @@ async def test_adding_cameras_keeps_a_change_made_to_the_environment_meanwhile(
     assert await linked_cameras(studio_db) == [str(wrist[0].id)]
 
 
-async def test_adding_cameras_is_refused_once_a_replacement_moved_the_simulation(
-    robot: SimpleNamespace, environment_store: dict[str, Any]
-) -> None:
-    unowned = _ip_camera(f"{EXTERNAL}/cameras/wrist/mjpeg")
-    environment_store["existing"] = [unowned]
-    responses = sim_api(EXTERNAL)
-
-    async def handle(request: httpx.Request) -> httpx.Response:
-        url = str(request.url)
-        if url == f"{EXTERNAL}/cameras":
-            # While the old simulation is probed, a replacement starts on another port and stores its
-            # address on the robot; its relocation skipped the camera, which had no robot yet.
-            robot.payload = Payload(http_url=STUDIO)
-        return httpx.Response(200, json=responses[url]) if url in responses else httpx.Response(404)
-
-    simulations = RobotSimulationService(
-        SimpleNamespace(rollback=AsyncMock(), expire_all=lambda: None),  # type: ignore[arg-type]
-        SimpleNamespace(
-            get_definition=lambda robot_type: SimpleNamespace(
-                simulation=SimpleNamespace(owner_name=lambda payload: "sim-a")
-            )
-        ),  # type: ignore[arg-type]
-        fake_manager(Simulation),  # type: ignore[arg-type]
-        transport=httpx.MockTransport(handle),
-    )
-
-    with pytest.raises(SimulationMovedError):
-        await simulations.add_cameras(PROJECT_ID, uuid4(), ROBOT_ID, ["wrist"])
-
-    assert environment_store["updated_cameras"] == []
-    assert environment_store["created"] == []
-    assert environment_store["linked"] == []
-
-
-async def test_a_failed_addition_keeps_neither_an_adoption_nor_a_new_camera(
-    robot: SimpleNamespace, studio_db: Any
-) -> None:
+async def test_a_failed_addition_keeps_no_new_camera(robot: SimpleNamespace, studio_db: Any) -> None:
     registry = RobotCatalogRegistry()
-    unowned = _ip_camera(f"{EXTERNAL}/cameras/wrist/mjpeg")
+    existing = _ip_camera("rtsp://192.168.1.100:554/stream1")
     async with studio_db() as session:
-        await ProjectCameraService(session, registry).create_camera(PROJECT_ID, unowned)
+        await ProjectCameraService(session, registry).create_camera(PROJECT_ID, existing)
 
     async def delete_the_environment() -> None:
         # The environment is deleted while the addition probes the simulation.
@@ -635,4 +603,80 @@ async def test_a_failed_addition_keeps_neither_an_adoption_nor_a_new_camera(
 
     async with studio_db() as session:
         stored = await ProjectCameraService(session, registry).get_camera_list(PROJECT_ID)
-    assert [(camera.id, camera.payload.simulation_robot_id) for camera in stored] == [(unowned.id, None)]
+    assert [camera.id for camera in stored] == [existing.id]
+
+
+async def test_deleting_a_robots_simulation_cameras_unlinks_them_and_keeps_the_others(studio_db: Any) -> None:
+    registry = RobotCatalogRegistry()
+    other_robot = uuid4()
+    mine = _simulation_camera(ROBOT_ID, "wrist")
+    theirs = _simulation_camera(other_robot, "wrist")
+    plain = _ip_camera("rtsp://192.168.1.100:554/stream1")
+    async with studio_db() as session:
+        for camera in (mine, theirs, plain):
+            await ProjectCameraService(session, registry).create_camera(PROJECT_ID, camera)
+        await ProjectEnvironmentRepository(session, PROJECT_ID, registry).link_cameras(
+            ENVIRONMENT_ID, [mine.id, theirs.id, plain.id]
+        )
+        await session.commit()
+
+    async with studio_db() as session:
+        await ProjectCameraRepository(session, str(PROJECT_ID)).delete_simulation_cameras(ROBOT_ID)
+        await session.commit()
+
+    async with studio_db() as session:
+        stored = await ProjectCameraService(session, registry).get_camera_list(PROJECT_ID)
+    assert sorted(str(camera.id) for camera in stored) == sorted([str(theirs.id), str(plain.id)])
+    assert await linked_cameras(studio_db) == sorted([str(theirs.id), str(plain.id)])
+
+
+async def _add_robot(sessions: Any, *, in_environment: bool) -> None:
+    async with sessions() as session:
+        session.add(
+            ProjectRobotDB(
+                id=str(ROBOT_ID),
+                project_id=str(PROJECT_ID),
+                name="Sim arm",
+                type="SO101_Follower",
+                payload={"connection_string": "/dev/ttyACM0", "serial_number": "arm"},
+            )
+        )
+        if in_environment:
+            session.add(EnvironmentRobotDB(environment_id=str(ENVIRONMENT_ID), robot_id=str(ROBOT_ID)))
+        await session.commit()
+
+
+async def _add_camera_of_the_robot(sessions: Any) -> SimulationCamera:
+    camera = _simulation_camera(ROBOT_ID, "wrist")
+    async with sessions() as session:
+        registry = RobotCatalogRegistry()
+        await ProjectCameraService(session, registry).create_camera(PROJECT_ID, camera)
+        await ProjectEnvironmentRepository(session, PROJECT_ID, registry).link_cameras(ENVIRONMENT_ID, [camera.id])
+        await session.commit()
+    return camera
+
+
+async def test_deleting_a_robot_deletes_its_simulation_cameras(studio_db: Any) -> None:
+    await _add_robot(studio_db, in_environment=False)
+    await _add_camera_of_the_robot(studio_db)
+
+    async with studio_db() as session:
+        await RealRobotService(session, RobotCatalogRegistry()).delete_robot(PROJECT_ID, ROBOT_ID)
+
+    async with studio_db() as session:
+        assert await ProjectCameraService(session, RobotCatalogRegistry()).get_camera_list(PROJECT_ID) == []
+    assert await linked_cameras(studio_db) == []
+
+
+async def test_a_robot_that_cannot_be_deleted_keeps_its_simulation_cameras(studio_db: Any) -> None:
+    await _add_robot(studio_db, in_environment=True)
+    camera = await _add_camera_of_the_robot(studio_db)
+
+    async with studio_db() as session:
+        with pytest.raises(ResourceInUseError):
+            await RealRobotService(session, RobotCatalogRegistry()).delete_robot(PROJECT_ID, ROBOT_ID)
+
+    async with studio_db() as session:
+        stored = await ProjectCameraService(session, RobotCatalogRegistry()).get_camera_list(PROJECT_ID)
+    assert [c.id for c in stored] == [camera.id]
+    assert await linked_cameras(studio_db) == [str(camera.id)]

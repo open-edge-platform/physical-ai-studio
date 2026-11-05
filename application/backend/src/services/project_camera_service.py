@@ -32,14 +32,13 @@ class ProjectCameraService:
     async def create_camera(self, project_id: UUID, camera: Camera) -> Camera:
         return await self._repo(project_id).save(camera)
 
-    async def update_camera(self, project_id: UUID, partial_camera: Camera, *, commit: bool = True) -> Camera:
-        """Update a camera; with ``commit=False`` the caller commits it, with more."""
+    async def update_camera(self, project_id: UUID, partial_camera: Camera) -> Camera:
         repo = self._repo(project_id)
         camera = await repo.get_by_id(partial_camera.id)
         if camera is None:
             raise ResourceNotFoundError(ResourceType.CAMERA, str(partial_camera.id))
 
-        return await repo.update(camera, partial_update=partial_camera.model_dump(exclude={"id"}), commit=commit)
+        return await repo.update(camera, partial_update=partial_camera.model_dump(exclude={"id"}))
 
     async def delete_camera(self, project_id: UUID, camera_id: UUID) -> None:
         repo = self._repo(project_id)

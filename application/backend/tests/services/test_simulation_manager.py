@@ -31,14 +31,7 @@ from exceptions import (
 )
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.robot_service import RobotService
-from schemas.environment import (
-    CameraEnvironmentConfiguration,
-    Environment,
-    RobotEnvironmentConfiguration,
-    TeleoperatorNone,
-    TeleoperatorRobot,
-)
-from schemas.project_camera import IPCamera
+from schemas.environment import Environment, RobotEnvironmentConfiguration, TeleoperatorNone, TeleoperatorRobot
 from schemas.robot import RobotAdapter, UnavailableRobot
 from schemas.simulation import Simulation, SimulationPhase, SimulationStatus, StartSimulationRequest
 from services.simulation_manager import SimulationManager
@@ -769,7 +762,6 @@ async def test_the_database_store_writes_the_address_only_when_it_changes(
         yield SimpleNamespace(commit=_nothing)
 
     monkeypatch.setattr(module, "RobotService", FakeService)
-    monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: SimpleNamespace(get_camera_list=_no_cameras))
     monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
     monkeypatch.setattr(module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=_no_list))
     new_url = "http://127.0.0.1:9"
@@ -780,10 +772,6 @@ async def test_the_database_store_writes_the_address_only_when_it_changes(
         assert updates == []
     else:
         assert [update.payload.http_url for update in updates] == [new_url]
-
-
-async def _no_cameras(project_id: UUID) -> list[Any]:
-    return []
 
 
 async def _nothing() -> None:
@@ -801,7 +789,7 @@ class _StoredRobot(BaseModel):
     payload: FakePayload
 
 
-async def test_the_database_store_moves_only_the_started_robots_cameras_after_sequential_starts(
+async def test_the_database_store_stores_each_started_robots_address_after_sequential_starts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import services.simulation_manager as module
@@ -812,18 +800,6 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
         a: _StoredRobot(id=a, payload=FakePayload(name="sim-a", http_url=shared)),
         b: _StoredRobot(id=b, payload=FakePayload(name="sim-b", http_url=shared)),
     }
-
-    def camera(stream: str, owner: UUID | None) -> IPCamera:
-        url = f"{shared}/cameras/{stream}/mjpeg"
-        return IPCamera(
-            id=uuid4(),
-            name=stream,
-            fingerprint={"url": url},
-            hardware_name=stream,
-            payload={"url": url, "simulation_robot_id": owner},
-        )
-
-    cameras = {cam.name: cam for cam in (camera("wrist", a), camera("unowned", None))}
 
     class FakeRobotService:
         def __init__(self, session: Any, registry: Any) -> None:
@@ -838,19 +814,11 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
         async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
             robots[updated.id] = updated
 
-    class FakeCameraService:
-        async def get_camera_list(self, project_id: UUID) -> list[IPCamera]:
-            return list(cameras.values())
-
-        async def update_camera(self, project_id: UUID, updated: IPCamera, commit: bool = True) -> None:
-            cameras[updated.name] = updated
-
     @contextlib.asynccontextmanager
     async def fake_session():
         yield SimpleNamespace(commit=_nothing)
 
     monkeypatch.setattr(module, "RobotService", FakeRobotService)
-    monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: FakeCameraService())
     monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
     monkeypatch.setattr(module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=_no_list))
     store = module.DatabaseSimulationRobots(SimpleNamespace())  # type: ignore[arg-type]
@@ -858,10 +826,6 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
     await store.set_http_url(uuid4(), a, "http://127.0.0.1:50001")
     await store.set_http_url(uuid4(), b, "http://127.0.0.1:50002")
 
-    assert {name: (cam.payload.url, cam.payload.simulation_robot_id) for name, cam in cameras.items()} == {
-        "wrist": ("http://127.0.0.1:50001/cameras/wrist/mjpeg", a),
-        "unowned": (f"{shared}/cameras/unowned/mjpeg", None),
-    }
     assert [robots[a].payload.http_url, robots[b].payload.http_url] == [
         "http://127.0.0.1:50001",
         "http://127.0.0.1:50002",
@@ -869,7 +833,7 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
 
 
 async def test_a_start_on_the_robots_own_port_moves_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The simulation reuses the robot's port when it is free: cameras, leaders and payload stay put."""
+    """The simulation reuses the robot's port when it is free: leaders and payload stay put."""
     import services.simulation_manager as module
 
     address = "http://127.0.0.1:8765"
@@ -878,14 +842,6 @@ async def test_a_start_on_the_robots_own_port_moves_nothing(monkeypatch: pytest.
         robot_id: _StoredRobot(id=robot_id, payload=FakePayload(name="sim-a", http_url=address)),
         leader_id: _StoredLeader(id=leader_id, payload=_StoredLeaderPayload(http_port=8765)),
     }
-    url = f"{address}/cameras/wrist/mjpeg"
-    camera = IPCamera(
-        id=uuid4(),
-        name="wrist",
-        fingerprint={"url": url},
-        hardware_name="wrist",
-        payload={"url": url, "simulation_robot_id": robot_id},
-    )
     environment = Environment(
         id=uuid4(),
         name="Env",
@@ -906,13 +862,6 @@ async def test_a_start_on_the_robots_own_port_moves_nothing(monkeypatch: pytest.
         async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
             updates.append(updated)
 
-    class FakeCameraService:
-        async def get_camera_list(self, project_id: UUID) -> list[IPCamera]:
-            return [camera]
-
-        async def update_camera(self, project_id: UUID, updated: IPCamera, commit: bool = True) -> None:
-            updates.append(updated)
-
     async def environments(project_id: UUID) -> list[Environment]:
         return [environment]
 
@@ -923,112 +872,12 @@ async def test_a_start_on_the_robots_own_port_moves_nothing(monkeypatch: pytest.
     roles = {"Sim_Follower": "follower", "Sim_Leader": "leader"}
     registry = SimpleNamespace(get_definition=lambda robot_type: SimpleNamespace(role=roles[robot_type]))
     monkeypatch.setattr(module, "RobotService", FakeRobotService)
-    monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: FakeCameraService())
     monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
     monkeypatch.setattr(module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=environments))
 
     await module.DatabaseSimulationRobots(registry).set_http_url(uuid4(), robot_id, address)  # type: ignore[arg-type]
 
     assert updates == []
-
-
-@pytest.mark.parametrize(
-    ("environments", "camera_address", "moves"),
-    [
-        # The tester's database: cameras saved by hand on the robot's stream, in its only environment.
-        ([["robot"]], "http://127.0.0.1:8765", True),
-        ([["robot"], ["robot", "leader"]], "http://127.0.0.1:8765", True),
-        # Next to another simulated robot, either robot could claim the camera.
-        ([["robot", "other"]], "http://127.0.0.1:8765", False),
-        ([["robot"], ["other"]], "http://127.0.0.1:8765", False),
-        # In no environment: nothing says whose it is.
-        ([], "http://127.0.0.1:8765", False),
-        # On another address than the robot's.
-        ([["robot"]], "http://127.0.0.1:9000", False),
-    ],
-    ids=["own-environment", "with-a-leader", "next-to-another-sim", "also-elsewhere", "no-environment", "elsewhere"],
-)
-async def test_a_fallback_start_takes_the_cameras_saved_by_hand_in_the_robots_environment(
-    monkeypatch: pytest.MonkeyPatch, environments: list[list[str]], camera_address: str, moves: bool
-) -> None:
-    """Studio's start fell back to a free port: the robot's hand-saved cameras must follow it."""
-    import services.simulation_manager as module
-
-    ids = {"robot": uuid4(), "other": uuid4(), "leader": uuid4()}
-    robots: dict[UUID, Any] = {
-        ids["robot"]: _StoredRobot(id=ids["robot"], payload=FakePayload(name="fr3", http_url="http://127.0.0.1:8765")),
-        ids["other"]: _StoredRobot(id=ids["other"], payload=FakePayload(name="b", http_url="http://127.0.0.1:8765")),
-        ids["leader"]: _StoredLeader(id=ids["leader"], payload=_StoredLeaderPayload(http_port=9999)),
-    }
-    cameras = {
-        name: IPCamera(
-            id=uuid4(),
-            name=name,
-            fingerprint={"url": f"{camera_address}/cameras/{name}/mjpeg"},
-            hardware_name=name,
-            payload={"url": f"{camera_address}/cameras/{name}/mjpeg"},
-        )
-        for name in ("wrist", "overview")
-    }
-    project_environments = [
-        Environment(
-            id=uuid4(),
-            name="franka",
-            robots=[
-                RobotEnvironmentConfiguration(robot_id=ids[member], tele_operator=TeleoperatorNone())
-                for member in members
-            ],
-            cameras=[CameraEnvironmentConfiguration(camera_id=camera.id) for camera in cameras.values()],
-        )
-        for members in environments
-    ]
-
-    class FakeRobotService:
-        def __init__(self, session: Any, registry: Any) -> None:
-            pass
-
-        async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Any:
-            return robots[robot_id]
-
-        async def get_robot_list(self, project_id: UUID) -> list[Any]:
-            return list(robots.values())
-
-        async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
-            robots[updated.id] = updated
-
-    class FakeCameraService:
-        async def get_camera_list(self, project_id: UUID) -> list[IPCamera]:
-            return list(cameras.values())
-
-        async def update_camera(self, project_id: UUID, updated: IPCamera, commit: bool = True) -> None:
-            cameras[updated.name] = updated
-
-    async def environment_list(project_id: UUID) -> list[Environment]:
-        return project_environments
-
-    @contextlib.asynccontextmanager
-    async def fake_session():
-        yield SimpleNamespace(commit=_nothing)
-
-    roles = {"Sim_Follower": "follower", "Sim_Leader": "leader"}
-    registry = SimpleNamespace(get_definition=lambda robot_type: SimpleNamespace(role=roles[robot_type]))
-    monkeypatch.setattr(module, "RobotService", FakeRobotService)
-    monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: FakeCameraService())
-    monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
-    monkeypatch.setattr(
-        module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=environment_list)
-    )
-
-    fallback = "http://127.0.0.1:58153"
-    await module.DatabaseSimulationRobots(registry).set_http_url(uuid4(), ids["robot"], fallback)  # type: ignore[arg-type]
-
-    assert robots[ids["robot"]].payload.http_url == fallback
-    expected = (fallback, ids["robot"]) if moves else (camera_address, None)
-    for name, camera in cameras.items():
-        assert (camera.payload.url, camera.payload.simulation_robot_id) == (
-            f"{expected[0]}/cameras/{name}/mjpeg",
-            expected[1],
-        )
 
 
 class _StoredLeaderPayload(BaseModel):
@@ -1106,7 +955,6 @@ class LeaderWorld:
         )
         monkeypatch.setattr(module, "RobotService", FakeRobotService)
         monkeypatch.setattr(module, "EnvironmentService", FakeEnvironmentService)
-        monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: SimpleNamespace(get_camera_list=_no_cameras))
         monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
         self.store = module.DatabaseSimulationRobots(registry)  # type: ignore[arg-type]
         self.manager = SimulationManager(registry, self.store)  # type: ignore[arg-type]
@@ -1228,7 +1076,7 @@ async def test_a_session_waits_for_an_address_write_and_reads_both_robots_again(
     leader = world.leader(8080)
     stale_follower, stale_leader = world.robots[world.follower], world.robots[leader]
 
-    async with world.manager.holding_addresses():
+    async with world.manager.updating_robot(world.project_id, uuid4()):
         session = asyncio.create_task(
             world.manager.point_leader_at_follower(world.project_id, stale_follower, stale_leader)
         )

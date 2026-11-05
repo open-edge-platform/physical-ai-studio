@@ -4,12 +4,16 @@
 """Routes of a robot's simulation against a stub service: status codes and error codes."""
 
 from collections.abc import Iterator
+from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api.robot_simulation import get_robot_simulation_service
+import api.robot_simulation as module
+from api.dependencies import get_robot_simulation_service
+from api.robot_simulation import resolve_export_cameras
 from exceptions import (
     ResourceNotFoundError,
     ResourceType,
@@ -19,6 +23,7 @@ from exceptions import (
     SimulationNotSupportedError,
 )
 from main import app
+from schemas.project_camera import IPCamera, SimulationCamera
 from schemas.simulation import RobotSimulation, SimulationCommand
 
 PROJECT_ID = uuid4()
@@ -157,3 +162,40 @@ def test_command_errors_map_to_their_codes(
 
     assert response.status_code == status_code
     assert response.json()["error_code"] == error_code
+
+
+PLAIN = IPCamera(
+    id=uuid4(), name="Top", fingerprint={"url": "rtsp://x"}, hardware_name="Top", payload={"url": "rtsp://x"}
+)
+SIMULATED = SimulationCamera(
+    id=uuid4(),
+    name="Wrist",
+    fingerprint={"robot_id": str(ROBOT_ID), "camera": "wrist"},
+    hardware_name="wrist",
+    payload={"robot_id": ROBOT_ID, "camera": "wrist"},
+)
+
+
+async def test_an_export_without_simulation_cameras_needs_no_simulation_manager() -> None:
+    # No app state: looking up the manager would fail.
+    assert await resolve_export_cameras(SimpleNamespace(), None, PROJECT_ID, [PLAIN]) == [PLAIN]  # type: ignore[arg-type]
+
+
+async def test_an_export_resolves_its_simulation_cameras(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[Any] = []
+
+    class FakeService:
+        def __init__(self, session: Any, registry: Any, manager: Any) -> None:
+            calls.append(manager)
+
+        async def resolve_cameras(self, project_id: Any, cameras: list[Any]) -> list[Any]:
+            return [PLAIN for _ in cameras]
+
+    manager = object()
+    monkeypatch.setattr(module, "RobotSimulationService", FakeService)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(simulation_manager=manager)))
+
+    resolved = await resolve_export_cameras(request, None, PROJECT_ID, [SIMULATED])  # type: ignore[arg-type]
+
+    assert resolved == [PLAIN]
+    assert calls == [manager]

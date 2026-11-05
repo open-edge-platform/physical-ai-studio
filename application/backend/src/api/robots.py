@@ -3,7 +3,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from api.dependencies import RuntimeSessionRegistryDep, SimulationManagerDep, get_robot_service
+from api.dependencies import (
+    CameraClaimRegistryDep,
+    ProjectCameraServiceDep,
+    RuntimeSessionRegistryDep,
+    SimulationManagerDep,
+    get_robot_service,
+)
+from exceptions import RecordingLockError
+from schemas.project_camera import SimulationCamera
 from schemas.robot import (
     ReadableRobot,
     Robot,
@@ -87,9 +95,17 @@ async def delete_project_robot(
     project_id: ProjectID,
     robot_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
+    camera_service: ProjectCameraServiceDep,
     registry: RuntimeSessionRegistryDep,
+    claims: CameraClaimRegistryDep,
 ) -> None:
-    """Delete a robot."""
+    """Delete a robot, with its simulation cameras."""
     robot = await robot_service.get_robot_by_id(project_id, robot_id)
     registry.require_robot_free(robot.id, robot.name)
+    for camera in await camera_service.get_camera_list(project_id):
+        if not isinstance(camera, SimulationCamera) or camera.payload.robot_id != robot_id:
+            continue
+        holder = claims.holder_of(camera.fingerprint) if camera.fingerprint else None
+        if holder is not None:
+            raise RecordingLockError(f"Camera {camera.name!r} is in use by project {holder.project_name!r}.")
     await robot_service.delete_robot(project_id, robot_id)
