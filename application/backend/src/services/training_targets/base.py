@@ -17,8 +17,8 @@ class TrainingTargetHandler(Protocol):
 
     `JobService.submit_train_job` calls `prepare` once, at submission time, to
     reject an invalid target selection and pin any target-specific fields
-    (e.g. a resolved remote trainer URL) onto the payload. `TrainingWorker`
-    calls `target_key` for every pending job to derive the key that keeps two
+    (e.g. a resolved remote trainer URL) onto the payload. `TrainingJobHandler`
+    calls `target_key` for every runnable job to derive the key that keeps two
     jobs on the same target (local execution or a configured remote trainer)
     from running concurrently.
 
