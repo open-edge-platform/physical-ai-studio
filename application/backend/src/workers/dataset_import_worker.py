@@ -8,7 +8,7 @@ from physicalai.data.archive_safety import SafeZipArchive
 from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
 from schemas import Dataset
-from schemas.base_job import JobStatus
+from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import (
     DatasetImportJobPayload,
     ImportStep,
@@ -46,11 +46,11 @@ class DatasetImportWorker(BaseProcessWorker):
         self.adapters: list[DatasetImportAdapter] = get_registered_dataset_import_adapters()
 
     async def run_loop(self) -> None:
-        """Execute one claimed import step, then exit (including before user review)."""
+        """Claim one assigned import step, then exit (including before user review)."""
         if self.should_stop():
             return
         async with get_async_db_session_ctx() as session:
-            job = await JobService(session).get_job_by_id(self.job_id)
+            job = await JobService(session).claim_pending_job(self.job_id, JobType.DATASET_IMPORT)
         if isinstance(job, DatasetImportJob) and job.status == JobStatus.RUNNING:
             await self._process_job(job)
 
