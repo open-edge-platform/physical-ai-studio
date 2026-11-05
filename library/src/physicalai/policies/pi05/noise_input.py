@@ -49,6 +49,10 @@ _RANDOM_OP = "RandomUniform"
 _ELEMENTWISE = {"Add", "Subtract", "Multiply", "Divide", "Log", "Cos", "Sin", "Sqrt", "Power", "Negative", "Convert"}
 
 
+class RollbackError(RuntimeError):
+    """A failed in-place conversion could not put the original files back; nothing was deleted."""
+
+
 class ConversionStatus(StrEnum):
     """Outcome of :func:`convert_openvino_export`."""
 
@@ -342,7 +346,8 @@ def _replace_from(source: Path, target: Path, names: list[str], scratch: Path) -
     every target file is either the old or the new one at any moment, even if the
     process is killed.
     """
-    scratch.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(scratch, ignore_errors=True)  # links left by an interrupted earlier run
+    scratch.mkdir(parents=True)
     try:
         for name in names:
             _link_or_copy(source / name, scratch / name)
@@ -398,6 +403,8 @@ def convert_openvino_export(
     Raises:
         ValueError: If the export is not a pi05 export with in-graph noise, or the
             output or backup folder overlaps the export.
+        RollbackError: If replacing the files failed and putting the originals back
+            failed too. The original files are kept; the message says where.
     """
     import openvino as ov  # noqa: PLC0415
 
@@ -439,14 +446,15 @@ def convert_openvino_export(
         del model
         gc.collect()
         _swap_in(export_dir, staged_dir, aside, names)
+    except RollbackError:
+        raise  # keep every file where it is: the message says where the originals are
     except BaseException:
-        if keep is not None:
-            shutil.rmtree(keep, ignore_errors=True)
-        raise
-    finally:
         shutil.rmtree(staged_dir, ignore_errors=True)
-        if keep is None:
-            shutil.rmtree(aside, ignore_errors=True)
+        shutil.rmtree(aside, ignore_errors=True)  # the export has its original files again
+        raise
+    shutil.rmtree(staged_dir, ignore_errors=True)
+    if keep is None:
+        shutil.rmtree(aside, ignore_errors=True)
     return ConversionResult(ConversionStatus.CONVERTED, export_dir, noise_shape, replaced_ops, keep)
 
 
@@ -490,6 +498,9 @@ def _swap_in(export_dir: Path, staged_dir: Path, aside: Path, names: list[str]) 
     ``aside`` gets a complete copy of the originals (hard links) before any of them
     changes. Each file is then replaced with one atomic rename, so the export never
     lacks a file; on failure the originals are put back the same way.
+
+    Raises:
+        RollbackError: If putting the originals back fails as well.
     """
     aside.mkdir(parents=True, exist_ok=True)
     for name in names:
@@ -498,7 +509,14 @@ def _swap_in(export_dir: Path, staged_dir: Path, aside: Path, names: list[str]) 
         for name in names:
             (staged_dir / name).replace(export_dir / name)
     except BaseException:
-        _replace_from(aside, export_dir, names, export_dir / _SCRATCH_DIRNAME)
+        try:
+            _replace_from(aside, export_dir, names, export_dir / _SCRATCH_DIRNAME)
+        except BaseException as rollback_exc:
+            msg = (
+                f"replacing the files in {export_dir} failed and so did putting the originals back. "
+                f"The original files are in {aside}; copy them back into the export."
+            )
+            raise RollbackError(msg) from rollback_exc
         raise
 
 
@@ -539,12 +557,16 @@ def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | Non
 
     Raises:
         FileNotFoundError: If the export folder does not exist, or the backup is missing or incomplete.
+        ValueError: If the backup folder overlaps the export.
     """
     export_dir = Path(export_dir).resolve()
     backup = Path(backup_dir).resolve() if backup_dir is not None else default_backup_dir(export_dir)
     if not export_dir.is_dir():
         msg = f"no export folder {export_dir}"
         raise FileNotFoundError(msg)
+    if _overlaps(backup, export_dir):
+        msg = f"the backup folder {backup} must be outside the export {export_dir}, and the other way round"
+        raise ValueError(msg)
     graph_name = _backup_graph_name(backup)
     if graph_name is None or not has_backup(export_dir, backup):
         msg = f"no complete backup in {backup} (graph, weights and manifest)"

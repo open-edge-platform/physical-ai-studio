@@ -23,6 +23,7 @@ from physicalai.policies.pi05.noise_input import (
     convert_openvino_export,
     has_backup,
     main,
+    RollbackError,
     read_noise_shape,
     restore_openvino_export,
 )
@@ -367,6 +368,32 @@ class TestFailures:
         assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
         assert not export_dir.with_name(export_dir.name + BACKUP_SUFFIX).exists()
 
+    @pytest.mark.parametrize("backup", [True, False])
+    def test_failed_rollback_keeps_the_originals(
+        self,
+        export_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        backup: bool,
+    ) -> None:
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        real_replace = Path.replace
+
+        def replace(self: Path, target: Path) -> Path:
+            if (self.parent.name, self.name) in {(".noise-input-new", "pi05.bin"), (".noise-input-swap", "pi05.xml")}:
+                msg = "disk full"
+                raise OSError(msg)
+            return real_replace(self, target)
+
+        monkeypatch.setattr(Path, "replace", replace)
+
+        with pytest.raises(RollbackError, match="copy them back"):
+            convert_openvino_export(export_dir, backup=backup)
+
+        kept = export_dir.with_name(export_dir.name + BACKUP_SUFFIX) if backup else export_dir / ".noise-input-old"
+        assert {name: (kept / name).read_bytes() for name in ("pi05.xml", "pi05.bin", "manifest.json")} == {
+            name: original[name] for name in ("pi05.xml", "pi05.bin", "manifest.json")
+        }
+
     def test_checksum_failure_changes_nothing(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         (export_dir / "SHA256SUMS").write_text(f"{'0' * 64}  pi05.xml\n")
         original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
@@ -422,6 +449,44 @@ class TestFailures:
         assert has_backup(export_dir)
         restore_openvino_export(export_dir)
         assert {path.name: path.read_bytes() for path in export_dir.iterdir() if path.is_file()} == original
+
+    def test_killed_during_restore_then_rerun(self, export_dir: Path) -> None:
+        """The process dies after the first file is restored: the first rerun succeeds."""
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        convert_openvino_export(export_dir)
+        script = textwrap.dedent(
+            f"""
+            import os
+            from pathlib import Path
+            from physicalai.policies.pi05.noise_input import restore_openvino_export
+
+            real_replace = Path.replace
+
+            def replace(self, target):
+                result = real_replace(self, target)
+                if self.parent.name == ".noise-input-swap":
+                    os._exit(3)
+                return result
+
+            Path.replace = replace
+            restore_openvino_export({str(export_dir)!r})
+            """,
+        )
+        killed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True)  # noqa: S603
+        assert killed.returncode == 3, killed.stderr.decode()
+
+        restore_openvino_export(export_dir)
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir() if path.is_file()} == original
+
+    def test_restore_from_the_export_itself(self, export_dir: Path) -> None:
+        convert_openvino_export(export_dir)
+        converted = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+
+        with pytest.raises(ValueError, match="must be outside the export"):
+            restore_openvino_export(export_dir, backup_dir=export_dir)
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == converted
 
     def test_checksums_symlink_target_is_not_written(self, export_dir: Path, tmp_path: Path) -> None:
         outside = tmp_path / "outside_sums"

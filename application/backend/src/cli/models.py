@@ -395,6 +395,7 @@ def fix_pi05_noise(target: str | None, as_copy: bool, restore: bool, output_dir:
     """
     from physicalai.policies.pi05.noise_input import (
         ConversionStatus,
+        RollbackError,
         convert_openvino_export,
         restore_openvino_export,
         runtime_draws_noise,
@@ -424,7 +425,7 @@ def fix_pi05_noise(target: str | None, as_copy: bool, restore: bool, output_dir:
                 click.echo(f"Fixed: {result.export_dir} (noise_shape {list(result.noise_shape)})")
                 if result.backup_dir is not None:
                     click.echo(f"Original files kept in: {result.backup_dir} (undo with --restore)")
-    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+    except (FileNotFoundError, FileExistsError, ValueError, RollbackError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     if not runtime_draws_noise():
