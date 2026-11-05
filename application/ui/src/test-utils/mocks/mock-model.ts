@@ -14,6 +14,7 @@ export const getMockedModel = (overrides: Partial<SchemaModel> = {}): SchemaMode
     version: 1,
     created_at: '2026-07-14T12:00:00Z',
     available_backends: [],
+    optimization: null,
     lora_enabled: false,
     lora_use_dora: false,
     snapflow_enabled: false,

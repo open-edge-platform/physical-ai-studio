@@ -12,6 +12,7 @@ from db.schema import JobDB
 from exceptions import (
     DuplicateJobException,
     InvalidJobStateError,
+    InvalidResourceError,
     ResourceInUseError,
     ResourceNotFoundError,
     ResourceType,
@@ -22,6 +23,7 @@ from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import JobStatus, JobType
 from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services.job_handlers import get_job_handler
+from services.model_service import ModelService
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
 
@@ -65,6 +67,14 @@ class JobService:
         async with RemoteTrainerService.allow_job_submission(trainer_id):
             handler = get_training_target_handler(payload, self.session, self.remote_trainer_service)
             payload = await handler.prepare(payload)
+
+            if payload.base_model_id is not None:
+                base_model = await ModelService(self.session).get_model_by_id(payload.base_model_id)
+                if base_model.optimization is not None:
+                    raise InvalidResourceError(
+                        ResourceType.MODEL,
+                        "Optimized models are inference-only; retrain from the original model instead",
+                    )
 
             if await self.repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
                 raise DuplicateJobException

@@ -1,7 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, computed_field
@@ -11,6 +11,13 @@ from schemas.base import BaseIDModel, Field, UTCDatetime
 LORA_PROPERTY = "lora_enabled"
 DORA_PROPERTY = "lora_use_dora"
 SNAPFLOW_PROPERTY = "snapflow_enabled"
+
+
+class ModelOptimizationInfo(BaseModel):
+    """Provenance of a separately stored optimized model."""
+
+    source_model_id: UUID
+    mode: Literal["int8_sym"] = "int8_sym"
 
 
 class Model(BaseIDModel):
@@ -25,6 +32,13 @@ class Model(BaseIDModel):
     parent_model_id: UUID | None = Field(None, description="Parent model this was retrained from")
     version: int = Field(1, description="Model version, incremented on each retrain")
     created_at: UTCDatetime | None = Field(None)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def optimization(self) -> ModelOptimizationInfo | None:
+        """Return typed optimization metadata stored in properties."""
+        metadata = self.properties.get("optimization")
+        return ModelOptimizationInfo.model_validate(metadata) if metadata is not None else None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
