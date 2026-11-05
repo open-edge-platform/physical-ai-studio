@@ -182,3 +182,94 @@ def export(model_id: UUID, backends: tuple[str, ...]) -> None:
         raise
     except Exception as exc:
         raise click.ClickException(f"Model export failed: {exc}") from exc
+
+
+NOISE_BACKUP_DIRNAME = "noise-input-backup"
+
+
+def _get_model_dir(model_id: UUID) -> Path:
+    """Return the folder of the Studio model with this id."""
+    from db import get_async_db_session_ctx
+    from services.model_service import ModelService
+
+    async def get_path() -> str:
+        async with get_async_db_session_ctx() as session:
+            return (await ModelService(session).get_model_by_id(model_id)).path
+
+    return Path(asyncio.run(get_path())).expanduser()
+
+
+def _resolve_openvino_export(target: str) -> tuple[Path, Path | None]:
+    """Return the OpenVINO export folder TARGET names and, for a Studio model, the model folder."""
+    from training.job import EXPORTS_DIRNAME
+
+    path = Path(target).expanduser()
+    if not path.exists():
+        try:
+            model_id = UUID(target)
+        except ValueError:
+            raise click.ClickException(f"Not a folder or a model UUID: {target}") from None
+        try:
+            path = _get_model_dir(model_id)
+        except Exception as exc:
+            raise click.ClickException(f"Model {model_id} not found: {exc}") from exc
+    studio_export = path / EXPORTS_DIRNAME / "openvino"
+    if studio_export.is_dir():
+        return studio_export, path
+    return path, None
+
+
+@models.command("fix-pi05-noise")
+@click.argument("target")
+@click.option(
+    "--out",
+    "output_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Write the converted export to this new folder instead of converting in place.",
+)
+@click.option(
+    "--backup/--no-backup",
+    default=True,
+    show_default=True,
+    help=f"In place: keep the replaced files, in the model folder's {NOISE_BACKUP_DIRNAME}/ "
+    "for a Studio model, else in EXPORT_DIR.orig/.",
+)
+def fix_pi05_noise(target: str, output_dir: Path | None, backup: bool) -> None:
+    """Make an older pi05 OpenVINO export draw fresh start noise on every call.
+
+    pi05 models exported before the start noise became a model input sample it
+    inside the graph, where OpenVINO's GPU plugin returns the same noise on every
+    call. This rewrites the export so the runtime draws the noise instead. The
+    weights stay as they are and no checkpoint is needed. Exports that already take
+    the noise as input are left unchanged.
+
+    TARGET is a Studio model UUID, a Studio model folder, or an OpenVINO export
+    folder (with manifest.json). Studio models are converted in place and keep
+    their id and name; reload the model in a running Studio afterwards.
+
+    \b
+    Example:
+      physicalai-studio models fix-pi05-noise MODEL_UUID
+    """
+    from physicalai.policies.pi05.noise_input import ConversionStatus, convert_openvino_export, runtime_draws_noise
+
+    export_dir, model_dir = _resolve_openvino_export(target)
+    backup_dir = model_dir / NOISE_BACKUP_DIRNAME if model_dir is not None else None
+    try:
+        result = convert_openvino_export(export_dir, output_dir, backup=backup, backup_dir=backup_dir)
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if result.status is ConversionStatus.ALREADY_CONVERTED:
+        click.echo(f"Already takes the noise as input: {result.export_dir}")
+    else:
+        click.echo(f"Converted: {result.export_dir} (noise_shape {list(result.noise_shape)})")
+        if result.backup_dir is not None:
+            click.echo(f"Original files kept in: {result.backup_dir}")
+    if not runtime_draws_noise():
+        click.echo(
+            "Warning: the installed physicalai runtime cannot draw the noise yet "
+            "(needs openvinotoolkit/physicalai#442). Upgrade physicalai before loading this model.",
+            err=True,
+        )
