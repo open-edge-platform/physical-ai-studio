@@ -111,4 +111,16 @@ jobs:
           SIM_E2E_ARTIFACT_URL: ${{ steps.evidence.outputs.artifact-url }}
           SIM_E2E_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
           SIM_E2E_TRAINING_OUTCOME: ${{ steps.training.outcome }}
-        run: uv run --no-sync python ../../.github/scripts/simulation_summary.py
+        run: |
+          if ! uv run --isolated --no-project --with 'defusedxml>=0.7.1' python ../../.github/scripts/simulation_summary.py; then
+            {
+              printf '# 🦾 Conveyor simulation — ACT\n\n'
+              printf '⚠️ Detailed summary unavailable: the renderer or its dependencies failed. Evidence was not evaluated.\n\n'
+              printf '| Phase | Outcome |\n| --- | --- |\n'
+              printf '| Controls | %s |\n' "$SIM_E2E_CONTROLS_OUTCOME"
+              printf '| Training and deployment | %s |\n' "$SIM_E2E_TRAINING_OUTCOME"
+              if [ -n "$SIM_E2E_ARTIFACT_URL" ]; then
+                printf '\n[Download all simulation evidence](%s)\n' "$SIM_E2E_ARTIFACT_URL"
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

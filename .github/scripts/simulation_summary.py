@@ -5,6 +5,7 @@
 
 import html
 import json
+import math
 import os
 from pathlib import Path
 
@@ -17,8 +18,10 @@ def cell(value: object) -> str:
     return html.escape(str(value)).replace("|", "&#124;").replace("\n", "<br>").replace("\r", "")
 
 
-def status(value: str) -> str:
+def status(value: object) -> str:
     """Distinguish missing evidence from successful checks."""
+    if not isinstance(value, str):
+        return "⚠️ not reported"
     icon = {"passed": "✅", "success": "✅", "failed": "❌", "failure": "❌", "error": "❌", "skipped": "⏭️"}
     return f"{icon.get(value, '⚠️')} {cell(value)}"
 
@@ -44,6 +47,32 @@ def test_results(output: Path, warnings: list[str]) -> list[str]:
     return lines
 
 
+def scored_trials(value: object, source: str, warnings: list[str]) -> list[dict]:
+    """Keep valid scored episodes without losing them to incomplete neighboring entries."""
+    if not isinstance(value, list):
+        warnings.append(f"{source}: expected a list of trials")
+        return []
+    trials = []
+    for index, trial in enumerate(value):
+        if (
+            not isinstance(trial, dict)
+            or not isinstance(trial.get("seed"), (int, str))
+            or not isinstance(trial.get("episodes"), list)
+        ):
+            warnings.append(f"{source}: invalid trial {index}")
+            continue
+        episodes = []
+        for episode in trial["episodes"]:
+            if not isinstance(episode, dict) or not all(
+                type(episode.get(key)) is int and episode[key] >= 0 for key in ("correct", "wrong", "missed")
+            ):
+                warnings.append(f"{source}: invalid episode in trial {index}")
+                continue
+            episodes.append(episode)
+        trials.append({**trial, "episodes": episodes})
+    return trials
+
+
 def render_summary(output: Path, artifact_url: str, outcomes: dict[str, str]) -> str:
     """Summarize pytest status, conveyor item accounting, training, and video evidence."""
     lines = ["# 🦾 Conveyor simulation — ACT", "", "## Test results", "", "| Phase | Status |", "| --- | --- |"]
@@ -53,9 +82,14 @@ def render_summary(output: Path, artifact_url: str, outcomes: dict[str, str]) ->
     reports = {}
     for name in ("controls", "training", "result", "rollouts"):
         try:
-            reports[name] = json.loads((output / f"{name}.json").read_text())
+            report = json.loads((output / f"{name}.json").read_text())
         except (OSError, ValueError) as exc:
             warnings.append(f"{name}.json: {exc}")
+            continue
+        if isinstance(report, list if name == "rollouts" else dict):
+            reports[name] = report
+        else:
+            warnings.append(f"{name}.json: unexpected report type")
     controls = reports.get("controls", {})
     training = reports.get("training", {})
     result = reports.get("result", {})
@@ -69,16 +103,29 @@ def render_summary(output: Path, artifact_url: str, outcomes: dict[str, str]) ->
     }
     lines.extend(f"| {name} | {status(value)} |" for name, value in checks.items())
     if training:
-        lines += [
-            "",
-            f"**Training:** {training['training_epochs']} epochs · "
-            f"{training['training_seconds'] / 60:.1f} minutes · "
-            f"validation loss **{training['validation_loss']:.4f}**",
-        ]
+        if all(
+            type(training.get(key)) in {int, float} and math.isfinite(training[key]) and training[key] >= 0
+            for key in ("training_epochs", "training_seconds", "validation_loss")
+        ):
+            lines += [
+                "",
+                f"**Training:** {training['training_epochs']} epochs · "
+                f"{training['training_seconds'] / 60:.1f} minutes · "
+                f"validation loss **{training['validation_loss']:.4f}**",
+            ]
+        else:
+            warnings.append("training.json: missing or invalid training metrics")
 
+    drive = controls.get("drive", {})
+    if not isinstance(drive, dict):
+        warnings.append("controls.json: invalid drive report")
+        drive = {}
+    policy_trials = scored_trials(result.get("rollouts", []), "result.json rollouts", warnings)
+    if not any(trial["episodes"] for trial in policy_trials):
+        policy_trials = scored_trials(reports.get("rollouts", []), "rollouts.json", warnings)
     groups = [
-        ("Scripted expert", controls.get("drive", {}).get("trials", [])),
-        ("ACT policy", result.get("rollouts", reports.get("rollouts", []))),
+        ("Scripted expert", scored_trials(drive.get("trials", []), "controls.json trials", warnings)),
+        ("ACT policy", policy_trials),
     ]
     lines += [
         "",

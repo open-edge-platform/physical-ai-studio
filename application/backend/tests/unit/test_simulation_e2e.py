@@ -757,7 +757,8 @@ def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
     assert summary["env"]["SIM_E2E_CONTROLS_OUTCOME"] == f"${{{{ steps.{controls_step['id']}.outcome }}}}"
     assert summary["env"]["SIM_E2E_TRAINING_OUTCOME"] == f"${{{{ steps.{training_step['id']}.outcome }}}}"
     assert summary["working-directory"] == "application/backend"
-    assert summary["run"] == "uv run --no-sync python ../../.github/scripts/simulation_summary.py"
+    assert "uv run --isolated --no-project --with 'defusedxml>=0.7.1' python" in summary["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in summary["run"]
 
 
 def _workflow_python(path, step):
