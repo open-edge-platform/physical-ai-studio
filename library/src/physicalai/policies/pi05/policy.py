@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -951,6 +952,24 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         """
         return self._with_export_noise(super()._get_default_export_input_sample())
 
+    def _check_runtime_draws_noise(self) -> None:
+        """Fail early if the installed runtime cannot load an export that takes the noise as input.
+
+        Raises:
+            RuntimeError: If random input noise is enabled and the runtime's ``pi05``
+                preprocessor does not accept ``noise_shape``.
+        """
+        if not self.config.use_random_input_noise:
+            return
+        from physicalai.inference.preprocessors.pi05 import Pi05Preprocessor as RuntimePi05Preprocessor  # noqa: PLC0415
+
+        if "noise_shape" not in inspect.signature(RuntimePi05Preprocessor.__init__).parameters:
+            msg = (
+                "Exporting pi05 needs a physicalai runtime whose pi05 preprocessor accepts `noise_shape` "
+                "(openvinotoolkit/physicalai#442). Upgrade physicalai."
+            )
+            raise RuntimeError(msg)
+
     def to_onnx(
         self,
         output_path: PathLike | str,
@@ -958,6 +977,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         **export_kwargs: dict,
     ) -> None:
         """Export to ONNX, adding the start noise to an explicit ``input_sample`` too."""
+        self._check_runtime_draws_noise()
         super().to_onnx(output_path, self._with_export_noise(input_sample), **export_kwargs)
 
     def to_openvino(
@@ -967,6 +987,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         **export_kwargs: dict,
     ) -> None:
         """Export to OpenVINO, adding the start noise to an explicit ``input_sample`` too."""
+        self._check_runtime_draws_noise()
         super().to_openvino(output_path, self._with_export_noise(input_sample), **export_kwargs)
 
     @property

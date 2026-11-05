@@ -1261,6 +1261,34 @@ class TestPi05ExportNoiseInput:
             getattr(policy, method)("out", sample)
             assert export.call_args.args[1] is sample
 
+    @pytest.mark.parametrize("method", ["to_openvino", "to_onnx"])
+    def test_export_fails_on_runtime_without_noise_shape(self, method: str) -> None:
+        """An installed runtime that cannot load the export stops it with a clear error."""
+        from unittest.mock import patch
+
+        from physicalai.export import ExportablePolicyMixin
+
+        class OldRuntimePi05Preprocessor:
+            def __init__(self, image_resolution: tuple[int, int] = (224, 224), empty_cameras: int = 0) -> None:
+                pass
+
+        policy = Pi05()
+        with (
+            patch("physicalai.inference.preprocessors.pi05.Pi05Preprocessor", OldRuntimePi05Preprocessor),
+            patch.object(ExportablePolicyMixin, method) as export,
+            pytest.raises(RuntimeError, match="noise_shape"),
+        ):
+            getattr(policy, method)("out", None)
+        export.assert_not_called()
+
+        policy = Pi05(use_random_input_noise=False)
+        with (
+            patch("physicalai.inference.preprocessors.pi05.Pi05Preprocessor", OldRuntimePi05Preprocessor),
+            patch.object(ExportablePolicyMixin, method) as export,
+        ):
+            getattr(policy, method)("out", None)
+        export.assert_called_once()
+
     def test_predict_action_chunk_uses_batch_noise(self) -> None:
         """Noise in the batch reaches ``sample_actions``; without it the model samples its own."""
         from unittest.mock import MagicMock, patch
