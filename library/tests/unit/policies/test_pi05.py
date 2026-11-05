@@ -1192,6 +1192,22 @@ class TestPi05ExtraExportArgs:
         else:
             assert noise_shape is None
 
+    def test_runtime_builds_pi05_spec_with_noise(self) -> None:
+        """The pinned runtime accepts the exported pi05 spec and draws the noise from it."""
+        import numpy as np
+        from physicalai.inference.component_factory import instantiate_component
+
+        from physicalai.data.constants import NOISE
+
+        policy = Pi05()
+        policy._dataset_stats = self._mock_stats()
+        spec = next(s for s in policy.extra_export_args["openvino"].preprocessors_specs if s.type == "pi05")
+
+        preprocessor = instantiate_component(spec)
+        inputs = {STATE: np.zeros((1, 8), np.float32), IMAGES: np.zeros((1, 3, 32, 32), np.float32), "task": ["t"]}
+        out = preprocessor(inputs)
+        assert out[NOISE].shape == (1, policy.config.chunk_size, policy.config.max_action_dim)
+
 
 class TestPi05ExportNoiseInput:
     """The start noise is a traced input, so no random op ends up in the exported graph."""
@@ -1204,8 +1220,10 @@ class TestPi05ExportNoiseInput:
         from physicalai.data.constants import NOISE
         from physicalai.export import ExportablePolicyMixin
 
+        from physicalai.data.constants import TOKENIZED_PROMPT
+
         policy = Pi05(use_random_input_noise=use_random_input_noise)
-        base = {STATE: torch.zeros(2, 8)}
+        base = {STATE: torch.zeros(2, 8), TOKENIZED_PROMPT: torch.zeros(2, 4)}
         with patch.object(ExportablePolicyMixin, "_get_default_export_input_sample", return_value=base):
             sample = policy._get_default_export_input_sample()
 
@@ -1214,6 +1232,34 @@ class TestPi05ExportNoiseInput:
             assert sample[NOISE].shape == (2, policy.config.chunk_size, policy.config.max_action_dim)
         else:
             assert NOISE not in sample
+
+    @pytest.mark.parametrize("method", ["to_openvino", "to_onnx"])
+    def test_explicit_export_sample_gets_noise(self, method: str) -> None:
+        """An ``input_sample`` passed to the export gets the noise too; noise it already has is kept."""
+        from unittest.mock import patch
+
+        from physicalai.data.constants import NOISE, TOKENIZED_PROMPT
+        from physicalai.export import ExportablePolicyMixin
+
+        policy = Pi05()
+        sample = {STATE: torch.zeros(1, 8), TOKENIZED_PROMPT: torch.zeros(1, 4)}
+        with patch.object(ExportablePolicyMixin, method) as export:
+            getattr(policy, method)("out", sample)
+            traced = export.call_args.args[1]
+            assert traced[NOISE].shape == (1, policy.config.chunk_size, policy.config.max_action_dim)
+            assert NOISE not in sample
+
+            given = {**sample, NOISE: torch.ones(1, 50, 32)}
+            getattr(policy, method)("out", given)
+            assert export.call_args.args[1][NOISE] is given[NOISE]
+
+            getattr(policy, method)("out", None)
+            assert export.call_args.args[1] is None
+
+        policy = Pi05(use_random_input_noise=False)
+        with patch.object(ExportablePolicyMixin, method) as export:
+            getattr(policy, method)("out", sample)
+            assert export.call_args.args[1] is sample
 
     def test_predict_action_chunk_uses_batch_noise(self) -> None:
         """Noise in the batch reaches ``sample_actions``; without it the model samples its own."""
