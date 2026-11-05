@@ -2827,9 +2827,11 @@ cuda = [
     { name = "torchvision", version = "0.26.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
 ]
 sim-e2e = [
+    { name = "defusedxml" },
     { name = "physicalai-mujoco-plugin" },
 ]
 tests = [
+    { name = "defusedxml" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2870,6 +2872,8 @@ requires-dist = [
     { name = "boto3", extras = ["crt"], specifier = ">=1.42" },
     { name = "click", specifier = ">=8.3.0" },
     { name = "cv2-enumerate-cameras" },
+    { name = "defusedxml", marker = "extra == 'sim-e2e'", specifier = ">=0.7.1" },
+    { name = "defusedxml", marker = "extra == 'tests'", specifier = ">=0.7.1" },
     { name = "fastapi", extras = ["standard"], specifier = "<1" },
     { name = "greenlet", specifier = ">=3.2.4" },
     { name = "harvesters", marker = "sys_platform != 'darwin'" },

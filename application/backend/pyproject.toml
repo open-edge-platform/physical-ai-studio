@@ -81,9 +81,10 @@ xpu = [
     "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
-sim-e2e = ["physicalai-mujoco-plugin==0.5.0"]
+sim-e2e = ["physicalai-mujoco-plugin==0.5.0", "defusedxml>=0.7.1"]
 
 tests = [
+    "defusedxml>=0.7.1",
     "pytest",
     "pytest-asyncio",
     "pytest-mock",
