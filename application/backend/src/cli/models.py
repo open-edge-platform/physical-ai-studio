@@ -1,6 +1,7 @@
 """Model management CLI commands."""
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -219,8 +220,61 @@ def _resolve_openvino_export(target: str) -> tuple[Path, Path | None]:
     return path, None
 
 
+def _studio_models() -> list[tuple[UUID, str, str, Path]]:
+    """Return the id, label (name, version, date) and folder of every Studio model, oldest first."""
+    from db import get_async_db_session_ctx
+    from services.model_service import ModelService
+
+    async def get_models() -> list[tuple[UUID, str, str, Path]]:
+        async with get_async_db_session_ctx() as session:
+            found = await ModelService(session).get_model_list()
+        found.sort(key=lambda model: (model.created_at is None, model.created_at))
+        return [
+            (
+                model.id,
+                model.name,
+                f"v{model.version}" + (f", {model.created_at:%Y-%m-%d}" if model.created_at else ""),
+                Path(model.path).expanduser(),
+            )
+            for model in found
+        ]
+
+    return asyncio.run(get_models())
+
+
+def _noise_status(export_dir: Path) -> str | None:
+    """Return whether a pi05 export still samples its noise in-graph, or None if it is not pi05."""
+    try:
+        manifest = json.loads((export_dir / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return None
+    for spec in manifest.get("model", {}).get("preprocessors", []):
+        if spec.get("type") == "pi05" or "pi05" in str(spec.get("class_path", "")).lower():
+            return "already fixed" if "noise_shape" in spec.get("init_args", spec) else "needs fix"
+    return None
+
+
+def _choose_studio_model() -> Path:
+    """List the Studio pi05 models with an OpenVINO export and ask which one to convert."""
+    from training.job import EXPORTS_DIRNAME
+
+    rows = []
+    for model_id, name, details, model_dir in _studio_models():
+        status = _noise_status(model_dir / EXPORTS_DIRNAME / "openvino")
+        if status is not None:
+            rows.append((model_id, name, details, model_dir, status))
+    if not rows:
+        raise click.ClickException("No Studio pi05 model has an OpenVINO export.")
+
+    click.echo("Studio pi05 models with an OpenVINO export:")
+    for index, (model_id, name, details, _, status) in enumerate(rows, start=1):
+        click.echo(f"  {index:>2}. {name} ({details})  [{status}]  {model_id}")
+    choice = click.prompt("Model to convert", type=click.IntRange(1, len(rows)))
+    return rows[choice - 1][3]
+
+
 @models.command("fix-pi05-noise")
-@click.argument("target")
+@click.argument("target", required=False)
 @click.option(
     "--out",
     "output_dir",
@@ -235,7 +289,7 @@ def _resolve_openvino_export(target: str) -> tuple[Path, Path | None]:
     help=f"In place: keep the replaced files, in the model folder's {NOISE_BACKUP_DIRNAME}/ "
     "for a Studio model, else in EXPORT_DIR.orig/.",
 )
-def fix_pi05_noise(target: str, output_dir: Path | None, backup: bool) -> None:
+def fix_pi05_noise(target: str | None, output_dir: Path | None, backup: bool) -> None:
     """Make an older pi05 OpenVINO export draw fresh start noise on every call.
 
     pi05 models exported before the start noise became a model input sample it
@@ -245,15 +299,20 @@ def fix_pi05_noise(target: str, output_dir: Path | None, backup: bool) -> None:
     the noise as input are left unchanged.
 
     TARGET is a Studio model UUID, a Studio model folder, or an OpenVINO export
-    folder (with manifest.json). Studio models are converted in place and keep
-    their id and name; reload the model in a running Studio afterwards.
+    folder (with manifest.json). Without TARGET, the command lists the Studio
+    pi05 models that have an OpenVINO export and asks which one to convert.
+    Studio models are converted in place and keep their id and name; reload the
+    model in a running Studio afterwards.
 
     \b
-    Example:
+    Examples:
+      physicalai-studio models fix-pi05-noise
       physicalai-studio models fix-pi05-noise MODEL_UUID
     """
     from physicalai.policies.pi05.noise_input import ConversionStatus, convert_openvino_export, runtime_draws_noise
 
+    if target is None:
+        target = str(_choose_studio_model())
     export_dir, model_dir = _resolve_openvino_export(target)
     backup_dir = model_dir / NOISE_BACKUP_DIRNAME if model_dir is not None else None
     try:

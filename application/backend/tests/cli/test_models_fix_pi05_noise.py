@@ -96,3 +96,43 @@ def test_rejects_folder_without_export(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "no manifest.json" in result.output
+
+
+def test_lists_studio_models_and_converts_the_chosen_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    old = tmp_path / "old"
+    _write_old_pi05_export(old / "exports" / "openvino")
+    fixed = tmp_path / "fixed"
+    _write_old_pi05_export(fixed / "exports" / "openvino")
+    CliRunner().invoke(models_cli.models, ["fix-pi05-noise", str(fixed)])
+    other = tmp_path / "act"
+    (other / "exports" / "openvino").mkdir(parents=True)
+    (other / "exports" / "openvino" / "manifest.json").write_text(json.dumps({"model": {"preprocessors": []}}))
+    no_export = tmp_path / "torch_only"
+    no_export.mkdir()
+    ids = [uuid4() for _ in range(4)]
+    studio = [
+        (ids[0], "pi05 old", "v1, 2026-10-28", old),
+        (ids[1], "act", "v1", other),
+        (ids[2], "pi05 fixed", "v2", fixed),
+        (ids[3], "torch only", "v1", no_export),
+    ]
+    monkeypatch.setattr(models_cli, "_studio_models", lambda: studio)
+
+    result = CliRunner().invoke(models_cli.models, ["fix-pi05-noise"], input="1\n")
+
+    assert result.exit_code == 0, result.output
+    assert f"1. pi05 old (v1, 2026-10-28)  [needs fix]  {ids[0]}" in result.output
+    assert f"2. pi05 fixed (v2)  [already fixed]  {ids[2]}" in result.output
+    assert "act" not in result.output
+    assert "torch only" not in result.output
+    assert "Converted:" in result.output
+    assert "noise" in _input_names(old / "exports" / "openvino")
+
+
+def test_list_without_pi05_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(models_cli, "_studio_models", list)
+
+    result = CliRunner().invoke(models_cli.models, ["fix-pi05-noise"])
+
+    assert result.exit_code != 0
+    assert "No Studio pi05 model has an OpenVINO export" in result.output
