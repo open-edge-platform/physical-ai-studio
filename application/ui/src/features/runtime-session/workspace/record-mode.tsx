@@ -72,7 +72,7 @@ const useDefaultTask = (dataset_id: string | undefined) => {
         { params: { path: { dataset_id: dataset_id ?? '' } } },
         { enabled: dataset_id !== undefined }
     );
-    return data?.default_task ?? '';
+    return data?.default_task ?? null;
 };
 
 /** The rate a dataset with nothing recorded yet is recorded at; changing it loads the dataset again at that rate. */
@@ -111,10 +111,14 @@ export const RecordMode = () => {
     const { state, statuses } = useRuntimeSession();
     const dataset = state?.dataset ?? undefined;
     const defaultTask = useDefaultTask(dataset?.dataset_id);
+    const [previousDefaultTask, setPreviousDefaultTask] = useState<string | null>(defaultTask);
     const [task, setTask] = useState(defaultTask);
     const { run, isPending } = useRecordingCommand();
 
-    useEffect(() => setTask(defaultTask), [defaultTask]);
+    if (previousDefaultTask !== defaultTask && task === null) {
+        setTask(defaultTask);
+        setPreviousDefaultTask(defaultTask);
+    }
 
     const { data: settings } = $api.useSuspenseQuery('get', '/api/settings');
     const bindings = getEffectiveBindings(settings.hotkeys.bindings);
@@ -127,7 +131,10 @@ export const RecordMode = () => {
         state?.environment != null &&
         failureOf(statuses, 'environment') === null;
 
-    const start = () => void run({ command: 'start_episode', task });
+    const start = () => {
+        if (task === null) return;
+        void run({ command: 'start_episode', task });
+    };
     const save = () => void run({ command: 'save_episode' });
     const discard = () => void run({ command: 'discard_episode' });
 
@@ -137,7 +144,7 @@ export const RecordMode = () => {
 
     const onStart = (event: FormEvent) => {
         event.preventDefault();
-        if (task !== '') {
+        if (task !== null) {
             start();
         }
     };
@@ -154,7 +161,7 @@ export const RecordMode = () => {
                         name='Task'
                         width='100%'
                         isRequired
-                        value={task}
+                        value={task ?? ''}
                         onChange={setTask}
                     />
                     {dataset !== undefined && <RecordingRate dataset={dataset} />}
