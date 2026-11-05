@@ -7,7 +7,9 @@ import html
 import json
 import os
 from pathlib import Path
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 
 def cell(value: object) -> str:
@@ -26,9 +28,8 @@ def test_results(output: Path, warnings: list[str]) -> list[str]:
     lines = ["", "| Test | Status | Duration |", "| --- | --- | --- |"]
     for name in ("controls-junit.xml", "junit.xml"):
         try:
-            # These XML files are generated locally by pytest, not supplied by users.
-            root = ElementTree.parse(output / name).getroot()  # noqa: S314
-        except (OSError, ElementTree.ParseError) as exc:
+            root = ElementTree.parse(output / name).getroot()
+        except (OSError, ElementTree.ParseError, DefusedXmlException) as exc:
             warnings.append(f"{name}: {exc}")
             continue
         for test in root.iter("testcase"):

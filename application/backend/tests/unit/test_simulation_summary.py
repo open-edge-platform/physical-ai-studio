@@ -101,6 +101,17 @@ def test_summary_uses_partial_rollouts_and_reports_corrupt_evidence(tmp_path):
     assert "artifact upload unavailable" in text
 
 
+def test_summary_reports_forbidden_xml_entities_and_continues(tmp_path):
+    (tmp_path / "controls-junit.xml").write_text(
+        '<!DOCTYPE testsuite [<!ENTITY payload "expanded">]><testsuite><testcase name="&payload;" /></testsuite>'
+    )
+    (tmp_path / "junit.xml").write_text('<testsuite><testcase name="test_deployment" time="1" /></testsuite>')
+    text = render_summary(tmp_path, "", {"Deployment": "success"})
+    assert "controls-junit.xml: EntitiesForbidden" in text
+    assert "| test_deployment | ✅ passed | 1.0s |" in text
+    assert "## Conveyor sorting" in text
+
+
 def test_summary_cli_appends_even_when_setup_produced_no_evidence(tmp_path):
     summary = tmp_path / "summary.md"
     summary.write_text("Existing summary\n")

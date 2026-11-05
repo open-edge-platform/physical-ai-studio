@@ -680,9 +680,8 @@ def test_lockfiles_resolve_the_configured_runtime_and_plugin_pin():
         assert package["source"]["git"].endswith(f"#{expected}")
         if project == BACKEND:
             plugin = next(package for package in lock["package"] if package["name"] == "physicalai-mujoco-plugin")
-            assert config["project"]["optional-dependencies"]["sim-e2e"] == [
-                f"physicalai-mujoco-plugin=={plugin['version']}"
-            ]
+            sim_dependencies = config["project"]["optional-dependencies"]["sim-e2e"]
+            assert f"physicalai-mujoco-plugin=={plugin['version']}" in sim_dependencies
             assert plugin["source"] == {"registry": "https://pypi.org/simple"}
 
 
@@ -757,7 +756,8 @@ def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
     assert summary["env"]["SIM_E2E_ARTIFACT_URL"] == "${{ steps.evidence.outputs.artifact-url }}"
     assert summary["env"]["SIM_E2E_CONTROLS_OUTCOME"] == f"${{{{ steps.{controls_step['id']}.outcome }}}}"
     assert summary["env"]["SIM_E2E_TRAINING_OUTCOME"] == f"${{{{ steps.{training_step['id']}.outcome }}}}"
-    assert summary["run"] == "python3 .github/scripts/simulation_summary.py"
+    assert summary["working-directory"] == "application/backend"
+    assert summary["run"] == "uv run --no-sync python ../../.github/scripts/simulation_summary.py"
 
 
 def _workflow_python(path, step):
