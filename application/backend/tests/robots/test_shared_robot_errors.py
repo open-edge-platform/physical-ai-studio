@@ -1,5 +1,6 @@
 import pytest
 from physicalai.robot import (
+    RobotCalibrationError,
     RobotDeviceAlreadyOwned,
     RobotError,
     RobotNameConflict,
@@ -8,6 +9,7 @@ from physicalai.robot import (
 )
 
 from exceptions import (
+    RobotCalibrationRequiredError,
     RobotDeviceAlreadyOwnedError,
     RobotNameConflictError,
     RobotProtocolMismatchError,
@@ -17,6 +19,28 @@ from robots.shared_robot_errors import translate_robot_error
 
 
 class TestTranslateRobotError:
+    @pytest.mark.parametrize("reason", ["missing", "invalid", "mismatch"])
+    def test_calibration_error_uses_structured_diagnostics(self, reason):
+        result = translate_robot_error(
+            RobotCalibrationError(
+                "vendor details and traceback must not be forwarded",
+                reason=reason,
+                calibration_path="/calibration/leader.json",
+            )
+        )
+        assert isinstance(result, RobotCalibrationRequiredError)
+        assert result.error_code == "robot_calibration_required"
+        assert "/calibration/leader.json" in result.message
+        assert "terminal" in result.message
+        assert "vendor details" not in result.message
+        assert "traceback" not in result.message
+
+    def test_calibration_error_without_path(self):
+        result = translate_robot_error(RobotCalibrationError("ignored", reason="invalid"))
+        assert isinstance(result, RobotCalibrationRequiredError)
+        assert "invalid" in result.message
+        assert "Calibration file:" not in result.message
+
     def test_device_already_owned_includes_device_id(self):
         result = translate_robot_error(
             RobotDeviceAlreadyOwned("ignored", phase="device_lock_contention", device_ids=("serial:ttyACM0",))
