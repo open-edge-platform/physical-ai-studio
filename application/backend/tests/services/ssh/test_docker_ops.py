@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlunsplit
 
 import pytest
 
@@ -42,9 +43,17 @@ class FakeTransport:
     def __init__(self, script: dict[str, CommandResult] | None = None) -> None:
         self.script = script or {}
         self.commands: list[tuple[str, ...]] = []
+        self.output_limits: list[int | None] = []
 
-    async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+    async def run_command(
+        self,
+        argv,
+        timeout: float | None = None,  # noqa: ASYNC109 - matches SshTransport
+        *,
+        output_limit: int | None = None,
+    ) -> CommandResult:
         self.commands.append(tuple(argv))
+        self.output_limits.append(output_limit)
         joined = " ".join(argv)
         for prefix, result in self.script.items():
             if joined.startswith(prefix):
@@ -213,6 +222,100 @@ def test_build_run_argv_allows_tuning_shared_memory() -> None:
     assert "--shm-size=8g" in argv
 
 
+def test_build_run_argv_passes_proxy_env_as_docker_flags() -> None:
+    argv = docker_ops.build_run_argv(
+        image_digest_ref=f"{_REGISTRY}/physicalai-trainer-cuda@{_DIGEST}",
+        device_type=DeviceType.CUDA,
+        name="physicalai-trainer-abc",
+        labels={},
+        data_volume="physicalai-trainer-data-abc",
+        remote_container_port=8080,
+        stop_timeout_s=30,
+        proxy_env={"HTTPS_PROXY": "http://proxy:3128", "https_proxy": "http://proxy:3128"},
+    )
+
+    assert "--env=HTTPS_PROXY=http://proxy:3128" in argv
+    assert "--env=https_proxy=http://proxy:3128" in argv
+    assert argv[-1] == f"{_REGISTRY}/physicalai-trainer-cuda@{_DIGEST}"
+
+
+async def test_resolve_daemon_proxy_env_forwards_proxy_and_exclusions() -> None:
+    info = json.dumps(["http://proxy:3128", "http.docker.internal:3128", "intranet.example.com"])
+    transport = FakeTransport({"docker info": _ok(info)})
+
+    env = await docker_ops.resolve_daemon_proxy_env(transport)
+
+    assert transport.commands == [("docker", "info", "--format", docker_ops._DAEMON_PROXY_FORMAT)]
+    assert transport.output_limits == [64 * 1024]
+    assert env == {
+        "HTTP_PROXY": "http://proxy:3128",
+        "http_proxy": "http://proxy:3128",
+        "HTTPS_PROXY": "http://http.docker.internal:3128",
+        "https_proxy": "http://http.docker.internal:3128",
+        "NO_PROXY": "intranet.example.com,localhost,127.0.0.1,::1",
+        "no_proxy": "intranet.example.com,localhost,127.0.0.1,::1",
+    }
+
+
+async def test_resolve_daemon_proxy_env_preserves_long_no_proxy() -> None:
+    exclusions = ",".join(f"service-{n}.corp.example.com" for n in range(200))
+    assert len(exclusions) > Settings.model_fields["ssh_output_max_total_chars"].default
+    transport = FakeTransport({"docker info": _ok(json.dumps(["", "http://proxy:3128", exclusions]))})
+
+    env = await docker_ops.resolve_daemon_proxy_env(transport)
+
+    assert env["NO_PROXY"] == f"{exclusions},localhost,127.0.0.1,::1"
+    assert "HTTP_PROXY" not in env
+
+
+@pytest.mark.parametrize("response", [_ok('["", "", ""]'), _fail(), _ok("bad json"), _ok('["proxy"]')])
+async def test_resolve_daemon_proxy_env_omits_unavailable_proxy(response: CommandResult) -> None:
+    assert await docker_ops.resolve_daemon_proxy_env(FakeTransport({"docker info": response})) == {}
+
+
+def _proxy_with_userinfo(username: str, password: str) -> str:
+    """Build synthetic credential URLs without storing secret-looking test literals."""
+    return urlunsplit(("http", f"{username}:{password}@proxy:3128", "", "", ""))
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        _proxy_with_userinfo("xxxxx", "xxxxx"),  # docker info masks credentials.
+        _proxy_with_userinfo("user", "password"),
+        "http://127.0.0.1:3128",
+        "http://127.1:3128",
+        "http://0x7f.1:3128",
+        "http://2130706433:3128",
+        "http://[::1]:3128",
+        "http://[::ffff:127.0.0.1]:3128",
+        "http://proxy.localhost:3128",
+        "http://proxy:bad",
+        "socks5://proxy:1080",
+    ],
+)
+@pytest.mark.parametrize("invalid_protocol", ["HTTP_PROXY", "HTTPS_PROXY"])
+async def test_resolve_daemon_proxy_env_keeps_the_usable_protocol(url: str, invalid_protocol: str) -> None:
+    valid_url = "http://corp-proxy:3128"
+    http, https = (url, valid_url) if invalid_protocol == "HTTP_PROXY" else (valid_url, url)
+    info = json.dumps([http, https, "internal.example.com"])
+
+    env = await docker_ops.resolve_daemon_proxy_env(FakeTransport({"docker info": _ok(info)}))
+
+    valid_protocol = "HTTPS_PROXY" if invalid_protocol == "HTTP_PROXY" else "HTTP_PROXY"
+    assert env == {
+        valid_protocol: valid_url,
+        valid_protocol.lower(): valid_url,
+        "NO_PROXY": "internal.example.com,localhost,127.0.0.1,::1",
+        "no_proxy": "internal.example.com,localhost,127.0.0.1,::1",
+    }
+
+
+async def test_resolve_daemon_proxy_env_omits_both_unusable_proxies() -> None:
+    info = json.dumps(["http://127.0.0.1:3128", _proxy_with_userinfo("user", "password"), "internal.example.com"])
+    assert await docker_ops.resolve_daemon_proxy_env(FakeTransport({"docker info": _ok(info)})) == {}
+
+
 def test_build_run_argv_mounts_disk_backed_data_volume_not_tmpfs() -> None:
     """The trainer's storage dir is a named volume (disk), never a RAM tmpfs."""
     argv = docker_ops.build_run_argv(
@@ -314,13 +417,20 @@ class _SequencedTransport(FakeTransport):
         super().__init__(script)
         self._sequences = {prefix: list(results) for prefix, results in (sequences or {}).items()}
 
-    async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+    async def run_command(
+        self,
+        argv,
+        timeout: float | None = None,  # noqa: ASYNC109 - matches FakeTransport
+        *,
+        output_limit: int | None = None,
+    ) -> CommandResult:
         joined = " ".join(argv)
         for prefix, queue in self._sequences.items():
             if joined.startswith(prefix) and queue:
                 self.commands.append(tuple(argv))
+                self.output_limits.append(output_limit)
                 return queue.pop(0)
-        return await super().run_command(argv, timeout=timeout)
+        return await super().run_command(argv, timeout=timeout, output_limit=output_limit)
 
 
 async def _no_sleep(_seconds: float) -> None:
@@ -609,8 +719,15 @@ class _PortConflictTransport(FakeTransport):
         self._labels_by_id = labels_by_id
         self.removed: list[str] = []
 
-    async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+    async def run_command(
+        self,
+        argv,
+        timeout: float | None = None,  # noqa: ASYNC109 - matches FakeTransport
+        *,
+        output_limit: int | None = None,
+    ) -> CommandResult:
         self.commands.append(tuple(argv))
+        self.output_limits.append(output_limit)
         joined = " ".join(argv)
         if joined.startswith("docker ps -a --filter publish="):
             return _ok("\n".join(self._ids_on_port))

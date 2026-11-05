@@ -254,7 +254,13 @@ class SshTransport:
     # ASYNC109: an explicit `timeout` is part of this method's contract - a caller
     # gets a CommandResult carrying a TIMEOUT failure rather than a raised
     # CancelledError, which `asyncio.timeout` at the call site cannot express.
-    async def run_command(self, argv: Sequence[str], timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+    async def run_command(
+        self,
+        argv: Sequence[str],
+        timeout: float | None = None,  # noqa: ASYNC109
+        *,
+        output_limit: int | None = None,
+    ) -> CommandResult:
         """Run one command on the remote host and return its sanitized output.
 
         ``argv`` is shell-quoted with :func:`shlex.join` before it reaches the
@@ -270,6 +276,8 @@ class SshTransport:
             argv: Program and arguments. Every element comes from an application
                 constant or an already-validated identifier.
             timeout: Per-command budget. Defaults to ``ssh_command_timeout_s``.
+            output_limit: Override the per-line and total output caps for a
+                bounded structured response that must be parsed whole.
 
         Returns:
             The command's exit status and sanitized output.
@@ -307,6 +315,7 @@ class SshTransport:
                 error.stderr,
                 started,
                 CommandFailure.TIMEOUT,
+                output_limit=output_limit,
             )
         except asyncssh.ChannelOpenError:
             return self._result(
@@ -317,6 +326,7 @@ class SshTransport:
                 "",
                 started,
                 CommandFailure.CHANNEL_REFUSED,
+                output_limit=output_limit,
             )
         except asyncssh.ProcessError as error:
             return self._result(
@@ -327,6 +337,7 @@ class SshTransport:
                 error.stderr,
                 started,
                 CommandFailure.SIGNALED if error.exit_signal else None,
+                output_limit=output_limit,
             )
         except (asyncssh.ConnectionLost, asyncssh.DisconnectError) as error:
             raise SshConnectionError(self.alias, reason=_REASON_CONNECTION_LOST) from error
@@ -342,6 +353,7 @@ class SshTransport:
                 completed.stderr,
                 started,
                 CommandFailure.SIGNALED,
+                output_limit=output_limit,
             )
         return self._result(
             argv,
@@ -351,9 +363,10 @@ class SshTransport:
             completed.stderr,
             started,
             None,
+            output_limit=output_limit,
         )
 
-    def _result(
+    def _result(  # noqa: PLR0913 - one field per CommandResult attribute, plus the output cap
         self,
         argv: Sequence[str],
         command: str,
@@ -362,27 +375,29 @@ class SshTransport:
         stderr: object,
         started: float,
         failure: CommandFailure | None,
+        *,
+        output_limit: int | None,
     ) -> CommandResult:
         """Build a result with both output streams sanitized."""
         return CommandResult(
             argv=tuple(argv),
             command=command,
             exit_status=exit_status,
-            stdout=self._sanitize(stdout),
-            stderr=self._sanitize(stderr),
+            stdout=self._sanitize(stdout, output_limit),
+            stderr=self._sanitize(stderr, output_limit),
             duration_ms=round((perf_counter() - started) * 1000),
             failure=failure,
         )
 
-    def _sanitize(self, stream: object) -> str:
+    def _sanitize(self, stream: object, output_limit: int | None = None) -> str:
         """Sanitize and cap one output stream."""
         if stream is None:
             return ""
         text = stream.decode("utf-8", errors="replace") if isinstance(stream, bytes) else str(stream)
         return sanitize_output(
             text,
-            max_line_chars=self._settings.ssh_output_max_line_chars,
-            max_total_chars=self._settings.ssh_output_max_total_chars,
+            max_line_chars=self._settings.ssh_output_max_line_chars if output_limit is None else output_limit,
+            max_total_chars=self._settings.ssh_output_max_total_chars if output_limit is None else output_limit,
         )
 
     async def close(self) -> None:
