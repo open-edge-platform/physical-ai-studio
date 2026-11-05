@@ -34,6 +34,7 @@ from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
 from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY, ExportablePolicyMixin
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -199,6 +200,25 @@ def _warn_if_unsupported_policy(policy_name: str) -> None:
         UserWarning,
         stacklevel=3,
     )
+
+
+class _ActionChunkExportModule(torch.nn.Module):
+    """Traceable inference graph: raw observation tensors -> denormalized action chunk.
+
+    Bakes the LeRobot normalizer / unnormalizer steps into the graph and skips
+    the processors' rename, batching and device steps, the action queue and the loss.
+    """
+
+    def __init__(self, policy: PreTrainedPolicy, normalizer: Any, unnormalizer: Any) -> None:  # noqa: ANN401
+        super().__init__()
+        self.policy = policy
+        self.normalizer = normalizer
+        self.unnormalizer = unnormalizer
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        batch = self.normalizer._normalize_observation(batch, inverse=False)  # noqa: SLF001
+        actions = self.policy.predict_action_chunk(batch)
+        return self.unnormalizer._normalize_action(actions, inverse=True)  # noqa: SLF001
 
 
 class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
@@ -731,6 +751,56 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     @model.setter
     def model(self, value: Any) -> None:  # noqa: ANN401
         """No-op setter to absorb stale assignments during deserialization."""
+
+    @property
+    def _export_module(self) -> torch.nn.Module:
+        """Inference graph for export; ``model.forward`` is the training loss.
+
+        Returns:
+            Module mapping raw observation tensors to a denormalized action chunk.
+        """
+        from lerobot.processor import NormalizerProcessorStep, UnnormalizerProcessorStep  # noqa: PLC0415
+
+        normalizer = next(s for s in self._preprocessor.steps if isinstance(s, NormalizerProcessorStep))
+        unnormalizer = next(s for s in self._postprocessor.steps if isinstance(s, UnnormalizerProcessorStep))
+        # Populated observation queues (e.g. Diffusion after select_action) make
+        # predict_action_chunk read the queues instead of its inputs; the trace
+        # would bake them in as constants.
+        self.lerobot_policy.reset()
+        return _ActionChunkExportModule(self.lerobot_policy, normalizer, unnormalizer)
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
+        """Raw ``sample_input`` tensors; the export graph normalizes them itself.
+
+        Returns:
+            Sample tensors on the policy device, or ``None`` before initialization.
+        """
+        sample = self.sample_input
+        if sample is None:
+            return None
+        return {k: v.to(self.device) for k, v in sample.items() if isinstance(v, torch.Tensor)}
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the raw observation tensors expected by the exported graph.
+
+        Returns:
+            One float32 feature per LeRobot input feature, or ``None`` before
+            the policy is initialized.
+        """
+        if self._config is None:
+            return None
+        # Diffusion consumes a stacked observation history: (n_obs_steps, *shape).
+        obs_steps = (self._config.n_obs_steps,) if self.policy_name == "diffusion" else ()
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.__members__.get(feature.type.value, InferenceFeatureType.COMMON),
+                shape=(*obs_steps, *feature.shape),
+                name=key,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            )
+            for key, feature in self._config.input_features.items()
+        ]
 
     def _initialize_policy(
         self,
