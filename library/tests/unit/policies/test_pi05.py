@@ -1178,6 +1178,65 @@ class TestPi05ExtraExportArgs:
                 f"{backend}: normalize must precede pi05, got {types}"
             )
 
+    @pytest.mark.parametrize("use_random_input_noise", [True, False])
+    def test_pi05_spec_noise_shape(self, use_random_input_noise: bool) -> None:
+        """The runtime draws the start noise only when the export takes it as an input."""
+        policy = Pi05(use_random_input_noise=use_random_input_noise)
+        policy._dataset_stats = self._mock_stats()
+
+        spec = next(s for s in policy.extra_export_args["openvino"].preprocessors_specs if s.type == "pi05")
+        noise_shape = getattr(spec, "noise_shape", None)
+        if use_random_input_noise:
+            assert noise_shape is not None
+            assert tuple(noise_shape) == (policy.config.chunk_size, policy.config.max_action_dim)
+        else:
+            assert noise_shape is None
+
+
+class TestPi05ExportNoiseInput:
+    """The start noise is a traced input, so no random op ends up in the exported graph."""
+
+    @pytest.mark.parametrize("use_random_input_noise", [True, False])
+    def test_export_sample_adds_noise(self, use_random_input_noise: bool) -> None:
+        """The export sample carries ``noise`` of shape (B, chunk_size, max_action_dim)."""
+        from unittest.mock import patch
+
+        from physicalai.data.constants import NOISE
+        from physicalai.export import ExportablePolicyMixin
+
+        policy = Pi05(use_random_input_noise=use_random_input_noise)
+        base = {STATE: torch.zeros(2, 8)}
+        with patch.object(ExportablePolicyMixin, "_get_default_export_input_sample", return_value=base):
+            sample = policy._get_default_export_input_sample()
+
+        assert sample is not None
+        if use_random_input_noise:
+            assert sample[NOISE].shape == (2, policy.config.chunk_size, policy.config.max_action_dim)
+        else:
+            assert NOISE not in sample
+
+    def test_predict_action_chunk_uses_batch_noise(self) -> None:
+        """Noise in the batch reaches ``sample_actions``; without it the model samples its own."""
+        from unittest.mock import MagicMock, patch
+
+        from physicalai.data.constants import IMAGE_MASKS, NOISE, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+
+        with patch.object(Pi05Model, "__init__", lambda self: None):
+            model = Pi05Model.__new__(Pi05Model)
+        torch.nn.Module.__init__(model)
+        model.enable_rtc = False
+        model._n_action_steps = None
+        model._dataset_stats = {"action": {"shape": (7,)}}
+        model.sample_actions = MagicMock(return_value=torch.zeros(1, 50, 32))
+
+        batch = {IMAGES: [], IMAGE_MASKS: [], TOKENIZED_PROMPT: torch.zeros(1, 4), TOKENIZED_PROMPT_MASK: None}
+        noise = torch.randn(1, 50, 32)
+        model.predict_action_chunk({**batch, NOISE: noise})
+        assert model.sample_actions.call_args.kwargs["noise"] is noise
+
+        model.predict_action_chunk(batch)
+        assert model.sample_actions.call_args.kwargs["noise"] is None
+
 
 # ============================================================================ #
 # embed_prefix Tests                                                           #
