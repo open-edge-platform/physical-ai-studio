@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import onnx
@@ -20,37 +20,42 @@ from physicalai.policies.pi05.noise_input import (
     convert_openvino_export,
     has_backup,
     main,
+    read_noise_shape,
     restore_openvino_export,
 )
+from physicalai.policies.pi05 import noise_input
 
-if TYPE_CHECKING:
-    from pathlib import Path
 
 SHAPE = [1, 4, 3]
 PI05_SPEC = {"type": "pi05", "image_resolution": [224, 224], "empty_cameras": 0}
 
 
-def _write_export(export_dir: Path, *, random_noise: bool = True) -> Path:
+def _write_export(export_dir: Path, *, graph: str = "normal", pi05_spec: dict | None = None) -> Path:
     """Write a tiny OpenVINO export shaped like an old pi05 one: ``y = x + noise``.
 
     The noise comes from an ONNX ``RandomNormalLike`` converted by OpenVINO, which
     builds the same single-RandomUniform Box-Muller subgraph as the real pi05 export.
+    ``graph`` picks a variant: ``"cast"`` also outputs the noise cast to fp16,
+    ``"uniform"`` adds uniform noise (no Box-Muller), ``"none"`` has no noise.
     """
     export_dir.mkdir(parents=True)
     x = helper.make_tensor_value_info("x", TensorProto.FLOAT, SHAPE)
-    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, SHAPE)
-    if random_noise:
-        nodes = [helper.make_node("RandomNormalLike", ["x"], ["n"]), helper.make_node("Add", ["x", "n"], ["y"])]
-    else:
+    outputs = [helper.make_tensor_value_info("y", TensorProto.FLOAT, SHAPE)]
+    noise_op = "RandomUniformLike" if graph == "uniform" else "RandomNormalLike"
+    nodes = [helper.make_node(noise_op, ["x"], ["n"]), helper.make_node("Add", ["x", "n"], ["y"])]
+    if graph == "cast":
+        nodes.append(helper.make_node("Cast", ["n"], ["z"], to=TensorProto.FLOAT16))
+        outputs.append(helper.make_tensor_value_info("z", TensorProto.FLOAT16, SHAPE))
+    if graph == "none":
         nodes = [helper.make_node("Identity", ["x"], ["y"])]
-    graph = helper.make_graph(nodes, "g", [x], [y])
+    onnx_graph = helper.make_graph(nodes, "g", [x], outputs)
     onnx_path = export_dir.parent / f"{export_dir.name}.onnx"
-    onnx.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)]), onnx_path)
+    onnx.save(helper.make_model(onnx_graph, opset_imports=[helper.make_opsetid("", 17)]), onnx_path)
     ov.save_model(ov.convert_model(str(onnx_path)), export_dir / "pi05.xml")
     manifest = {
         "model": {
             "artifacts": {"openvino": "pi05.xml"},
-            "preprocessors": [{"type": "normalize", "mode": "quantiles"}, dict(PI05_SPEC)],
+            "preprocessors": [{"type": "normalize", "mode": "quantiles"}, pi05_spec or dict(PI05_SPEC)],
         },
     }
     (export_dir / "manifest.json").write_text(json.dumps(manifest))
@@ -80,7 +85,7 @@ class TestConvertOpenVINOExport:
 
         assert result.status is ConversionStatus.CONVERTED
         assert result.noise_shape == (4, 3)
-        assert "RandomUniform" in result.replaced_ops[0]
+        assert any("RandomUniform" in name for name in result.replaced_ops)
         assert "RandomUniform" not in _op_types(export_dir / "pi05.xml")
         assert _pi05_spec(export_dir) == {**PI05_SPEC, "noise_shape": [4, 3]}
 
@@ -162,7 +167,7 @@ class TestConvertOpenVINOExportErrors:
     """Exports the converter refuses, without writing anything."""
 
     def test_graph_without_noise(self, tmp_path: Path) -> None:
-        export_dir = _write_export(tmp_path / "export", random_noise=False)
+        export_dir = _write_export(tmp_path / "export", graph="none")
 
         with pytest.raises(ValueError, match="samples no start noise"):
             convert_openvino_export(export_dir)
@@ -243,3 +248,131 @@ class TestRestoreOpenVINOExport:
 
         assert capsys.readouterr().out.startswith("restored:")
         assert "RandomUniform" in _op_types(export_dir / "pi05.xml")
+
+
+class TestConversionGraphs:
+    """Which graphs the converter accepts, and that it keeps the model's own ops."""
+
+    def test_keeps_ops_after_the_noise(self, tmp_path: Path) -> None:
+        export_dir = _write_export(tmp_path / "export", graph="cast")
+
+        convert_openvino_export(export_dir)
+
+        compiled = ov.Core().compile_model(export_dir / "pi05.xml", "CPU")
+        x = np.ones(SHAPE, np.float32)
+        noise = (np.arange(12, dtype=np.float32) * 0.25 - 1.5).reshape(SHAPE)  # exact in fp16
+        result = compiled({"x": x, "noise": noise})
+        np.testing.assert_array_equal(result["y"], x + noise)
+        np.testing.assert_array_equal(result["z"], noise.astype(np.float16))
+
+    def test_rejects_noise_that_is_not_box_muller(self, tmp_path: Path) -> None:
+        export_dir = _write_export(tmp_path / "export", graph="uniform")
+
+        with pytest.raises(ValueError, match="not the Box-Muller pattern"):
+            convert_openvino_export(export_dir)
+        assert sorted(path.name for path in export_dir.iterdir()) == [
+            "manifest.json",
+            "pi05.bin",
+            "pi05.xml",
+            "tokenizer.xml",
+        ]
+
+
+class TestConversionManifests:
+    """The runtime reads ``init_args`` for a ``class_path`` spec and the flat fields otherwise."""
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            {"class_path": "physicalai.inference.preprocessors.pi05.Pi05Preprocessor", "init_args": {}},
+            {"type": "pi05", "class_path": "physicalai.inference.preprocessors.pi05.Pi05Preprocessor"},
+        ],
+    )
+    def test_class_path_spec(self, tmp_path: Path, spec: dict) -> None:
+        from physicalai.inference.component_factory import instantiate_component
+        from physicalai.inference.manifest import ComponentSpec
+
+        export_dir = _write_export(tmp_path / "export", pi05_spec=spec)
+
+        convert_openvino_export(export_dir)
+
+        written = json.loads((export_dir / "manifest.json").read_text())["model"]["preprocessors"][1]
+        assert written["init_args"]["noise_shape"] == [4, 3]
+        assert "noise_shape" not in {k for k in written if k != "init_args"}
+        assert read_noise_shape(export_dir) == [4, 3]
+        preprocessor = instantiate_component(ComponentSpec(**written))
+        assert preprocessor._noise_shape == (4, 3)
+
+    def test_rejects_artifact_outside_the_folder(self, tmp_path: Path) -> None:
+        export_dir = _write_export(tmp_path / "export")
+        manifest = json.loads((export_dir / "manifest.json").read_text())
+        manifest["model"]["artifacts"]["openvino"] = "../outside.xml"
+        (export_dir / "manifest.json").write_text(json.dumps(manifest))
+
+        with pytest.raises(ValueError, match="must be a file name in the folder"):
+            convert_openvino_export(export_dir)
+
+    def test_output_inside_the_export(self, export_dir: Path) -> None:
+        with pytest.raises(ValueError, match="must be outside the export"):
+            convert_openvino_export(export_dir, export_dir / "fixed")
+        assert not (export_dir / "fixed").exists()
+
+
+class TestFailures:
+    """A failure while swapping files leaves a complete export and, for restore, a complete backup."""
+
+    @staticmethod
+    def _fail_on(monkeypatch: pytest.MonkeyPatch, source_parent: str, name: str) -> None:
+        real_move = noise_input.shutil.move
+
+        def move(src: Path, dst: Path) -> object:
+            if Path(src).parent.name == source_parent and Path(src).name == name:
+                msg = "disk full"
+                raise OSError(msg)
+            return real_move(src, dst)
+
+        monkeypatch.setattr(noise_input.shutil, "move", move)
+
+    def test_conversion_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        self._fail_on(monkeypatch, ".noise-input-new", "pi05.bin")
+
+        with pytest.raises(OSError, match="disk full"):
+            convert_openvino_export(export_dir)
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
+        assert not export_dir.with_name(export_dir.name + BACKUP_SUFFIX).exists()
+
+    def test_conversion_without_backup_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        original = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        self._fail_on(monkeypatch, ".noise-input-new", "manifest.json")
+
+        with pytest.raises(OSError, match="disk full"):
+            convert_openvino_export(export_dir, backup=False)
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == original
+
+    def test_restore_rolls_back(self, export_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        convert_openvino_export(export_dir)
+        converted = {path.name: path.read_bytes() for path in export_dir.iterdir()}
+        backup = export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
+        self._fail_on(monkeypatch, backup.name, "pi05.bin")
+
+        with pytest.raises(OSError, match="disk full"):
+            restore_openvino_export(export_dir)
+
+        assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == converted
+        assert has_backup(export_dir)
+
+    def test_backup_with_artifact_outside_the_folder(self, export_dir: Path, tmp_path: Path) -> None:
+        convert_openvino_export(export_dir)
+        backup = export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
+        manifest = json.loads((backup / "manifest.json").read_text())
+        manifest["model"]["artifacts"]["openvino"] = "../outside.xml"
+        (backup / "manifest.json").write_text(json.dumps(manifest))
+        (tmp_path / "outside.xml").write_text("victim")
+
+        assert not has_backup(export_dir)
+        with pytest.raises(FileNotFoundError, match="no complete backup"):
+            restore_openvino_export(export_dir)
+        assert (tmp_path / "outside.xml").read_text() == "victim"

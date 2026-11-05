@@ -1,5 +1,7 @@
+import asyncio
 import importlib
 import json
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +12,11 @@ import openvino as ov
 import pytest
 from click.testing import CliRunner
 from onnx import TensorProto, helper
+from sqlalchemy import event, func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from db.schema import Base, JobDB, ModelDB, ProjectDB
+from services.model_import_service import ModelImportService
 
 # cli/__init__.py binds `models` to the click group, so import the module itself.
 models_cli = importlib.import_module("cli.models")
@@ -243,3 +250,69 @@ def test_list_without_pi05_models(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code != 0
     assert "No Studio pi05 model with an OpenVINO export" in result.output
+
+
+def test_export_folder_target_is_treated_as_its_studio_model(model_dir: Path) -> None:
+    export_dir = model_dir / "exports" / "openvino"
+
+    fixed = _run(str(export_dir))
+    restored = _run(str(export_dir), "--restore")
+
+    assert fixed.exit_code == 0, fixed.output
+    assert f"{models_cli.NOISE_BACKUP_DIRNAME}" in fixed.output
+    assert sorted(path.name for path in (model_dir / "exports").iterdir()) == ["openvino"]
+    assert restored.exit_code == 0, restored.output
+    assert "noise" not in _input_names(export_dir)
+
+
+def test_failed_import_saves_neither_job_nor_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The job and the model go in one transaction: a model the database rejects leaves no job behind."""
+
+    async def check() -> None:
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _foreign_keys(connection, _record) -> None:
+            connection.execute("PRAGMA foreign_keys=ON")
+
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+
+        @asynccontextmanager
+        async def session_ctx():
+            async with maker() as session:
+                try:
+                    yield session
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            project_id = uuid4()
+            async with maker() as session:
+                session.add(ProjectDB(id=str(project_id), name="Project"))
+                await session.commit()
+            monkeypatch.setattr("db.get_async_db_session_ctx", session_ctx)
+
+            async def get_dataset(dataset_id: UUID) -> SimpleNamespace:
+                return SimpleNamespace(id=dataset_id, project_id=project_id)  # not in the database
+
+            service = ModelImportService(get_dataset=get_dataset, persist_import=models_cli._persist_import)
+            with pytest.raises(Exception, match="FOREIGN KEY"):
+                await service._finalize_import(
+                    model_dir=tmp_path / str(uuid4()),
+                    dataset=await get_dataset(uuid4()),
+                    model_name="copy",
+                    policy="pi05",
+                    base_model_id=None,
+                    version=1,
+                )
+
+            async with maker() as session:
+                assert await session.scalar(select(func.count()).select_from(JobDB)) == 0
+                assert await session.scalar(select(func.count()).select_from(ModelDB)) == 0
+        finally:
+            await engine.dispose()
+
+    asyncio.run(check())

@@ -40,9 +40,10 @@ if TYPE_CHECKING:
 MANIFEST_NAME = "manifest.json"
 CHECKSUMS_NAME = "SHA256SUMS"  # optional `sha256sum` listing some copies of an export carry
 BACKUP_SUFFIX = ".orig"  # default backup folder: <export_dir>.orig next to the export
-_TMP_DIRNAME = ".noise-input-tmp"
-_RANDOM_OPS = ("RandomUniform", "RandomNormal")
-# Ops the in-graph sampling (Box-Muller) is built from; the replaced subgraph stays inside these.
+_STAGED_DIRNAME = ".noise-input-new"  # new files, written completely before anything is replaced
+_ASIDE_DIRNAME = ".noise-input-old"  # replaced files while swapping, when no backup is kept
+_RANDOM_OP = "RandomUniform"
+# Ops OpenVINO builds Box-Muller from; the search for the noise stays inside these.
 _ELEMENTWISE = {"Add", "Subtract", "Multiply", "Divide", "Log", "Cos", "Sin", "Sqrt", "Power", "Negative", "Convert"}
 
 
@@ -85,61 +86,102 @@ def runtime_draws_noise() -> bool:
 
 
 def _random_ops(model: ov.Model) -> list[ov.Node]:
-    return [op for op in model.get_ordered_ops() if op.get_type_name() in _RANDOM_OPS]
+    return [op for op in model.get_ordered_ops() if op.get_type_name().startswith("Random")]
 
 
 def _consumers(node: ov.Node) -> list[ov.Node]:
     return [target.get_node() for output in node.outputs() for target in output.get_target_inputs()]
 
 
-def _noise_subgraph(model: ov.Model) -> tuple[list[ov.Node], ov.Node]:
-    """Find the ops that turn the graph's single random op into the start noise.
-
-    Starting from the random op, a consumer joins the subgraph when it is an
-    elementwise op with the noise's shape whose inputs are either already in the
-    subgraph or constant (they depend on no model input and no random op).
+def _varying(model: ov.Model) -> dict[str, bool]:
+    """Map each op to whether it depends on a model input or the random op.
 
     Returns:
-        The subgraph's ops and the one op whose output leaves it (the start noise).
-
-    Raises:
-        ValueError: If the graph has no single random op or no single noise output.
+        Op name to True if it varies, False if it acts as a constant.
     """
-    rand = _random_ops(model)
-    if len(rand) != 1:
-        msg = f"expected one random op in the graph, found {[op.get_type_name() for op in rand]}"
-        raise ValueError(msg)
-
     varying: dict[str, bool] = {}
     for node in model.get_ordered_ops():
         sources = [inp.get_source_output().get_node().get_friendly_name() for inp in node.inputs()]
-        varying[node.get_friendly_name()] = node.get_type_name() in {"Parameter", *_RANDOM_OPS} or any(
+        varying[node.get_friendly_name()] = node.get_type_name() in {"Parameter", _RANDOM_OP} or any(
             varying[source] for source in sources
         )
+    return varying
 
+
+def _joins_log_and_trig(inner: list[frozenset[str]]) -> bool:
+    """Return whether two branches are Box-Muller's ``sqrt(-2 ln u)`` and ``cos(2 pi u)`` halves."""
+    log_side = sorted("Log" in tags and not tags & {"Cos", "Sin"} for tags in inner)
+    trig_side = sorted(bool(tags & {"Cos", "Sin"}) and "Log" not in tags for tags in inner)
+    return len(inner) == 2 and log_side == trig_side == [False, True]  # noqa: PLR2004
+
+
+def _computed_by(out: ov.Node, nodes: dict[str, ov.Node]) -> list[ov.Node]:
+    """Return ``out`` and the ops among ``nodes`` it is computed from."""
+    computed: dict[str, ov.Node] = {}
+    stack = [out]
+    while stack:
+        node = stack.pop()
+        if node.get_friendly_name() in computed:
+            continue
+        computed[node.get_friendly_name()] = node
+        for inp in node.inputs():
+            source = inp.get_source_output().get_node()
+            if source.get_friendly_name() in nodes:
+                stack.append(source)
+    return list(computed.values())
+
+
+def _box_muller_output(model: ov.Model) -> tuple[ov.Node, list[ov.Node]]:
+    """Find the op that outputs the start noise OpenVINO builds from ``RandomUniform``.
+
+    OpenVINO's ONNX frontend turns ``RandomNormalLike`` into Box-Muller:
+    ``sqrt(-2 ln u) * cos(2 pi u)`` with a single ``RandomUniform`` u. Starting from
+    that op, this follows elementwise ops of the same shape whose other inputs are
+    constant, and looks for the one ``Multiply`` that joins a ``Log`` branch with a
+    ``Cos``/``Sin`` branch. Ops after it (casts, the model's own arithmetic) stay.
+
+    Returns:
+        The Box-Muller output op and the ops that compute it.
+
+    Raises:
+        ValueError: If the graph does not have exactly one ``RandomUniform`` feeding
+            exactly one Box-Muller product.
+    """
+    rand = _random_ops(model)
+    if [op.get_type_name() for op in rand] != [_RANDOM_OP]:
+        msg = f"expected one {_RANDOM_OP} op in the graph, found {[op.get_type_name() for op in rand]}"
+        raise ValueError(msg)
+    varying = _varying(model)
     shape = rand[0].get_output_partial_shape(0)
-    chain = {rand[0].get_friendly_name(): rand[0]}
+    # Op types on the way from the random op to each op of the noise computation.
+    tags: dict[str, frozenset[str]] = {rand[0].get_friendly_name(): frozenset()}
+    nodes = {rand[0].get_friendly_name(): rand[0]}
+    candidates = []
     frontier = [rand[0]]
     while frontier:
         next_frontier = []
-        for node in frontier:
-            for consumer in _consumers(node):
-                name = consumer.get_friendly_name()
-                if name in chain or consumer.get_type_name() not in _ELEMENTWISE:
-                    continue
-                if consumer.get_output_partial_shape(0) != shape:
-                    continue
-                sources = [inp.get_source_output().get_node().get_friendly_name() for inp in consumer.inputs()]
-                if all(source in chain or not varying[source] for source in sources):
-                    chain[name] = consumer
-                    next_frontier.append(consumer)
+        for consumer in (c for node in frontier for c in _consumers(node)):
+            name = consumer.get_friendly_name()
+            sources = [inp.get_source_output().get_node().get_friendly_name() for inp in consumer.inputs()]
+            if (
+                name in nodes
+                or consumer.get_type_name() not in _ELEMENTWISE
+                or consumer.get_output_partial_shape(0) != shape
+                or not all(source in nodes or not varying[source] for source in sources)
+            ):
+                continue
+            inner = [tags[source] for source in sources if source in nodes]
+            tags[name] = frozenset().union(*inner, {consumer.get_type_name()} & {"Log", "Cos", "Sin"})
+            nodes[name] = consumer
+            next_frontier.append(consumer)
+            if consumer.get_type_name() == "Multiply" and _joins_log_and_trig(inner):
+                candidates.append(consumer)
         frontier = next_frontier
 
-    outputs = [node for node in chain.values() if any(c.get_friendly_name() not in chain for c in _consumers(node))]
-    if len(outputs) != 1:
-        msg = f"expected one noise output, found {[node.get_friendly_name() for node in outputs]}"
+    if len(candidates) != 1:
+        msg = f"the noise is not the Box-Muller pattern OpenVINO builds (found {len(candidates)} candidates)"
         raise ValueError(msg)
-    return list(chain.values()), outputs[0]
+    return candidates[0], _computed_by(candidates[0], nodes)
 
 
 def _replace_noise_with_input(model: ov.Model) -> tuple[tuple[int, ...], tuple[str, ...]]:
@@ -149,11 +191,12 @@ def _replace_noise_with_input(model: ov.Model) -> tuple[tuple[int, ...], tuple[s
         The noise shape without the batch dimension, and the names of the replaced ops.
 
     Raises:
-        ValueError: If the noise does not have a static shape.
+        ValueError: If the noise has a dynamic shape, or the random op also feeds
+            something other than the noise.
     """
     from openvino import opset13 as ops  # noqa: PLC0415
 
-    chain, out = _noise_subgraph(model)
+    out, computed = _box_muller_output(model)
     shape = out.get_output_partial_shape(0)
     if not shape.is_static:
         msg = f"the start noise has a dynamic shape {shape}"
@@ -164,15 +207,62 @@ def _replace_noise_with_input(model: ov.Model) -> tuple[tuple[int, ...], tuple[s
         target.replace_source_output(param.output(0))
     model.add_parameters([param])
     model.validate_nodes_and_infer_types()
-    return tuple(int(d) for d in shape.to_shape()[1:]), tuple(node.get_friendly_name() for node in chain)
+    if _random_ops(model):
+        msg = f"the {_RANDOM_OP} op also feeds parts of the graph other than the start noise"
+        raise ValueError(msg)
+    return tuple(int(d) for d in shape.to_shape()[1:]), tuple(node.get_friendly_name() for node in computed)
 
 
-def _pi05_spec(manifest: dict[str, Any]) -> dict[str, Any]:
-    specs = [spec for spec in manifest.get("model", {}).get("preprocessors", []) if spec.get("type") == "pi05"]
+def _is_pi05_spec(spec: dict[str, Any]) -> bool:
+    if spec.get("class_path"):
+        return str(spec["class_path"]).rsplit(".", 1)[-1].startswith("Pi05")
+    return spec.get("type") == "pi05"
+
+
+def _pi05_args(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the arguments the runtime passes to the manifest's ``pi05`` preprocessor.
+
+    Those are ``init_args`` for a ``class_path`` spec (which the runtime prefers over
+    ``type``) and the spec's own fields otherwise. The dict is the manifest's own, so
+    changes to it change the manifest.
+
+    Raises:
+        ValueError: If the manifest does not have exactly one ``pi05`` preprocessor.
+    """
+    specs = [spec for spec in manifest.get("model", {}).get("preprocessors", []) if _is_pi05_spec(spec)]
     if len(specs) != 1:
         msg = f"expected one `pi05` preprocessor in the manifest, found {len(specs)}"
         raise ValueError(msg)
-    return specs[0]
+    spec = specs[0]
+    return spec.setdefault("init_args", {}) if spec.get("class_path") else spec
+
+
+def _graph_name(manifest: dict[str, Any], where: Path) -> str:
+    """Return the manifest's OpenVINO graph file name.
+
+    Raises:
+        ValueError: If it is missing or not a plain file name inside the folder.
+    """
+    name = manifest.get("model", {}).get("artifacts", {}).get("openvino") if isinstance(manifest, dict) else None
+    if not isinstance(name, str) or name in {"", ".", ".."} or Path(name).name != name or "\\" in name:
+        msg = f"{where / MANIFEST_NAME}: the OpenVINO artifact must be a file name in the folder, got {name!r}"
+        raise ValueError(msg)
+    return name
+
+
+def read_noise_shape(export_dir: Path | str) -> list[int] | None:
+    """Return the ``noise_shape`` a pi05 export's manifest gives its preprocessor, if any.
+
+    Also raises ``ValueError`` if the manifest has no single ``pi05`` preprocessor.
+
+    Raises:
+        FileNotFoundError: If the folder has no manifest.
+    """
+    manifest_path = Path(export_dir) / MANIFEST_NAME
+    if not manifest_path.is_file():
+        msg = f"no {MANIFEST_NAME} in {export_dir}"
+        raise FileNotFoundError(msg)
+    return _pi05_args(json.loads(manifest_path.read_text())).get("noise_shape")
 
 
 def _noise_input_shape(model: ov.Model) -> tuple[int, ...] | None:
@@ -189,7 +279,7 @@ def _require_empty(folder: Path) -> None:
 
 
 def _read_export(export_dir: Path) -> tuple[dict[str, Any], dict[str, Any], Path]:
-    """Return the export's manifest, its ``pi05`` preprocessor spec and its graph path.
+    """Return the export's manifest, its ``pi05`` preprocessor arguments and its graph path.
 
     Raises:
         FileNotFoundError: If the folder has no manifest or no OpenVINO graph.
@@ -199,11 +289,11 @@ def _read_export(export_dir: Path) -> tuple[dict[str, Any], dict[str, Any], Path
         msg = f"no {MANIFEST_NAME} in {export_dir}"
         raise FileNotFoundError(msg)
     manifest = json.loads(manifest_path.read_text())
-    graph_name = manifest.get("model", {}).get("artifacts", {}).get("openvino")
-    if not graph_name or not (export_dir / graph_name).is_file():
-        msg = f"{export_dir} is not an OpenVINO export (manifest artifact: {graph_name!r})"
+    graph_path = export_dir / _graph_name(manifest, export_dir)
+    if not graph_path.is_file():
+        msg = f"{export_dir} is not an OpenVINO export (no {graph_path.name})"
         raise FileNotFoundError(msg)
-    return manifest, _pi05_spec(manifest), export_dir / graph_name
+    return manifest, _pi05_args(manifest), graph_path
 
 
 def _refresh_checksums(folder: Path, names: list[str]) -> None:
@@ -238,25 +328,52 @@ def _rewritten_names(graph_name: str) -> list[str]:
 
 def _copy_other_files(export_dir: Path, output_dir: Path, graph_name: str) -> None:
     """Copy everything in the export except the files the conversion rewrites."""
-    skipped = {*_rewritten_names(graph_name), _TMP_DIRNAME}
+    skipped = {*_rewritten_names(graph_name), _STAGED_DIRNAME, _ASIDE_DIRNAME}
+    items = [item for item in export_dir.iterdir() if item.name not in skipped]
     output_dir.mkdir(parents=True, exist_ok=True)
-    for item in export_dir.iterdir():
-        if item.name in skipped:
-            continue
+    for item in items:
         if item.is_dir():
             shutil.copytree(item, output_dir / item.name)
         else:
             shutil.copy2(item, output_dir / item.name)
 
 
-def _swap_in(export_dir: Path, staged_dir: Path, backup_dir: Path | None, graph_name: str) -> None:
-    """Move the staged files over the export's, moving the old ones to ``backup_dir`` if given."""
-    if backup_dir is not None:
-        backup_dir.mkdir(parents=True, exist_ok=True)
-    for name in _rewritten_names(graph_name):
-        if backup_dir is not None:
-            shutil.move(export_dir / name, backup_dir / name)
-        (staged_dir / name).replace(export_dir / name)
+def _overlaps(a: Path, b: Path) -> bool:
+    a, b = a.resolve(), b.resolve()
+    return a == b or a.is_relative_to(b) or b.is_relative_to(a)
+
+
+def _swap(target: Path, incoming: Path, aside: Path, names: list[str]) -> None:
+    """Move ``names`` from ``target`` to ``aside``, then from ``incoming`` to ``target``.
+
+    On any failure every file goes back where it was, so ``target`` keeps a complete
+    set of files.
+
+    Raises:
+        RuntimeError: If putting the files back fails too; the message says where they are.
+    """
+    moved_aside: list[str] = []
+    moved_in: list[str] = []
+    try:
+        aside.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            shutil.move(target / name, aside / name)
+            moved_aside.append(name)
+        for name in names:
+            shutil.move(incoming / name, target / name)
+            moved_in.append(name)
+    except BaseException as exc:
+        try:
+            for name in moved_in:
+                shutil.move(target / name, incoming / name)
+            for name in moved_aside:
+                shutil.move(aside / name, target / name)
+        except BaseException as rollback_exc:
+            msg = f"swapping files in {target} failed and could not be undone: files are in {aside} and {incoming}"
+            raise RuntimeError(msg) from rollback_exc
+        with contextlib.suppress(OSError):
+            aside.rmdir()
+        raise exc from None
 
 
 def convert_openvino_export(
@@ -289,11 +406,11 @@ def convert_openvino_export(
     import openvino as ov  # noqa: PLC0415
 
     export_dir = Path(export_dir)
-    manifest, spec, graph_path = _read_export(export_dir)
+    manifest, pi05_args, graph_path = _read_export(export_dir)
     model = ov.Core().read_model(graph_path)
     existing = _noise_input_shape(model)
     if existing is not None:
-        if spec.get("noise_shape") is None:
+        if pi05_args.get("noise_shape") is None:
             msg = f"{graph_path} takes `{NOISE}` but the manifest's pi05 preprocessor has no `noise_shape`"
             raise ValueError(msg)
         return ConversionResult(ConversionStatus.ALREADY_CONVERTED, export_dir, existing)
@@ -304,22 +421,28 @@ def convert_openvino_export(
     out = Path(output_dir) if output_dir is not None else None
     keep: Path | None = None
     if out is not None:
+        if _overlaps(out, export_dir):
+            msg = f"the output folder {out} must be outside the export {export_dir}, and the other way round"
+            raise ValueError(msg)
         _require_empty(out)
     elif backup:
         keep = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
         _require_empty(keep)
+    aside = keep if keep is not None else export_dir / _ASIDE_DIRNAME
+    _require_empty(aside)
 
     noise_shape, replaced_ops = _replace_noise_with_input(model)
-    spec["noise_shape"] = list(noise_shape)
+    pi05_args["noise_shape"] = list(noise_shape)
     graph_name = graph_path.name
+    names = _rewritten_names(graph_name)
     if out is not None:
         _copy_other_files(export_dir, out, graph_name)
         _save(model, manifest, out, graph_name)
-        _refresh_checksums(out, _rewritten_names(graph_name))
+        _refresh_checksums(out, names)
         return ConversionResult(ConversionStatus.CONVERTED, out, noise_shape, replaced_ops)
 
-    # Write the new files completely before replacing anything.
-    staged_dir = export_dir / _TMP_DIRNAME
+    # Write the new files completely before touching the originals.
+    staged_dir = export_dir / _STAGED_DIRNAME
     shutil.rmtree(staged_dir, ignore_errors=True)
     staged_dir.mkdir()
     try:
@@ -327,10 +450,12 @@ def convert_openvino_export(
         # Release the original weights (memory-mapped by read_model) before moving them.
         del model
         gc.collect()
-        _swap_in(export_dir, staged_dir, keep, graph_name)
+        _swap(export_dir, staged_dir, aside, names)
     finally:
         shutil.rmtree(staged_dir, ignore_errors=True)
-    _refresh_checksums(export_dir, _rewritten_names(graph_name))
+    if keep is None:
+        shutil.rmtree(aside, ignore_errors=True)
+    _refresh_checksums(export_dir, names)
     return ConversionResult(ConversionStatus.CONVERTED, export_dir, noise_shape, replaced_ops, keep)
 
 
@@ -340,19 +465,25 @@ def default_backup_dir(export_dir: Path | str) -> Path:
     return export_dir.with_name(export_dir.name + BACKUP_SUFFIX)
 
 
+def _backup_graph_name(backup: Path) -> str | None:
+    try:
+        manifest = json.loads((backup / MANIFEST_NAME).read_text())
+        return _graph_name(manifest, backup)
+    except (OSError, ValueError):
+        return None
+
+
 def has_backup(export_dir: Path | str, backup_dir: Path | str | None = None) -> bool:
     """Return whether a backup that :func:`restore_openvino_export` can put back exists."""
     backup = Path(backup_dir) if backup_dir is not None else default_backup_dir(export_dir)
-    try:
-        graph_name = json.loads((backup / MANIFEST_NAME).read_text())["model"]["artifacts"]["openvino"]
-    except (OSError, ValueError, KeyError, TypeError):
-        return False
-    return all((backup / name).is_file() for name in _rewritten_names(graph_name))
+    graph_name = _backup_graph_name(backup)
+    return graph_name is not None and all((backup / name).is_file() for name in _rewritten_names(graph_name))
 
 
 def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | None = None) -> Path:
     """Undo an in-place :func:`convert_openvino_export` by moving the backed-up files back.
 
+    If moving fails, the converted files stay in place and the backup stays complete.
     The backup folder is removed once it is empty.
 
     Args:
@@ -370,13 +501,15 @@ def restore_openvino_export(export_dir: Path | str, backup_dir: Path | str | Non
     if not export_dir.is_dir():
         msg = f"no export folder {export_dir}"
         raise FileNotFoundError(msg)
-    if not has_backup(export_dir, backup):
+    graph_name = _backup_graph_name(backup)
+    if graph_name is None or not has_backup(export_dir, backup):
         msg = f"no complete backup in {backup} (graph, weights and manifest)"
         raise FileNotFoundError(msg)
-    graph_name = json.loads((backup / MANIFEST_NAME).read_text())["model"]["artifacts"]["openvino"]
     names = _rewritten_names(graph_name)
-    for name in names:
-        (backup / name).replace(export_dir / name)
+    aside = export_dir / _ASIDE_DIRNAME
+    _require_empty(aside)
+    _swap(export_dir, backup, aside, names)
+    shutil.rmtree(aside, ignore_errors=True)
     _refresh_checksums(export_dir, names)
     with contextlib.suppress(OSError):
         backup.rmdir()

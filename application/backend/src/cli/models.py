@@ -1,9 +1,9 @@
 """Model management CLI commands."""
 
 import asyncio
-import json
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -222,6 +222,9 @@ def _resolve_openvino_export(target: str) -> tuple[Path, Path | None]:
     studio_export = path / EXPORTS_DIRNAME / "openvino"
     if studio_export.is_dir():
         return studio_export, path
+    if path.name == "openvino" and path.parent.name == EXPORTS_DIRNAME:
+        # A Studio model's export folder: treat it like the model itself.
+        return path, path.parent.parent
     return path, None
 
 
@@ -240,21 +243,18 @@ def _studio_models() -> "list[Model]":
 
 def _noise_status(model_dir: Path) -> str | None:
     """Describe a Studio model's pi05 OpenVINO export, or return None if it has none."""
-    from physicalai.policies.pi05.noise_input import has_backup
+    from physicalai.policies.pi05.noise_input import has_backup, read_noise_shape
 
     from training.job import EXPORTS_DIRNAME
 
     export_dir = model_dir / EXPORTS_DIRNAME / "openvino"
     try:
-        manifest = json.loads((export_dir / "manifest.json").read_text())
+        noise_shape = read_noise_shape(export_dir)
     except (OSError, ValueError):
         return None
-    for spec in manifest.get("model", {}).get("preprocessors", []):
-        if spec.get("type") == "pi05" or "pi05" in str(spec.get("class_path", "")).lower():
-            if "noise_shape" not in spec.get("init_args", spec):
-                return "needs fix"
-            return "fixed, restorable" if has_backup(export_dir, model_dir / NOISE_BACKUP_DIRNAME) else "fixed"
-    return None
+    if noise_shape is None:
+        return "needs fix"
+    return "fixed, restorable" if has_backup(export_dir, model_dir / NOISE_BACKUP_DIRNAME) else "fixed"
 
 
 def _choose_studio_model(*, restorable_only: bool) -> Path:
@@ -291,13 +291,18 @@ async def _get_dataset(dataset_id: UUID) -> "Dataset":
 
 
 async def _persist_import(job: "TrainJob", model: "Model") -> "Model":
+    """Save the import's job and model in one transaction, so a failure leaves neither."""
     from db import get_async_db_session_ctx
-    from services.job_service import JobService
-    from services.model_service import ModelService
+    from repositories.job_repo import JobRepository
+    from repositories.model_repo import ModelRepository
 
+    model = model.model_copy(update={"train_job_id": job.id})
     async with get_async_db_session_ctx() as session:
-        saved_job = await JobService(session).create_job(job)
-        return await ModelService(session).create_model(model.model_copy(update={"train_job_id": saved_job.id}))
+        session.add(JobRepository(session).to_schema(job))
+        await session.flush()  # the model row references the job
+        session.add(ModelRepository(session).to_schema(model))
+        await session.commit()
+    return model
 
 
 def _copy_as_fixed_model(model_dir: Path, export_dir: Path) -> None:
@@ -314,8 +319,9 @@ def _copy_as_fixed_model(model_dir: Path, export_dir: Path) -> None:
     if original.dataset_id is None:
         raise click.ClickException(f"Model {original.id} has no dataset; use --out and models import-dir instead")
 
-    staging = get_settings().models_dir / f".noise-fix-{original.id}"
-    shutil.rmtree(staging, ignore_errors=True)
+    models_dir = get_settings().models_dir
+    models_dir.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".noise-fix-", dir=models_dir))
     try:
         result = convert_openvino_export(export_dir, staging / "openvino")
         if result.status is ConversionStatus.ALREADY_CONVERTED:
