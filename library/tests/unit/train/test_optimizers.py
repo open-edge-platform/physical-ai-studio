@@ -124,3 +124,29 @@ class TestAdamW:
         restored = adamw(params, lr=1e-5)
         restored.load_state_dict(optimizer.state_dict())
         assert torch.equal(restored.state[params[0]]["exp_avg_sq"], state["exp_avg_sq"])
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Triton kernel runs on CUDA")
+    @pytest.mark.parametrize("betas", [(0.9, 0.95), (0.9, 0.999)])
+    def test_fused_kernel_matches_eager(self, monkeypatch: pytest.MonkeyPatch, betas: tuple[float, float]) -> None:
+        pytest.importorskip("triton")
+        init = (torch.randn(1031, 517, device="cuda") * 0.02).bfloat16()
+
+        def train(fused: bool) -> tuple[torch.Tensor, dict]:
+            if not fused:
+                monkeypatch.setattr(optimizers, "_fused_update", lambda: None)
+            params = [torch.nn.Parameter(init.clone())]
+            optimizer = adamw(params, lr=1e-5, betas=betas, weight_decay=0.01)
+            generator = torch.Generator(device="cuda").manual_seed(0)
+            for _ in range(20):
+                params[0].grad = torch.randn(init.shape, device="cuda", generator=generator).bfloat16()
+                optimizer.step()
+            return params[0].detach(), optimizer.state[params[0]]
+
+        fused_weight, fused_state = train(fused=True)
+        eager_weight, eager_state = train(fused=False)
+        fused_effective = fused_weight.float() + fused_state["compensation"].float()
+        eager_effective = eager_weight.float() + eager_state["compensation"].float()
+        moved = (eager_effective - init.float()).abs().max()
+        assert (fused_effective - eager_effective).abs().max() < 0.02 * moved
+        assert fused_state["exp_avg_sq"].dtype == eager_state["exp_avg_sq"].dtype
+        assert (fused_state["compensation"] != 0).any()

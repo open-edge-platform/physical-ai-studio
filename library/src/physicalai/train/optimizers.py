@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -67,8 +68,9 @@ class BF16AdamW(torch.optim.Optimizer):
 
     Each bf16 update is computed in fp32 on ``weight + compensation``, rounded to bf16, and
     the rounding residual is stored in a bf16 ``compensation`` buffer for the next step. The
-    weights follow the fp32-weight trajectory at 2 extra bytes per bf16 parameter. Other
-    parameters use torch's foreach AdamW.
+    weights follow the fp32-weight trajectory at 2 extra bytes per bf16 parameter. On CUDA the
+    bf16 update is one fused Triton kernel per tensor; without Triton, or for non-contiguous
+    tensors, it falls back to chunked eager ops. Other parameters use torch's foreach AdamW.
 
     Moments of bf16 parameters are bf16 unless their beta is too close to 1 for bf16 to hold
     the EMA update (e.g. the default ``beta2=0.999``); those moments are kept in fp32.
@@ -157,11 +159,13 @@ class BF16AdamW(torch.optim.Optimizer):
         bias_correction2_sqrt = math.sqrt(1 - beta2**step)
         decay = 1 - lr * group["weight_decay"]
         tensors = (p, grad, state["compensation"], state["exp_avg"], state["exp_avg_sq"])
-        chunks: Iterable[tuple[torch.Tensor, ...]]
-        if all(t.is_contiguous() for t in tensors):
-            chunks = zip(*(t.view(-1).split(_CHUNK_NUMEL) for t in tensors), strict=True)
-        else:
-            chunks = iter([tensors])
+        contiguous = all(t.is_contiguous() for t in tensors)
+        if p.is_cuda and contiguous and (fused := _fused_update()) is not None:
+            fused(*tensors, beta1, beta2, step_size, bias_correction2_sqrt, group["eps"], decay)
+            return
+        chunks: Iterable[tuple[torch.Tensor, ...]] = (
+            zip(*(t.view(-1).split(_CHUNK_NUMEL) for t in tensors), strict=True) if contiguous else [tensors]
+        )
         for weight, grad_chunk, compensation, exp_avg, exp_avg_sq in chunks:
             grad32 = grad_chunk.float()
             # fp32 moments are updated in place (``.float()`` returns them); bf16 ones via the copies.
@@ -174,6 +178,16 @@ class BF16AdamW(torch.optim.Optimizer):
             weight32.addcdiv_(exp_avg32, denom, value=-step_size)
             weight.copy_(weight32)
             compensation.copy_(weight32.sub_(weight.float()))
+
+
+@cache
+def _fused_update() -> Callable[..., None] | None:
+    """Return the Triton update kernel, or ``None`` when Triton is unavailable."""
+    try:
+        from ._kahan_triton import kahan_adamw_update  # noqa: PLC0415
+    except ImportError:
+        return None
+    return kahan_adamw_update
 
 
 def _moment_dtype(p: torch.Tensor, beta: float) -> torch.dtype:
