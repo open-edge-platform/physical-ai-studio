@@ -20,6 +20,7 @@ from physicalai.runtime.events import InferenceEvent, MetricsEvent, TickEvent
 from runtime_session.controls.model import ModelControl, _Observation
 from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening
 from runtime_session.rerun import _background_server as background_server
+from runtime_session.session import RuntimeSession
 from runtime_session.store import STATE, FeatureSpec, ImageSpec, Store
 from schemas.runtime_session import ExecutionConfig, ModelControlConfig, SessionState, StateMessage, TeleopControlConfig
 from settings import RerunSettings
@@ -412,11 +413,13 @@ async def test_opening_session_loading_environment_and_teleop_do_not_start_rerun
     assert session.state().rerun_url is None
 
 
-async def test_play_stop_play_creates_separate_recordings(model_session) -> None:
+async def test_play_stop_play_creates_separate_recordings(model_session: RuntimeSession) -> None:
     session = model_session
-    assert session._observer is None
+    initial = session._observer
+    assert initial is None
     await session.set_control(ModelControlConfig())
     first = session._observer
+    assert first is not None
     assert first.is_alive()
     assert first._store is session.store
     first_id = rr.get_recording_id(first._recording)
@@ -424,11 +427,13 @@ async def test_play_stop_play_creates_separate_recordings(model_session) -> None
 
     await session.set_control(None)
     assert not first.is_alive()
-    assert session._observer is None
+    stopped = session._observer
+    assert stopped is None
     assert session.state().rerun_url is None
 
     await session.set_control(ModelControlConfig())
     second = session._observer
+    assert second is not None
     assert second is not first
     assert second.is_alive()
     assert rr.get_recording_id(second._recording) != first_id
