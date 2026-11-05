@@ -7,7 +7,7 @@ import { Button, ButtonGroup, Checkbox, Flex, Heading, Text, TextField, toast, V
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage } from '../../api/errors';
-import { SchemaEnvironmentWithRelations, SchemaSimulationCamera } from '../../api/openapi-spec';
+import { SchemaEnvironmentWithRelations, SchemaSimulationCameraInfo } from '../../api/openapi-spec';
 import { useProjectId } from '../projects/use-project';
 import { useSimulatedRobotTypes } from './robot-simulation';
 import { useRobotSimulation } from './use-robot-simulation';
@@ -34,7 +34,7 @@ const dismiss = (key: string) => {
 
 const SOURCE_LABEL: Record<string, string> = { scene: 'scene', override: 'robot', model: 'robot', default: 'robot' };
 
-const cameraDetails = ({ source, width, height, fps }: SchemaSimulationCamera) =>
+const cameraDetails = ({ source, width, height, fps }: SchemaSimulationCameraInfo) =>
     `${SOURCE_LABEL[source] ?? source} camera · ${width}×${height} · ${fps} fps`;
 
 const RobotCamerasPrompt = ({
@@ -69,19 +69,13 @@ const RobotCamerasPrompt = ({
         }
     );
 
-    // A camera on a stream of this simulation is present when it is this robot's, or no robot's
-    // (adding it makes it this robot's). Another robot's camera only shares the URL: that robot's
-    // simulation ran on this port before, and moves the camera when it restarts.
-    const environmentUrls = new Set(
+    // The simulation cameras of this robot the environment has, by their name in the simulation.
+    const present = new Set(
         (environment.cameras ?? []).flatMap((camera) =>
-            camera.driver === 'ipcam' &&
-            'url' in camera.payload &&
-            [robot.id, null, undefined].includes(camera.payload.simulation_robot_id)
-                ? [camera.payload.url]
-                : []
+            camera.driver === 'simulation' && camera.payload.robot_id === robot.id ? [camera.payload.camera] : []
         )
     );
-    const missing = (simulation?.cameras ?? []).filter(({ stream_url }) => !environmentUrls.has(stream_url));
+    const missing = (simulation?.cameras ?? []).filter(({ name }) => !present.has(name));
 
     if (isHidden || simulation === undefined || !simulation.running || missing.length === 0) {
         return null;
@@ -161,7 +155,7 @@ const RobotCamerasPrompt = ({
                     ))}
                 </Flex>
                 <Text UNSAFE_className={classes.detail}>
-                    Added as IP cameras on the simulation&apos;s streams, under the names above.
+                    Added under the names above. They stream while the simulation runs.
                 </Text>
                 <ButtonGroup>
                     <Button

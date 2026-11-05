@@ -108,7 +108,8 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
             raise ValueError(f"{item.__class__} with ID `{item_id}` doesn't exist")
         return updated
 
-    async def delete_by_id(self, obj_id: str | UUID) -> None:
+    async def delete_by_id(self, obj_id: str | UUID, *, commit: bool = True) -> None:
+        """Delete the item; with ``commit=False`` the caller commits it, with more."""
         if not hasattr(self.schema, "id"):
             raise AttributeError(f"Delete by ID is not supported by schema: `{self.schema}`")
 
@@ -119,7 +120,8 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
         ]
         query = expression.delete(self.schema).where(*where_expression)
         await self.db.execute(query)
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     @staticmethod
     def _id_to_str(obj_id: str | UUID) -> str:

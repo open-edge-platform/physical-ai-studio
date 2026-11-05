@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
+from repositories.project_camera_repo import ProjectCameraRepository
 from repositories.project_environment_repo import ProjectEnvironmentRepository
 from repositories.project_robot_repo import ProjectRobotRepository
 from robots.catalog.registry import RobotCatalogRegistry
@@ -85,7 +86,12 @@ class RobotService:
             raise ResourceNotFoundError(ResourceType.ROBOT, str(robot_id))
 
         try:
-            await repo.delete_by_id(robot_id)
+            # One transaction, the robot first: deleting it takes the database's write lock, so the
+            # cameras listed next include any that an addition committed before, and an addition
+            # after it finds no robot. If the robot cannot be deleted, its cameras stay too.
+            await repo.delete_by_id(robot_id, commit=False)
+            await ProjectCameraRepository(self.session, str(project_id)).delete_simulation_cameras(robot_id)
+            await self.session.commit()
         except IntegrityError as e:
             await self.session.rollback()
             env_repo = ProjectEnvironmentRepository(self.session, project_id, self.catalog_registry)

@@ -688,18 +688,6 @@ class SimulationNameInUseError(BaseException):
         )
 
 
-class SimulationMovedError(BaseException):
-    """Raised when a simulation moved to another address while its cameras were being added."""
-
-    def __init__(self, owner_name: str) -> None:
-        super().__init__(
-            message=f"The simulation {owner_name!r} restarted on another address. Try adding its cameras again.",
-            error_code="simulation_moved",
-            http_status=http.HTTPStatus.CONFLICT,
-            details={"owner_name": owner_name},
-        )
-
-
 class SimulationNotServingError(BaseException):
     """Raised when a robot's simulation does not serve what the browser asked Studio to pass on."""
 

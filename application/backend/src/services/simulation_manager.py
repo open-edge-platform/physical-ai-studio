@@ -20,7 +20,7 @@ import ipaddress
 import json
 import time
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -39,7 +39,6 @@ from exceptions import (
 )
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.robot_service import RobotService
-from schemas.project_camera import IPCamera
 from schemas.robot import UnavailableRobot
 from schemas.simulation import (
     Simulation,
@@ -51,7 +50,6 @@ from schemas.simulation import (
     simulation_proxy_path,
 )
 from services.environment_service import EnvironmentService
-from services.project_camera_service import ProjectCameraService
 
 START_TIMEOUT_S = 180.0
 """A starting simulation that prints no event for this long is stopped as failed."""
@@ -107,18 +105,17 @@ class DatabaseSimulationRobots:
             robot = await service.get_robot_by_id(project_id, robot_id)
             if isinstance(robot, UnavailableRobot) or "http_url" not in type(robot.payload).model_fields:
                 return
-            # One transaction for the cameras, the leaders and the robot: the leaders are matched on
-            # the robot's previous address, so they must not move without it. If any of it fails,
-            # none of it is kept, and the next start moves them all from the address still stored.
-            cameras = ProjectCameraService(session, self._registry)
-            await _move_simulation_cameras(cameras, project_id, robot_id, http_url, commit=False)
-            if robot.payload.http_url != http_url:
-                environments = EnvironmentService(session, self._registry)
-                await _move_simulation_leaders(
-                    service, environments, self._registry, project_id, robot_id, robot.payload.http_url, http_url
-                )
-                payload = robot.payload.model_copy(update={"http_url": http_url})
-                await service.update_robot(project_id, robot.model_copy(update={"payload": payload}), commit=False)
+            if robot.payload.http_url == http_url:
+                return
+            # One transaction for the leaders and the robot: the leaders are matched on the robot's
+            # previous address, so they must not move without it. If any of it fails, none of it is
+            # kept, and the next start moves them from the address still stored.
+            environments = EnvironmentService(session, self._registry)
+            await _move_simulation_leaders(
+                service, environments, self._registry, project_id, robot_id, robot.payload.http_url, http_url
+            )
+            payload = robot.payload.model_copy(update={"http_url": http_url})
+            await service.update_robot(project_id, robot.model_copy(update={"payload": payload}), commit=False)
             await session.commit()
 
     async def point_leader(self, project_id: UUID, follower_id: UUID, leader_id: UUID) -> tuple[Any, Any] | None:
@@ -141,29 +138,6 @@ class DatabaseSimulationRobots:
                     port,
                 )
             return follower, leader
-
-
-async def _move_simulation_cameras(
-    cameras: ProjectCameraService, project_id: UUID, robot_id: UUID, new_url: str, *, commit: bool = True
-) -> None:
-    """Point the IP cameras added from a robot's simulation at the simulation's new address.
-
-    Simulations start on free ports, so the address changes on every start. A camera added from a
-    simulation records its robot, and only that robot's cameras move, from whatever address they
-    were on (the robot's stored address may have changed since). A camera without a robot never
-    moves: its address cannot tell which simulation it came from.
-    """
-    for camera in await cameras.get_camera_list(project_id):
-        if not isinstance(camera, IPCamera) or camera.payload.simulation_robot_id != robot_id:
-            continue
-        base, separator, stream = camera.payload.url.partition("/cameras/")
-        if not separator or base == new_url:
-            continue
-        url = f"{new_url}/cameras/{stream}"
-        payload = camera.payload.model_copy(update={"url": url})
-        await cameras.update_camera(
-            project_id, camera.model_copy(update={"payload": payload, "fingerprint": {"url": url}}), commit=commit
-        )
 
 
 async def _move_simulation_leaders(
@@ -324,19 +298,8 @@ class SimulationManager:
         Yields whether Studio is starting, running or stopping this robot's simulation. Its address
         is Studio's then: whoever updates the robot keeps the stored one.
         """
-        async with self.holding_addresses() as simulated_by_studio:
-            yield simulated_by_studio(project_id, robot_id)
-
-    @contextlib.asynccontextmanager
-    async def holding_addresses(self) -> AsyncIterator[Callable[[UUID, UUID], bool]]:
-        """Hold off storing simulation addresses, and so moving and adopting cameras.
-
-        One lock, never taken while it is held, for robot and camera updates, address writes and
-        additions of a simulation's cameras alike. Yields whether Studio is starting, running or
-        stopping the simulation of a project's robot.
-        """
         async with self._address_lock:
-            yield self._simulated_by_studio
+            yield self._simulated_by_studio(project_id, robot_id)
 
     async def point_leader_at_follower(self, project_id: UUID, follower: Any, leader: Any) -> tuple[Any, Any]:
         """Point a leader that reads from a simulation at the follower's, for a session of the two.
@@ -579,8 +542,8 @@ class SimulationManager:
     async def _finish_ready(self, child: _Child, running: dict[str, Any]) -> None:
         """Store the simulation's address, then report it running.
 
-        In this order, so that whoever reacts to ``running`` (the UI refetching the robot and its
-        cameras) already sees the new address.
+        In this order, so that whoever reacts to ``running`` (the UI refetching the robot, a session
+        loading its cameras) already sees the new address.
         """
         http_url = running["http_url"]
         if http_url is not None and self._state.project_id and self._state.robot_id:

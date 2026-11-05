@@ -3,29 +3,20 @@
 
 """A simulated robot's simulation: what it serves, and adding its cameras to an environment."""
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
+from fastapi.requests import HTTPConnection
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import AsyncSessionDep, RobotCatalogServiceDep, SimulationManagerDep
-from schemas.project_camera import IPCamera
+from api.dependencies import RobotSimulationServiceDep, get_robot_catalog_service, get_simulation_manager
+from schemas.project_camera import Camera, SimulationCamera
 from schemas.simulation import AddSimulationCamerasRequest, ProjectRobotSimulation, RobotSimulation
 from services.robot_simulation_service import RobotSimulationService
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["Simulation"])
 
 ProjectID = UUID
-
-
-def get_robot_simulation_service(
-    session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep, manager: SimulationManagerDep
-) -> RobotSimulationService:
-    """Provide a RobotSimulationService for the request's database session."""
-    return RobotSimulationService(session, catalog_service.registry, manager)
-
-
-RobotSimulationServiceDep = Annotated[RobotSimulationService, Depends(get_robot_simulation_service)]
 
 
 @router.get("/robots/{robot_id}/simulation")
@@ -52,6 +43,19 @@ async def add_simulation_cameras(
     environment_id: UUID,
     request: AddSimulationCamerasRequest,
     service: RobotSimulationServiceDep,
-) -> list[IPCamera]:
-    """Add cameras of a running simulation to an environment, as IP cameras on its streams."""
+) -> list[SimulationCamera]:
+    """Add cameras of a running simulation to an environment; they stream while it runs."""
     return await service.add_cameras(project_id, environment_id, request.robot_id, request.cameras, request.names)
+
+
+async def resolve_export_cameras(
+    request: HTTPConnection, session: AsyncSession, project_id: UUID, cameras: list[Camera]
+) -> list[Camera]:
+    """Return *cameras* for a runtime export, simulation cameras on the streams they have now.
+
+    The simulation manager is looked up only if there is a simulation camera.
+    """
+    if not any(isinstance(camera, SimulationCamera) for camera in cameras):
+        return cameras
+    service = RobotSimulationService(session, get_robot_catalog_service().registry, get_simulation_manager(request))
+    return await service.resolve_cameras(project_id, cameras)

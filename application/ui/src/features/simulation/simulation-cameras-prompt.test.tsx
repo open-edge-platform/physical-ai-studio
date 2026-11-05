@@ -14,22 +14,22 @@ import { SimulationCamerasPrompt } from './simulation-cameras-prompt';
 
 const PROJECT_ID = 'project-1';
 const SIM = 'http://127.0.0.1:56209';
+const simulationCamera = (id: string, robot_id: string, camera: string) => ({
+    id,
+    name: `Sim arm ${camera}`,
+    driver: 'simulation',
+    fingerprint: { robot_id, camera },
+    hardware_name: camera,
+    payload: { robot_id, camera },
+});
+
 const robot = { id: 'robot-1', name: 'Sim arm', type: 'SO101_Follower', payload: { connection_string: '' } };
 
 const environment = {
     id: 'env-1',
     name: 'Sim env',
     robots: [{ robot, tele_operator: { type: 'none' } }],
-    cameras: [
-        {
-            id: 'cam-1',
-            name: 'Sim arm wrist',
-            driver: 'ipcam',
-            fingerprint: null,
-            hardware_name: null,
-            payload: { url: `${SIM}/cameras/wrist/mjpeg`, fps: 30 },
-        },
-    ],
+    cameras: [simulationCamera('cam-1', 'robot-1', 'wrist')],
 } as unknown as SchemaEnvironmentWithRelations;
 
 const camera = (name: string, source: string) => ({
@@ -110,28 +110,38 @@ describe('SimulationCamerasPrompt', () => {
         await waitFor(() => expect(added).toEqual([{ robot_id: robot.id, cameras: ['overview'], names: {} }]));
     });
 
-    it("offers a camera on a port another robot's simulation used before, whose camera has the same URL", async () => {
+    it("offers a camera when the environment has another robot's camera of the same name", async () => {
         mockSimulation(true);
-        // Another robot's simulation ran on this port and added its wrist camera; it moves the camera
-        // away when it restarts, so this robot's wrist camera is not in the environment.
-        const wrist = environment.cameras?.[0] as { payload: object };
-        const theirs = { ...wrist, payload: { ...wrist.payload, simulation_robot_id: 'robot-0' } };
-        renderPrompt({ ...environment, cameras: [theirs] } as SchemaEnvironmentWithRelations);
+        renderPrompt({
+            ...environment,
+            cameras: [simulationCamera('cam-0', 'robot-0', 'wrist')],
+        } as unknown as SchemaEnvironmentWithRelations);
 
         expect(await screen.findByRole('checkbox', { name: 'wrist' })).toBeChecked();
         expect(screen.getByRole('checkbox', { name: 'overview' })).toBeChecked();
     });
 
-    it('counts a camera of this robot, or of no robot, on the stream as present', async () => {
+    it("offers a camera when the environment has only an IP camera on the simulation's stream", async () => {
         mockSimulation(true);
-        const wrist = environment.cameras?.[0] as { payload: object };
-        const mine = { ...wrist, payload: { ...wrist.payload, simulation_robot_id: robot.id } };
-        const overview = {
-            ...wrist,
-            id: 'cam-2',
-            payload: { url: `${SIM}/cameras/overview/mjpeg`, fps: 30, simulation_robot_id: null },
+        const onTheStream = {
+            id: 'cam-0',
+            name: 'Wrist stream',
+            driver: 'ipcam',
+            fingerprint: { url: `${SIM}/cameras/wrist/mjpeg` },
+            hardware_name: null,
+            payload: { url: `${SIM}/cameras/wrist/mjpeg`, fps: 30 },
         };
-        renderPrompt({ ...environment, cameras: [mine, overview] } as SchemaEnvironmentWithRelations);
+        renderPrompt({ ...environment, cameras: [onTheStream] } as unknown as SchemaEnvironmentWithRelations);
+
+        expect(await screen.findByRole('checkbox', { name: 'wrist' })).toBeChecked();
+    });
+
+    it("counts the robot's simulation cameras the environment has as present", async () => {
+        mockSimulation(true);
+        renderPrompt({
+            ...environment,
+            cameras: [simulationCamera('cam-1', robot.id, 'wrist'), simulationCamera('cam-2', robot.id, 'overview')],
+        } as unknown as SchemaEnvironmentWithRelations);
 
         await new Promise((resolve) => setTimeout(resolve, 50));
         expect(screen.queryByRole('heading', { name: 'Add simulated cameras?' })).not.toBeInTheDocument();

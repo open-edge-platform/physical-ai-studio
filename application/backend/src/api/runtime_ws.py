@@ -28,6 +28,7 @@ from api.dependencies import (
     ProjectServiceDep,
     RobotClientFactoryDep,
     RobotServiceDep,
+    RobotSimulationServiceDep,
     RuntimeSessionRegistryDep,
     SimulationManagerDep,
 )
@@ -97,6 +98,7 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
     registry: RuntimeSessionRegistryDep,
     camera_claims: CameraClaimRegistryDep,
     simulations: SimulationManagerDep,
+    robot_simulations: RobotSimulationServiceDep,
     hz: Annotated[float, Query(gt=0, le=60)] = 20,
 ) -> None:
     await websocket.accept()
@@ -108,7 +110,7 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
         camera_claims=camera_claims,
         robot_factory=robot_client_factory,
         resolve=project_resolvers(
-            project_id, robot_service, camera_service, dataset_service, model_service, simulations
+            project_id, robot_service, camera_service, dataset_service, model_service, simulations, robot_simulations
         ),
     )
     async with session:

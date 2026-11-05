@@ -74,7 +74,9 @@ class SimulationLogs(BaseModel):
     lines: list[str] = Field(..., description="Latest log lines of the current or last simulation, oldest first")
 
 
-class SimulationCamera(BaseModel):
+class SimulationCameraInfo(BaseModel):
+    """A camera a running simulation reports."""
+
     name: str
     width: int
     height: int
@@ -99,7 +101,7 @@ class RobotSimulation(BaseModel):
         None, description="The 3D viewer through Studio, for the browser: a path on Studio's own address"
     )
     scene: str | None = None
-    cameras: list[SimulationCamera] = Field(default_factory=list)
+    cameras: list[SimulationCameraInfo] = Field(default_factory=list)
 
 
 class ProjectRobotSimulation(RobotSimulation):
@@ -117,7 +119,7 @@ class AddSimulationCamerasRequest(BaseModel):
         default_factory=dict,
         description=(
             "Names for the project cameras this call creates, by simulation camera; a missing or blank one "
-            "becomes '<robot name> <camera>'. A camera already on the stream keeps its name."
+            "becomes '<robot name> <camera>'. A camera the project has already keeps its name."
         ),
     )
 

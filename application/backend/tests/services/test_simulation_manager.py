@@ -32,7 +32,6 @@ from exceptions import (
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.robot_service import RobotService
 from schemas.environment import Environment, RobotEnvironmentConfiguration, TeleoperatorNone, TeleoperatorRobot
-from schemas.project_camera import IPCamera
 from schemas.robot import RobotAdapter, UnavailableRobot
 from schemas.simulation import Simulation, SimulationPhase, SimulationStatus, StartSimulationRequest
 from services.simulation_manager import SimulationManager
@@ -757,7 +756,6 @@ async def test_the_database_store_writes_the_address_only_when_it_changes(
         yield SimpleNamespace(commit=_nothing)
 
     monkeypatch.setattr(module, "RobotService", FakeService)
-    monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: SimpleNamespace(get_camera_list=_no_cameras))
     monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
     monkeypatch.setattr(module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=_no_list))
     new_url = "http://127.0.0.1:9"
@@ -768,10 +766,6 @@ async def test_the_database_store_writes_the_address_only_when_it_changes(
         assert updates == []
     else:
         assert [update.payload.http_url for update in updates] == [new_url]
-
-
-async def _no_cameras(project_id: UUID) -> list[Any]:
-    return []
 
 
 async def _nothing() -> None:
@@ -789,7 +783,7 @@ class _StoredRobot(BaseModel):
     payload: FakePayload
 
 
-async def test_the_database_store_moves_only_the_started_robots_cameras_after_sequential_starts(
+async def test_the_database_store_stores_each_started_robots_address_after_sequential_starts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import services.simulation_manager as module
@@ -801,18 +795,6 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
         b: _StoredRobot(id=b, payload=FakePayload(name="sim-b", http_url=shared)),
     }
 
-    def camera(stream: str, owner: UUID | None) -> IPCamera:
-        url = f"{shared}/cameras/{stream}/mjpeg"
-        return IPCamera(
-            id=uuid4(),
-            name=stream,
-            fingerprint={"url": url},
-            hardware_name=stream,
-            payload={"url": url, "simulation_robot_id": owner},
-        )
-
-    cameras = {cam.name: cam for cam in (camera("wrist", a), camera("unowned", None))}
-
     class FakeRobotService:
         def __init__(self, session: Any, registry: Any) -> None:
             pass
@@ -823,19 +805,11 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
         async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
             robots[updated.id] = updated
 
-    class FakeCameraService:
-        async def get_camera_list(self, project_id: UUID) -> list[IPCamera]:
-            return list(cameras.values())
-
-        async def update_camera(self, project_id: UUID, updated: IPCamera, commit: bool = True) -> None:
-            cameras[updated.name] = updated
-
     @contextlib.asynccontextmanager
     async def fake_session():
         yield SimpleNamespace(commit=_nothing)
 
     monkeypatch.setattr(module, "RobotService", FakeRobotService)
-    monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: FakeCameraService())
     monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
     monkeypatch.setattr(module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=_no_list))
     store = module.DatabaseSimulationRobots(SimpleNamespace())  # type: ignore[arg-type]
@@ -843,10 +817,6 @@ async def test_the_database_store_moves_only_the_started_robots_cameras_after_se
     await store.set_http_url(uuid4(), a, "http://127.0.0.1:50001")
     await store.set_http_url(uuid4(), b, "http://127.0.0.1:50002")
 
-    assert {name: (cam.payload.url, cam.payload.simulation_robot_id) for name, cam in cameras.items()} == {
-        "wrist": ("http://127.0.0.1:50001/cameras/wrist/mjpeg", a),
-        "unowned": (f"{shared}/cameras/unowned/mjpeg", None),
-    }
     assert [robots[a].payload.http_url, robots[b].payload.http_url] == [
         "http://127.0.0.1:50001",
         "http://127.0.0.1:50002",
@@ -925,7 +895,6 @@ class LeaderWorld:
         )
         monkeypatch.setattr(module, "RobotService", FakeRobotService)
         monkeypatch.setattr(module, "EnvironmentService", FakeEnvironmentService)
-        monkeypatch.setattr(module, "ProjectCameraService", lambda *_args: SimpleNamespace(get_camera_list=_no_cameras))
         monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
         self.store = module.DatabaseSimulationRobots(registry)  # type: ignore[arg-type]
         self.manager = SimulationManager(registry, self.store)  # type: ignore[arg-type]
@@ -1047,7 +1016,7 @@ async def test_a_session_waits_for_an_address_write_and_reads_both_robots_again(
     leader = world.leader(8080)
     stale_follower, stale_leader = world.robots[world.follower], world.robots[leader]
 
-    async with world.manager.holding_addresses():
+    async with world.manager.updating_robot(world.project_id, uuid4()):
         session = asyncio.create_task(
             world.manager.point_leader_at_follower(world.project_id, stale_follower, stale_leader)
         )

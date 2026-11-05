@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from schemas.runtime_session import EnvironmentDraft
     from services import DatasetService, ModelService, RobotService
     from services.project_camera_service import ProjectCameraService
+    from services.robot_simulation_service import RobotSimulationService
     from services.simulation_manager import SimulationManager
 
 
@@ -32,10 +33,12 @@ def project_resolvers(
     datasets: DatasetService,
     models: ModelService,
     simulations: SimulationManager | None = None,
+    robot_simulations: RobotSimulationService | None = None,
 ) -> Resolvers:
     """Resolvers backed by the database, scoped to ``project_id``.
 
-    With ``simulations``, a leader that reads from a simulation is pointed at its follower's.
+    With ``simulations``, a leader that reads from a simulation is pointed at its follower's. With
+    ``robot_simulations``, a simulation camera streams from where its simulation runs now.
     """
 
     async def environment(draft: EnvironmentDraft) -> EnvironmentWithRelations:
@@ -49,11 +52,14 @@ def project_resolvers(
                     follower, leader = await simulations.point_leader_at_follower(project_id, follower, leader)
                 teleoperator = TeleoperatorRobotWithRobot(robot_id=leader.id, robot=leader)
             configured.append(RobotWithTeleoperator(robot=follower, tele_operator=teleoperator))
+        loaded = [await cameras.get_camera_by_id(project_id, camera.camera_id) for camera in draft.cameras]
+        if robot_simulations is not None:
+            loaded = await robot_simulations.resolve_cameras(project_id, loaded)
         return EnvironmentWithRelations(
             id=draft.id or UNSAVED_ENVIRONMENT_ID,
             name=draft.name,
             robots=configured,
-            cameras=[await cameras.get_camera_by_id(project_id, camera.camera_id) for camera in draft.cameras],
+            cameras=loaded,
         )
 
     async def dataset(dataset_id: UUID) -> Dataset:
