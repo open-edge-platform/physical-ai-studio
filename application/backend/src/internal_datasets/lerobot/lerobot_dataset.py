@@ -235,6 +235,7 @@ class InternalLeRobotDataset(DatasetClient):
                 tasks=episode["tasks"],
                 length=episode["length"],
                 fps=metadata.fps,
+                videos=self._build_videos(episode),
             )
             for episode in episodes
         ]
@@ -386,22 +387,27 @@ class InternalLeRobotDataset(DatasetClient):
         actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
         return torch.stack(actions)
 
+    def _build_videos(self, episode: EpisodeMetadata) -> dict[str, EpisodeVideo]:
+        """Build video info for episode."""
+        metadata = self._dataset.meta
+        return {
+            video_key: EpisodeVideo(
+                start=episode[f"videos/{video_key}/from_timestamp"],
+                end=episode[f"videos/{video_key}/to_timestamp"],
+                path=str(metadata.get_video_file_path(episode["episode_index"], video_key)),
+            )
+            for video_key in metadata.video_keys
+        }
+
     def _build_episode_from_metadata(self, episode: EpisodeMetadata) -> Episode:
         metadata = self._dataset.meta
-        episode_index = episode["episode_index"]
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
+        videos = self._build_videos(episode)
 
         return Episode(
             actions=self._get_episode_actions(episode).tolist(),
             fps=metadata.fps,
-            videos={
-                video_key: EpisodeVideo(
-                    start=episode[f"videos/{video_key}/from_timestamp"],
-                    end=episode[f"videos/{video_key}/to_timestamp"],
-                    path=str(metadata.get_video_file_path(episode_index, video_key)),
-                )
-                for video_key in self._dataset.meta.video_keys
-            },
+            videos=videos,
             action_keys=action_feature_names,
             **episode,
         )
