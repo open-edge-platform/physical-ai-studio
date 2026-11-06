@@ -35,6 +35,7 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
+from physicalai.export.hooks import compress_weights_executorch_openvino_int8_sym
 
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
@@ -565,18 +566,21 @@ class ExportablePolicyMixin:
         Args:
             output_path: Directory or file path where the ExecuTorch model will be saved.
                 If directory, creates ``{policy_name}.pte``. If file, uses as-is.
-            input_sample: A sample input tensor dictionary used to trace/export the model.
-                If ``None``, attempts to use the policy's ``sample_input`` property.
+            input_sample: A preprocessed, tensor-only sample dictionary used to trace/export
+                the model. If ``None``, uses the policy's default preprocessed export sample
+                (derived from the ``sample_input`` property). If provided, every value must be
+                a ``torch.Tensor`` — non-tensor entries raise ``ValueError``
             delegate: ExecuTorch delegate backend to use. Defaults to ``None``
                 (uses value from ``ExecuTorchExportParameters``). Supported values:
 
                 - ``"portable"``: Portable mode — no delegation, uses ExecuTorch portable ops.
                 - ``"xnnpack"``: XNNPACK delegation — optimized CPU kernels for ARM/x86.
                   Works out-of-the-box with ``pip install executorch``.
-                - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for export and a
-                  custom-built ExecuTorch runtime with OpenVINO backend for inference.
+                - ``"openvino"``: OpenVINO delegation — requires ``nncf`` for the export.
             delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
-                supports ``{"device": "CPU"}`` (or other supported target device).
+                supports ``{"device": "CPU"}`` (or other supported target device) and
+                ``{"compress_weights": True}`` to compress weights to INT8 symmetric with
+                ``nncf`` before lowering.
             **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
 
         Returns:
@@ -588,6 +592,8 @@ class ExportablePolicyMixin:
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
+            ValueError: If an unsupported delegate is specified, or if ``input_sample``
+                contains non-tensor entries.
         """
         if ExportBackend.EXECUTORCH not in self.get_supported_export_backends():
             msg = (
@@ -604,6 +610,16 @@ class ExportablePolicyMixin:
                 "or the policy must implement the `sample_input` property."
             )
             raise RuntimeError(msg)
+
+        # The traced graph only accepts tensors.
+        non_tensor_keys = [key for key, value in input_sample.items() if not isinstance(value, torch.Tensor)]
+        if non_tensor_keys:
+            msg = (
+                f"input_sample for ExecuTorch export must contain only tensors, but these entries are "
+                f"non-tensor: {non_tensor_keys}. Pass a preprocessed tensor-only sample, or pass "
+                f"input_sample=None to use the policy's default preprocessed export sample."
+            )
+            raise ValueError(msg)
 
         model_path = self._prepare_export_path(output_path, ".pte")
         export_dir = model_path.parent
@@ -645,8 +661,10 @@ class ExportablePolicyMixin:
             export_dir,
             ExportBackend.EXECUTORCH,
             runner=ComponentSpec.from_class(SinglePass),
+            preprocessors=extra_model_args.preprocessors_specs,
+            postprocessors=extra_model_args.postprocessors_specs,
             callbacks=extra_model_args.callbacks_specs,
-            input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
+            input_names=list(input_sample.keys()),
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
@@ -681,11 +699,19 @@ class ExportablePolicyMixin:
             ImportError: If the selected delegate's dependencies are not installed.
         """
         cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
+        export_args = (cpu_input_sample,)
         aten_dialect = torch.export.export(
             self.model,
-            args=(cpu_input_sample,),
+            args=export_args,
             **extra_export_kwargs,
         )
+
+        if delegate == "openvino" and (delegate_config or {}).get("compress_weights"):
+            aten_dialect = compress_weights_executorch_openvino_int8_sym(
+                aten_dialect,
+                export_args,
+                **extra_export_kwargs,
+            )
 
         try:
             if delegate == "openvino":

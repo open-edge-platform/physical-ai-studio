@@ -135,6 +135,13 @@ INT8 symmetric weights (requires `physicalai-train[nncf]`). See the
 [Export & Inference Guide](../../how-to/export/export_inference.md#int8-weight-compression-openvino)
 for usage.
 
+ExecuTorch programs cannot be modified after lowering, so post-export hooks do
+not apply there. Instead, `delegate_config={"compress_weights": True}` with the
+`openvino` delegate applies INT8 symmetric weights quantization
+to the traced program before lowering.
+ See
+[ExecuTorch with OpenVINO Delegate INT8 Weight Compression](../../how-to/export/export_inference.md#executorch-with-openvino-delegate-int8-weight-compression).
+
 ## Configuration Serialization for Torch models
 
 The export system automatically serializes model configurations to preserve reproducibility:

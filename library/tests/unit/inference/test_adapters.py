@@ -340,6 +340,28 @@ class TestExecuTorchAdapter:
         np.testing.assert_array_almost_equal(call_args[0].numpy(), [[2.0]])
         np.testing.assert_array_almost_equal(call_args[1].numpy(), [[1.0]])
 
+    def test_predict_converts_and_casts_inputs(self) -> None:
+        """Strings/None become None; tensors are made contiguous and cast to expected dtypes."""
+        adapter = ExecuTorchAdapter()
+        adapter._method = MagicMock()
+        adapter._method.execute.return_value = [torch.tensor([0.0])]
+        adapter._input_names = ["state", "task", "mask", "ids"]
+        adapter._input_dtypes = [torch.float32, None, None, torch.int64]
+
+        adapter.predict({
+            "state": np.arange(6, dtype=np.float64).reshape(2, 3).T,  # non-contiguous float64
+            "task": "pick",
+            "mask": None,
+            "ids": np.array([1, 2], dtype=np.int32),
+        })
+
+        state, task, mask, ids = adapter._method.execute.call_args[0][0]
+        assert state.dtype == torch.float32
+        assert state.is_contiguous()
+        assert task is None
+        assert mask is None
+        assert ids.dtype == torch.int64
+
     def test_input_output_names(self) -> None:
         """Test properties return correct values."""
         adapter = ExecuTorchAdapter()
@@ -348,3 +370,50 @@ class TestExecuTorchAdapter:
 
         assert adapter.input_names == ["x"]
         assert adapter.output_names == ["y"]
+
+    @staticmethod
+    def _exir_tensor_modules() -> dict[str, MagicMock]:
+        """Fake ``executorch.exir.tensor`` with a minimal ScalarType enum."""
+        from enum import IntEnum
+
+        class FakeScalarType(IntEnum):
+            LONG = 4
+            FLOAT = 6
+
+        tensor_mod = MagicMock(
+            ScalarType=FakeScalarType,
+            enum_to_scalar_map={FakeScalarType.LONG: torch.int64, FakeScalarType.FLOAT: torch.float32},
+        )
+        return {"executorch": MagicMock(), "executorch.exir": MagicMock(), "executorch.exir.tensor": tensor_mod}
+
+    def test_read_input_dtypes(self) -> None:
+        """Known codes map to torch dtypes; non-tensor or unknown inputs map to None."""
+
+        def input_tensor_meta(i: int) -> MagicMock:
+            if i == 2:
+                raise RuntimeError("non-tensor input")
+            return MagicMock(dtype=MagicMock(return_value=[6, 4, None, 99][i]))
+
+        adapter = ExecuTorchAdapter()
+        adapter._method = MagicMock()
+        adapter._method.metadata.num_inputs.return_value = 4
+        adapter._method.metadata.input_tensor_meta.side_effect = input_tensor_meta
+
+        with patch.dict("sys.modules", self._exir_tensor_modules()):
+            assert adapter._read_input_dtypes() == [torch.float32, torch.int64, None, None]
+
+    def test_read_input_dtypes_without_exir_returns_empty(self) -> None:
+        """Missing ExecuTorch EXIR helpers disable dtype casting."""
+        adapter = ExecuTorchAdapter()
+        adapter._method = MagicMock()
+
+        with patch.dict("sys.modules", {"executorch.exir.tensor": None}):
+            assert adapter._read_input_dtypes() == []
+
+    def test_read_input_dtypes_without_metadata_returns_empty(self) -> None:
+        """Methods without readable metadata disable dtype casting."""
+        adapter = ExecuTorchAdapter()
+        adapter._method = object()  # no ``metadata`` attribute
+
+        with patch.dict("sys.modules", self._exir_tensor_modules()):
+            assert adapter._read_input_dtypes() == []

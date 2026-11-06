@@ -98,6 +98,26 @@ policy.export(
 The exported `model.xml` / `model.bin` are replaced with their INT8-compressed
 counterparts and load transparently through `InferenceModel("./exports")`.
 
+### ExecuTorch with OpenVINO Delegate INT8 Weight Compression 
+
+A `.pte` cannot be rewritten after lowering, so ExecuTorch compression runs
+_before_ lowering instead of a post-export hook. Enable it through
+`delegate_config` when exporting with the `openvino` delegate:
+
+```python test="skip" reason="requires checkpoint, executorch and nncf"
+from physicalai.policies import Pi05
+
+policy = Pi05.load_from_checkpoint("checkpoints/best.ckpt")
+policy.export(
+    "./exports",
+    backend="executorch",
+    delegate="openvino",
+    delegate_config={"device": "CPU", "compress_weights": True},
+)
+```
+
+Such export compresses the traced program's weights to INT8 symmetric with NNCF and re-exports it with the same `torch.export.export` arguments.
+It requires `physicalai-train[nncf]` and is ignored for other delegates.
 ## Inference
 
 ```python test="skip" reason="requires exported model and environment"
