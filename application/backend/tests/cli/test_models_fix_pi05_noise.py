@@ -16,6 +16,7 @@ from onnx import TensorProto, helper
 from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from cli import cli
 from db.schema import Base, JobDB, ModelDB, ProjectDB
 from services.model_import_service import ModelImportService
 
@@ -59,7 +60,9 @@ def _studio_model(model_dir: Path, name: str, version: int = 1, created: datetim
 
 
 def _run(*args: str, stdin: str | None = None):
-    return CliRunner().invoke(models_cli.models, ["fix-pi05-noise", *args], input=stdin)
+    # Through the root group, as users run it: invoking `models` alone makes click
+    # cache its help option without the root's `-h`.
+    return CliRunner().invoke(cli, ["models", "fix-pi05-noise", *args], input=stdin)
 
 
 @pytest.fixture
