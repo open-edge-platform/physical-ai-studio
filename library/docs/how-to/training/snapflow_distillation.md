@@ -52,10 +52,10 @@ phase boundary and rebuilds the optimizer over the now-trainable parameters. No
 checkpoint handoff, no second command.
 
 A complete worked config ships at
-[`configs/physicalai/pi05/so101/snapflow.yaml`](../../../configs/physicalai/pi05/so101/snapflow.yaml):
+[`configs/physicalai/pi05/so101/finetune_and_snapflow.yaml`](../../../configs/physicalai/pi05/so101/finetune_and_snapflow.yaml):
 
 ```bash
-physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml
+physicalai fit --config configs/physicalai/pi05/so101/finetune_and_snapflow.yaml
 ```
 
 The parts that matter:
@@ -70,12 +70,12 @@ model:
     scheduler_warmup_steps: 100
 
 trainer:
-  max_epochs: 14 # phase 1 (epochs 0-9) + phase 2 (epochs 10-13)
+  max_epochs: 8 # phase 1 (epochs 0-4) + phase 2 (epochs 5-7)
   precision: bf16-mixed
   callbacks:
     - class_path: physicalai.train.SnapFlowPhaseCallback
       init_args:
-        start_epoch: 10 # phase-2 boundary
+        start_epoch: 5 # phase-2 boundary
         alpha: 0.5
         lambda_: 0.1
         num_inference_steps: 1
@@ -85,7 +85,7 @@ trainer:
       init_args:
         monitor: val/loss
         mode: min
-        save_top_k: 3 # keep the 3 best of each phase (6 files total)
+        save_top_k: 1 # keep the best of each phase (2 files total)
         filename: "epoch{epoch:03d}"
         auto_insert_metric_name: false
 ```
@@ -117,7 +117,7 @@ garble the bar's own output:
 
 ```text
 ==============================================================================
-SnapFlow distillation ENABLED at step 30000 (epoch 10)
+SnapFlow distillation ENABLED at step 9375 (epoch 5)
   alpha=0.50  lambda_=0.10  num_inference_steps=1
   trainable params: 311.9M / 3138.4M (9.9%) - VLM backbone is now frozen
   Optimizer and LR scheduler rebuilt; phase 2 restarts the warmup.
@@ -130,18 +130,15 @@ SnapFlow distillation ENABLED at step 30000 (epoch 10)
 logged during phase 1, so the key's presence is itself the phase indicator:
 
 ```text
-Epoch 10/13 ━━━━━━━━━╺━━━━━━ 812/1875 train/loss: 0.243  snapflow: 1.000
+Epoch 5/7 ━━━━━━━━━╺━━━━━━ 812/1875 train/loss: 0.243  snapflow: 1.000
 ```
 
 **Checkpoints written after the boundary are prefixed** with `snapflow-`, so a
 staged run is unambiguous on disk:
 
 ```text
-epoch008.ckpt            <- phase 1, top-3 best-val-loss
-epoch009.ckpt            <- phase 1, top-3 best-val-loss
-epoch010.ckpt            <- phase 1, top-3 best-val-loss (the true best)
-snapflow-epoch012.ckpt   <- phase 2, top-3 best-val-loss (1-NFE), distilled
-snapflow-epoch013.ckpt   <- phase 2, top-3 best-val-loss (1-NFE), distilled
+epoch004.ckpt            <- phase 1, best val/loss (the distillation teacher)
+snapflow-epoch007.ckpt   <- phase 2, best val/loss (1-NFE), distilled
 ```
 
 Change the prefix with `checkpoint_prefix: "distilled-"`, or set it to `null`
@@ -151,10 +148,10 @@ machine-readable form:
 ```python
 import torch
 
-ckpt = torch.load("snapflow-epoch012.ckpt", weights_only=False)
+ckpt = torch.load("snapflow-epoch007.ckpt", weights_only=False)
 print(ckpt["snapflow"])
 # {'enabled': True, 'alpha': 0.5, 'lambda_': 0.1,
-#  'num_inference_steps': 1, 'activated_at_step': 30000}
+#  'num_inference_steps': 1, 'activated_at_step': 9375}
 ```
 
 ### Which checkpoint phase 2 distills from
@@ -183,7 +180,7 @@ scores in the running (not recommended).
 The banner reports both actions:
 
 ```text
-  Distillation teacher: restored best checkpoint '/mnt/data/experiments/snapflow-multi-object-augment/epoch010.ckpt'.
+  Distillation teacher: restored best checkpoint 'experiments/lightning_logs/version_0/checkpoints/epoch004.ckpt'.
   Best-checkpoint tracking reset for monitor(s) ['val/loss']: val/loss is not comparable across num_inference_steps.
 ```
 
@@ -212,15 +209,15 @@ Exactly one of the two must be set:
 
 ```bash
 # Smoke-test the wiring without training anything
-physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
+physicalai fit --config configs/physicalai/pi05/so101/finetune_and_snapflow.yaml \
     --trainer.fast_dev_run 1
 
 # Smaller GPU
-physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
+physicalai fit --config configs/physicalai/pi05/so101/finetune_and_snapflow.yaml \
     --data.train_batch_size 8 --trainer.accumulate_grad_batches 2
 
 # Longer total budget
-physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
+physicalai fit --config configs/physicalai/pi05/so101/finetune_and_snapflow.yaml \
     --trainer.max_epochs 20
 ```
 
@@ -231,9 +228,8 @@ warmup. The cosine decay horizon, however, is derived from
 `Trainer.estimated_stepping_batches`, which reports the _total_ run budget
 rather than the phase-2 remainder. Phase 2 therefore decays more slowly than a
 standalone phase-2 run would. If you need an exact phase-2 decay horizon, use
-Option 3 (Python API), which warm-starts phase 2 from the phase-1 weights only
-and constructs a fresh `Trainer` — Option 2's `--fit.ckpt_path` is a full
-resume and has the same combined-horizon behavior as Option 1.
+Option 2 or 3, which warm-start phase 2 from the phase-1 weights only with a
+fresh step count.
 
 ---
 
@@ -241,8 +237,7 @@ resume and has the same combined-horizon behavior as Option 1.
 
 Use this when you are distilling from a checkpoint you already have (for
 example a published checkpoint, or a phase-1 run from a separate machine or
-job). Note that `--fit.ckpt_path` is a full Lightning resume, so this does
-**not** give phase 2 an independent LR horizon — see the caveat below.
+job).
 
 ```bash
 # Phase 1 — standard flow-matching training
@@ -250,14 +245,17 @@ physicalai fit --config configs/physicalai/pi05/aloha/default.yaml
 
 # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start from phase 1
 physicalai fit \
-    --config configs/physicalai/pi05/aloha/snapflow.yaml \
-    --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
+    --config configs/physicalai/pi05/aloha/snapflow_distillation.yaml \
+    --weights_from ./experiments/lightning_logs/version_0/checkpoints/<phase-1>.ckpt
 ```
+
+Phase 1 saves checkpoints as `epoch=N-step=M.ckpt` by default; there is no
+`last.ckpt` unless you add a `ModelCheckpoint` with `save_last: true`.
 
 Substitute `pi05` with `smolvla` for the SmolVLA policy. Phase-2 templates:
 
-- `configs/physicalai/pi05/aloha/snapflow.yaml`
-- `configs/physicalai/smolvla/pusht/snapflow.yaml`
+- `configs/physicalai/pi05/aloha/snapflow_distillation.yaml`
+- `configs/physicalai/smolvla/pusht/snapflow_distillation.yaml`
 
 Both set `snapflow_enabled: true`, `train_expert_only: true`, and the paper
 defaults (`snapflow_alpha: 0.5`, `snapflow_lambda: 0.1`,
@@ -319,13 +317,13 @@ policy = Pi05.load_from_checkpoint(
 Trainer(max_epochs=3, precision="bf16-mixed").fit(policy, datamodule=datamodule)
 ```
 
+This is what `--weights_from` does under the hood (see Option 2).
+
 Or flip an already-constructed policy after `setup()` has run:
 
 ```python
 policy.enable_snapflow(alpha=0.5, lambda_=0.1, num_inference_steps=1)
 ```
-
-This is exactly what `--weights_from` does under the hood (see Option 2).
 
 ---
 
@@ -352,8 +350,9 @@ total_steps     = max_epochs * steps_per_epoch
 warmup          = 0.05 * total_steps
 ```
 
-The cosine horizon always follows `Trainer.estimated_stepping_batches`, so the
-LR lands on `scheduler_decay_lr` exactly at the end of the run.
+By default the cosine horizon follows `Trainer.estimated_stepping_batches`, so
+the LR lands on `scheduler_decay_lr` exactly at the end of the run. Set
+`scheduler_decay_steps` to override it.
 
 Hold out a validation split (`data.init_args.val_split`) on small datasets.
 Without it there is no way to distinguish convergence from memorisation.
@@ -364,9 +363,8 @@ Without it there is no way to distinguish convergence from memorisation.
 
 After the phase boundary, check that:
 
-- The log line `SnapFlowPhaseCallback: activating SnapFlow distillation at
-step N / epoch M` appeared, followed by the phase-2 trainable-parameter
-  count. That count should be roughly 10% of total parameters.
+- The `SnapFlow distillation ENABLED at step N (epoch M)` banner appeared. Its
+  `trainable params` line should show roughly 10% of total parameters.
 - `train/loss` shifts level at the boundary — expected, the objective changed.
   It should settle rather than diverge.
 - `val/loss` shifts level at the boundary too — expected, since its step count
@@ -385,7 +383,8 @@ step N / epoch M` appeared, followed by the phase-2 trainable-parameter
 
   ```bash
   physicalai benchmark --config configs/benchmark/libero.yaml \
-      --ckpt_path experiments/.../snapflow-epoch013.ckpt
+      --policy physicalai.policies.Pi05 \
+      --ckpt_path experiments/.../snapflow-epoch007.ckpt
   ```
 
 ## Exporting the distilled policy
@@ -395,7 +394,9 @@ carries the 1-NFE sampling path, which is where the latency win materialises for
 Runtime. As with benchmarking, prefer phase 2's best checkpoint:
 
 ```bash
-physicalai export --ckpt_path experiments/.../snapflow-epoch013.ckpt --backend openvino
+physicalai export --policy physicalai.policies.Pi05 \
+    --ckpt_path experiments/.../snapflow-epoch007.ckpt \
+    --backend openvino --output_dir ./exports/pi05_snapflow
 ```
 
 See [Export and deploy](../export/export_inference.md).
