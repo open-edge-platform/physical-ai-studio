@@ -11,13 +11,7 @@ from cli.models import models
 from cli.serve import serve
 
 
-@click.group(
-    context_settings={"help_option_names": ["-h", "--help"]},
-    epilog=(
-        "\b\nGuide: https://github.com/open-edge-platform/physical-ai-studio/"
-        "blob/main/application/backend/docs/studio_cli.md"
-    ),
-)
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli() -> None:
     """Manage the local Physical AI Studio application and its stored assets.
 

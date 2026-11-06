@@ -57,7 +57,7 @@ def test_help_is_available_without_side_effects(command, help_flag, tmp_path, mo
     ("command", "expected"),
     [
         ((), "STORAGE_DIR"),
-        ((), "studio_cli.md"),
+        ((), "format conversion belong to the separate physicalai CLI"),
         (("serve",), "Startup can modify"),
         (("db", "check"), "2 = migrations needed"),
         (("db", "clean"), "DESTRUCTIVE"),
@@ -75,11 +75,3 @@ def test_help_explains_decision_points(command, expected):
     result = CliRunner().invoke(cli, [*command, "--help"])
     assert result.exit_code == 0, result.output
     assert expected in " ".join(result.stdout.split())
-
-
-def test_guide_url_is_not_hard_wrapped():
-    result = CliRunner().invoke(cli, ["--help"])
-    assert (
-        "https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/backend/docs/studio_cli.md"
-        in result.stdout
-    )
