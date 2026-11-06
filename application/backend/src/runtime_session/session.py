@@ -46,6 +46,7 @@ from runtime_session.environment import COMPONENT as ENVIRONMENT
 from runtime_session.environment import RELOAD, Environment, describe_environment
 from runtime_session.model import COMPONENT as MODEL
 from runtime_session.model import ProcessModel, model_inputs
+from runtime_session.rerun import RerunObserver
 from runtime_session.slot import Slot
 from runtime_session.store import ACTION, STATE, FeatureSpecMismatchError, Store
 from schemas.runtime_session import (
@@ -69,6 +70,7 @@ from schemas.runtime_session import (
     UnloadModelCommand,
 )
 from services.camera_claims import CameraClaim, settings_from_camera
+from settings import get_settings
 from workers import dataset_worker as dataset_rpc
 from workers.base import WorkerStartupError
 from workers.dataset_worker import RecordingStatus
@@ -154,6 +156,7 @@ class RuntimeSession:
         environment while the spec stays the same, so the dataset recording from it stays loaded."""
         self._bus: Bus | None = None
         """Hosted for the session's lifetime; its parts join it."""
+        self._observer: RerunObserver | None = None
 
     async def __aenter__(self) -> Self:
         self._bus = Bus.host(self.id)
@@ -271,6 +274,7 @@ class RuntimeSession:
         control, dataset, model = self._control.value, self._dataset.value, self._model.value
         return SessionState(
             session_id=self.id,
+            rerun_url=self._observer.viewer_url if self._observer is not None and self._observer.is_alive() else None,
             environment=self.environment,
             control=control.config if control else None,
             dataset=dataset.state() if dataset else None,
@@ -338,6 +342,8 @@ class RuntimeSession:
                 await self._dataset.unload()
                 self._drop_store()  # first: the new one takes the same name
                 self._store = Store.create(description.spec, self.id)
+                if self._observer is not None:
+                    self._observer.set_store(self._store)
             try:
                 await self._environment.load(self._loaded_environment(environment, description))
                 logger.info("Session {} loaded environment {!r}", self.id, environment.name)
@@ -352,6 +358,8 @@ class RuntimeSession:
     def _drop_store(self) -> None:
         """Hold the lock, with nothing loaded that uses the store."""
         if self._store is not None:
+            if self._observer is not None:
+                self._observer.set_store(None)
             self._store.unlink()
             self._store = None
 
@@ -468,9 +476,33 @@ class RuntimeSession:
 
     @asynccontextmanager
     async def _watched_control(self, config: ControlConfig, environment: Environment) -> AsyncIterator[Control]:
-        control = build_control(config, environment.store, environment.leader, self._model.value, self.bus)
-        async with self._reported(_CONTROL, control):
-            yield control
+        try:
+            if isinstance(config, ModelControlConfig):
+                await self._start_observer(environment.store, hz=config.hz)
+            control = build_control(
+                config, environment.store, environment.leader, self._model.value, self.bus, observer=self._observer
+            )
+            async with self._reported(_CONTROL, control):
+                yield control
+        finally:
+            observer, self._observer = self._observer, None
+            if observer is not None:
+                observer.set_store(None)
+                await observer.__aexit__(None, None, None)
+
+    async def _start_observer(self, store: Store, *, hz: float) -> None:
+        """Start a fresh recording for this model run; visualization is best-effort."""
+        rerun_settings = get_settings().rerun
+        if not rerun_settings.enabled:
+            return
+        observer = RerunObserver(f"{self.id}-{uuid4().hex}", settings=rerun_settings, hz=hz)
+        observer.set_store(store)
+        try:
+            await observer.__aenter__()
+        except Exception:
+            logger.exception("Session {} could not start Rerun; continuing without visualization", self.id)
+        else:
+            self._observer = observer
 
     async def reload_environment(self) -> None:
         """Ask the environment to connect its devices again; the store and the dataset stay.
@@ -634,6 +666,8 @@ class RuntimeSession:
             self._emit(StateMessage(data=self.state()))
 
     def _emit(self, event: StateMessage | ErrorMessage) -> None:
+        if self._observer is not None:
+            self._observer.emit_session(event)
         if self._bus is not None:
             self._bus.publish(EVENTS, event)
         if event.type == "state":

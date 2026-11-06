@@ -3,6 +3,7 @@
 import os
 import shutil
 import tempfile
+from contextlib import nullcontext
 
 os.environ.setdefault("AWS_ENABLED", "true")
 
@@ -27,11 +28,21 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from physicalai.runtime.callbacks.gpu_stats import GpuStatsSample
 
 from robots.robot_client_factory import RobotClientFactory
 from schemas.dataset import Dataset
 from schemas.environment import EnvironmentWithRelations
 from schemas.model import Model
+
+
+@pytest.fixture(autouse=True)
+def no_rerun_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep runtime tests from opening a native viewer on the developer's desktop."""
+    monkeypatch.setattr("rerun.spawn", lambda **_kwargs: None)
+    monkeypatch.setattr("runtime_session.rerun._background_server", lambda _port, **_kwargs: nullcontext())
+    monkeypatch.setattr("rerun.RecordingStream.connect_grpc", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("physicalai.runtime.callbacks.system_monitor.collect_gpu_stats", GpuStatsSample)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:

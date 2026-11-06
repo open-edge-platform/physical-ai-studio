@@ -12,6 +12,7 @@ from api.dependencies import SystemServiceDep
 from settings import (
     HotkeySettings,
     HuggingFaceSettings,
+    RerunSettings,
     Settings,
     SshProvisioningSettings,
     TrainerClientSettings,
@@ -32,6 +33,7 @@ class UserSettingsResponse(BaseModel):
     huggingface: HuggingFaceSettings
     ssh: SshProvisioningSettings
     hotkeys: HotkeySettings
+    rerun: RerunSettings
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "UserSettingsResponse":
@@ -41,6 +43,7 @@ class UserSettingsResponse(BaseModel):
             huggingface=settings.huggingface,
             ssh=settings.ssh,
             hotkeys=settings.hotkeys,
+            rerun=settings.rerun,
         )
 
 
@@ -52,6 +55,7 @@ class SettingsUpdate(BaseModel):
     huggingface: HuggingFaceSettings | None = None
     ssh: SshProvisioningSettings | None = None
     hotkeys: HotkeySettings | None = None
+    rerun: RerunSettings | None = None
 
 
 @router.get("")
