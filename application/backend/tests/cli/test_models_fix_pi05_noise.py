@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import shutil
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -241,6 +242,20 @@ def test_restore_lists_only_restorable_models(studio: list[SimpleNamespace]) -> 
     assert f"1. pi05 restorable (v1)  [fixed, restorable]  {restorable.id}" in result.output
     assert "pi05 old" not in result.output
     assert "noise" not in _input_names(Path(restorable.path) / "exports" / "openvino")
+
+
+def test_restore_lists_an_interrupted_fix(studio: list[SimpleNamespace]) -> None:
+    """A fix killed before the manifest was swapped still has its backup, so it can be restored."""
+    restorable = studio[4]
+    model_dir = Path(restorable.path)
+    export_dir = model_dir / "exports" / "openvino"
+    shutil.copy2(model_dir / "noise-input-backup" / "manifest.json", export_dir / "manifest.json")
+
+    result = _run("--restore", stdin="1\n")
+
+    assert result.exit_code == 0, result.output
+    assert f"1. pi05 restorable (v1)  [needs fix, restorable]  {restorable.id}" in result.output
+    assert "noise" not in _input_names(export_dir)
 
 
 def test_list_without_pi05_models(monkeypatch: pytest.MonkeyPatch) -> None:

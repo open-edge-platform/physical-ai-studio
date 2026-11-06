@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import subprocess
 import sys
 import textwrap
@@ -34,19 +35,46 @@ SHAPE = [1, 4, 3]
 PI05_SPEC = {"type": "pi05", "image_resolution": [224, 224], "empty_cameras": 0}
 
 
+def _scalar(name: str, value: float) -> onnx.NodeProto:
+    return helper.make_node("Constant", [], [name], value=helper.make_tensor(name, TensorProto.FLOAT, [], [value]))
+
+
+# Graphs that look like Box-Muller from the op types alone, with u = RandomUniformLike(x).
+NEAR_BOX_MULLER = {
+    "log_times_cos": [
+        helper.make_node("Log", ["u"], ["l"]),
+        helper.make_node("Cos", ["u"], ["c"]),
+        helper.make_node("Mul", ["l", "c"], ["n"]),
+    ],
+    "wrong_scale": [
+        _scalar("k", -1.0),
+        _scalar("tau", 2 * math.pi),
+        helper.make_node("Log", ["u"], ["l"]),
+        helper.make_node("Mul", ["l", "k"], ["lk"]),
+        helper.make_node("Sqrt", ["lk"], ["r"]),
+        helper.make_node("Mul", ["tau", "u"], ["a"]),
+        helper.make_node("Cos", ["a"], ["c"]),
+        helper.make_node("Mul", ["r", "c"], ["n"]),
+    ],
+}
+
+
 def _write_export(export_dir: Path, *, graph: str = "normal", pi05_spec: dict | None = None) -> Path:
     """Write a tiny OpenVINO export shaped like an old pi05 one: ``y = x + noise``.
 
     The noise comes from an ONNX ``RandomNormalLike`` converted by OpenVINO, which
     builds the same single-RandomUniform Box-Muller subgraph as the real pi05 export.
     ``graph`` picks a variant: ``"cast"`` also outputs the noise cast to fp16,
-    ``"uniform"`` adds uniform noise (no Box-Muller), ``"none"`` has no noise.
+    ``"uniform"`` adds uniform noise (no Box-Muller), ``"none"`` has no noise, and
+    the ``NEAR_BOX_MULLER`` names build ``n`` from ``u`` almost like Box-Muller.
     """
     export_dir.mkdir(parents=True)
     x = helper.make_tensor_value_info("x", TensorProto.FLOAT, SHAPE)
     outputs = [helper.make_tensor_value_info("y", TensorProto.FLOAT, SHAPE)]
     noise_op = "RandomUniformLike" if graph == "uniform" else "RandomNormalLike"
     nodes = [helper.make_node(noise_op, ["x"], ["n"]), helper.make_node("Add", ["x", "n"], ["y"])]
+    if graph in NEAR_BOX_MULLER:
+        nodes = [helper.make_node("RandomUniformLike", ["x"], ["u"]), *NEAR_BOX_MULLER[graph], nodes[1]]
     if graph == "cast":
         nodes.append(helper.make_node("Cast", ["n"], ["z"], to=TensorProto.FLOAT16))
         outputs.append(helper.make_tensor_value_info("z", TensorProto.FLOAT16, SHAPE))
@@ -138,17 +166,18 @@ class TestConvertOpenVINOExport:
         assert _pi05_spec(out)["noise_shape"] == [4, 3]
         assert (out / "tokenizer.xml").read_text() == "<tokenizer/>"
 
-    def test_refreshes_existing_checksums(self, export_dir: Path) -> None:
+    @pytest.mark.parametrize("prefix", ["", "./"])
+    def test_refreshes_existing_checksums(self, export_dir: Path, prefix: str) -> None:
         names = ["manifest.json", "pi05.bin", "pi05.xml", "tokenizer.xml"]
-        (export_dir / "SHA256SUMS").write_text("".join(f"{'0' * 64}  {name}\n" for name in names))
+        (export_dir / "SHA256SUMS").write_text("".join(f"{'0' * 64}  {prefix}{name}\n" for name in names))
 
         convert_openvino_export(export_dir)
 
         rows = [line.split() for line in (export_dir / "SHA256SUMS").read_text().splitlines()]
         listed = {name: digest for digest, name in rows}
         for name in names[:3]:
-            assert listed[name] == hashlib.sha256((export_dir / name).read_bytes()).hexdigest()
-        assert listed["tokenizer.xml"] == "0" * 64
+            assert listed[prefix + name] == hashlib.sha256((export_dir / name).read_bytes()).hexdigest()
+        assert listed[prefix + "tokenizer.xml"] == "0" * 64
 
     def test_second_run_changes_nothing(self, export_dir: Path) -> None:
         convert_openvino_export(export_dir)
@@ -289,8 +318,9 @@ class TestConversionGraphs:
         np.testing.assert_array_equal(result["y"], x + noise)
         np.testing.assert_array_equal(result["z"], noise.astype(np.float16))
 
-    def test_rejects_noise_that_is_not_box_muller(self, tmp_path: Path) -> None:
-        export_dir = _write_export(tmp_path / "export", graph="uniform")
+    @pytest.mark.parametrize("graph", ["uniform", *NEAR_BOX_MULLER])
+    def test_rejects_noise_that_is_not_box_muller(self, tmp_path: Path, graph: str) -> None:
+        export_dir = _write_export(tmp_path / "export", graph=graph)
 
         with pytest.raises(ValueError, match="not the Box-Muller pattern"):
             convert_openvino_export(export_dir)

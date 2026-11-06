@@ -249,13 +249,14 @@ def _noise_status(model_dir: Path) -> str | None:
     from training.job import EXPORTS_DIRNAME
 
     export_dir = model_dir / EXPORTS_DIRNAME / "openvino"
+    # A backup decides restorability on its own: an interrupted fix can leave the
+    # export unreadable or looking unfixed.
+    restorable = ", restorable" if has_backup(export_dir, model_dir / NOISE_BACKUP_DIRNAME) else ""
     try:
         noise_shape = read_noise_shape(export_dir)
     except (OSError, ValueError):
-        return None
-    if noise_shape is None:
-        return "needs fix"
-    return "fixed, restorable" if has_backup(export_dir, model_dir / NOISE_BACKUP_DIRNAME) else "fixed"
+        return f"unreadable{restorable}" if restorable else None
+    return ("needs fix" if noise_shape is None else "fixed") + restorable
 
 
 def _choose_studio_model(*, restorable_only: bool) -> Path:
@@ -264,7 +265,7 @@ def _choose_studio_model(*, restorable_only: bool) -> Path:
     for model in _studio_models():
         model_dir = Path(model.path).expanduser()
         status = _noise_status(model_dir)
-        if status is None or (restorable_only and status != "fixed, restorable"):
+        if status is None or (restorable_only and not status.endswith(", restorable")):
             continue
         created = f", {model.created_at:%Y-%m-%d}" if model.created_at else ""
         rows.append((f"{model.name} (v{model.version}{created})  [{status}]  {model.id}", model_dir))

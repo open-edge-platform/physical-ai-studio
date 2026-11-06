@@ -26,6 +26,7 @@ import gc
 import hashlib
 import inspect
 import json
+import math
 import os
 import shutil
 from dataclasses import dataclass
@@ -114,11 +115,42 @@ def _varying(model: ov.Model) -> dict[str, bool]:
     return varying
 
 
-def _joins_log_and_trig(inner: list[frozenset[str]]) -> bool:
-    """Return whether two branches are Box-Muller's ``sqrt(-2 ln u)`` and ``cos(2 pi u)`` halves."""
-    log_side = sorted("Log" in tags and not tags & {"Cos", "Sin"} for tags in inner)
-    trig_side = sorted(bool(tags & {"Cos", "Sin"}) and "Log" not in tags for tags in inner)
-    return len(inner) == 2 and log_side == trig_side == [False, True]  # noqa: PLR2004
+def _source(node: ov.Node, index: int) -> ov.Node:
+    return node.input_value(index).get_node()
+
+
+def _scaled_operand(node: ov.Node, factor: float) -> ov.Node | None:
+    """Return ``x`` if ``node`` is ``x * factor`` with a constant factor, else None."""
+    if node.get_type_name() != "Multiply":
+        return None
+    for operand, other in ((_source(node, 0), _source(node, 1)), (_source(node, 1), _source(node, 0))):
+        constant = _source(other, 0) if other.get_type_name() == "Convert" else other
+        if constant.get_type_name() != "Constant":
+            continue
+        value = constant.get_data()
+        if value.size and all(math.isclose(v, factor, rel_tol=1e-5) for v in value.ravel().tolist()):
+            return operand
+    return None
+
+
+def _is_box_muller(node: ov.Node, rand_name: str) -> bool:
+    """Return whether ``node`` is exactly ``sqrt(-2 ln u) * cos(2 pi u)`` (or ``sin``) of the random op ``u``."""
+    if node.get_type_name() != "Multiply":
+        return False
+    for root, trig in ((_source(node, 0), _source(node, 1)), (_source(node, 1), _source(node, 0))):
+        if root.get_type_name() != "Sqrt" or trig.get_type_name() not in {"Cos", "Sin"}:
+            continue
+        log = _scaled_operand(_source(root, 0), -2.0)
+        angle = _scaled_operand(_source(trig, 0), 2 * math.pi)
+        if (
+            log is not None
+            and log.get_type_name() == "Log"
+            and _source(log, 0).get_friendly_name() == rand_name
+            and angle is not None
+            and angle.get_friendly_name() == rand_name
+        ):
+            return True
+    return False
 
 
 def _computed_by(out: ov.Node, nodes: dict[str, ov.Node]) -> list[ov.Node]:
@@ -143,8 +175,8 @@ def _box_muller_output(model: ov.Model) -> tuple[ov.Node, list[ov.Node]]:
     OpenVINO's ONNX frontend turns ``RandomNormalLike`` into Box-Muller:
     ``sqrt(-2 ln u) * cos(2 pi u)`` with a single ``RandomUniform`` u. Starting from
     that op, this follows elementwise ops of the same shape whose other inputs are
-    constant, and looks for the one ``Multiply`` that joins a ``Log`` branch with a
-    ``Cos``/``Sin`` branch. Ops after it (casts, the model's own arithmetic) stay.
+    constant, and looks for the one ``Multiply`` that computes exactly that, constants
+    included. Ops after it (casts, the model's own arithmetic) stay.
 
     Returns:
         The Box-Muller output op and the ops that compute it.
@@ -159,8 +191,6 @@ def _box_muller_output(model: ov.Model) -> tuple[ov.Node, list[ov.Node]]:
         raise ValueError(msg)
     varying = _varying(model)
     shape = rand[0].get_output_partial_shape(0)
-    # Op types on the way from the random op to each op of the noise computation.
-    tags: dict[str, frozenset[str]] = {rand[0].get_friendly_name(): frozenset()}
     nodes = {rand[0].get_friendly_name(): rand[0]}
     candidates = []
     frontier = [rand[0]]
@@ -176,11 +206,9 @@ def _box_muller_output(model: ov.Model) -> tuple[ov.Node, list[ov.Node]]:
                 or not all(source in nodes or not varying[source] for source in sources)
             ):
                 continue
-            inner = [tags[source] for source in sources if source in nodes]
-            tags[name] = frozenset().union(*inner, {consumer.get_type_name()} & {"Log", "Cos", "Sin"})
             nodes[name] = consumer
             next_frontier.append(consumer)
-            if consumer.get_type_name() == "Multiply" and _joins_log_and_trig(inner):
+            if _is_box_muller(consumer, rand[0].get_friendly_name()):
                 candidates.append(consumer)
         frontier = next_frontier
 
@@ -314,8 +342,10 @@ def _write_checksums(source: Path, files_dir: Path, names: list[str], dest: Path
     """Write ``source`` (a ``SHA256SUMS``) to ``dest`` with the lines for ``names`` hashed from ``files_dir``."""
     lines = []
     for line in source.read_text(encoding="utf-8").splitlines():
-        name = line.split(maxsplit=1)[-1].lstrip("*") if line.strip() else ""
-        lines.append(f"{_sha256(files_dir / name)}  {name}" if name in names else line)
+        listed = line.split(maxsplit=1)[-1].lstrip("*") if line.strip() else ""
+        # sha256sum also accepts "./name"; keep the spelling the listing uses.
+        name = listed.removeprefix("./")
+        lines.append(f"{_sha256(files_dir / name)}  {listed}" if name in names else line)
     dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
