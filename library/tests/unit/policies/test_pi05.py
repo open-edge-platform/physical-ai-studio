@@ -1260,6 +1260,8 @@ class TestPi05ExportNoiseInput:
         with patch.object(ExportablePolicyMixin, method) as export:
             getattr(policy, method)("out", sample)
             assert export.call_args.args[1] is sample
+            with pytest.raises(ValueError, match="use_random_input_noise"):
+                getattr(policy, method)("out", given)
 
     @pytest.mark.parametrize("method", ["to_openvino", "to_onnx"])
     def test_export_fails_on_runtime_without_noise_shape(self, method: str) -> None:
