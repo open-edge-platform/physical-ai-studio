@@ -113,7 +113,8 @@ describe('ZeroCalibrationWizardContent', () => {
             http.post('/api/projects/{project_id}/robots', async ({ request }) => {
                 const body = await request.json();
                 created(body);
-                return HttpResponse.json({ ...(body as object), connection_status: 'unknown' } as never);
+                // Cast the whole response: the robot union has more than 25 members, past what TypeScript relates member by member.
+                return HttpResponse.json({ ...(body as object), connection_status: 'unknown' }) as never;
             })
         );
         renderWizard({
@@ -140,7 +141,8 @@ describe('ZeroCalibrationWizardContent', () => {
             http.post('/api/projects/{project_id}/robots', async ({ request }) => {
                 const body = await request.json();
                 created(body);
-                return HttpResponse.json({ ...(body as object), connection_status: 'unknown' } as never);
+                // Cast the whole response: the robot union has more than 25 members, past what TypeScript relates member by member.
+                return HttpResponse.json({ ...(body as object), connection_status: 'unknown' }) as never;
             })
         );
         renderWizard();

@@ -24,6 +24,9 @@ export const formatFingerprint = (fingerprint: CameraFingerprint | null | undefi
     const serial = typeof fingerprint.serial === 'string' && fingerprint.serial ? fingerprint.serial : null;
     const url = typeof fingerprint.url === 'string' && fingerprint.url ? fingerprint.url : null;
     const index = typeof fingerprint.index === 'number' ? fingerprint.index : null;
+    const simulated = typeof fingerprint.robot_id === 'string' && typeof fingerprint.camera === 'string';
+
+    if (simulated) return `Simulation camera ${fingerprint.camera}`;
 
     const serial_bus = bus && serial ? `${serial} @ ${bus}` : serial;
     if (serial_bus) return serial_bus;

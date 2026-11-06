@@ -13,6 +13,7 @@ import { BaslerFormFields } from './drivers/basler';
 import { GenicamFormFields } from './drivers/genicam';
 import { IpCamFormFields } from './drivers/ipcam';
 import { RealsenseFormFields } from './drivers/realsense';
+import { SimulationFormFields } from './drivers/simulation';
 import { USBCameraFormFields } from './drivers/usb-camera';
 import { CameraDriver, useCameraForm, useSetCameraForm } from './provider';
 import { SubmitNewCameraButton } from './submit-new-camera-button';
@@ -104,6 +105,8 @@ const EditCameraFormFields = () => {
             return <BaslerFormFields />;
         case 'genicam':
             return <GenicamFormFields />;
+        case 'simulation':
+            return <SimulationFormFields />;
     }
 };
 

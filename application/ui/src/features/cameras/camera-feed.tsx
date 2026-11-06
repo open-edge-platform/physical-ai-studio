@@ -3,7 +3,9 @@ import { ReactNode } from 'react';
 import { Flex, Grid, Heading, minmax, Text, View } from '@geti-ui/ui';
 
 import { SchemaProjectCamera } from '../../api/types';
+import { formatCameraMode, isSimulationCamera } from './camera-format';
 import { formatFingerprint } from './fingerprint';
+import { SimulationCameraStream } from './simulation-camera-stream';
 import { WebsocketCamera } from './websocket-camera';
 
 const CameraWell = ({
@@ -58,15 +60,17 @@ const CameraHeading = ({ camera }: { camera: SchemaProjectCamera }) => {
                         >
                             {formatFingerprint(camera.fingerprint)}
                         </span>
-                        <span
-                            style={{
-                                backgroundColor: 'var(--spectrum-global-color-gray-300)',
-                                padding: '4px',
-                                borderRadius: '2px',
-                            }}
-                        >
-                            {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
-                        </span>
+                        {formatCameraMode(camera) !== null && (
+                            <span
+                                style={{
+                                    backgroundColor: 'var(--spectrum-global-color-gray-300)',
+                                    padding: '4px',
+                                    borderRadius: '2px',
+                                }}
+                            >
+                                {formatCameraMode(camera)}
+                            </span>
+                        )}
                     </Flex>
                 </span>
             </Flex>
@@ -87,8 +91,13 @@ export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCam
                 flex={1}
                 minHeight={0}
             >
-                <CameraWell width={camera.payload.width} height={camera.payload.height}>
-                    {camera.fingerprint ? (
+                <CameraWell
+                    width={isSimulationCamera(camera) ? undefined : camera.payload.width}
+                    height={isSimulationCamera(camera) ? undefined : camera.payload.height}
+                >
+                    {isSimulationCamera(camera) ? (
+                        <SimulationCameraStream key={camera.id} camera={camera} />
+                    ) : camera.fingerprint ? (
                         <WebsocketCamera camera={camera} />
                     ) : (
                         <Flex width='100%' height='100%' justifyContent='center' alignItems='center'>

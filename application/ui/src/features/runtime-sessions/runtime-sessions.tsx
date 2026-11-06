@@ -15,6 +15,8 @@ import useWebSocket from 'react-use-websocket';
 
 import { $api, fetchClient } from '../../api/client';
 import { SchemaRuntimeSessionInfo, SchemaRuntimeSessionsMessage } from '../../api/openapi-spec';
+import { SimulationsSection } from '../simulation/simulations-section';
+import { useFooterSimulations } from '../simulation/use-footer-simulations';
 
 const SESSIONS_WS_URL = fetchClient.PATH('/api/runtime/sessions/ws');
 
@@ -55,20 +57,33 @@ const SessionRow = ({ session }: { session: SchemaRuntimeSessionInfo }) => {
     );
 };
 
-/** Footer badge for the live runtime sessions, with a list to stop them from. Hidden when there are none. */
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+const statusLabel = (sessions: number, simulations: number) =>
+    [
+        sessions > 0 || simulations === 0 ? plural(sessions, 'runtime session') : null,
+        simulations > 0 ? plural(simulations, 'simulation') : null,
+    ]
+        .filter(Boolean)
+        .join(' · ');
+
+/**
+ * Footer badge for the live runtime sessions and running simulations, with a list to stop them
+ * from. Hidden when there are none.
+ */
 export const RuntimeSessionStatus = () => {
     const { data: sessions } = useRuntimeSessions();
+    const simulationCount = useFooterSimulations().length;
+    const sessionCount = sessions?.length ?? 0;
 
-    if (!sessions?.length) {
+    if (sessionCount === 0 && simulationCount === 0) {
         return null;
     }
 
     return (
         <DialogTrigger type='popover'>
             <ActionButton isQuiet>
-                <StatusLight variant='positive'>
-                    {sessions.length === 1 ? '1 runtime session' : `${sessions.length} runtime sessions`}
-                </StatusLight>
+                <StatusLight variant='positive'>{statusLabel(sessionCount, simulationCount)}</StatusLight>
             </ActionButton>
             <Dialog>
                 <Heading>Runtime sessions</Heading>
@@ -76,11 +91,13 @@ export const RuntimeSessionStatus = () => {
                 <Content>
                     <View>
                         <Flex direction='column' gap='size-200'>
-                            {sessions.map((session) => (
+                            {sessionCount === 0 && <Text>No runtime sessions</Text>}
+                            {sessions?.map((session) => (
                                 <SessionRow key={session.session_id} session={session} />
                             ))}
                         </Flex>
                     </View>
+                    <SimulationsSection />
                 </Content>
             </Dialog>
         </DialogTrigger>
