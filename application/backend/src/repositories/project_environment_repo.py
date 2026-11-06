@@ -32,7 +32,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
     def from_schema(self) -> Callable[[ProjectEnvironmentDB], Environment]:
         return ProjectEnvironmentMapper.from_schema
 
-    async def update(self, item: Environment, partial_update: dict, *, commit: bool = True) -> Environment:
+    async def update(self, item: Environment, partial_update: dict) -> Environment:
         """Update an environment, fully replacing its robot/camera join rows.
 
         Reassigning the ``robot_links`` / ``camera_links`` collections lets the ``delete-orphan``
@@ -56,10 +56,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
         existing.name = to_update.name
         existing.robot_links = ProjectEnvironmentMapper.build_robot_links(to_update)
         existing.camera_links = ProjectEnvironmentMapper.build_camera_links(to_update)
-        if commit:
-            await self.db.commit()
-        else:
-            await self.db.flush()
+        await self.db.commit()
 
         updated = await self.get_by_id(item.id)
         if updated is None:
