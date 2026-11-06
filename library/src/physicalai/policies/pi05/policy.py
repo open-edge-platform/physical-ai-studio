@@ -937,8 +937,19 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         Returns:
             The sample with ``noise`` added when random input noise is enabled and
             the sample has none yet; otherwise the sample unchanged.
+
+        Raises:
+            ValueError: If the sample has ``noise`` but random input noise is disabled:
+                the graph would take an input the runtime preprocessor never provides.
         """
-        if sample is None or not self.config.use_random_input_noise or NOISE in sample:
+        if sample is None:
+            return sample
+        if not self.config.use_random_input_noise:
+            if NOISE in sample:
+                msg = f"Export sample has `{NOISE}`, but use_random_input_noise is False. Remove it from the sample."
+                raise ValueError(msg)
+            return sample
+        if NOISE in sample:
             return sample
         batch_size = sample[TOKENIZED_PROMPT].shape[0]
         return {**sample, NOISE: torch.randn(batch_size, *self._export_noise_shape, device=self.device)}

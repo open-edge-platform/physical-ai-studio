@@ -1330,7 +1330,8 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
                     max_guidance_weight=torch.as_tensor(rtc_max_guidance, device=device),
                 )
 
-            x_t += dt * v_t
+            # Out of place, so the caller's noise tensor is left as it was.
+            x_t = x_t + dt * v_t  # noqa: PLR6104
 
         return x_t
 
