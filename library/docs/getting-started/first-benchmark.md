@@ -173,7 +173,7 @@ Kitchen manipulation benchmark. RoboCasa requires a dedicated virtual environmen
 ```bash
 uv venv .venv-robocasa
 source .venv-robocasa/bin/activate
-uv sync --active --extra cu128          # or cpu / xpu
+uv sync --active --extra cu130          # or cpu / xpu
 
 bash library/scripts/benchmark/install_robocasa.sh
 

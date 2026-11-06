@@ -12,8 +12,7 @@ dependencies = [
   "fastapi[standard]<1",
   "physicalai[capture, transport]~=0.3.0",
   "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
-  "lerobot[dataset,feetech]==0.6.0",
-  "torchcodec==0.11.1",
+  "lerobot[dataset,feetech]==0.7",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
@@ -65,20 +64,28 @@ path = "scripts/hatch_build.py"
 [project.optional-dependencies]
 # executorch enables the ExecuTorch export backend. It conflicts with the xpu
 # torch build (see library conflicts), so it ships only with cpu/cuda.
+# torch/torchvision caps follow lerobot (torch<2.16, torchvision<0.30): torchvision
+# 0.26-0.29.1 hard-pin torch 2.11-2.14, while 0.29.2 accepts torch>=2.14 (incl. 2.15).
+# torchcodec floor stays at 0.11, which pairs with the torch 2.11 floor.
 cpu = [
-    "torch>=2.11,<2.12",
-    "torchvision>=0.26,<0.27",
+    "torch>=2.11,<2.16",
+    "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
+    "torchao>=0.18.0,<0.19",
     "physicalai-train[executorch]",
 ]
 cuda = [
-    "torch>=2.11,<2.12",
-    "torchvision>=0.26,<0.27",
+    "torch>=2.11,<2.16",
+    "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
+    "torchao>=0.18.0,<0.19",
     "physicalai-train[executorch]",
 ]
 xpu = [
-    "torch>=2.11,<2.12",
-    "torchvision>=0.26,<0.27",
-    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torch>=2.11,<2.16",
+    "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
+    "torchao>=0.18.0,<0.19; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 sim-e2e = ["physicalai-mujoco-plugin==0.5.0", "defusedxml>=0.7.1"]
@@ -116,9 +123,10 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+# CUDA 12.8 wheels stop at torch 2.11; CUDA 13.0 carries the whole 2.11-2.14 range.
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [[tool.uv.index]]
@@ -128,20 +136,30 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ee381b7b7643d173e9b6b74e8702fa6e800b2943" }
-# Keep torchao on PyPI for all extras.
-# The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
-# be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
-# producing incompatible torch/torchao combinations at runtime.
-torchao = { index = "pypi" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "07a29f313fdfcab7dcf533a96af40dfabcb9cdbc" }
+# Route torchao per extra like torch: with unsafe-best-match, an unrouted torchao would pick
+# the XPU index's `+xpu` build even for cpu/cuda installs.
+torchao = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    # The cu130 index only publishes linux x86_64 torchao wheels.
+    { index = "pytorch-cu130", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pypi", extra = "cuda", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+# PyPI's Linux torchcodec wheel is CUDA-built (needs libnvrtc), so route it per extra like torch.
+torchcodec = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cuda" },
+    { index = "pytorch-cu130", extra = "cuda" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cuda" },
+    { index = "pytorch-cu130", extra = "cuda" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 # torch's XPU build depends on triton-xpu transitively; pin its index.
@@ -173,7 +191,7 @@ exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
 # FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
-exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-trossen-plugin = false, physicalai-so101-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, physicalai-mujoco-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false}
+exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-trossen-plugin = false, physicalai-so101-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, physicalai-mujoco-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false, lerobot = false}
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
@@ -192,6 +210,16 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
+    # The physicalai runtime pins transformers<5.16, but lerobot main needs 5.22. The runtime only
+    # uses transformers for AutoTokenizer.from_pretrained, which is stable across 5.x.
+    { package = { name = "physicalai" }, dependencies = [
+        "transformers>=5.22.0,<5.23.0",
+    ] },
+    # LeRobot declares torchcodec with per-platform markers; uv forks on those and then
+    # can't keep the per-extra torchcodec sources apart. Collapse it to one requirement.
+    { package = { name = "lerobot" }, dependencies = [
+        "torchcodec>=0.11,<0.18; extra == 'dataset'",
+    ] },
 ]
 conflicts = [
     [

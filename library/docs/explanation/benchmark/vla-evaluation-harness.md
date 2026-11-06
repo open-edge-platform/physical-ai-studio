@@ -243,7 +243,7 @@ sequenceDiagram
 
 ```bash
 cd library
-uv sync --extra cu128 --extra pi05
+uv sync --extra cu130 --extra pi05
 uv pip install vla-eval
 ```
 
