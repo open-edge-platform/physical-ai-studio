@@ -213,11 +213,6 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
-    # The physicalai runtime pins transformers<5.16, but lerobot main needs 5.22. The runtime only
-    # uses transformers for AutoTokenizer.from_pretrained, which is stable across 5.x.
-    { package = { name = "physicalai" }, dependencies = [
-        "transformers>=5.22.0,<5.23.0",
-    ] },
 ]
 
 
@@ -250,7 +245,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ee381b7b7643d173e9b6b74e8702fa6e800b2943" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "07a29f313fdfcab7dcf533a96af40dfabcb9cdbc" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cu130" },

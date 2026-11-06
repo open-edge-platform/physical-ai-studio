@@ -130,7 +130,6 @@ pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
 
 [manifest]
 overrides = [
-    { package = { name = "physicalai" }, dependencies = [{ name = "transformers", specifier = ">=5.22.0,<5.23.0" }] },
     { name = "diffusers", specifier = ">=0.38.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "setuptools", specifier = ">=83.0.0" },
@@ -3562,8 +3561,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.3.1.dev48+gee381b7"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=ee381b7b7643d173e9b6b74e8702fa6e800b2943#ee381b7b7643d173e9b6b74e8702fa6e800b2943" }
+version = "0.3.1.dev57+g07a29f3"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=07a29f313fdfcab7dcf533a96af40dfabcb9cdbc#07a29f313fdfcab7dcf533a96af40dfabcb9cdbc" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -3760,7 +3759,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'cosmos3'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=ee381b7b7643d173e9b6b74e8702fa6e800b2943" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=07a29f313fdfcab7dcf533a96af40dfabcb9cdbc" },
     { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'executorch-openvino'" },

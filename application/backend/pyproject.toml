@@ -136,7 +136,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ee381b7b7643d173e9b6b74e8702fa6e800b2943" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "07a29f313fdfcab7dcf533a96af40dfabcb9cdbc" }
 # Route torchao per extra like torch: with unsafe-best-match, an unrouted torchao would pick
 # the XPU index's `+xpu` build even for cpu/cuda installs.
 torchao = [
