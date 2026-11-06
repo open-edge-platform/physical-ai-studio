@@ -108,8 +108,7 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
             raise ValueError(f"{item.__class__} with ID `{item_id}` doesn't exist")
         return updated
 
-    async def delete_by_id(self, obj_id: str | UUID, *, commit: bool = True) -> None:
-        """Delete the item; with ``commit=False`` the caller commits it, with more."""
+    async def delete_by_id(self, obj_id: str | UUID) -> None:
         if not hasattr(self.schema, "id"):
             raise AttributeError(f"Delete by ID is not supported by schema: `{self.schema}`")
 
@@ -120,8 +119,7 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
         ]
         query = expression.delete(self.schema).where(*where_expression)
         await self.db.execute(query)
-        if commit:
-            await self.db.commit()
+        await self.db.commit()
 
     @staticmethod
     def _id_to_str(obj_id: str | UUID) -> str:
@@ -143,8 +141,7 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
         await self.db.commit()
         return item
 
-    async def update(self, item: ModelType, partial_update: dict, *, commit: bool = True) -> ModelType:
-        """Update *item*; with ``commit=False`` only flush, so that the caller commits it with more."""
+    async def update(self, item: ModelType, partial_update: dict) -> ModelType:
         # Remove None values and timestamp fields from partial_update
         partial_update = {
             k: v for k, v in partial_update.items() if v is not None and k not in {"created_at", "updated_at"}
@@ -159,10 +156,7 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
             setattr(schema_item, "project_id", self.project_id)
 
         await self.db.merge(schema_item)
-        if commit:
-            await self.db.commit()
-        else:
-            await self.db.flush()
+        await self.db.commit()
 
         item_id = getattr(item, "id", None)
         if item_id is None:
