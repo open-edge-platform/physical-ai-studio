@@ -3,6 +3,8 @@
 
 import { $api } from '../../api/client';
 import { useOptionalProjectId } from '../projects/use-project';
+import { useRobotCatalogQuery } from '../robots/robot-catalog.hooks';
+import { launchNoun } from './robot-simulation';
 import { isActiveSimulation, useSimulation } from './use-simulation';
 
 export interface FooterSimulation {
@@ -11,6 +13,8 @@ export interface FooterSimulation {
     scene: string | null;
     startedByStudio: boolean;
     viewerUrl: string | null;
+    /** What it is called (`launchNoun`): "simulation", "VR leader"... */
+    noun: string;
 }
 
 /**
@@ -20,6 +24,9 @@ export interface FooterSimulation {
 export const useFooterSimulations = (): FooterSimulation[] => {
     const { project_id } = useOptionalProjectId();
     const { data: studio } = useSimulation();
+    const { data: catalog } = useRobotCatalogQuery();
+    const nounOf = (robotType: string | null | undefined) =>
+        launchNoun(catalog.find(({ type }) => type === robotType)?.simulation);
     const { data: project } = $api.useQuery(
         'get',
         '/api/projects/{project_id}/simulations',
@@ -33,6 +40,7 @@ export const useFooterSimulations = (): FooterSimulation[] => {
         scene: simulation.scene ?? null,
         startedByStudio: simulation.started_by === 'studio',
         viewerUrl: simulation.viewer_proxy_url ?? null,
+        noun: nounOf(simulation.robot_type),
     }));
 
     if (isActiveSimulation(studio) && !rows.some(({ key }) => key === studio.robot_id)) {
@@ -42,6 +50,7 @@ export const useFooterSimulations = (): FooterSimulation[] => {
             scene: studio.scene ?? null,
             startedByStudio: true,
             viewerUrl: studio.viewer_proxy_url ?? null,
+            noun: nounOf(studio.robot_type),
         });
     }
 

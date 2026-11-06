@@ -11,6 +11,8 @@ import { paths } from '../../paths';
 import { useProjectId } from '../projects/use-project';
 import { sessionForRobot, useRuntimeSessions } from '../runtime-sessions/runtime-sessions';
 import {
+    capitalized,
+    launchNoun,
     ROBOT_SIMULATION_STATUS_LABEL,
     RobotSimulationLaunch,
     robotSimulationStatus,
@@ -105,6 +107,7 @@ const MenuActions = ({
     const isUnavailable = isUnavailableRobot(robot);
 
     const ownsSimulation = simulationStatus === 'studio' || simulationStatus === 'starting';
+    const noun = launchNoun(launch);
     const canStartSimulation = launch !== null && (simulationStatus === 'offline' || simulationStatus === 'unknown');
 
     return (
@@ -140,8 +143,8 @@ const MenuActions = ({
                         }
                     }}
                 >
-                    {canStartSimulation ? <Item key='start-simulation'>Start simulation…</Item> : null}
-                    {ownsSimulation ? <Item key='stop-simulation'>Stop simulation</Item> : null}
+                    {canStartSimulation ? <Item key='start-simulation'>{`Start ${noun}…`}</Item> : null}
+                    {ownsSimulation ? <Item key='stop-simulation'>{`Stop ${noun}`}</Item> : null}
                     {isUnavailable ? null : (
                         <Item key='edit' href={editPath}>
                             Edit
@@ -169,7 +172,9 @@ const SimulationStatus = ({ status }: { status: RobotSimulationStatus }) => {
 
 const SimulationChips = ({ launch }: { launch: RobotSimulationLaunch }) => (
     <div className={simulationClasses.chips}>
-        <span className={clsx(simulationClasses.chip, simulationClasses.simulation)}>Simulation</span>
+        <span className={clsx(simulationClasses.chip, simulationClasses.simulation)}>
+            {capitalized(launchNoun(launch))}
+        </span>
         {(launch.labels ?? []).map((label) => (
             <span key={label} className={simulationClasses.chip}>
                 {label}

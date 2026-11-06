@@ -7,6 +7,7 @@ import { Button, Flex, Link, ProgressCircle, StatusLight, Text, toast, View } fr
 
 import { getApiErrorMessage } from '../../api/errors';
 import { useProjectId } from '../projects/use-project';
+import { capitalized, launchNoun, useRobotSimulationLaunch } from './robot-simulation';
 import { useSimulationDialog } from './simulation-dialog';
 import { SimulationNotRunning } from './simulation-not-running';
 import { RobotSimulation, useRobotSimulation } from './use-robot-simulation';
@@ -37,22 +38,25 @@ export const SimulationViewer = ({
     const { data: studioSimulation } = useSimulation();
     // The dialog is rendered in every state below: it has to outlive the "not running" view.
     const simulationDialog = useSimulationDialog(robot);
+    const noun = launchNoun(useRobotSimulationLaunch(robot.type));
 
     let content: ReactNode;
     if (isPending) {
         content = (
             <Flex width='100%' height='100%' justifyContent='center' alignItems='center'>
-                <ProgressCircle isIndeterminate aria-label='Looking for the simulation' />
+                <ProgressCircle isIndeterminate aria-label={`Looking for the ${noun}`} />
             </Flex>
         );
     } else if (simulation === undefined || !simulation.running) {
         const isStarting =
             studioSimulation?.robot_id === robot.id &&
             (studioSimulation.status === 'starting' || studioSimulation.status === 'stopping');
-        content = <SimulationNotRunning robot={robot} isStarting={isStarting} onStart={simulationDialog.open} />;
+        content = (
+            <SimulationNotRunning robot={robot} noun={noun} isStarting={isStarting} onStart={simulationDialog.open} />
+        );
     } else {
         content = (
-            <RunningSimulation robot={robot} simulation={simulation} actions={actions} compact={compact}>
+            <RunningSimulation robot={robot} simulation={simulation} noun={noun} actions={actions} compact={compact}>
                 {children}
             </RunningSimulation>
         );
@@ -69,12 +73,14 @@ export const SimulationViewer = ({
 const RunningSimulation = ({
     robot,
     simulation,
+    noun,
     actions,
     children,
     compact,
 }: {
     robot: { name: string };
     simulation: RobotSimulation;
+    noun: string;
     actions?: ReactNode;
     children?: ReactNode;
     compact: boolean;
@@ -89,7 +95,7 @@ const RunningSimulation = ({
             <View UNSAFE_className={classes.viewerBar} paddingX='size-150' paddingY='size-75'>
                 <Flex alignItems='center' gap='size-150' wrap>
                     <StatusLight variant='positive' UNSAFE_className={classes.viewerStatus}>
-                        Simulation running
+                        {capitalized(noun)} running
                     </StatusLight>
                     {compact || startedByStudio ? null : (
                         <Text UNSAFE_className={classes.detail}>started by someone else (CLI)</Text>
@@ -117,7 +123,7 @@ const RunningSimulation = ({
                                     )
                                 }
                             >
-                                Stop simulation
+                                Stop {noun}
                             </Button>
                         ) : null}
                         {actions}
@@ -129,12 +135,12 @@ const RunningSimulation = ({
                 <iframe
                     className={classes.viewer}
                     src={simulation.viewer_proxy_url}
-                    title={`${robot.name} simulation viewer`}
+                    title={`${robot.name} ${noun} viewer`}
                     allow='fullscreen'
                 />
             ) : (
                 <Flex flex={1} justifyContent='center' alignItems='center'>
-                    <Text>The simulation runs without a viewer.</Text>
+                    <Text>The {noun} runs without a viewer.</Text>
                 </Flex>
             )}
             {children}

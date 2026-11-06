@@ -9,7 +9,7 @@ import { HttpResponse } from 'msw';
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
 import { render } from '../../test-utils/render';
-import { SimulationsSection } from './simulations-section';
+import { processesHeading, SimulationsSection } from './simulations-section';
 
 const PROJECT_ID = 'project-1';
 
@@ -97,5 +97,13 @@ describe('SimulationsSection', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 50));
         expect(screen.queryByRole('heading', { name: 'Simulations' })).not.toBeInTheDocument();
+    });
+});
+
+describe('processesHeading', () => {
+    it('names what the section lists', () => {
+        expect(processesHeading(['simulation', 'simulation'])).toBe('Simulations');
+        expect(processesHeading(['VR leader'])).toBe('VR leaders');
+        expect(processesHeading(['simulation', 'VR leader'])).toBe('Simulations and VR leaders');
     });
 });

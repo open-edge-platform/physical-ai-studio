@@ -54,6 +54,8 @@ const mockSimulatedRobot = (connection_status: 'online' | 'offline', simulation:
                         default_scene: 'single_pick_place',
                         max_seed: null,
                         labels: [],
+                        noun: 'simulation',
+                        cameras: true,
                     },
                 },
             ])

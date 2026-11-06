@@ -27,6 +27,8 @@ const launch: RobotSimulationLaunch = {
     default_scene: 'single_pick_place',
     max_seed: 4294967295,
     labels: ['1 arm', 'experimental'],
+    noun: 'simulation',
+    cameras: true,
 };
 
 const idle: Simulation = { status: 'idle', cameras: [] };
@@ -280,5 +282,67 @@ describe('SimulationNotRunning', () => {
         expect(await screen.findByRole('heading', { name: 'Simulation not running' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Start simulation…' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+    });
+});
+
+describe('A launch that is not a simulation', () => {
+    const leader = { id: 'leader-1', name: 'VR arm', type: 'MuJoCo_Headset_Leader' };
+    const vrLaunch: RobotSimulationLaunch = {
+        scenes: [{ id: 'hand-tracker', display_name: 'Hand trackers', description: 'Hold a grip to move that arm' }],
+        default_scene: 'hand-tracker',
+        max_seed: null,
+        labels: ['VR controllers'],
+        noun: 'VR leader',
+        cameras: false,
+    };
+
+    const renderLeaderDialog = (simulation: Simulation) => {
+        server.use(
+            http.get('/api/simulation', () => HttpResponse.json(simulation)),
+            http.get('/api/robots/catalog', () =>
+                HttpResponse.json([
+                    {
+                        type: leader.type,
+                        display_name: 'Headset Leader (VR controllers)',
+                        role: 'leader',
+                        urdf_path: '',
+                        package_map: {},
+                        joint_map: {},
+                        zero_calibration: null,
+                        simulation: vrLaunch,
+                    },
+                ])
+            )
+        );
+        render(<SimulationDialog robot={leader} project_id={PROJECT_ID} launch={vrLaunch} close={rs.fn()} />, {
+            route: `/projects/${PROJECT_ID}/robots`,
+            path: '/projects/:project_id/robots',
+        });
+    };
+
+    it('is started under its own name, with no scene to pick', async () => {
+        renderLeaderDialog(idle);
+
+        expect(await screen.findByRole('heading', { name: 'Start VR leader' })).toBeInTheDocument();
+        expect(screen.getByText('Hold a grip to move that arm')).toBeInTheDocument();
+        expect(screen.queryByText('Scene')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Start VR leader' })).toBeInTheDocument();
+        expect(screen.queryByText(/simulation/i)).not.toBeInTheDocument();
+    });
+
+    it('runs without a camera step and without warning about cameras', async () => {
+        renderLeaderDialog({ ...idle, status: 'running', robot_id: leader.id, robot_type: leader.type });
+
+        expect(await screen.findByRole('heading', { name: 'VR leader running' })).toBeInTheDocument();
+        expect(screen.getByText('Ready')).toBeInTheDocument();
+        expect(screen.queryByText('Cameras')).not.toBeInTheDocument();
+        expect(screen.queryByText(/without cameras/)).not.toBeInTheDocument();
+    });
+
+    it('says when it is not running, under its own name', async () => {
+        render(<SimulationNotRunning robot={leader} noun='VR leader' onStart={rs.fn()} />);
+
+        expect(await screen.findByRole('heading', { name: 'VR leader not running' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Start VR leader…' })).toBeInTheDocument();
     });
 });

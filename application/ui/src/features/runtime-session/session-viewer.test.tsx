@@ -49,6 +49,8 @@ const mockFollower = (simulated: boolean) =>
                               default_scene: 'single_pick_place',
                               max_seed: null,
                               labels: ['1 arm'],
+                              noun: 'simulation',
+                              cameras: true,
                           }
                         : null,
                 },

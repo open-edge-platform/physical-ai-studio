@@ -90,8 +90,8 @@ async def describe_environment(
     """Build the follower's driver (unconnected) and derive the session's spec.
 
     Raises:
-        ValueError: The environment does not have exactly one robot, or two
-            cameras share a store key.
+        ValueError: The environment does not have exactly one robot, two
+            cameras share a store key, or the leader refuses the follower.
     """
     if len(environment.robots) != 1:
         raise ValueError(
@@ -105,6 +105,10 @@ async def describe_environment(
     leader = None
     if (leader_robot := getattr(environment.robots[0].tele_operator, "robot", None)) is not None:
         leader_driver, _definition = await factory.build_robot_driver(leader_robot, factory)
+        # A leader that answers in the follower's units can refuse a follower set up otherwise.
+        check_follower = getattr(leader_driver, "check_follower", None)
+        if callable(check_follower):
+            check_follower(driver)
         leader = RobotRecipe.from_driver(leader_robot.id, leader_driver)
         robot_names[leader_robot.id] = leader_robot.name
 
