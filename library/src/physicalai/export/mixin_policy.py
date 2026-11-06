@@ -170,6 +170,18 @@ class ExportablePolicyMixin:
         """
         return {}
 
+    @property
+    def _export_module(self) -> torch.nn.Module:
+        """Module traced by the ONNX, OpenVINO and ExecuTorch exporters.
+
+        Defaults to ``self.model``. Override when ``model.forward`` is not the
+        inference path (e.g. it computes a training loss).
+
+        Returns:
+            The module to trace during export.
+        """
+        return self.model
+
     @contextmanager
     def _export_ready_model(self) -> Generator[None, None, None]:
         """Put ``self.model`` in eval mode with ``torch.compile`` wrappers removed.
@@ -185,7 +197,7 @@ class ExportablePolicyMixin:
         Both the wrappers and the original training mode are restored on exit,
         including when the block raises.
         """
-        model = self.model
+        model = self._export_module
         if not isinstance(model, torch.nn.Module):
             yield
             return
@@ -628,7 +640,7 @@ class ExportablePolicyMixin:
         # raising), so trace on CPU. The original device is always restored;
         # train mode is restored by _export_ready_model().
         original_device = self.device
-        self.model.to("cpu")
+        self._export_module.to("cpu")
         try:
             self._export_ready_model()(self._export_executorch_pte)(
                 model_path=model_path,
@@ -639,7 +651,7 @@ class ExportablePolicyMixin:
                 to_edge_transform_and_lower=to_edge_transform_and_lower,
             )
         finally:
-            self.model.to(original_device)
+            self._export_module.to(original_device)
 
         self.create_manifest(
             export_dir,
@@ -682,7 +694,7 @@ class ExportablePolicyMixin:
         """
         cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
         aten_dialect = torch.export.export(
-            self.model,
+            self._export_module,
             args=(cpu_input_sample,),
             **extra_export_kwargs,
         )
@@ -789,7 +801,7 @@ class ExportablePolicyMixin:
             **export_kwargs: Additional keyword arguments for torch.onnx.export.
         """
         torch.onnx.export(
-            self.model,
+            self._export_module,
             args=(),
             kwargs={arg_name: input_sample},
             f=str(model_path),
@@ -836,7 +848,7 @@ class ExportablePolicyMixin:
                         input=input_shapes,
                     )
         return openvino.convert_model(
-            self.model,
+            self._export_module,
             example_input={arg_name: input_sample},
             input=input_shapes,
             **extra_export_kwargs,
@@ -887,7 +899,7 @@ class ExportablePolicyMixin:
         Returns:
             str: The name of the first positional argument in the forward method.
         """
-        sig = inspect.signature(self.model.forward)
+        sig = inspect.signature(self._export_module.forward)
         positional_args = [
             param_name
             for param_name, param in sig.parameters.items()
