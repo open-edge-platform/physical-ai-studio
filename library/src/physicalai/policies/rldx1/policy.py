@@ -67,7 +67,7 @@ from physicalai.policies.rldx1.utils.stats import (
     infer_num_views_from_stats,
     merge_explicit_features,
 )
-from physicalai.train.optimizers import adamw
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -706,7 +706,7 @@ class Rldx1(Rldx1ExportMixin, Policy):
         """
         optim = self.config.optim
         if optim in {"adamw_torch", "adamw_torch_fused"}:
-            return adamw(
+            return build_adamw_auto_precision(
                 params,
                 lr=self.config.learning_rate,
                 weight_decay=self.config.weight_decay,

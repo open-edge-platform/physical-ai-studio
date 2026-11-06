@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from physicalai.train import optimizers
-from physicalai.train.optimizers import BF16AdamW, adamw
+from physicalai.train.optimizers import AdamWBF16Kahan, build_adamw_auto_precision
 
 
 def _params(dtype: torch.dtype) -> list[torch.nn.Parameter]:
@@ -25,19 +25,19 @@ def _train(params: list[torch.nn.Parameter], optimizer: torch.optim.Optimizer, s
 
 class TestAdamW:
     def test_float32_uses_torch_adamw(self) -> None:
-        optimizer = adamw(_params(torch.float32), lr=1e-5, fused=False)
+        optimizer = build_adamw_auto_precision(_params(torch.float32), lr=1e-5, fused=False)
         assert type(optimizer) is torch.optim.AdamW
 
     def test_bfloat16_uses_bf16_adamw(self) -> None:
         bf16, fp32 = _params(torch.bfloat16), _params(torch.float32)
-        optimizer = adamw(
+        optimizer = build_adamw_auto_precision(
             [{"params": fp32, "weight_decay": 0.0}, {"params": bf16}],
             lr=1e-5,
             betas=(0.9, 0.95),
             weight_decay=0.01,
             fused=True,
         )
-        assert isinstance(optimizer, BF16AdamW)
+        assert isinstance(optimizer, AdamWBF16Kahan)
         assert [group["weight_decay"] for group in optimizer.param_groups] == [0.0, 0.01]
         assert all(group["betas"] == (0.9, 0.95) for group in optimizer.param_groups)
 
@@ -59,7 +59,7 @@ class TestAdamW:
                 scheduler.step()
             return [p.detach() for p in params]
 
-        for actual, expected in zip(train(BF16AdamW), train(torch.optim.AdamW), strict=True):
+        for actual, expected in zip(train(AdamWBF16Kahan), train(torch.optim.AdamW), strict=True):
             torch.testing.assert_close(actual, expected)
 
     @pytest.mark.parametrize("chunk_numel", [None, 1000])
@@ -70,7 +70,7 @@ class TestAdamW:
         reference, plain, compensated = _params(torch.float32), _params(torch.bfloat16), _params(torch.bfloat16)
         _train(reference, torch.optim.AdamW(reference, **kwargs), steps=50)
         _train(plain, torch.optim.AdamW(plain, **kwargs), steps=50)
-        optimizer = adamw(compensated, **kwargs)
+        optimizer = build_adamw_auto_precision(compensated, **kwargs)
         _train(compensated, optimizer, steps=50)
 
         start = torch.tensor(0.02).bfloat16().float()
@@ -86,7 +86,7 @@ class TestAdamW:
         source = torch.optim.AdamW(params, lr=1e-5)
         _train(params, source, steps=1)
 
-        optimizer = adamw(params, lr=1e-3)
+        optimizer = build_adamw_auto_precision(params, lr=1e-3)
         optimizer.load_state_dict(source.state_dict())
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 0.5)
         _train(params, optimizer, steps=1)
@@ -98,20 +98,20 @@ class TestAdamW:
 
     def test_generator_param_groups_keep_all_params(self) -> None:
         model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.Linear(4, 4).bfloat16())
-        optimizer = adamw([{"params": model[0].parameters()}, {"params": model[1].parameters()}], lr=1e-3)
+        optimizer = build_adamw_auto_precision([{"params": model[0].parameters()}, {"params": model[1].parameters()}], lr=1e-3)
         assert [len(group["params"]) for group in optimizer.param_groups] == [2, 2]
 
-        fp32_only = adamw([{"params": model[0].parameters()}], lr=1e-3)
+        fp32_only = build_adamw_auto_precision([{"params": model[0].parameters()}], lr=1e-3)
         assert len(fp32_only.param_groups[0]["params"]) == 2
 
     def test_unsupported_options_raise_for_bfloat16(self) -> None:
-        assert isinstance(adamw(_params(torch.bfloat16), lr=1e-3, amsgrad=False, foreach=False), BF16AdamW)
+        assert isinstance(build_adamw_auto_precision(_params(torch.bfloat16), lr=1e-3, amsgrad=False, foreach=False), AdamWBF16Kahan)
         with pytest.raises(ValueError, match="amsgrad"):
-            adamw(_params(torch.bfloat16), lr=1e-3, amsgrad=True)
+            build_adamw_auto_precision(_params(torch.bfloat16), lr=1e-3, amsgrad=True)
 
     def test_default_beta2_tracks_float32_second_moment(self) -> None:
         params = _params(torch.bfloat16)
-        optimizer = adamw(params, lr=1e-5)  # default betas (0.9, 0.999)
+        optimizer = build_adamw_auto_precision(params, lr=1e-5)  # default betas (0.9, 0.999)
         for _ in range(2000):
             params[0].grad = torch.ones_like(params[0])
             optimizer.step()
@@ -121,7 +121,7 @@ class TestAdamW:
         assert state["exp_avg_sq"].dtype == torch.float32
         torch.testing.assert_close(state["exp_avg_sq"], torch.full_like(state["exp_avg_sq"], 1 - 0.999**2000))
 
-        restored = adamw(params, lr=1e-5)
+        restored = build_adamw_auto_precision(params, lr=1e-5)
         restored.load_state_dict(optimizer.state_dict())
         assert torch.equal(restored.state[params[0]]["exp_avg_sq"], state["exp_avg_sq"])
 
@@ -135,7 +135,7 @@ class TestAdamW:
             if not fused:
                 monkeypatch.setattr(optimizers, "_fused_update", lambda: None)
             params = [torch.nn.Parameter(init.clone())]
-            optimizer = adamw(params, lr=1e-5, betas=betas, weight_decay=0.01)
+            optimizer = build_adamw_auto_precision(params, lr=1e-5, betas=betas, weight_decay=0.01)
             generator = torch.Generator(device="cuda").manual_seed(0)
             for _ in range(20):
                 params[0].grad = torch.randn(init.shape, device="cuda", generator=generator).bfloat16()

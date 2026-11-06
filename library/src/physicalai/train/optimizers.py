@@ -23,11 +23,11 @@ _CHUNK_NUMEL = 1 << 24
 _MIN_BF16_EMA_WEIGHT = 2**-5
 
 
-def adamw(params: ParamsT, **kwargs: Any) -> torch.optim.Optimizer:  # noqa: ANN401
+def build_adamw_auto_precision(params: ParamsT, **kwargs: Any) -> torch.optim.Optimizer:  # noqa: ANN401
     """Build AdamW, with Kahan-compensated updates when any parameter is bf16.
 
     Plain AdamW on bf16 weights rounds updates below bf16 resolution to zero, so small
-    learning rates leave most weights unchanged. ``BF16AdamW`` keeps the rounding residual
+    learning rates leave most weights unchanged. ``AdamWBF16Kahan`` keeps the rounding residual
     in a bf16 buffer instead of an fp32 copy of the weights. Other parameter dtypes use
     ``torch.optim.AdamW``.
 
@@ -54,16 +54,16 @@ def adamw(params: ParamsT, **kwargs: Any) -> torch.optim.Optimizer:  # noqa: ANN
     kwargs.pop("foreach", None)
     enabled = [key for key in ("amsgrad", "maximize", "capturable", "differentiable") if kwargs.pop(key, False)]
     if enabled:
-        msg = f"BF16AdamW does not support {enabled}; set them to False or train with non-bf16 weights."
+        msg = f"AdamWBF16Kahan does not support {enabled}; set them to False or train with non-bf16 weights."
         raise ValueError(msg)
-    return BF16AdamW(param_list, **kwargs)
+    return AdamWBF16Kahan(param_list, **kwargs)
 
 
 def _as_list(params: Any) -> list[Any]:  # noqa: ANN401
     return [params] if isinstance(params, torch.Tensor) else list(params)
 
 
-class BF16AdamW(torch.optim.Optimizer):
+class AdamWBF16Kahan(torch.optim.Optimizer):
     """AdamW with Kahan-compensated updates for bf16 parameters.
 
     Each bf16 update is computed in fp32 on ``weight + compensation``, rounded to bf16, and
