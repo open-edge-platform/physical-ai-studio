@@ -1,5 +1,7 @@
 import ctypes
 import errno
+import importlib
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -51,7 +53,7 @@ def fake_fd():
 
 
 def _run(device: FakeDevice, fps=30):
-    with patch.object(v4l2.fcntl, "ioctl", side_effect=device.ioctl):
+    with patch.object(v4l2.sys, "platform", "linux"), patch("fcntl.ioctl", side_effect=device.ioctl):
         return fix_device_frame_interval("/dev/video0", fps)
 
 
@@ -94,7 +96,10 @@ def test_s_parm_failure_returns_false(fake_fd):
 
 
 def test_unopenable_device_returns_false():
-    with patch.object(v4l2.os, "open", side_effect=PermissionError(errno.EACCES, "denied")):
+    with (
+        patch.object(v4l2.sys, "platform", "linux"),
+        patch.object(v4l2.os, "open", side_effect=PermissionError(errno.EACCES, "denied")),
+    ):
         assert fix_device_frame_interval("/dev/video0") is False
 
 
@@ -115,3 +120,15 @@ def test_fix_zero_frame_intervals_noop_off_linux(tmp_path):
     with patch.object(v4l2.sys, "platform", "darwin"), patch.object(v4l2, "fix_device_frame_interval") as fix:
         assert fix_zero_frame_intervals(tmp_path) == []
     fix.assert_not_called()
+
+
+def test_importable_and_noop_without_fcntl(tmp_path):
+    """On Windows there is no fcntl module; importing and calling must still work."""
+    (tmp_path / "video0").touch()
+    with patch.dict(sys.modules, {"fcntl": None}), patch.object(sys, "platform", "win32"):
+        module = importlib.reload(v4l2)
+        try:
+            assert module.fix_device_frame_interval(tmp_path / "video0") is False
+            assert module.fix_zero_frame_intervals(tmp_path) == []
+        finally:
+            importlib.reload(v4l2)
