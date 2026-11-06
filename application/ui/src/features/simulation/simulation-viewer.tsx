@@ -92,7 +92,7 @@ const RunningSimulation = ({
                         Simulation running
                     </StatusLight>
                     {compact || startedByStudio ? null : (
-                        <Text UNSAFE_className={classes.detail}>started by someone else (CLI)</Text>
+                        <Text UNSAFE_className={classes.detail}>started outside Studio</Text>
                     )}
                     {simulation.scene != null ? (
                         <Text UNSAFE_className={classes.detail}>{simulation.scene}</Text>

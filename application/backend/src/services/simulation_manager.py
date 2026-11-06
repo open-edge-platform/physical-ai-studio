@@ -380,7 +380,10 @@ class SimulationManager:
             # it cannot overwrite the address of the one starting now.
             await self._finish_address_writes()
 
-            await self._spawn(argv, owner_name, request, robot.type)
+            robot_http_url = getattr(robot.payload, "http_url", None)
+            await self._spawn(
+                argv, owner_name, request, robot.type, robot_http_url if isinstance(robot_http_url, str) else None
+            )
             return self.state()
 
     async def stop(self) -> Simulation:
@@ -406,7 +409,14 @@ class SimulationManager:
 
     # -- process -----------------------------------------------------------
 
-    async def _spawn(self, argv: list[str], owner_name: str, request: StartSimulationRequest, robot_type: str) -> None:
+    async def _spawn(
+        self,
+        argv: list[str],
+        owner_name: str,
+        request: StartSimulationRequest,
+        robot_type: str,
+        robot_http_url: str | None = None,
+    ) -> None:
         self._logs.clear()
         logger.info("Starting simulation {!r}: {}", owner_name, argv)
         try:
@@ -432,6 +442,7 @@ class SimulationManager:
                 scene=request.scene,
                 seed=request.seed,
                 started_at=datetime.now(UTC),
+                robot_http_url=robot_http_url,
             )
         )
         stdout = asyncio.create_task(self._read_events(child))

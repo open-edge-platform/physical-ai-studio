@@ -3,15 +3,16 @@
 
 """A simulated robot's simulation: what it serves, and adding its cameras to an environment."""
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from fastapi.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import RobotSimulationServiceDep, get_robot_catalog_service, get_simulation_manager
 from schemas.project_camera import Camera, SimulationCamera
-from schemas.simulation import AddSimulationCamerasRequest, ProjectRobotSimulation, RobotSimulation
+from schemas.simulation import AddSimulationCamerasRequest, ProjectRobotSimulation, RobotSimulation, SimulationCommand
 from services.robot_simulation_service import RobotSimulationService
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["Simulation"])
@@ -27,6 +28,22 @@ async def get_robot_simulation(
 ) -> RobotSimulation:
     """Whether the robot's simulation runs, who started it, and its viewer, speed and cameras."""
     return await service.get(project_id, robot_id)
+
+
+@router.get("/robots/{robot_id}/simulation/command")
+async def get_robot_simulation_command(
+    project_id: ProjectID,
+    robot_id: UUID,
+    service: RobotSimulationServiceDep,
+    scene: Annotated[str, Query(description="Id of one of the robot type's simulation scenes")],
+    seed: Annotated[int | None, Query(ge=0, description="Fixed seed for the scene; none for a random layout")] = None,
+) -> SimulationCommand:
+    """The command that starts the robot's simulation in a terminal, outside Studio.
+
+    Studio attaches to that simulation as one started outside Studio; it keeps running when Studio
+    stops. 404 when the robot type's plugin offers no such command.
+    """
+    return await service.command(project_id, robot_id, scene, seed)
 
 
 @router.get("/simulations")
