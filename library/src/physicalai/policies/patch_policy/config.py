@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
-from typing import Literal
+from typing import Any, Literal
 
 from physicalai.config import Config
 
@@ -59,7 +59,7 @@ class PatchPolicyConfig(Config):
         n_action_steps: Number of predicted actions executed per invocation.
         encoder_name: Name of the timm visual encoder architecture.
         encoder_output: Visual representation extracted from the encoder.
-        encoder_pretrained: Whether to initialize the encoder with pretrained weights.
+        encoder_config: Resolved encoder architecture metadata for offline reconstruction.
         image_size: Encoder input height and width, defaulting to (224, 224).
         action_head: Action-head architecture used to predict action chunks.
         hidden_dim: Hidden width of the action head.
@@ -94,7 +94,7 @@ class PatchPolicyConfig(Config):
 
     encoder_name: FeatureEncoderName = "dinov2"
     encoder_output: EncoderOutput = "patches"
-    encoder_pretrained: bool = True
+    encoder_config: dict[str, Any] | None = None
     image_size: tuple[int, int] = (224, 224)
     action_head: ActionHeadName = "behavior_transformer"
 
@@ -117,8 +117,6 @@ class PatchPolicyConfig(Config):
     vq_num_embeddings: int = 16
     vq_num_groups: int = 2
     vq_action_scale: float = 500.0
-    vqvae_iters: int = 1000
-    vqvae_batch_size: int = 1024
     offset_loss_weight: float = 10.0
     secondary_code_weight: float = 0.5
     focal_loss_gamma: float = 2.0
@@ -141,18 +139,27 @@ class PatchPolicyConfig(Config):
         if not 0 < self.n_action_steps <= self.chunk_size:
             msg = "n_action_steps must be in [1, chunk_size]."
             raise ValueError(msg)
+        if self.hidden_dim <= 0 or self.num_layers <= 0 or self.num_heads <= 0:
+            msg = "hidden_dim, num_layers, and num_heads must be positive."
+            raise ValueError(msg)
         if self.hidden_dim % self.num_heads:
             msg = "hidden_dim must be divisible by num_heads."
             raise ValueError(msg)
-        if self.num_layers <= 0 or self.num_heads <= 0:
-            msg = "num_layers and num_heads must be positive."
+        if self.encoder_name not in {"dinov2", "webssl", "resnet18"}:
+            msg = f"Unsupported encoder_name: {self.encoder_name!r}."
+            raise ValueError(msg)
+        if self.encoder_output not in {"patches", "cls", "average"}:
+            msg = f"Unsupported encoder_output: {self.encoder_output!r}."
+            raise ValueError(msg)
+        if self.action_head not in {"diffusion", "behavior_transformer"}:
+            msg = f"Unsupported action_head: {self.action_head!r}."
+            raise ValueError(msg)
+        if self.encoder_name == "webssl" and self.encoder_config is None:
+            msg = "WebSSL requires resolved encoder_config for offline reconstruction."
             raise ValueError(msg)
         if self.vq_num_groups <= 0 or self.vq_num_embeddings <= 0:
             msg = "VQ group and embedding counts must be positive."
             raise ValueError(msg)
         if self.vq_action_scale <= 0:
             msg = "vq_action_scale must be positive."
-            raise ValueError(msg)
-        if self.vqvae_iters <= 0 or self.vqvae_batch_size <= 0:
-            msg = "vqvae_iters and vqvae_batch_size must be positive."
             raise ValueError(msg)

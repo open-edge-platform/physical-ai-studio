@@ -39,7 +39,7 @@ class PatchPolicyModel(Model):
         chunk_size: Number of action timesteps predicted per chunk.
         encoder_name: Name of the timm visual encoder architecture.
         encoder_output: Visual representation extracted from the encoder.
-        encoder_pretrained: Whether to initialize the encoder with pretrained weights.
+        encoder_config: Resolved WebSSL architecture configuration; required for WebSSL.
         image_size: Encoder input height and width, defaulting to (224, 224).
         action_head: Action-head architecture used to predict action chunks.
         hidden_dim: Hidden width of the action head.
@@ -73,7 +73,7 @@ class PatchPolicyModel(Model):
         chunk_size: int = 5,
         encoder_name: FeatureEncoderName = "dinov2",
         encoder_output: EncoderOutput = "patches",
-        encoder_pretrained: bool = True,
+        encoder_config: dict[str, Any] | None = None,
         image_size: tuple[int, int] = (224, 224),
         action_head: ActionHeadName = "behavior_transformer",
         hidden_dim: int = 512,
@@ -112,7 +112,7 @@ class PatchPolicyModel(Model):
         self.encoder = TimmFeatureEncoder(
             encoder_name,
             encoder_output,
-            pretrained=encoder_pretrained,
+            encoder_config=encoder_config,
             image_size=image_size,
         )
         if action_head == "diffusion":
@@ -162,7 +162,7 @@ class PatchPolicyModel(Model):
 
     @classmethod
     def from_config(cls, config: PatchPolicyConfig) -> PatchPolicyModel:
-        """Build the complete model architecture from one serialized config.
+        """Build the complete model architecture offline from one serialized config.
 
         Args:
             config: Resolved Patch Policy configuration.
@@ -182,7 +182,7 @@ class PatchPolicyModel(Model):
             chunk_size=config.chunk_size,
             encoder_name=config.encoder_name,
             encoder_output=config.encoder_output,
-            encoder_pretrained=config.encoder_pretrained,
+            encoder_config=config.encoder_config,
             image_size=config.image_size,
             action_head=config.action_head,
             hidden_dim=config.hidden_dim,

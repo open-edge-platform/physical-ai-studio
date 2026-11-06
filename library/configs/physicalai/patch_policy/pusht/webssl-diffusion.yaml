@@ -3,9 +3,7 @@ model:
   class_path: physicalai.policies.PatchPolicy
   init_args:
     encoder_name: webssl
-    encoder_output: patches
     encoder_pretrained: true
-    eta: 1
     action_head: diffusion
     n_obs_steps: 2
     chunk_size: 5
