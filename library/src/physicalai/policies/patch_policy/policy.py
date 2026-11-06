@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import IO, TYPE_CHECKING, Any
@@ -106,6 +107,9 @@ def _attach_encoder_normalization(
 class PatchPolicy(PatchPolicyExportMixin, Policy):
     """Train a timm visual encoder followed by a diffusion or Behavior Transformer head.
 
+    One-step Behavior Transformer execution equally averages aligned predictions
+    from overlapping action chunks, matching upstream VQ-BeT evaluation.
+
     Args:
         input_features: Optional observation schema. Resolved from training data when omitted.
         output_features: Optional action schema. Resolved from training data when omitted.
@@ -191,6 +195,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.n_obs_steps = n_obs_steps
         self.chunk_size = chunk_size
         self.n_action_steps = n_action_steps
+        self._action_chunks: deque[Tensor] = deque()
 
         # Model params
         self.encoder_name = encoder_name
@@ -567,6 +572,35 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         if self.training:
             return self.model(self._prepare_batch(batch, require_actions=True))
         return self.predict_action_chunk(batch)
+
+    @torch.no_grad()
+    def select_action(self, batch: Observation) -> Tensor:
+        """Select an action, averaging overlapping VQ-BeT chunks for one-step replanning.
+
+        Returns:
+            A single action per batch element.
+
+        Raises:
+            RuntimeError: If the model or postprocessor is not initialized.
+        """
+        if self.action_head != "behavior_transformer" or self.n_action_steps != 1:
+            return super().select_action(batch)
+        if not isinstance(self.model, PatchPolicyModel) or self._postprocessor is None:
+            msg = "Patch Policy is not initialized."
+            raise RuntimeError(msg)
+        prepared = self._prepare_batch(batch, require_actions=False)
+        self._action_chunks.append(self.model.predict_action_chunk(prepared))
+        if len(self._action_chunks) > self.chunk_size:
+            self._action_chunks.popleft()
+        # Older chunks predict the current action at progressively later offsets.
+        aligned = [chunk[:, offset] for offset, chunk in enumerate(reversed(self._action_chunks))]
+        action = torch.stack(aligned).mean(dim=0)
+        return self._postprocessor(action[:, None])[:, 0]
+
+    def reset(self) -> None:
+        """Clear queued actions and overlapping predictions at episode boundaries."""
+        super().reset()
+        self._action_chunks.clear()
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: Observation) -> Tensor:

@@ -718,9 +718,9 @@ def test_preprocessor_rejects_invalid_image_shape(shape: tuple[int, ...]) -> Non
         preprocessor({"images": {"front": torch.zeros(shape)}})
 
 
-@pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
-def test_select_action_uses_newest_chunk_without_averaging(action_head: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    policy = make_policy(action_head, n_action_steps=1).eval()
+def test_diffusion_select_action_uses_newest_chunk_without_averaging(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Diffusion keeps its existing one-step execution without averaging."""
+    policy = make_policy("diffusion", n_action_steps=1).eval()
     chunks = torch.arange(8 * 2 * 4 * 2, dtype=torch.float32).reshape(8, 2, 4, 2)
     predict = Mock(side_effect=list(chunks) + [chunks[0]])
     monkeypatch.setattr(policy.model, "predict_action_chunk", predict)
@@ -731,6 +731,37 @@ def test_select_action_uses_newest_chunk_without_averaging(action_head: str, mon
 
     assert predict.call_count == len(chunks)
     policy.reset()
+    torch.testing.assert_close(policy.select_action(batch()), chunks[0, :, 0])
+    assert predict.call_count == len(chunks) + 1
+
+
+@pytest.mark.parametrize("chunk_size", [1, 4, 5])
+def test_vqbet_select_action_matches_upstream_temporal_average(
+    chunk_size: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Match upstream's NumPy chunk shifting through warmup, expiry, and reset."""
+    policy = make_policy("behavior_transformer", n_action_steps=1).eval()
+    policy.chunk_size = chunk_size
+    chunks = torch.randn(12, 2, chunk_size, 2)
+    predict = Mock(side_effect=[*chunks, chunks[0]])
+    monkeypatch.setattr(policy.model, "predict_action_chunk", predict)
+    action_list = []
+    for chunk in chunks:
+        action_list.append(chunk.numpy().copy())
+        action_list = action_list[-chunk_size:]
+        expected = np.array(action_list).mean(axis=0)[:, 0]
+        actual = policy.select_action(batch())
+        torch.testing.assert_close(actual, torch.from_numpy(expected))
+        action_list = [
+            np.concatenate((actions[:, 1:], np.zeros_like(actions[:, :1])), axis=1) for actions in action_list
+        ]
+        assert len(policy._action_chunks) <= chunk_size
+        assert not policy._action_queue
+
+    assert predict.call_count == len(chunks)
+    policy.reset()
+    assert not policy._action_chunks
     torch.testing.assert_close(policy.select_action(batch()), chunks[0, :, 0])
     assert predict.call_count == len(chunks) + 1
 
