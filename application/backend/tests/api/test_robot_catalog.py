@@ -62,6 +62,7 @@ def test_get_robot_catalog_schema_returns_pydantic_schema() -> None:
     assert schema["example"] == {
         "connection_string": "",
         "serial_number": "SO101-2024-001",
+        "unit": "normalized",
         "calibration": None,
     }
 
