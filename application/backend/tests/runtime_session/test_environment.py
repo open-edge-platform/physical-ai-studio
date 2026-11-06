@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -35,3 +36,21 @@ async def test_cameras_that_would_share_a_key_are_refused(test_environment, fact
     test_environment.cameras[1].name = "Grabber"
     with pytest.raises(ValueError, match="'grabber'"):
         await describe_environment(test_environment, factory)
+
+
+async def test_a_leader_can_refuse_the_follower(test_environment, factory, tmp_path) -> None:
+    follower = FakeRobot(str(tmp_path / "log"), ["shoulder_pan", "gripper"], [0.0, 0.0])
+    seen = []
+
+    class Leader:  # answers in the twin's units, as a headset leader does
+        def check_follower(self, driver: object) -> None:
+            seen.append(driver)
+            raise ValueError("the follower is set to degrees; set the follower to normalized")
+
+    factory.build_robot_driver = AsyncMock(side_effect=[(follower, object()), (Leader(), object())])
+    configuration = test_environment.robots[0]
+    object.__setattr__(configuration, "tele_operator", SimpleNamespace(robot=configuration.robot))
+
+    with pytest.raises(ValueError, match="set the follower to normalized"):
+        await describe_environment(test_environment, factory)
+    assert seen == [follower]

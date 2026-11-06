@@ -28,6 +28,11 @@ class RobotSimulationResponse(BaseModel):
     default_scene: str = Field(..., description="Id of the scene to preselect")
     max_seed: int | None = Field(None, description="Largest fixed seed, or null when the simulation takes no seed")
     labels: list[str] = Field(default_factory=list, description="Read-only facts shown in the start dialog")
+    noun: str = Field(
+        "simulation",
+        description='What Studio calls the process in its buttons and status, such as "simulation" or "VR leader"',
+    )
+    cameras: bool = Field(True, description="Whether the process streams cameras")
 
 
 class RobotCatalogDefinitionResponse(BaseModel):
@@ -92,6 +97,9 @@ def _simulation_response(launch: Any) -> RobotSimulationResponse | None:
         default_scene=launch.default_scene,
         max_seed=launch.max_seed,
         labels=list(launch.labels),
+        # Missing on physicalai-studio-plugin releases before them: every launch was a simulation with cameras.
+        noun=getattr(launch, "noun", "simulation"),
+        cameras=getattr(launch, "cameras", True),
     )
 
 

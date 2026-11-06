@@ -4,10 +4,20 @@
 import { Button, Flex, Heading, Link, Text, toast, View } from '@geti-ui/ui';
 
 import { getApiErrorMessage } from '../../api/errors';
+import { capitalized } from './robot-simulation';
 import { useFooterSimulations } from './use-footer-simulations';
 import { useStopSimulation } from './use-simulation';
 
 import classes from './simulation.module.css';
+
+const plural = (noun: string) => `${noun}s`;
+
+/** "Simulations", "VR leaders", or "Simulations and VR leaders": what the section lists. */
+export const processesHeading = (nouns: string[]): string => {
+    const text = [...new Set(nouns)].map(plural).join(' and ');
+
+    return capitalized(text);
+};
 
 /** The Simulations section of the footer's runtime popover: Stop for Studio's, Open for others. */
 export const SimulationsSection = () => {
@@ -21,7 +31,7 @@ export const SimulationsSection = () => {
     return (
         <View marginTop='size-200'>
             <Heading level={4} margin={0} marginBottom='size-100'>
-                Simulations
+                {processesHeading(simulations.map(({ noun }) => noun))}
             </Heading>
             <Flex direction='column' gap='size-100'>
                 {simulations.map((simulation) => {

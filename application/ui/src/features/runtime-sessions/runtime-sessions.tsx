@@ -59,13 +59,17 @@ const SessionRow = ({ session }: { session: SchemaRuntimeSessionInfo }) => {
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
-const statusLabel = (sessions: number, simulations: number) =>
-    [
-        sessions > 0 || simulations === 0 ? plural(sessions, 'runtime session') : null,
-        simulations > 0 ? plural(simulations, 'simulation') : null,
+const statusLabel = (sessions: number, processes: string[]) => {
+    const counts = new Map<string, number>();
+    processes.forEach((noun) => counts.set(noun, (counts.get(noun) ?? 0) + 1));
+
+    return [
+        sessions > 0 || processes.length === 0 ? plural(sessions, 'runtime session') : null,
+        ...[...counts].map(([noun, count]) => plural(count, noun)),
     ]
         .filter(Boolean)
         .join(' · ');
+};
 
 /**
  * Footer badge for the live runtime sessions and running simulations, with a list to stop them
@@ -73,7 +77,8 @@ const statusLabel = (sessions: number, simulations: number) =>
  */
 export const RuntimeSessionStatus = () => {
     const { data: sessions } = useRuntimeSessions();
-    const simulationCount = useFooterSimulations().length;
+    const processes = useFooterSimulations().map(({ noun }) => noun);
+    const simulationCount = processes.length;
     const sessionCount = sessions?.length ?? 0;
 
     if (sessionCount === 0 && simulationCount === 0) {
@@ -83,7 +88,7 @@ export const RuntimeSessionStatus = () => {
     return (
         <DialogTrigger type='popover'>
             <ActionButton isQuiet>
-                <StatusLight variant='positive'>{statusLabel(sessionCount, simulationCount)}</StatusLight>
+                <StatusLight variant='positive'>{statusLabel(sessionCount, processes)}</StatusLight>
             </ActionButton>
             <Dialog>
                 <Heading>Runtime sessions</Heading>
