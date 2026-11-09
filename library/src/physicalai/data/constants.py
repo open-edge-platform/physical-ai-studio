@@ -32,6 +32,10 @@ TIMESTAMP = "timestamp"
 INFO = "info"
 EXTRA = "extra"
 
+# Flow-matching start noise, fed to the exported pi05 graph by the runtime.
+# Defined here, not imported, so the library keeps working with older runtimes.
+NOISE = "noise"
+
 __all__ = [
     "ACTION",
     "EPISODE_INDEX",
@@ -43,6 +47,7 @@ __all__ = [
     "INFO",
     "NEXT_REWARD",
     "NEXT_SUCCESS",
+    "NOISE",
     "PREV_CHUNK_LEFT_OVER",
     "RTC_EXECUTION_HORIZON",
     "RTC_INFERENCE_DELAY",

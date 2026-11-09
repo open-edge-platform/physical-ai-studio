@@ -49,7 +49,9 @@ def test_get_thumbnail_delegates_to_episode_thumbnail_service(monkeypatch: pytes
     dataset = _make_dataset()
     project = _make_project([dataset])
     dataset_client = MagicMock()
-    dataset_client.get_episode_infos.return_value = [EpisodeInfo(episode_index=3, tasks=["task"], length=20, fps=30)]
+    dataset_client.get_episode_infos.return_value = [
+        EpisodeInfo(episode_index=3, tasks=["task"], length=20, fps=30, videos={})
+    ]
     monkeypatch.setattr("internal_datasets.utils.get_internal_read_dataset", lambda _dataset: dataset_client)
 
     expected = EpisodeThumbnail(

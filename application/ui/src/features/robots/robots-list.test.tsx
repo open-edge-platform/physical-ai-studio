@@ -26,6 +26,7 @@ const so101Robot = {
     payload: {
         connection_string: '',
         serial_number: 'SO101-001',
+        unit: 'normalized' as const,
         calibration: {
             shoulder_pan: { id: 1, drive_mode: 0, homing_offset: 10, range_min: -100, range_max: 100 },
         },
@@ -102,7 +103,7 @@ describe('RobotsList', () => {
     it('disables Export calibration when no calibration is active', async () => {
         const noCalRobot = {
             ...so101Robot,
-            payload: { connection_string: '', serial_number: 'SO101-001' },
+            payload: { connection_string: '', serial_number: 'SO101-001', unit: 'normalized' as const },
         };
         server.use(
             http.get(ROBOTS_PATH, () => HttpResponse.json([noCalRobot])),

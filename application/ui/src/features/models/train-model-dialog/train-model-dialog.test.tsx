@@ -6,6 +6,7 @@ import { SchemaModel } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
+import { getMockedEpisode } from '../../../test-utils/mocks/mock-episode';
 import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
 import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
 import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
@@ -99,7 +100,7 @@ const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) =>
             })
         ),
         http.get('/api/dataset/{dataset_id}/episodes', () =>
-            HttpResponse.json([{ episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 }])
+            HttpResponse.json([getMockedEpisode({ episode_index: 0, tasks: ['Test task'], length: 100 })])
         ),
         http.get('/api/dataset/{dataset_id}/episodes/{episode_index}', () =>
             HttpResponse.json({
@@ -348,8 +349,8 @@ describe('TrainModelDialog', () => {
         server.use(
             http.get('/api/dataset/{dataset_id}/episodes', () =>
                 HttpResponse.json([
-                    { episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 },
-                    { episode_index: 1, tasks: ['Test task'], length: 100, fps: 30 },
+                    getMockedEpisode({ episode_index: 0, tasks: ['Test task'], length: 100 }),
+                    getMockedEpisode({ episode_index: 1, tasks: ['Test task'], length: 100 }),
                 ])
             )
         );

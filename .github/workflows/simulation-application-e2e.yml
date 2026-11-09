@@ -33,7 +33,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, gpu]
     timeout-minutes: 450 # 390 minutes of tests plus setup, cleanup, and upload headroom.
     steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -51,6 +51,7 @@ jobs:
       - uses: $/.github/actions/simulation-environment
       - uses: $/.github/actions/start-simulator
       - name: Verify seeded expert and no-action episodes
+        id: controls
         timeout-minutes: 30
         working-directory: application/backend
         run: |
@@ -59,6 +60,7 @@ jobs:
             -k 'test_simulator_controls or test_camera_latest_frame_does_not_backlog or test_application_simulation_environment' \
             -v --junitxml="$SIM_E2E_OUTPUT_DIR/controls-junit.xml"
       - name: Train fresh model and run its deployment bundle
+        id: training
         timeout-minutes: 360
         working-directory: application/backend
         run: |
@@ -88,7 +90,9 @@ jobs:
             .simulation-results/full-act/runtime.zip
           compression-level: 0
           retention-days: 2
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Retain simulation evidence and video
+        id: evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: sim-full-act
@@ -100,3 +104,23 @@ jobs:
             .simulation-results/full-act/runtime/runtime.yaml
             .simulation-results/full-act/runtime/README.md
           retention-days: 14
+      - name: Publish simulation job summary
+        if: always()
+        working-directory: application/backend
+        env:
+          SIM_E2E_ARTIFACT_URL: ${{ steps.evidence.outputs.artifact-url }}
+          SIM_E2E_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SIM_E2E_TRAINING_OUTCOME: ${{ steps.training.outcome }}
+        run: |
+          if ! uv run --isolated --no-project --with 'defusedxml>=0.7.1' python ../../.github/scripts/simulation_summary.py; then
+            {
+              printf '# 🦾 Conveyor simulation — ACT\n\n'
+              printf '⚠️ Detailed summary unavailable: the renderer or its dependencies failed. Evidence was not evaluated.\n\n'
+              printf '| Phase | Outcome |\n| --- | --- |\n'
+              printf '| Controls | %s |\n' "$SIM_E2E_CONTROLS_OUTCOME"
+              printf '| Training and deployment | %s |\n' "$SIM_E2E_TRAINING_OUTCOME"
+              if [ -n "$SIM_E2E_ARTIFACT_URL" ]; then
+                printf '\n[Download all simulation evidence](%s)\n' "$SIM_E2E_ARTIFACT_URL"
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

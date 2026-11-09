@@ -16,7 +16,7 @@ const robot = {
     id: ROBOT_ID,
     name: 'Sim arm',
     type: 'SO101_Follower' as const,
-    payload: { connection_string: '', serial_number: '' },
+    payload: { connection_string: '', serial_number: '', unit: 'normalized' as const },
 };
 
 const mockSimulatedRobot = (connection_status: 'online' | 'offline', simulation: object) => {
