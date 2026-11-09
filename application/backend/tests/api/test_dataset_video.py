@@ -69,3 +69,41 @@ def test_etag_changes_when_a_recording_grows_the_file(dataset: Dataset) -> None:
 
     assert after.headers["etag"] != before.headers["etag"]
     assert after.headers["content-range"] == "bytes 0-8191/8192"
+
+
+@pytest.mark.parametrize("video_path", ["%2e%2e/secret.mp4", "videos/%2e%2e/%2e%2e/secret.mp4", "/etc/passwd"])
+def test_video_rejects_unsafe_paths(dataset: Dataset, video_path: str) -> None:
+    response = TestClient(app).get(f"/api/dataset/{dataset.id}/video/{video_path}")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("outside_dir", ["outside", "{dataset_id}-other"])
+def test_video_rejects_symlinks_outside_dataset(dataset: Dataset, outside_dir: str) -> None:
+    dataset_path = Path(dataset.path)
+    outside = dataset_path.parent / outside_dir.format(dataset_id=dataset.id) / "secret.mp4"
+    outside.parent.mkdir(parents=True, exist_ok=True)
+    outside.write_bytes(b"private")
+    (dataset_path / "link.mp4").symlink_to(outside)
+
+    response = TestClient(app).get(f"/api/dataset/{dataset.id}/video/link.mp4")
+
+    assert response.status_code == 403
+
+
+def test_video_allows_symlinks_within_dataset(dataset: Dataset) -> None:
+    dataset_path = Path(dataset.path)
+    (dataset_path / "link.mp4").symlink_to(dataset_path / VIDEO_PATH)
+
+    response = TestClient(app).get(f"/api/dataset/{dataset.id}/video/link.mp4")
+
+    assert response.status_code == 200
+    assert response.content == b"\x00" * 4096
+    assert "no-cache" in response.headers["cache-control"]
+
+
+@pytest.mark.parametrize("video_path", ["missing.mp4", "videos"])
+def test_video_returns_not_found_for_missing_files_and_directories(dataset: Dataset, video_path: str) -> None:
+    response = TestClient(app).get(f"/api/dataset/{dataset.id}/video/{video_path}")
+
+    assert response.status_code == 404

@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -125,12 +126,13 @@ async def dataset_video_endpoint(
     if normalized_video_path.is_absolute() or ".." in normalized_video_path.parts:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
 
-    requested_path = (dataset_base / normalized_video_path).resolve()
+    requested_path = os.path.realpath(dataset_base / normalized_video_path)
 
-    if not requested_path.is_relative_to(dataset_base):
+    # Include the separator so sibling directories sharing the dataset prefix are excluded.
+    if not requested_path.startswith(f"{dataset_base}{os.sep}"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
 
-    if not requested_path.is_file():
+    if not Path(requested_path).is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
 
     # Recording appends episodes to the same mp4, so a cached copy goes stale: it ends where the
