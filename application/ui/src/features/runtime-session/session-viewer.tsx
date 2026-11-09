@@ -34,7 +34,7 @@ const buildPanels = (api: DockviewApi, environment: SchemaSessionEnvironment) =>
         if (!api.panels.some((panel) => panel.id === camera.camera_id)) {
             api.addPanel({
                 id: camera.camera_id,
-                title: camera.name,
+                title: `${camera.name} (${camera.width}x${camera.height})`,
                 component: 'camera',
                 params: { camera_id: camera.camera_id },
                 position: { direction: 'left', referencePanel: '' },
