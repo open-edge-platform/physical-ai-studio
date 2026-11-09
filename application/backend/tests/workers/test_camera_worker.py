@@ -93,3 +93,108 @@ class TestCameraWorker:
         # A frame at another resolution is resized to the slot.
         assert sample.value.shape == (480, 640, 3)
         assert np.all(sample.value == 2)
+
+
+def _fast_worker(store, **kwargs) -> CameraWorker:
+    """A worker that gives up on a silent camera, and retries, within milliseconds."""
+    worker = CameraWorker(_make_config(), store, "cam", **kwargs)
+    worker.stale_after_s = 0.05
+    worker.reconnect_interval_s = 0.01
+    return worker
+
+
+def _frozen_camera() -> MagicMock:
+    """A camera whose publisher has exited: ``read_latest`` keeps returning its last frame."""
+    camera = MagicMock()
+    camera.read_latest.return_value = _make_frame(value=1, timestamp=1.0)
+    camera.is_connected = True
+    return camera
+
+
+def _camera_that_stops(worker: CameraWorker, frame) -> MagicMock:
+    """A camera that delivers ``frame`` once, then stops the worker."""
+    camera = MagicMock()
+    camera.is_connected = True
+
+    def read_latest():
+        worker.request_stop()
+        return frame
+
+    camera.read_latest.side_effect = read_latest
+    return camera
+
+
+class TestCameraReconnect:
+    def test_a_camera_that_stops_sending_frames_is_reopened(self, store):
+        worker = _fast_worker(store)
+        old = _frozen_camera()
+        with patch("workers.camera_worker.build_shared_camera") as mock_build:
+            new = _camera_that_stops(worker, _make_frame(value=7, timestamp=5.0))
+            mock_build.return_value = new
+            asyncio.run(worker.run_loop(old))
+
+        old.disconnect.assert_called_once()
+        new.connect.assert_called_once()
+        sample = store.read_observation("cam")
+        assert sample.timestamp == 5.0
+        assert np.all(sample.value == 7)
+
+    def test_reopening_keeps_trying_until_the_camera_is_back(self, store):
+        from physicalai.capture.errors import CaptureError
+
+        worker = _fast_worker(store)
+        absent = MagicMock()
+        absent.connect.side_effect = CaptureError("No camera found")
+        with patch("workers.camera_worker.build_shared_camera") as mock_build:
+            back = _camera_that_stops(worker, _make_frame(value=9, timestamp=6.0))
+            mock_build.side_effect = [absent, absent, back]
+            asyncio.run(worker.run_loop(_frozen_camera()))
+
+        assert mock_build.call_count == 3
+        assert store.read_observation("cam").timestamp == 6.0
+
+    def test_a_stop_while_reopening_ends_the_loop(self, store):
+        from physicalai.capture.errors import CaptureError
+
+        worker = _fast_worker(store)
+
+        def build(**_kwargs):
+            worker.request_stop()
+            absent = MagicMock()
+            absent.connect.side_effect = CaptureError("No camera found")
+            return absent
+
+        with patch("workers.camera_worker.build_shared_camera", side_effect=build):
+            asyncio.run(worker.run_loop(_frozen_camera()))
+
+        assert worker.should_stop()
+
+    def test_reconnecting_is_reported_and_then_running_again(self, store):
+        worker = _fast_worker(store, component="environment/cam")
+        worker._bus = MagicMock()
+        with (
+            patch("workers.camera_worker.build_shared_camera") as mock_build,
+            patch("workers.camera_worker.publish_status") as mock_status,
+        ):
+            mock_build.return_value = _camera_that_stops(worker, _make_frame(timestamp=5.0))
+            asyncio.run(worker.run_loop(_frozen_camera()))
+
+        states = [call.args[2] for call in mock_status.call_args_list]
+        assert states == ["starting", "running"]
+        assert "reconnecting" in mock_status.call_args_list[0].args[3]
+
+    def test_lifecycle_releases_the_reopened_camera(self, store):
+        worker = _fast_worker(store)
+        old = _frozen_camera()
+        with patch("workers.camera_worker.build_shared_camera") as mock_build:
+            new = _camera_that_stops(worker, _make_frame(timestamp=5.0))
+            mock_build.side_effect = [old, new]
+
+            async def run() -> None:
+                async with worker.lifecycle() as camera:
+                    await worker.run_loop(camera)
+
+            asyncio.run(run())
+
+        old.disconnect.assert_called_once()
+        new.disconnect.assert_called_once()

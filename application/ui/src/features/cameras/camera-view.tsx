@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Flex, ProgressCircle } from '@geti-ui/ui';
+import { AlertCircle } from '@geti-ui/ui/icons';
 
 import { InlineAlert } from '../robots/setup-wizard/shared/inline-alert';
 import { useFittedMediaSize } from './use-fitted-media-size';
+
+import classes from './camera-view.module.css';
 
 /** Where a camera view gets its JPEG frames from: a camera socket or a runtime session. */
 export interface FrameSource {
@@ -85,12 +88,15 @@ export const CameraView = ({
     width,
     height,
     error,
+    warning,
 }: {
     source: FrameSource;
     label: string;
     width?: number | null;
     height?: number | null;
     error?: string | null;
+    /** Shown over the image, which stays visible: the last frame, when the camera has gone quiet. */
+    warning?: string | null;
 }) => {
     const fitted = useFittedMediaSize(Number(width), Number(height));
 
@@ -103,8 +109,17 @@ export const CameraView = ({
     }
 
     return (
-        <div ref={fitted.containerRef} style={{ height: '100%', width: '100%' }}>
+        <div ref={fitted.containerRef} style={{ height: '100%', width: '100%', position: 'relative' }}>
             <CameraCanvas source={source} label={label} width={fitted.width} height={fitted.height} />
+            {warning && (
+                <>
+                    <div className={classes.frozenScrim} />
+                    <div role='alert' className={classes.warning}>
+                        <AlertCircle UNSAFE_className={classes.warningIcon} aria-hidden='true' />
+                        <span>{warning}</span>
+                    </div>
+                </>
+            )}
         </div>
     );
 };

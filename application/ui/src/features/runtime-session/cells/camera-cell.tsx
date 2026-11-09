@@ -4,8 +4,11 @@ import { CameraView } from '../../cameras/camera-view';
 import { useRuntimeSession } from '../runtime-session-provider';
 
 export const CameraCell = ({ camera_id }: { camera_id: string }) => {
-    const { state, frame } = useRuntimeSession();
+    const { state, statuses, frame } = useRuntimeSession();
     const camera = state?.environment?.cameras.find((candidate) => candidate.camera_id === camera_id);
+    const status = camera && statuses[`environment/${camera.key}`];
+    // A camera reports ``starting`` with a reason only after it stopped sending frames and is reconnecting.
+    const isReconnecting = status?.state === 'starting' && Boolean(status.error);
 
     if (camera === undefined) {
         return (
@@ -20,6 +23,7 @@ export const CameraCell = ({ camera_id }: { camera_id: string }) => {
             label={`Camera: ${camera.key}`}
             width={camera.width}
             height={camera.height}
+            warning={isReconnecting ? 'Camera frozen: no new frames. Reconnecting…' : null}
         />
     );
 };
