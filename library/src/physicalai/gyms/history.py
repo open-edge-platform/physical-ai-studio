@@ -28,23 +28,30 @@ class HistoryGym(Gym):
     each window with the initial value. Selected values always gain a time
     axis, including when ``n_obs_steps=1``.
 
+    ``stride`` spaces window entries by environment steps. History advances on
+    every step, and the newest entry is always the current observation.
+
     The wrapped gym must reset explicitly between episodes; independent
     vector-environment auto-resets are not supported.
     """
 
-    def __init__(self, gym: Gym, n_obs_steps: int, keys: set[str]) -> None:
+    def __init__(self, gym: Gym, n_obs_steps: int, keys: set[str], stride: int = 1) -> None:
         """Initialize an observation-history wrapper.
 
         Args:
             gym: Environment implementing the Gym interface.
             n_obs_steps: Positive history window length.
             keys: Nonempty set of tensor or NumPy observation paths to stack.
+            stride: Positive spacing between window entries in environment steps.
 
         Raises:
-            ValueError: If the window length or keys are invalid.
+            ValueError: If the window length, stride, or keys are invalid.
         """
         if isinstance(n_obs_steps, bool) or not isinstance(n_obs_steps, int) or n_obs_steps < 1:
             msg = "n_obs_steps must be a positive integer."
+            raise ValueError(msg)
+        if isinstance(stride, bool) or not isinstance(stride, int) or stride < 1:
+            msg = "stride must be a positive integer."
             raise ValueError(msg)
         field_names = Observation.keys()
         if not keys or any(
@@ -61,9 +68,10 @@ class HistoryGym(Gym):
             raise ValueError(msg)
         self.gym = gym
         self.n_obs_steps = n_obs_steps
+        self.stride = stride
         self.keys = frozenset(keys)
         self._history: dict[str, deque[torch.Tensor | np.ndarray]] = {
-            key: deque(maxlen=n_obs_steps) for key in sorted(keys)
+            key: deque(maxlen=(n_obs_steps - 1) * stride + 1) for key in sorted(keys)
         }
 
     def _stack_observation(self, observation: Observation) -> Observation:
@@ -89,12 +97,13 @@ class HistoryGym(Gym):
                 raise ValueError(msg)
             snapshot = value.clone() if isinstance(value, torch.Tensor) else value.copy()
             history.append(snapshot)
-            while len(history) < self.n_obs_steps:
+            while len(history) < (self.n_obs_steps - 1) * self.stride + 1:
                 history.appendleft(snapshot)
+            window = tuple(history)[:: self.stride]
             stacked = (
-                torch.stack(cast("tuple[torch.Tensor, ...]", tuple(history)), dim=1)
+                torch.stack(cast("tuple[torch.Tensor, ...]", window), dim=1)
                 if isinstance(value, torch.Tensor)
-                else np.stack(tuple(history), axis=1)
+                else np.stack(window, axis=1)
             )
             if nested_key:
                 if field not in updates:

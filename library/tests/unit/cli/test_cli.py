@@ -102,6 +102,7 @@ class TestConfigParsing:
                                 "init_args": {
                                     "gym": {"class_path": "physicalai.gyms.PushTGym"},
                                     "n_obs_steps": 2,
+                                    "stride": 2,
                                     "keys": ["images.top"],
                                 },
                             }
@@ -114,6 +115,7 @@ class TestConfigParsing:
         try:
             assert isinstance(gym, HistoryGym)
             assert isinstance(gym.gym, PushTGym)
+            assert gym.stride == 2
             observation, _ = gym.reset(seed=42)
             assert observation.images["top"].shape[:2] == (1, 2)
         finally:

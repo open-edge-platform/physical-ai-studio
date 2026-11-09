@@ -20,8 +20,9 @@ from physicalai.gyms.step_limit import StepLimit
 
 
 @pytest.mark.parametrize("batch_size", [1, 3])
-@pytest.mark.parametrize("n_obs_steps", [1, 3])
-def test_history_values_and_reset(batch_size, n_obs_steps):
+@pytest.mark.parametrize("n_obs_steps", [1, 3, 4])
+@pytest.mark.parametrize("stride", [1, 2, 3])
+def test_history_values_and_reset(batch_size, n_obs_steps, stride):
     """Selected keys advance in order, snapshots survive backend buffer reuse."""
     frame = torch.zeros(batch_size, 3, 4, 4)
     state = np.zeros((batch_size, 2), dtype=np.float32)
@@ -29,27 +30,44 @@ def test_history_values_and_reset(batch_size, n_obs_steps):
     gym = Mock()
     gym.reset.return_value = observation, {"reset": True}
     gym.step.return_value = observation, 1.0, False, False, {"step": True}
-    env = HistoryGym(gym, n_obs_steps=n_obs_steps, keys={"images.image", "state"})
+    env = HistoryGym(gym, n_obs_steps=n_obs_steps, keys={"images.image", "state"}, stride=stride)
 
     initial, info = env.reset(seed=7, episode_index=2)
     gym.reset.assert_called_once_with(seed=7, episode_index=2)
     assert info == {"reset": True}
     assert initial.images["image"].shape == (batch_size, n_obs_steps, 3, 4, 4)
+    assert initial.images["image"][0, :, 0, 0, 0].tolist() == [0] * n_obs_steps
+    assert initial.state.shape == (batch_size, n_obs_steps, 2)
+    assert initial.state[0, :, 0].tolist() == [0] * n_obs_steps
     assert initial.images["image1"] is observation.images["image1"]
     assert observation.images["image"].shape == (batch_size, 3, 4, 4)
 
-    for step in range(1, 5):
+    for step in range(1, (n_obs_steps - 1) * stride + 4):
         frame.fill_(step)
         state.fill(step)
         current, reward, terminated, truncated, info = env.step(torch.zeros(batch_size, 2))
-        expected = [max(0, i) for i in range(step - n_obs_steps + 1, step + 1)]
+        expected = [max(0, step - offset * stride) for offset in reversed(range(n_obs_steps))]
         assert current.images["image"][0, :, 0, 0, 0].tolist() == expected
         assert current.state[0, :, 0].tolist() == expected
         assert (reward, terminated, truncated, info) == (1.0, False, False, {"step": True})
     assert torch.count_nonzero(initial.images["image"]) == 0
     assert np.count_nonzero(initial.state) == 0
+    frame.fill_(100)
+    state.fill(100)
     reset, _ = env.reset()
-    assert reset.images["image"][0, :, 0, 0, 0].tolist() == [4] * n_obs_steps
+    assert reset.images["image"][0, :, 0, 0, 0].tolist() == [100] * n_obs_steps
+    assert reset.state[0, :, 0].tolist() == [100] * n_obs_steps
+    frame.fill_(101)
+    state.fill(101)
+    current, *_ = env.step(torch.zeros(batch_size, 2))
+    assert current.images["image"][0, :, 0, 0, 0].tolist() == [100] * (n_obs_steps - 1) + [101]
+    assert current.state[0, :, 0].tolist() == [100] * (n_obs_steps - 1) + [101]
+
+
+@pytest.mark.parametrize("stride", [0, -1, 1.5, True, False, "2", None])
+def test_invalid_stride(stride):
+    with pytest.raises(ValueError, match="stride must be a positive integer"):
+        HistoryGym(Mock(), n_obs_steps=4, keys={"state"}, stride=stride)
 
 
 @pytest.mark.parametrize(
@@ -79,7 +97,7 @@ def test_nested_parser_and_rollout(outer_limit):
         "init_args": {"gym_id": "CartPole-v1", "render_mode": None},
     }
     wrappers = [
-        ("physicalai.gyms.HistoryGym", {"n_obs_steps": 2, "keys": ["state"]}),
+        ("physicalai.gyms.HistoryGym", {"n_obs_steps": 2, "keys": ["state"], "stride": 2}),
         ("physicalai.gyms.step_limit.StepLimit", {"max_steps": 3}),
     ]
     for class_path, init_args in wrappers if outer_limit else reversed(wrappers):
@@ -95,6 +113,7 @@ def test_nested_parser_and_rollout(outer_limit):
     try:
         assert isinstance(env, StepLimit if outer_limit else HistoryGym)
         assert isinstance(env.gym.gym, GymnasiumGym)
+        assert (env.gym if outer_limit else env).stride == 2
         assert isinstance(env, Gym)
         result = rollout(env, policy, seed=42, return_observations=True)
         assert result["episode_length"] == 3
@@ -177,9 +196,10 @@ def test_step_outputs_are_passed_through(batched):
 
 
 @pytest.mark.parametrize("reconstruct", ["deepcopy", "pickle"])
-def test_reconstruction_preserves_history(reconstruct):
+@pytest.mark.parametrize("stride", [1, 2])
+def test_reconstruction_preserves_history(reconstruct, stride):
     """Copy and unpickle wrappers before gym has been restored without recursion."""
-    env = HistoryGym(GymnasiumGym("CartPole-v1", render_mode=None), n_obs_steps=2, keys={"state"})
+    env = HistoryGym(GymnasiumGym("CartPole-v1", render_mode=None), n_obs_steps=2, keys={"state"}, stride=stride)
     restored = None
     try:
         env.reset(seed=42)
@@ -191,7 +211,8 @@ def test_reconstruction_preserves_history(reconstruct):
             restored = pickle.loads(pickle.dumps(env))
         assert restored.gym is not env.gym
         assert restored.keys == env.keys
-        torch.testing.assert_close(torch.stack(tuple(restored._history["state"]), dim=1), observation.state)
+        assert restored.stride == stride
+        torch.testing.assert_close(torch.stack(tuple(restored._history["state"])[::stride], dim=1), observation.state)
         expected, *_ = env.step(torch.tensor(0))
         actual, *_ = restored.step(torch.tensor(0))
         torch.testing.assert_close(actual.state, expected.state)
