@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from api.dependencies import get_robot_catalog_service, get_robot_client_factory
 from main import app
 from robots.catalog.registry import RobotCatalogRegistry
+from workers.robot_worker import claim_devices
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -40,6 +41,7 @@ class FakeDriver:
     joint_names: list[str] = field(default_factory=lambda: list(JOINT_NAMES))
     calls: list[str] = field(default_factory=list)
     fail_next_release: bool = False
+    device_ids: tuple[str, ...] = field(default_factory=lambda: (f"fake:{uuid4().hex}",))
 
     def connect(self) -> None:
         self.calls.append("connect")
@@ -186,6 +188,24 @@ def test_failed_release_disconnects_so_start_can_be_retried(client: TestClient, 
 
     assert error["message"] == "Servo did not unlock"
     assert driver.calls[:5] == ["connect", "release", "disconnect", "connect", "release"]
+
+
+def test_start_refuses_a_device_something_else_holds(client: TestClient, driver: FakeDriver) -> None:
+    with claim_devices("a-session", driver.device_ids), client.websocket_connect(_url()) as websocket:
+        websocket.send_json({"command": "start", "robot": _robot()})
+        error = _receive_until(websocket, "error")
+
+    assert error["error_code"] == "robot_device_already_owned"
+    assert "connect" not in driver.calls
+
+
+def test_the_device_is_released_when_the_wizard_closes(client: TestClient, driver: FakeDriver) -> None:
+    with client.websocket_connect(_url()) as websocket:
+        websocket.send_json({"command": "start", "robot": _robot()})
+        _receive_until(websocket, "status", phase="positioning")
+
+    with claim_devices("a-session", driver.device_ids):
+        pass
 
 
 def test_set_zero_before_start_is_a_command_error(client: TestClient) -> None:

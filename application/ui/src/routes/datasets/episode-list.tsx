@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
-import { Checkbox, Flex, Loading, Size, View, type Selection } from '@geti-ui/ui';
+import { Checkbox, Flex, Size, View, type Selection } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
 import { fetchClient } from '../../api/client';
 import { VirtualizedGridLayout } from '../../components/virtualized-grid-layout/virtualized-grid-layout';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { EpisodeThumbnail } from '../../features/datasets/episodes/episode-thumbnail/episode-thumbnail';
 import { EpisodeSummary, useDataset } from './dataset-provider';
 
 import classes from './episode-list.module.css';
@@ -18,34 +19,6 @@ interface EpisodeListProps {
     thumbnailCamera?: string;
     isThumbnailCameraLoading?: boolean;
 }
-
-interface EpisodeThumbnailProps {
-    src: string | undefined;
-    alt: string;
-    isLoading: boolean;
-}
-
-const EpisodeThumbnail = ({ src, alt, isLoading }: EpisodeThumbnailProps) => {
-    const [failed, setFailed] = useState(false);
-
-    if (src === undefined && isLoading) {
-        return (
-            <div className={classes.episodeImagePlaceholder}>
-                <Loading isIndeterminate size='S' aria-label='Loading thumbnail' />
-            </div>
-        );
-    }
-
-    if (src === undefined || failed) {
-        return (
-            <div role='img' aria-label={alt} className={classes.episodeImagePlaceholder}>
-                No preview
-            </div>
-        );
-    }
-
-    return <img alt={alt} src={src} className={classes.episodeImage} onError={() => setFailed(true)} />;
-};
 
 const episodeGridLayoutOptions = {
     minItemSize: new Size(200, 180),
@@ -112,6 +85,21 @@ export const EpisodeList = ({
                                       },
                                   });
 
+                        const episodeVideo =
+                            thumbnailCamera === undefined ? undefined : episode.videos[thumbnailCamera];
+
+                        const previewVideo =
+                            episodeVideo === undefined
+                                ? undefined
+                                : {
+                                      url: fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
+                                          params: { path: { dataset_id, video_path: episodeVideo.path } },
+                                      }),
+                                      start: episodeVideo.start,
+                                      end: episodeVideo.end,
+                                      fps: episode.fps,
+                                  };
+
                         return (
                             <View
                                 UNSAFE_className={clsx(classes.episodeItem, {
@@ -123,6 +111,7 @@ export const EpisodeList = ({
                                     alt={`Camera frame of ${episode.episode_index}`}
                                     src={thumbnailSrc}
                                     isLoading={isThumbnailCameraLoading}
+                                    video={previewVideo}
                                 />
                                 <Flex
                                     alignItems={'center'}

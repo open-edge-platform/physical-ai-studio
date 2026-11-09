@@ -1,0 +1,126 @@
+name: Simulation application E2E
+
+on:
+  schedule:
+    - cron: "0 19 * * *" # Daily at 19:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  # Also serialize with runs started by the previous library workflows.
+  group: simulation-library-gpu
+  cancel-in-progress: false
+
+env:
+  MUJOCO_GL: egl
+  PYOPENGL_PLATFORM: egl
+  CUDA_VISIBLE_DEVICES: ${{ vars.SIM_E2E_CUDA_VISIBLE_DEVICES || '0' }}
+  MUJOCO_EGL_DEVICE_ID: ${{ vars.SIM_E2E_CUDA_VISIBLE_DEVICES || '0' }}
+  SIM_E2E_ACCELERATOR: cuda
+  SIM_E2E_HTTP_URL: http://127.0.0.1:8080
+  SIM_E2E_OWNER: sim-daily-${{ github.run_id }}-${{ github.run_attempt }}
+  SIM_E2E_RECORD_VIDEO: true
+  SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/full-act
+  SIM_E2E_CONTROLS_FILE: ${{ github.workspace }}/.simulation-results/full-act/controls.json
+  STORAGE_DIR: ${{ github.workspace }}/.simulation-results/full-act/studio
+  SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/full-act/studio/settings.json
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+jobs:
+  simulation:
+    name: ACT recording to inference
+    runs-on: [self-hosted, Linux, X64, gpu]
+    timeout-minutes: 450 # 390 minutes of tests plus setup, cleanup, and upload headroom.
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443 github.com:443 raw.githubusercontent.com:443
+            huggingface.co:443 cas-server.xethub.hf.co:443 transfer.xethub.hf.co:443
+            us.aws.cdn.hf.co:443 download.pytorch.org:443 download-r2.pytorch.org:443
+            files.pythonhosted.org:443 pypi.org:443 releases.astral.sh:443
+            release-assets.githubusercontent.com:443 archive.ubuntu.com:80
+            security.ubuntu.com:80 azure.archive.ubuntu.com:80
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/simulation-environment
+      - uses: $/.github/actions/start-simulator
+      - name: Verify seeded expert and no-action episodes
+        id: controls
+        timeout-minutes: 30
+        working-directory: application/backend
+        run: |
+          uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
+            tests/integration/test_simulation_camera_freshness.py \
+            -k 'test_simulator_controls or test_camera_latest_frame_does_not_backlog or test_application_simulation_environment' \
+            -v --junitxml="$SIM_E2E_OUTPUT_DIR/controls-junit.xml"
+      - name: Train fresh model and run its deployment bundle
+        id: training
+        timeout-minutes: 360
+        working-directory: application/backend
+        run: |
+          uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
+            -k test_train_export_and_run_in_simulation -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
+      - name: Stop owner
+        if: always()
+        run: |
+          if test -f "$SIM_E2E_OUTPUT_DIR/owner.pid"; then
+            pid=$(< "$SIM_E2E_OUTPUT_DIR/owner.pid")
+            if ps -p "$pid" -o args= | grep -F -- "--name $SIM_E2E_OWNER" > /dev/null; then
+              curl --silent --max-time 3 -X POST "$SIM_E2E_HTTP_URL/shutdown" || true
+              kill "$pid" 2>/dev/null || true
+            fi
+          fi
+      - name: Retain training and deployment outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: training-outputs-act
+          path: |
+            .simulation-results/full-act/*.json
+            .simulation-results/full-act/studio/models/
+            .simulation-results/full-act/studio/cache/*/*.ckpt
+            .simulation-results/full-act/studio/cache/*/version_*/
+            .simulation-results/full-act/studio/logs/
+            .simulation-results/full-act/runtime.zip
+          compression-level: 0
+          retention-days: 2
+      - name: Retain simulation evidence and video
+        id: evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: sim-full-act
+          path: |
+            .simulation-results/full-act/*.json
+            .simulation-results/full-act/*.xml
+            .simulation-results/full-act/*.log
+            .simulation-results/full-act/*.mp4
+            .simulation-results/full-act/runtime/runtime.yaml
+            .simulation-results/full-act/runtime/README.md
+          retention-days: 14
+      - name: Publish simulation job summary
+        if: always()
+        working-directory: application/backend
+        env:
+          SIM_E2E_ARTIFACT_URL: ${{ steps.evidence.outputs.artifact-url }}
+          SIM_E2E_CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          SIM_E2E_TRAINING_OUTCOME: ${{ steps.training.outcome }}
+        run: |
+          if ! uv run --isolated --no-project --with 'defusedxml>=0.7.1' python ../../.github/scripts/simulation_summary.py; then
+            {
+              printf '# 🦾 Conveyor simulation — ACT\n\n'
+              printf '⚠️ Detailed summary unavailable: the renderer or its dependencies failed. Evidence was not evaluated.\n\n'
+              printf '| Phase | Outcome |\n| --- | --- |\n'
+              printf '| Controls | %s |\n' "$SIM_E2E_CONTROLS_OUTCOME"
+              printf '| Training and deployment | %s |\n' "$SIM_E2E_TRAINING_OUTCOME"
+              if [ -n "$SIM_E2E_ARTIFACT_URL" ]; then
+                printf '\n[Download all simulation evidence](%s)\n' "$SIM_E2E_ARTIFACT_URL"
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

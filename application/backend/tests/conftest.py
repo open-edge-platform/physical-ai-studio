@@ -139,3 +139,7 @@ def test_dataset():
             "environment_id": "7656679b-25fe-4af5-a19d-73e7df16f384",
         }
     )
+
+
+# Loaded after this module, so after STORAGE_DIR is set above.
+pytest_plugins = ["tests.runtime_session.fixtures"]
