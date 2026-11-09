@@ -250,6 +250,10 @@ export const Layout = () => {
 
     return (
         <CollapsibleSidebarLayout
+            paddingTop={'size-200'}
+            paddingBottom={'size-200'}
+            paddingStart={'size-200'}
+            paddingEnd={'size-200'}
             toolbar={
                 <AddResourceButton to={paths.project.cameras.new({ project_id })}>
                     Configure new camera

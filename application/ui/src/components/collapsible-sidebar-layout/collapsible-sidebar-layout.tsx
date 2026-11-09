@@ -34,6 +34,10 @@ interface CollapsibleSidebarLayoutProps {
     children: ReactNode;
     side?: 'left' | 'right';
     width?: DimensionValue;
+    paddingTop?: DimensionValue;
+    paddingBottom?: DimensionValue;
+    paddingStart?: DimensionValue;
+    paddingEnd?: DimensionValue;
 }
 
 export const CollapsibleSidebarLayout = ({
@@ -42,6 +46,10 @@ export const CollapsibleSidebarLayout = ({
     children,
     side = 'left',
     width = 'size-6000',
+    paddingTop,
+    paddingBottom,
+    paddingStart,
+    paddingEnd,
 }: CollapsibleSidebarLayoutProps) => {
     const contentId = useId();
     const [state, setState] = useState<SidebarState>('expanded');
@@ -71,6 +79,10 @@ export const CollapsibleSidebarLayout = ({
 
     const sidebarStyle = {
         '--sidebar-expanded-width': dimensionalValue(width),
+        '--sidebar-padding-top': paddingTop === undefined ? undefined : dimensionalValue(paddingTop),
+        '--sidebar-padding-bottom': paddingBottom === undefined ? undefined : dimensionalValue(paddingBottom),
+        '--sidebar-padding-start': paddingStart === undefined ? undefined : dimensionalValue(paddingStart),
+        '--sidebar-padding-end': paddingEnd === undefined ? undefined : dimensionalValue(paddingEnd),
     } as CSSProperties;
 
     const aside = (
