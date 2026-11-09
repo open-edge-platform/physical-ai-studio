@@ -12,12 +12,11 @@ from schemas.base_job import JobStatus
 from schemas.dataset import Dataset
 from schemas.job import LocalTrainJobPayload
 from settings import get_settings
+from utils.model_manifest import EXPORT_BACKENDS, manifest_artifact, manifest_policy
 
 # Imported models must retain the checkpoint needed to resume training. Logger
 # artifacts are optional and deployment exports may target any supported backend.
 _REQUIRED_FILES = ("model.ckpt",)
-_EXPORT_BACKENDS = ("torch", "openvino", "onnx", "executorch")
-_SUPPORTED_POLICIES = frozenset({"act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"})
 
 
 class ModelReader(Protocol):
@@ -161,7 +160,7 @@ class ModelImportService:
 
     def _is_exports_directory(self, reader: ModelReader) -> bool:
         """Return whether the reader is rooted at an ``exports`` directory."""
-        return any(reader.file_exists(f"{backend}/manifest.json") for backend in _EXPORT_BACKENDS)
+        return any(reader.file_exists(f"{backend}/manifest.json") for backend in EXPORT_BACKENDS)
 
     def _inspect_model(self, reader: ModelReader, *, source_is_exports_dir: bool) -> str:
         """Validate model structure and infer policy."""
@@ -170,19 +169,22 @@ class ModelImportService:
                 if not reader.file_exists(required):
                     raise InvalidArchiveError(f"Model is missing required file '{required}'")
 
-        for backend in _EXPORT_BACKENDS:
+        for backend in EXPORT_BACKENDS:
             manifest_path = f"{backend}/manifest.json" if source_is_exports_dir else f"exports/{backend}/manifest.json"
             if not reader.file_exists(manifest_path):
                 continue
             manifest = self._read_manifest(reader, manifest_path)
-            self._validate_backend_artifact(
-                manifest,
-                reader,
-                backend,
-                manifest_path,
-                source_is_exports_dir=source_is_exports_dir,
-            )
-            return self._infer_policy(manifest, manifest_path)
+            try:
+                self._validate_backend_artifact(
+                    manifest,
+                    reader,
+                    backend,
+                    manifest_path,
+                    source_is_exports_dir=source_is_exports_dir,
+                )
+                return manifest_policy(manifest, manifest_path)
+            except ValueError as exc:
+                raise InvalidArchiveError(str(exc)) from exc
 
         raise InvalidArchiveError("Model is missing a supported export manifest under 'exports/'")
 
@@ -205,46 +207,7 @@ class ModelImportService:
         source_is_exports_dir: bool,
     ) -> None:
         """Validate that a manifest references an existing backend artifact."""
-        artifact = self._extract_backend_artifact_path(manifest, backend, manifest_path)
+        artifact = manifest_artifact(manifest, backend, manifest_path)
         artifact_path = f"{backend}/{artifact}" if source_is_exports_dir else f"exports/{backend}/{artifact}"
         if not reader.file_exists(artifact_path):
             raise InvalidArchiveError(f"Manifest '{manifest_path}' references missing {backend} artifact '{artifact}'")
-
-    @staticmethod
-    def _extract_backend_artifact_path(manifest: dict[str, Any], backend: str, label: str) -> str:
-        """Extract and validate a backend artifact path from a manifest."""
-        model_section = manifest.get("model")
-        if not isinstance(model_section, dict):
-            raise InvalidArchiveError(f"Manifest '{label}' is missing object field 'model'")
-
-        artifacts = model_section.get("artifacts")
-        if not isinstance(artifacts, dict):
-            raise InvalidArchiveError(f"Manifest '{label}' is missing object field 'model.artifacts'")
-
-        artifact = artifacts.get(backend)
-        if not isinstance(artifact, str) or not artifact.strip():
-            raise InvalidArchiveError(f"Manifest '{label}' is missing non-empty 'model.artifacts.{backend}' entry")
-
-        artifact_path = Path(artifact)
-        if artifact_path.is_absolute() or ".." in artifact_path.parts:
-            raise InvalidArchiveError(f"Manifest '{label}' contains unsafe {backend} artifact path '{artifact}'")
-
-        return artifact
-
-    def _infer_policy(self, manifest: dict[str, Any], manifest_path: str) -> str:
-        """Extract and validate the policy name from the manifest."""
-        policy_section = manifest.get("policy")
-        if not isinstance(policy_section, dict):
-            raise InvalidArchiveError(f"Manifest '{manifest_path}' is missing 'policy' section")
-
-        policy_name = policy_section.get("name")
-        if not isinstance(policy_name, str) or not policy_name:
-            raise InvalidArchiveError(f"Manifest '{manifest_path}' is missing 'policy.name'")
-
-        if policy_name not in _SUPPORTED_POLICIES:
-            raise InvalidArchiveError(
-                f"Manifest '{manifest_path}' declares unsupported policy '{policy_name}'. "
-                f"Supported policies are: {', '.join(sorted(_SUPPORTED_POLICIES))}"
-            )
-
-        return policy_name

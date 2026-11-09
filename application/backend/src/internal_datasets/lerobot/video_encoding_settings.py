@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from lerobot.configs import RGBEncoderConfig
-from lerobot.configs.video import VIDEO_CODECS_ALIASES
+from lerobot.configs.video import VIDEO_CODECS_ALIASES, DepthEncoderConfig
 from pydantic import BaseModel, Field
 
 _HW_CODEC_PIX_FMTS = dict.fromkeys(
@@ -192,6 +192,26 @@ def _normalise_preset(vcodec: str, preset: Any) -> Any:
     return _numeric_preset_choices(vcodec).get(preset, preset)
 
 
+class _UnsupportedDepthEncoderConfig(DepthEncoderConfig):
+    """Keep RGB-only writers independent of LeRobot's unused depth defaults.
+
+    LeRobot 0.6 eagerly constructs and validates a HEVC/gray12le depth encoder
+    in both DatasetWriter and StreamingVideoEncoder, even for RGB-only data.
+    Studio's LGPL FFmpeg build cannot supply that encoder. Pass an explicit
+    placeholder instead, without probing a codec that we never use.
+
+    Replace this placeholder with a validated depth configuration when Studio
+    adds depth recording; do not silently encode depth with the RGB settings.
+    """
+
+    def __post_init__(self) -> None:
+        # Skip the inherited codec resolution and validation, not RGB validation.
+        pass
+
+    def get_codec_options(self, encoder_threads: int | None = None, as_strings: bool = False) -> dict[str, Any]:
+        raise NotImplementedError("Depth video recording is not supported by Studio")
+
+
 class VideoEncodingSettings(BaseModel):
     streaming_encoding: bool = True
     vcodec: str = "auto"
@@ -209,6 +229,7 @@ class VideoEncodingSettings(BaseModel):
             "encoder_threads": self.encoder_threads,
             "encoder_queue_maxsize": self.encoder_queue_maxsize,
             "rgb_encoder": self._build_rgb_encoder_config(),
+            "depth_encoder": _UnsupportedDepthEncoderConfig(),
         }
 
     def _build_rgb_encoder_config(self) -> StudioRGBEncoderConfig:

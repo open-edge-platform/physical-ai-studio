@@ -13,6 +13,8 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+import torch
+from lightning.pytorch import __version__ as lightning_version
 from physicalai.inference import InferenceModel
 from physicalai.policies.pi05 import Pi05, Pi05Config
 from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
@@ -49,6 +51,45 @@ def _minimal_export_stats() -> dict[str, dict[str, Any]]:
             "type": "ACTION",
         },
     }
+
+
+@pytest.mark.parametrize("legacy_vision_keys", [False, True])
+@pytest.mark.parametrize("missing_key", [False, True])
+def test_pi05_checkpoint_vision_keys(tmp_path: Path, legacy_vision_keys: bool, missing_key: bool) -> None:
+    """Load old and current vision keys strictly without allocating model weights."""
+    with torch.device("meta"):
+        policy = Pi05(
+            dataset_stats=_minimal_export_stats(),
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+        )
+    expected = policy.state_dict()
+    state_dict = {
+        key.replace(".vision_tower.", ".vision_tower.vision_model.") if legacy_vision_keys else key: value
+        for key, value in expected.items()
+    }
+    if missing_key:
+        del state_dict["model.action_in_proj.weight"]
+    checkpoint_path = tmp_path / "pi05.ckpt"
+    torch.save(
+        {
+            "state_dict": state_dict,
+            "hyper_parameters": dict(policy.hparams),
+            "pytorch-lightning_version": lightning_version,
+            "rtc_enabled": True,
+        },
+        checkpoint_path,
+    )
+
+    with torch.device("meta"):
+        if missing_key:
+            with pytest.raises(RuntimeError, match="model.action_in_proj.weight"):
+                Pi05.load_from_checkpoint(checkpoint_path, map_location="meta")
+            return
+        loaded = Pi05.load_from_checkpoint(checkpoint_path, map_location="meta")
+
+    assert loaded.state_dict().keys() == expected.keys()
+    assert loaded.rtc_enabled
 
 
 @pytest.mark.parametrize(

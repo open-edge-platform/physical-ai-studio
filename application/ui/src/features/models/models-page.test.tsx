@@ -145,8 +145,7 @@ describe('ModelsPage - Current Training', () => {
         renderPage();
 
         await user.click(await screen.findByRole('button', { name: 'Train model' }));
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent('Test dataset');
         // Training is submitted from the last wizard step, so walk there first.
         while (screen.queryByRole('button', { name: 'Next' }) !== null) {
             await user.click(screen.getByRole('button', { name: 'Next' }));

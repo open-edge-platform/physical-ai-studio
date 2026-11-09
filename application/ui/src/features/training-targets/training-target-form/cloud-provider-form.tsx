@@ -10,12 +10,12 @@ import { AwsCredentials } from './aws-credentials';
 
 import classes from '../training-targets-table/remote-trainer-form/remote-trainer-form.module.css';
 
+const AWS_BATCH_TEMPLATE_URL =
+    'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/' +
+    'aws-cf-templates/aws-batch-trainer/v1/aws-batch-trainer.yaml';
 const AWS_STACK_URL =
-    'https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1' +
-    '#/stacks/create/review?templateURL=' +
-    encodeURIComponent(
-        'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/aws-batch-trainer.yaml'
-    ) +
+    'https://console.aws.amazon.com/cloudformation/home' +
+    `#/stacks/create/review?templateURL=${encodeURIComponent(AWS_BATCH_TEMPLATE_URL)}` +
     '&stackName=physical-ai-studio-batch-trainer';
 
 interface CloudProviderFormProps {
@@ -26,6 +26,7 @@ interface CloudProviderFormProps {
 export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormProps) => {
     const existing = remoteTrainer?.connection.connection_mode === 'aws_batch' ? remoteTrainer.connection : undefined;
     const [step, setStep] = useState<'configure' | 'connect'>('configure');
+    const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [profileName, setProfileName] = useState(existing?.profile_name ?? '');
     const [values, setValues] = useState<Record<string, string>>({
         configuration_uri: existing?.configuration_uri ?? '',
@@ -46,6 +47,7 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
     const isPending = resolve.isPending || create.isPending || update.isPending;
     const error = resolve.error ?? create.error ?? update.error;
     const isConfigurationValid =
+        name.trim().length > 0 &&
         provider !== undefined &&
         provider.fields.every((field) => {
             const value = (values[field.name] ?? '').trim();
@@ -73,7 +75,7 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
                     profile_name: profileName.trim(),
                 },
             });
-            const body = { name: 'AWS Provider', connection };
+            const body = { name: name.trim(), connection };
             if (remoteTrainer) {
                 await update.mutateAsync({ params: { path: { remote_trainer_id: remoteTrainer.id } }, body });
             } else {
@@ -115,6 +117,16 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
                                         <Divider size='S' />
                                     </>
                                 )}
+                                <TextField
+                                    // eslint-disable-next-line jsx-a11y/no-autofocus
+                                    autoFocus
+                                    isRequired
+                                    label='Name'
+                                    value={name}
+                                    onChange={setName}
+                                    isDisabled={isPending}
+                                    width='100%'
+                                />
                                 {isLoadingSchema && <Text>Loading configuration fields...</Text>}
                                 {(schemaError || (!isLoadingSchema && !provider)) && (
                                     <div role='alert'>AWS configuration fields could not be loaded.</div>
