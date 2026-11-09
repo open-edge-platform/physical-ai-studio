@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { Button, Flex, Item, Picker, Slider, TextArea, toast } from '@geti-ui/ui';
 
@@ -33,6 +33,7 @@ const useDefaultTask = (model_id: string | undefined) => {
 export const InferenceMode = () => {
     const { state, statuses, send } = useRuntimeSession();
     const defaultTask = useDefaultTask(state?.model?.model_id);
+    const [previousDefaultTask, setPreviousDefaultTask] = useState(defaultTask);
     const [task, setTask] = useState(defaultTask);
     const [mode, setMode] = useState<SchemaExecutionConfig['mode']>('sync');
     const [threshold, setThreshold] = useState(0.5);
@@ -40,7 +41,10 @@ export const InferenceMode = () => {
     const [hz, setHz] = useState(30);
     const [isPending, setIsPending] = useState(false);
 
-    useEffect(() => setTask(defaultTask), [defaultTask]);
+    if (previousDefaultTask !== defaultTask) {
+        setPreviousDefaultTask(defaultTask);
+        setTask(defaultTask);
+    }
 
     const isRunning = state?.control?.type === 'model';
     const canRun =

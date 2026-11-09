@@ -1,13 +1,17 @@
 import { ReactNode, Suspense, useState } from 'react';
 
-import { Button, Divider, Flex, Grid, Item, Loading, minmax, Picker, Text, View } from '@geti-ui/ui';
+import { Button, Divider, Flex, Item, Loading, Picker, Text, View } from '@geti-ui/ui';
 
+import { SchemaSessionDataset } from '../../../api/openapi-spec';
+import { CollapsibleSidebarLayout } from '../../../components/collapsible-sidebar-layout/collapsible-sidebar-layout';
 import { SessionPartName, useRuntimeSession } from '../runtime-session-provider';
 import { SessionViewer } from '../session-viewer';
 import { InferenceMode } from './inference-mode';
 import { PartControlsProvider, usePartControls } from './part-controls';
 import { PartsPanel } from './parts-panel';
 import { RecordMode } from './record-mode';
+import { RecordingCommandProvider, useRecordingCommand } from './recording-command';
+import { RecordingEpisodeTag } from './recording-episode-tag';
 
 /**
  * One way of working with the session: the parts it needs, and its side bar panel, which
@@ -65,6 +69,19 @@ const MissingParts = ({ needs }: { needs: SessionPartName[] }) => {
     );
 };
 
+const RecordingToolbar = ({ dataset }: { dataset: SchemaSessionDataset }) => {
+    const { pendingCommand } = useRecordingCommand();
+
+    return (
+        <Suspense fallback={null}>
+            <Flex direction='column' gap='size-200'>
+                <RecordingEpisodeTag dataset={dataset} pendingCommand={pendingCommand} />
+                <Divider size='S' />
+            </Flex>
+        </Suspense>
+    );
+};
+
 /**
  * The session's robot and cameras in a dock, with a side bar: what is loaded, the mode, and the
  * selected mode's panel. Every mode is always there and says what it misses; entry points
@@ -86,35 +103,43 @@ export const SessionWorkspace = ({ initialMode, cancelHref }: { initialMode: Mod
 
     return (
         <PartControlsProvider>
-            <Grid
-                columns={[minmax(0, '1fr'), 'size-4600']}
-                gap='size-200'
-                height='100%'
-                minHeight={0}
-                UNSAFE_style={{ gridTemplateRows: minmax(0, '1fr') }}
-            >
-                <SessionViewer cancelHref={cancelHref} />
-                <View backgroundColor='gray-100' padding='size-200' overflow='auto' minHeight={0}>
-                    <Flex direction='column' gap='size-200'>
-                        <Suspense fallback={<Loading mode='inline' />}>
-                            <PartsPanel />
-                        </Suspense>
-                        <Divider size='S' />
-                        <Picker
-                            label='Mode'
-                            width='100%'
-                            items={MODES}
-                            selectedKey={mode.key}
-                            onSelectionChange={(key) => key !== null && selectMode(key as ModeKey)}
-                            isDisabled={state?.dataset?.is_recording}
-                        >
-                            {(candidate) => <Item key={candidate.key}>{candidate.label}</Item>}
-                        </Picker>
-                        <MissingParts needs={mode.needs} />
-                        <Suspense fallback={<Loading mode='inline' />}>{mode.panel}</Suspense>
-                    </Flex>
-                </View>
-            </Grid>
+            <RecordingCommandProvider>
+                <CollapsibleSidebarLayout
+                    side='right'
+                    width='size-4600'
+                    paddingBottom={'size-200'}
+                    paddingStart={'size-200'}
+                    toolbar={
+                        mode.key === 'record' && state?.dataset != null ? (
+                            <RecordingToolbar dataset={state.dataset} />
+                        ) : null
+                    }
+                    sidebar={
+                        <Flex direction='column' gap='size-200'>
+                            <Suspense fallback={<Loading mode='inline' />}>
+                                <PartsPanel />
+                            </Suspense>
+                            <Divider size='S' />
+                            <Picker
+                                label='Mode'
+                                width='100%'
+                                items={MODES}
+                                selectedKey={mode.key}
+                                onSelectionChange={(key) => key !== null && selectMode(key as ModeKey)}
+                                isDisabled={state?.dataset?.is_recording}
+                            >
+                                {(candidate) => <Item key={candidate.key}>{candidate.label}</Item>}
+                            </Picker>
+                            <MissingParts needs={mode.needs} />
+                            <Suspense fallback={<Loading mode='inline' />}>{mode.panel}</Suspense>
+                        </Flex>
+                    }
+                >
+                    <View height='100%' paddingEnd='size-200'>
+                        <SessionViewer cancelHref={cancelHref} />
+                    </View>
+                </CollapsibleSidebarLayout>
+            </RecordingCommandProvider>
         </PartControlsProvider>
     );
 };
