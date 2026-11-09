@@ -156,7 +156,9 @@ class TestCameraReconnect:
             assert store.read_observation("cam") is None
             recorder.record_frame()
             mutation.add_frame.assert_not_called()
-            assert recorder.skipped == 1
+            assert not recorder.status().is_recording
+            mutation.discard_buffer.assert_called_once()
+            assert "Episode discarded" in recorder.publish.call_args.args[0].error
             with pytest.raises(RuntimeError, match="has no frame yet"):
                 inference.infer(InferRequest(state=[]))
             model.predict_action_chunk.assert_not_called()
@@ -165,6 +167,9 @@ class TestCameraReconnect:
         with patch("workers.camera_worker.build_shared_camera", side_effect=reopen):
             asyncio.run(worker.run_loop(_frozen_camera()))
 
+        recorder.record_frame()
+        mutation.add_frame.assert_not_called()  # Recovery must not resume the discarded episode.
+        recorder.start(StartEpisodeCommand(request_id="restart", task="pick"))
         recorder.record_frame()
         inference.infer(InferRequest(state=[]))
         mutation.add_frame.assert_called_once()

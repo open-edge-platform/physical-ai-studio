@@ -631,6 +631,8 @@ class RuntimeSession:
         """The dataset worker owns its recording state; show whatever it last announced."""
         if (recording := self._dataset.value) is not None:
             recording.status = status
+            if status.error is not None:
+                publish_status(self.bus, DATASET, "running", status.error)
             self._emit(StateMessage(data=self.state()))
 
     def _emit(self, event: StateMessage | ErrorMessage) -> None:

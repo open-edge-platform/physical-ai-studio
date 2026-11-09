@@ -13,7 +13,7 @@ import pytest
 
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
 from internal_datasets.utils import get_internal_read_dataset
-from runtime_session.bus import BusRequestError, NoResponderError, command_key
+from runtime_session.bus import BusRequestError, NoResponderError, command_key, publish_status
 from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec
 from runtime_session.session import RuntimeSession
 from runtime_session.store import FeatureSpecMismatchError, ImageSpec
@@ -142,6 +142,31 @@ async def test_record_save_and_discard_episodes(new_session, fake_cameras, fake_
         "discard",
         "teardown",
     ]
+
+
+async def test_camera_reconnect_discards_the_episode_and_announces_why(new_session, fake_cameras, fake_worker) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    await _start(session, "pick")
+    await _until(lambda: session.state().dataset.is_recording)
+    await asyncio.sleep(0.2)
+
+    with subscribe_statuses(session) as statuses:
+        publish_status(session.bus, "environment/cam 0", "starting", "no frames; reconnecting")
+        async with asyncio.timeout(5):
+            while (status := await statuses.next()).component != "dataset":
+                pass
+        assert status.state == "running"  # The worker remains usable for a new episode.
+        assert 'Episode discarded because camera "cam 0"' in status.error
+    await _until(lambda: not session.state().dataset.is_recording)
+    assert session.state().dataset.episodes_recorded == 0
+    assert "discard" in [event["event"] for event in recording_log(Path(dataset.path) / "recording.jsonl")]
+
+    await _start(session, "pick again")
+    await asyncio.sleep(0.2)
+    assert (await _save(session)).episodes_recorded == 1
 
 
 async def test_a_too_short_episode_is_discarded_not_saved(new_session, fake_cameras, fake_worker) -> None:

@@ -250,6 +250,9 @@ export const RuntimeSessionProvider = ({
                         // The follower holds; nothing else shows a control.
                         toast.negative(`Control stopped: ${message.error ?? 'it failed'}`, ERROR_TOAST);
                     }
+                    if (message.component === 'dataset' && message.error) {
+                        toast.negative(message.error, ERROR_TOAST);
+                    }
                     break;
                 case 'ack':
                     pending.get(message.request_id)?.(message);

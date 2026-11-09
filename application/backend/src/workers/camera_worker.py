@@ -34,7 +34,7 @@ class CameraWorker(ThreadWorker[SharedCamera]):
     until it is back, without writing the frozen frame in the meantime.
     """
 
-    stale_after_s: float = 2.0
+    stale_after_s: float = 0.5
     """How long a camera may go without a new frame before it counts as gone."""
 
     reconnect_interval_s: float = 1.0
