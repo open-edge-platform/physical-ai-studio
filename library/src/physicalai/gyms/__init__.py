@@ -5,6 +5,7 @@
 
 from .base import Gym
 from .gymnasium_gym import GymnasiumGym
+from .history import HistoryGym
 from .libero import LiberoGym, create_libero_gyms
 from .pusht import PushTGym
 from .robocasa import RoboCasaGym, RoboCasaSplit, RoboCasaTaskGroup, create_robocasa_gyms
@@ -12,6 +13,7 @@ from .robocasa import RoboCasaGym, RoboCasaSplit, RoboCasaTaskGroup, create_robo
 __all__ = [
     "Gym",
     "GymnasiumGym",
+    "HistoryGym",
     "LiberoGym",
     "PushTGym",
     "RoboCasaGym",
