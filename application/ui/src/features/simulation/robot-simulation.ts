@@ -14,6 +14,18 @@ export const useRobotSimulationLaunch = (robotType: string): RobotSimulationLaun
     return catalog.find(({ type }) => type === robotType)?.simulation ?? null;
 };
 
+/**
+ * What Studio calls a robot type's launched process, as it reads mid-sentence: "simulation", or the
+ * plugin's own name for a process that is not one, such as "VR leader".
+ */
+export const launchNoun = (launch: RobotSimulationLaunch | null | undefined): string => launch?.noun ?? 'simulation';
+
+/** `launchNoun` for a sentence's start. */
+export const capitalized = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** Whether a robot type's launched process streams cameras (a simulation does). */
+export const launchHasCameras = (launch: RobotSimulationLaunch | null | undefined): boolean => launch?.cameras ?? true;
+
 /** The robot types Studio can simulate. */
 export const useSimulatedRobotTypes = (): Set<string> => {
     const { data: catalog } = useRobotCatalogQuery();

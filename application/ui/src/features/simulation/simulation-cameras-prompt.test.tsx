@@ -55,7 +55,14 @@ const mockSimulation = (running: boolean) =>
                     package_map: {},
                     joint_map: {},
                     zero_calibration: null,
-                    simulation: { scenes: [], default_scene: 'x', max_seed: null, labels: [] },
+                    simulation: {
+                        scenes: [],
+                        default_scene: 'x',
+                        max_seed: null,
+                        labels: [],
+                        noun: 'simulation',
+                        cameras: true,
+                    },
                 },
             ])
         ),

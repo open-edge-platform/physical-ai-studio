@@ -14,6 +14,8 @@ const launch: RobotSimulationLaunch = {
     default_scene: 'single_pick_place',
     max_seed: 100,
     labels: ['1 arm'],
+    noun: 'simulation',
+    cameras: true,
 };
 
 const simulation = (overrides: Partial<Simulation>): Simulation => ({

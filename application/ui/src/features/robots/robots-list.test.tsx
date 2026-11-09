@@ -216,6 +216,8 @@ describe('RobotsList simulated robots', () => {
                             default_scene: 'single_pick_place',
                             max_seed: null,
                             labels: ['1 arm'],
+                            noun: 'simulation',
+                            cameras: true,
                         },
                     },
                 ])

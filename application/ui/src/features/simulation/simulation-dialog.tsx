@@ -29,7 +29,15 @@ import { getApiErrorMessage } from '../../api/errors';
 import { useProjectId } from '../projects/use-project';
 import { useRobotCatalogQuery } from '../robots/robot-catalog.hooks';
 import { InlineAlert } from '../robots/setup-wizard/shared/inline-alert';
-import { rememberedScene, rememberScene, RobotSimulationLaunch, useRobotSimulationLaunch } from './robot-simulation';
+import {
+    capitalized,
+    launchHasCameras,
+    launchNoun,
+    rememberedScene,
+    rememberScene,
+    RobotSimulationLaunch,
+    useRobotSimulationLaunch,
+} from './robot-simulation';
 import {
     isActiveSimulation,
     Simulation,
@@ -73,6 +81,8 @@ const StartForm = ({
     const { data: catalog } = useRobotCatalogQuery();
     const displayName = catalog.find(({ type }) => type === robot.type)?.display_name ?? robotTypeLabel(robot.type);
     const sceneDescription = launch.scenes.find(({ id }) => id === scene)?.description;
+    const noun = launchNoun(launch);
+    const otherNoun = launchNoun(catalog.find(({ type }) => type === other?.robot_type)?.simulation);
 
     const start = () => {
         rememberScene(robot.id, scene);
@@ -94,11 +104,11 @@ const StartForm = ({
     const startError =
         startMutation.error === null
             ? undefined
-            : (getApiErrorMessage(startMutation.error) ?? 'Could not start the simulation.');
+            : (getApiErrorMessage(startMutation.error) ?? `Could not start the ${noun}.`);
 
     return (
         <Dialog width='size-6000'>
-            <Heading>Start simulation</Heading>
+            <Heading>Start {noun}</Heading>
             <Divider />
             <Content>
                 <Flex direction='column' gap='size-200'>
@@ -109,17 +119,22 @@ const StartForm = ({
                             <Text UNSAFE_className={classes.detail}>{displayName}</Text>
                         ) : null}
                     </Flex>
-                    <Picker
-                        label='Scene'
-                        width='100%'
-                        selectedKey={scene}
-                        onSelectionChange={(key) => key !== null && setScene(String(key))}
-                        description={sceneDescription}
-                    >
-                        {launch.scenes.map((option) => (
-                            <Item key={option.id}>{option.display_name}</Item>
-                        ))}
-                    </Picker>
+                    {launch.scenes.length > 1 ? (
+                        <Picker
+                            label='Scene'
+                            width='100%'
+                            selectedKey={scene}
+                            onSelectionChange={(key) => key !== null && setScene(String(key))}
+                            description={sceneDescription}
+                        >
+                            {launch.scenes.map((option) => (
+                                <Item key={option.id}>{option.display_name}</Item>
+                            ))}
+                        </Picker>
+                    ) : (
+                        // Nothing to choose: what it starts, in its own words.
+                        <Text>{sceneDescription || launch.scenes[0]?.display_name}</Text>
+                    )}
                     {launch.max_seed !== null ? (
                         <Disclosure isQuiet>
                             <DisclosureTitle>Advanced</DisclosureTitle>
@@ -150,10 +165,10 @@ const StartForm = ({
                     ) : null}
                     {other !== undefined ? (
                         <InlineAlert variant='warning'>
-                            <strong>Another simulation is running</strong>
+                            <strong>Another {otherNoun} is running</strong>
                             <br />
-                            Studio runs one simulation at a time. {robotTypeLabel(other.robot_type)} · {other.scene} is
-                            running; it will be stopped, and so will the sessions that use it.
+                            Studio runs one at a time. {robotTypeLabel(other.robot_type)} · {other.scene} is running; it
+                            will be stopped, and so will the sessions that use it.
                         </InlineAlert>
                     ) : null}
                     {startError !== undefined ? <InlineAlert variant='error'>{startError}</InlineAlert> : null}
@@ -164,7 +179,7 @@ const StartForm = ({
                     Cancel
                 </Button>
                 <Button variant='accent' onPress={start} isPending={startMutation.isPending}>
-                    {other !== undefined ? 'Stop it and start this one' : 'Start simulation'}
+                    {other !== undefined ? 'Stop it and start this one' : `Start ${noun}`}
                 </Button>
             </ButtonGroup>
         </Dialog>
@@ -174,17 +189,19 @@ const StartForm = ({
 type StepState = 'done' | 'active' | 'pending' | 'failed';
 
 const STEPS = ['Robot model', 'Physics and viewer', 'Cameras', 'Ready'] as const;
+/** A process without cameras or physics, such as a VR leader. */
+const PROCESS_STEPS = ['Robot model', 'Starting', 'Ready'] as const;
 
-const currentStep = (simulation: Simulation): number => {
+const currentStep = (simulation: Simulation, steps: readonly string[]): number => {
     if (simulation.status === 'running') {
-        return STEPS.length;
+        return steps.length;
     }
     switch (simulation.phase ?? simulation.error?.phase) {
         case 'connect':
         case 'load':
             return 1;
         case 'cameras':
-            return 2;
+            return Math.min(2, steps.length - 1);
         default:
             return 0;
     }
@@ -225,8 +242,12 @@ const SimulationProgress = ({
     const [showLog, setShowLog] = useState(false);
     const stopMutation = useStopSimulation(project_id);
     const { data: logs } = useSimulationLogs(showLog);
+    const launch = useRobotSimulationLaunch(simulation.robot_type ?? '');
+    const noun = launchNoun(launch);
+    const hasCameras = launchHasCameras(launch);
+    const steps = hasCameras ? STEPS : PROCESS_STEPS;
 
-    const step = currentStep(simulation);
+    const step = currentStep(simulation, steps);
     const failed = simulation.status === 'failed';
     const stepState = (index: number): StepState =>
         index < step ? 'done' : index > step ? 'pending' : failed ? 'failed' : 'active';
@@ -234,12 +255,12 @@ const SimulationProgress = ({
 
     const heading =
         simulation.status === 'running'
-            ? 'Simulation running'
+            ? `${capitalized(noun)} running`
             : failed
-              ? 'Simulation failed'
+              ? `${capitalized(noun)} failed`
               : simulation.status === 'stopping'
-                ? 'Stopping simulation'
-                : 'Starting simulation';
+                ? `Stopping ${noun}`
+                : `Starting ${noun}`;
 
     return (
         <Dialog width='size-6000'>
@@ -250,7 +271,7 @@ const SimulationProgress = ({
                     <Text>
                         {robotTypeLabel(simulation.robot_type)} · {simulation.scene}
                     </Text>
-                    {STEPS.map((label, index) => (
+                    {steps.map((label, index) => (
                         <Step key={label} state={stepState(index)}>
                             <Text>{label}</Text>
                             {index === 0 && download != null ? (
@@ -259,7 +280,7 @@ const SimulationProgress = ({
                                     {download.total != null ? ` of ${formatMegabytes(download.total)}` : ''}
                                 </Text>
                             ) : null}
-                            {index === STEPS.length - 1 && simulation.owner_name != null ? (
+                            {index === steps.length - 1 && simulation.owner_name != null ? (
                                 <Text UNSAFE_className={classes.detail}>as {simulation.owner_name}</Text>
                             ) : null}
                         </Step>
@@ -267,7 +288,7 @@ const SimulationProgress = ({
                     {failed && simulation.error != null ? (
                         <InlineAlert variant='error'>{simulation.error.message}</InlineAlert>
                     ) : null}
-                    {simulation.status === 'running' && (simulation.cameras ?? []).length === 0 ? (
+                    {hasCameras && simulation.status === 'running' && (simulation.cameras ?? []).length === 0 ? (
                         <InlineAlert variant='warning'>
                             The simulation runs without cameras: rendering is not available on this machine.
                         </InlineAlert>

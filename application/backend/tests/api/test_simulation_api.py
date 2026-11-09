@@ -223,8 +223,26 @@ def test_catalog_describes_the_simulation_of_simulated_types() -> None:
         "default_scene": "tabletop",
         "max_seed": 4294967295,
         "labels": ["1 arm", "twin"],
+        "noun": "simulation",  # a plugin without noun and cameras: every launch was a simulation with cameras
+        "cameras": True,
     }
     assert robot_catalog._simulation_response(None) is None
+
+
+def test_catalog_names_a_launch_that_is_not_a_simulation() -> None:
+    launch = SimpleNamespace(
+        scenes=(SimpleNamespace(id="hand-tracker", display_name="Hand tracker", description=""),),
+        default_scene="hand-tracker",
+        max_seed=None,
+        labels=(),
+        noun="VR leader",
+        cameras=False,
+    )
+
+    response = robot_catalog._simulation_response(launch)
+
+    assert response is not None
+    assert (response.noun, response.cameras) == ("VR leader", False)
 
 
 def _simulated_robot_type() -> str:
