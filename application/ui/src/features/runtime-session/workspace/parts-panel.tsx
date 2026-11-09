@@ -3,42 +3,13 @@ import { ReactNode, useState } from 'react';
 import { ActionButton, Flex, Heading, Item, Menu, MenuTrigger, ProgressCircle, StatusLight, Text } from '@geti-ui/ui';
 import { ChevronDownLight, ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
-import { SchemaSessionEnvironment, SchemaStatusMessage } from '../../../api/openapi-spec';
+import { SchemaSessionEnvironment } from '../../../api/openapi-spec';
 import { failureOf, SessionPartName, Statuses, useRuntimeSession } from '../runtime-session-provider';
+import { DeviceCards } from './devices/device-cards';
+import { toSessionDevices } from './devices/session-devices';
 import { PartAction, usePartControls } from './part-controls';
 
-const DEVICE_STATUS = { starting: 'notice', running: 'positive', failed: 'negative', stopped: 'neutral' } as const;
-
-/** Each of the environment's devices, as it last reported. */
-const DeviceStatuses = ({
-    devices,
-    environment,
-}: {
-    devices: SchemaStatusMessage[];
-    environment: SchemaSessionEnvironment;
-}) => {
-    const label = (device: string) =>
-        ({ follower: 'Follower', leader: 'Leader' })[device] ??
-        environment.cameras.find((camera) => camera.key === device)?.name ??
-        device;
-
-    return (
-        <Flex direction='column' marginStart='size-300'>
-            {devices.map(({ component, state, error }) => (
-                <Flex key={component} direction='column'>
-                    <StatusLight variant={DEVICE_STATUS[state]}>
-                        {label(component.slice('environment/'.length))}
-                    </StatusLight>
-                    {error && (
-                        <Text marginStart='size-300' UNSAFE_style={{ color: 'var(--spectrum-negative-visual-color)' }}>
-                            {error}
-                        </Text>
-                    )}
-                </Flex>
-            ))}
-        </Flex>
-    );
-};
+import classes from './parts-panel.module.css';
 
 const PartRow = ({
     label,
@@ -64,48 +35,49 @@ const PartRow = ({
     onAction: (action: PartAction) => void;
     expander?: ReactNode;
 }) => (
-    <Flex alignItems='center' justifyContent='space-between' gap='size-100'>
-        <Flex direction='column' minWidth={0}>
+    <Flex direction='column' minWidth={0}>
+        <Flex alignItems='center' justifyContent='space-between' gap='size-100'>
             <StatusLight
                 variant={isPending ? 'notice' : error ? 'negative' : (light ?? (isLoaded ? 'positive' : 'neutral'))}
             >
                 {label}
             </StatusLight>
-            <Text marginStart='size-300' UNSAFE_style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {isPending ? 'Loading…' : (name ?? 'Not loaded')}
-                {detail && !isPending ? ` · ${detail}` : ''}
-            </Text>
-            {error && !isPending && (
-                <Text marginStart='size-300' UNSAFE_style={{ color: 'var(--spectrum-negative-visual-color)' }}>
-                    {error}
-                </Text>
-            )}
+            <Flex alignItems='center' flexShrink={0}>
+                {expander}
+                {isPending ? (
+                    <ProgressCircle size='S' isIndeterminate aria-label={`Loading ${label}`} />
+                ) : (
+                    <MenuTrigger>
+                        <ActionButton isQuiet aria-label={`${label} actions`}>
+                            <MoreMenu />
+                        </ActionButton>
+                        <Menu onAction={(key) => onAction(key as PartAction)}>
+                            {actions.map((action) => (
+                                <Item key={action}>
+                                    {action === 'reload'
+                                        ? 'Reload'
+                                        : action === 'swap'
+                                          ? isLoaded
+                                              ? 'Swap…'
+                                              : 'Load…'
+                                          : 'Unload'}
+                                </Item>
+                            ))}
+                        </Menu>
+                    </MenuTrigger>
+                )}
+            </Flex>
         </Flex>
-        <Flex alignItems='center' flexShrink={0}>
-            {expander}
-            {isPending ? (
-                <ProgressCircle size='S' isIndeterminate aria-label={`Loading ${label}`} />
-            ) : (
-                <MenuTrigger>
-                    <ActionButton isQuiet aria-label={`${label} actions`}>
-                        <MoreMenu />
-                    </ActionButton>
-                    <Menu onAction={(key) => onAction(key as PartAction)}>
-                        {actions.map((action) => (
-                            <Item key={action}>
-                                {action === 'reload'
-                                    ? 'Reload'
-                                    : action === 'swap'
-                                      ? isLoaded
-                                          ? 'Swap…'
-                                          : 'Load…'
-                                      : 'Unload'}
-                            </Item>
-                        ))}
-                    </Menu>
-                </MenuTrigger>
-            )}
-        </Flex>
+        <Text marginStart='size-300' UNSAFE_style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {isPending ? 'Loading…' : (name ?? 'Not loaded')}
+            {detail && !isPending ? ` · ${detail}` : ''}
+        </Text>
+        {error && !isPending && (
+            <details className={classes.error}>
+                <summary>Error details</summary>
+                <pre className={classes.errorMessage}>{error}</pre>
+            </details>
+        )}
     </Flex>
 );
 
@@ -154,7 +126,7 @@ const EnvironmentRow = ({
                     )
                 }
             />
-            {canExpand && isExpanded && <DeviceStatuses devices={devices} environment={environment} />}
+            {canExpand && isExpanded && <DeviceCards devices={toSessionDevices(statuses, environment)} />}
         </>
     );
 };
