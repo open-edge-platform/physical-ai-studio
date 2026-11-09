@@ -25,6 +25,13 @@ def _make_device(
     )
 
 
+@pytest.fixture(autouse=True)
+def no_v4l2_fixup():
+    """Keep these tests hardware-isolated: never touch the host's /dev/video* nodes."""
+    with patch("api.hardware.fix_zero_frame_intervals", return_value=[]) as fixup:
+        yield fixup
+
+
 @pytest.fixture
 def event_loop():
     loop = asyncio.new_event_loop()

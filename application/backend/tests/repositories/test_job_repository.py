@@ -10,7 +10,7 @@ from db.schema import Base, ProjectDB
 from repositories.job_repo import JobRepository
 from repositories.mappers.job_mapper import JobMapper
 from schemas.aws_auth import AwsAuthenticationIssue
-from schemas.base_job import JobStatus
+from schemas.base_job import JobStatus, JobType
 from schemas.job import RemoteTrainJobPayload, TrainJob
 from services.job_service import JobService
 
@@ -110,5 +110,7 @@ async def test_pending_training_transition_rejects_other_states() -> None:
     """Only claiming and cancellation are valid queued training transitions."""
     session = AsyncMock()
     with pytest.raises(ValueError, match="only be claimed or canceled"):
-        await JobRepository(session).transition_pending_train_job(uuid4(), JobStatus.COMPLETED)
+        await JobRepository(session).transition_pending_job(
+            uuid4(), JobStatus.COMPLETED, JobType.TRAINING, message="Invalid transition"
+        )
     session.execute.assert_not_awaited()

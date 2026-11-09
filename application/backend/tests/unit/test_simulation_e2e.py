@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
+from packaging.requirements import Requirement
 from physicalai.config import Config
 from physicalai.inference import InferenceModel
 from tests.integration import simulation_e2e as controls
@@ -675,14 +676,15 @@ def test_lockfiles_resolve_the_configured_runtime_and_plugin_pin():
     for project in (ROOT / "library", BACKEND):
         config = tomllib.loads((project / "pyproject.toml").read_text())
         lock = tomllib.loads((project / "uv.lock").read_text())
-        expected = config["tool"]["uv"]["sources"]["physicalai"]["rev"]
+        requirements = [Requirement(dependency) for dependency in config["project"]["dependencies"]]
+        runtime = next(requirement for requirement in requirements if requirement.name == "physicalai")
         package = next(package for package in lock["package"] if package["name"] == "physicalai")
-        assert package["source"]["git"].endswith(f"#{expected}")
+        assert package["version"] in runtime.specifier
+        assert package["source"] == {"registry": "https://pypi.org/simple"}
         if project == BACKEND:
             plugin = next(package for package in lock["package"] if package["name"] == "physicalai-mujoco-plugin")
-            assert config["project"]["optional-dependencies"]["sim-e2e"] == [
-                f"physicalai-mujoco-plugin=={plugin['version']}"
-            ]
+            sim_dependencies = config["project"]["optional-dependencies"]["sim-e2e"]
+            assert f"physicalai-mujoco-plugin=={plugin['version']}" in sim_dependencies
             assert plugin["source"] == {"registry": "https://pypi.org/simple"}
 
 
@@ -749,7 +751,17 @@ def test_e2e_workflow_runs_only_act_daily_at_1900_utc():
     assert upload["if"] == "always()"
     assert upload["with"]["name"] == "training-outputs-act"
     assert upload["with"]["retention-days"] == "2"
-    assert steps[-1]["with"]["name"] == "sim-full-act"
+    evidence = next(step for step in steps if step.get("id") == "evidence")
+    assert evidence["with"]["name"] == "sim-full-act"
+    summary = steps[-1]
+    assert summary["name"] == "Publish simulation job summary"
+    assert summary["if"] == "always()"
+    assert summary["env"]["SIM_E2E_ARTIFACT_URL"] == "${{ steps.evidence.outputs.artifact-url }}"
+    assert summary["env"]["SIM_E2E_CONTROLS_OUTCOME"] == f"${{{{ steps.{controls_step['id']}.outcome }}}}"
+    assert summary["env"]["SIM_E2E_TRAINING_OUTCOME"] == f"${{{{ steps.{training_step['id']}.outcome }}}}"
+    assert summary["working-directory"] == "application/backend"
+    assert "uv run --isolated --no-project --with 'defusedxml>=0.7.1' python" in summary["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in summary["run"]
 
 
 def _workflow_python(path, step):
