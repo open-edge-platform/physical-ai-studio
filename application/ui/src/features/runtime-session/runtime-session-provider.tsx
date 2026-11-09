@@ -78,6 +78,17 @@ export const failureOf = (statuses: Statuses, component: string): string | null 
     return status?.state === 'failed' ? (status.error ?? 'Failed') : null;
 };
 
+/** When a recording began, given the previous start and whether the session was and is recording. */
+export const nextRecordingStartedAt = (
+    previous: number | null,
+    wasRecording: boolean,
+    isRecording: boolean,
+    now: number
+): number | null => {
+    if (!isRecording) return null;
+    return wasRecording && previous !== null ? previous : now;
+};
+
 /** A part that starts or stops takes its devices with it, so their earlier statuses are dropped. */
 const withStatus = (statuses: Statuses, status: SchemaStatusMessage): Statuses => {
     const kept =
@@ -117,6 +128,8 @@ interface RuntimeSessionContextValue {
     /** The last command or worker error, until the next successful load. */
     error: SchemaErrorMessage | null;
     statuses: Statuses;
+    /** When the current recording began, as the client first saw it (ms epoch); null when not recording. */
+    recordingStartedAt: number | null;
     /** What the provider is loading for the page: the environment, then the dataset and model it was given. */
     loading: SessionPartName | null;
     isLoading: boolean;
@@ -186,6 +199,7 @@ export const RuntimeSessionProvider = ({
     const [error, setError] = useState<SchemaErrorMessage | null>(null);
     const [statuses, setStatuses] = useState<Statuses>({});
     const [loading, setLoading] = useState<SessionPartName | null>(null);
+    const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
     const [attempt, setAttempt] = useState(0);
     const retry = useCallback(() => setAttempt((previous) => previous + 1), []);
     const observations = useRef(new Channel<SchemaObservationMessage>()).current;
@@ -214,6 +228,7 @@ export const RuntimeSessionProvider = ({
         reconnectInterval: 3000,
         onClose: () => {
             latestState.current = null;
+            setRecordingStartedAt(null);
             setState(null);
             setStatuses({});
             pending.forEach((resolve, request_id) =>
@@ -236,10 +251,17 @@ export const RuntimeSessionProvider = ({
             }
             const message = JSON.parse(event.data) as JsonServerMessage;
             switch (message.type) {
-                case 'state':
+                case 'state': {
+                    const wasRecording = latestState.current?.dataset?.is_recording ?? false;
+                    const isRecording = message.data.dataset?.is_recording ?? false;
+                    const now = Date.now();
+                    setRecordingStartedAt((previous) =>
+                        nextRecordingStartedAt(previous, wasRecording, isRecording, now)
+                    );
                     latestState.current = message.data;
                     setState(message.data);
                     break;
+                }
                 case 'error':
                     sessionClosed.current = !message.session_alive;
                     setError(message);
@@ -321,8 +343,19 @@ export const RuntimeSessionProvider = ({
     }, [environmentKey, dataset_id, modelKey, hasSession, send, attempt]);
 
     const value = useMemo(
-        () => ({ state, error, statuses, loading, isLoading: loading !== null, observations, frame, send, retry }),
-        [state, error, statuses, loading, observations, frame, send, retry]
+        () => ({
+            state,
+            error,
+            statuses,
+            recordingStartedAt,
+            loading,
+            isLoading: loading !== null,
+            observations,
+            frame,
+            send,
+            retry,
+        }),
+        [state, error, statuses, recordingStartedAt, loading, observations, frame, send, retry]
     );
 
     return <RuntimeSessionContext.Provider value={value}>{children}</RuntimeSessionContext.Provider>;

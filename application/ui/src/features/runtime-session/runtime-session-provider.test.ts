@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@rstest/core';
 
-import { environmentDraft, parseObservation } from './runtime-session-provider';
+import { environmentDraft, nextRecordingStartedAt, parseObservation } from './runtime-session-provider';
 
 describe('parseObservation', () => {
     it('splits the header from the jpegs it lists', async () => {
@@ -50,5 +50,27 @@ describe('environmentDraft', () => {
             robots: [{ robot_id: 'follower', tele_operator: { type: 'robot', robot_id: 'leader' } }],
             cameras: [{ camera_id: 'cam' }],
         });
+    });
+});
+
+describe('nextRecordingStartedAt', () => {
+    it('starts the clock when a recording begins', () => {
+        expect(nextRecordingStartedAt(null, false, true, 5000)).toBe(5000);
+    });
+
+    it('keeps the start while the recording goes on', () => {
+        expect(nextRecordingStartedAt(1000, true, true, 5000)).toBe(1000);
+    });
+
+    it('starts from the first state seen when reattaching mid-recording', () => {
+        expect(nextRecordingStartedAt(null, true, true, 5000)).toBe(5000);
+    });
+
+    it('clears the start when the recording ends', () => {
+        expect(nextRecordingStartedAt(1000, true, false, 5000)).toBeNull();
+    });
+
+    it('stays cleared when the session has no dataset', () => {
+        expect(nextRecordingStartedAt(null, false, false, 5000)).toBeNull();
     });
 });
