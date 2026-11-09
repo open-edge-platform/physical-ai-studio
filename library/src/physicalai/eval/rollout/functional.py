@@ -236,7 +236,7 @@ def _collect_frame(
     else:
         return None
     # [B, T, C, H, W]: record only the current frame.
-    if img.ndim == 5:  # noqa: PLR2004  
+    if img.ndim == 5:  # noqa: PLR2004
         img = img[:, -1]
     return img.squeeze(0).permute(1, 2, 0).cpu().numpy()
 

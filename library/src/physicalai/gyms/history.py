@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
@@ -92,7 +92,7 @@ class HistoryGym(Gym):
             while len(history) < self.n_obs_steps:
                 history.appendleft(snapshot)
             stacked = (
-                torch.stack(tuple(history), dim=1)
+                torch.stack(cast("tuple[torch.Tensor, ...]", tuple(history)), dim=1)
                 if isinstance(value, torch.Tensor)
                 else np.stack(tuple(history), axis=1)
             )
@@ -129,7 +129,7 @@ class HistoryGym(Gym):
         SingleOrBatch[float],
         SingleOrBatch[bool],
         SingleOrBatch[bool],
-        dict[str, Any] | list[dict[str, Any]],
+        SingleOrBatch[dict[str, Any]],
     ]:
         """Step the gym and append the resulting observation to history.
 
@@ -177,4 +177,5 @@ class HistoryGym(Gym):
         Returns:
             The attribute on the wrapped gym.
         """
-        return getattr(self.gym, name)
+        gym = object.__getattribute__(self, "gym")
+        return getattr(gym, name)

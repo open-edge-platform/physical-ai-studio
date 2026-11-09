@@ -3,6 +3,8 @@
 
 """Small history-wrapper and rollout checks."""
 
+import copy
+import pickle
 from unittest.mock import Mock
 
 import numpy as np
@@ -172,3 +174,30 @@ def test_step_outputs_are_passed_through(batched):
     result = env.step(torch.zeros(1, 2))
     for actual, expected in zip(result[1:], gym.step.return_value[1:], strict=True):
         assert actual is expected
+
+
+@pytest.mark.parametrize("reconstruct", ["deepcopy", "pickle"])
+def test_reconstruction_preserves_history(reconstruct):
+    """Copy and unpickle wrappers before gym has been restored without recursion."""
+    env = HistoryGym(GymnasiumGym("CartPole-v1", render_mode=None), n_obs_steps=2, keys={"state"})
+    restored = None
+    try:
+        env.reset(seed=42)
+        observation, *_ = env.step(torch.tensor(0))
+        if reconstruct == "deepcopy":
+            restored = copy.deepcopy(env)
+        else:
+            # Trusted bytes produced locally from this test's wrapper, not external input.
+            restored = pickle.loads(pickle.dumps(env))
+        assert restored.gym is not env.gym
+        assert restored.keys == env.keys
+        torch.testing.assert_close(torch.stack(tuple(restored._history["state"]), dim=1), observation.state)
+        expected, *_ = env.step(torch.tensor(0))
+        actual, *_ = restored.step(torch.tensor(0))
+        torch.testing.assert_close(actual.state, expected.state)
+        with pytest.raises(AttributeError):
+            getattr(restored, "missing_backend_attribute")
+    finally:
+        env.close()
+        if restored is not None:
+            restored.close()
