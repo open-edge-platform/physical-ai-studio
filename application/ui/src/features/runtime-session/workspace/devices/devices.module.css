@@ -1,0 +1,48 @@
+.sectionLabel {
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.deviceName {
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--spectrum-global-color-gray-900);
+}
+
+.deviceSubtitle {
+    overflow: hidden;
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.deviceError {
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    color: var(--spectrum-negative-visual-color);
+}
+
+.deviceError summary {
+    cursor: pointer;
+}
+
+.deviceErrorMessage {
+    max-height: var(--spectrum-global-dimension-size-2000);
+    margin: var(--spectrum-global-dimension-size-50) 0 0;
+    overflow: auto;
+    font-family: inherit;
+    font-size: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.cameraIcon {
+    flex: none;
+    width: var(--spectrum-global-dimension-size-400);
+    color: var(--spectrum-global-color-gray-700);
+}
