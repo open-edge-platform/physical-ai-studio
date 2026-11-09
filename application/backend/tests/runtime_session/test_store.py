@@ -67,6 +67,22 @@ def test_frames_round_trip_per_camera(store: Store) -> None:
     assert store.read_observation("top") is None
 
 
+def test_invalidating_a_camera_is_shared_and_the_next_write_restores_it(store: Store) -> None:
+    frame = np.ones(SPEC.observations["wrist"].shape, dtype=np.uint8)
+    store.write_observation("wrist", frame, timestamp=1.0)
+    store.write_observation("top", np.zeros(SPEC.observations["top"].shape, dtype=np.uint8), timestamp=1.0)
+    attached = Store.attach(SPEC, store.name)
+    try:
+        store.invalidate_observation("wrist")
+        assert attached.read_observation("wrist") is None
+        assert attached.read_observation("top") is not None
+
+        store.write_observation("wrist", frame, timestamp=2.0)
+        assert attached.read_observation("wrist").timestamp == 2.0
+    finally:
+        attached.close()
+
+
 def test_read_returns_a_copy(store: Store) -> None:
     store.write(STATE, [1.0, 2.0, 3.0], timestamp=1.0)
     first = store.read(STATE)

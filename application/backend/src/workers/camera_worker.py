@@ -88,6 +88,7 @@ class CameraWorker(ThreadWorker[SharedCamera]):
         try:
             await self._capture(context)
         except Exception as error:
+            self.store.invalidate_observation(self.key)
             self._publish("failed", str(error))
             raise
 
@@ -96,6 +97,7 @@ class CameraWorker(ThreadWorker[SharedCamera]):
         size = (self._image.width, self._image.height)
         camera: SharedCamera | None = context
         previous = None
+        reconnecting = False
         last_new_frame = time.monotonic()
         while camera is not None and not self.should_stop():
             frame = camera.read_latest()
@@ -103,7 +105,11 @@ class CameraWorker(ThreadWorker[SharedCamera]):
                 previous, last_new_frame = frame, time.monotonic()
                 data = frame.data if frame.data.shape[:2] == self._image.shape[:2] else cv2.resize(frame.data, size)
                 self.store.write_observation(self.key, data, timestamp=frame.timestamp)
+                if reconnecting:
+                    self._publish("running")
+                    reconnecting = False
             elif time.monotonic() - last_new_frame > self.stale_after_s:
+                reconnecting = True
                 camera = await self._reconnect(camera)
                 previous, last_new_frame = None, time.monotonic()
                 continue
@@ -116,6 +122,7 @@ class CameraWorker(ThreadWorker[SharedCamera]):
             The reopened camera, or ``None`` if the worker was asked to stop first.
         """
         logger.warning("Camera {!r} sent no frame for {:.1f}s; reconnecting", self.config.name, self.stale_after_s)
+        self.store.invalidate_observation(self.key)
         self._publish("starting", f"no frames for {self.stale_after_s:.1f}s; reconnecting")
         self._camera = None
         try:
@@ -135,7 +142,6 @@ class CameraWorker(ThreadWorker[SharedCamera]):
                 continue
             self._camera = camera
             logger.info("Camera {!r} reconnected after {} attempt(s)", self.config.name, attempts)
-            self._publish("running")
             return camera
         return None
 

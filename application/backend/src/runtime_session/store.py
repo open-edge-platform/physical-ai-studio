@@ -203,6 +203,10 @@ class Store:
     def read_observation(self, camera: str) -> Sample | None:
         return self._read(self._images[camera], self._views["camera:" + camera], (camera,))
 
+    def invalidate_observation(self, camera: str) -> None:
+        """Make a lost camera unreadable until its next frame is written."""
+        self._stamps[self._images[camera].stamp_index] = math.nan
+
     def _write(self, slot: _Slot, view: np.ndarray, values: ArrayLike, timestamp: float) -> None:
         array = np.asarray(values)
         if array.shape != slot.shape:

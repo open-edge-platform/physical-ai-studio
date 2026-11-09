@@ -5,8 +5,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from runtime_session.store import FeatureSpec, Store
+from runtime_session.store import ACTION, STATE, FeatureSpec, Store
+from schemas.runtime_session import StartEpisodeCommand
 from workers.camera_worker import CameraWorker, camera_image_spec
+from workers.dataset_worker import Recorder
+from workers.model_worker import Inference, InferRequest
 
 
 def _make_config(width=640, height=480, fps=30):
@@ -138,6 +141,45 @@ class TestCameraReconnect:
         sample = store.read_observation("cam")
         assert sample.timestamp == 5.0
         assert np.all(sample.value == 7)
+
+    def test_recording_and_inference_cannot_consume_a_reconnecting_camera(self, store):
+        worker = _fast_worker(store)
+        for key in (STATE, ACTION):
+            store.write(key, [], timestamp=1.0)
+        mutation, model = MagicMock(), MagicMock()
+        model.predict_action_chunk.return_value = np.zeros((1, 1))
+        recorder = Recorder(mutation, store, publish=MagicMock())
+        recorder.start(StartEpisodeCommand(request_id="start", task="pick"))
+        inference = Inference(model, store, {"images.cam": "cam"})
+
+        def reopen(**_kwargs):
+            assert store.read_observation("cam") is None
+            recorder.record_frame()
+            mutation.add_frame.assert_not_called()
+            assert recorder.skipped == 1
+            with pytest.raises(RuntimeError, match="has no frame yet"):
+                inference.infer(InferRequest(state=[]))
+            model.predict_action_chunk.assert_not_called()
+            return _camera_that_stops(worker, _make_frame(value=7, timestamp=5.0))
+
+        with patch("workers.camera_worker.build_shared_camera", side_effect=reopen):
+            asyncio.run(worker.run_loop(_frozen_camera()))
+
+        recorder.record_frame()
+        inference.infer(InferRequest(state=[]))
+        mutation.add_frame.assert_called_once()
+        model.predict_action_chunk.assert_called_once()
+        assert np.all(mutation.add_frame.call_args.args[0]["cam"] == 7)
+        assert np.all(model.predict_action_chunk.call_args.args[0]["images.cam"] == 7)
+
+    def test_a_read_failure_invalidates_the_last_frame(self, store):
+        worker = _fast_worker(store)
+        store.write_observation("cam", _make_frame().data, timestamp=1.0)
+        camera = MagicMock()
+        camera.read_latest.side_effect = RuntimeError("camera unplugged")
+        with pytest.raises(RuntimeError, match="camera unplugged"):
+            asyncio.run(worker.run_loop(camera))
+        assert store.read_observation("cam") is None
 
     def test_reopening_keeps_trying_until_the_camera_is_back(self, store):
         from physicalai.capture.errors import CaptureError

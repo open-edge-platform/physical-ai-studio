@@ -291,13 +291,19 @@ async def _enter_concurrently(
     """
     for name in devices:
         publish_status(bus, f"{COMPONENT}/{name}", "starting")
-    results = await asyncio.gather(*(device.__aenter__() for device in devices.values()), return_exceptions=True)
-    for (name, device), result in zip(devices.items(), results, strict=True):
-        if isinstance(result, Exception):
-            publish_status(bus, f"{COMPONENT}/{name}", "failed", _reason(result))
-        elif not isinstance(result, BaseException):
-            stack.push_async_exit(device)
-            publish_status(bus, f"{COMPONENT}/{name}", "running")
+
+    async def enter(name: str, device: AbstractAsyncContextManager[Any]) -> Any:
+        try:
+            result = await device.__aenter__()
+        except Exception as error:
+            publish_status(bus, f"{COMPONENT}/{name}", "failed", _reason(error))
+            raise
+        stack.push_async_exit(device)
+        # A connected device can already be reconnecting while another is still starting.
+        publish_status(bus, f"{COMPONENT}/{name}", "running")
+        return result
+
+    results = await asyncio.gather(*(enter(name, device) for name, device in devices.items()), return_exceptions=True)
     errors = [
         result
         for name, result in zip(devices, results, strict=True)
