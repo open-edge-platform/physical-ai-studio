@@ -85,7 +85,7 @@ def fix_device_frame_interval(device: str | Path, fps: int = DEFAULT_FPS) -> boo
     except OSError:
         return False
     finally:
-        if fd:
+        if fd is not None:
             os.close(fd)
 
 
