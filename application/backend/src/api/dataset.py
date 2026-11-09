@@ -133,7 +133,10 @@ async def dataset_video_endpoint(
     if not requested_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
 
-    return FileResponse(requested_path)
+    # Recording appends episodes to the same mp4, so a cached copy goes stale: it ends where the
+    # file ended when it was fetched, and every later episode then fails to play. Make browsers
+    # check the ETag before reusing it.
+    return FileResponse(requested_path, headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/{dataset_id}/download")
