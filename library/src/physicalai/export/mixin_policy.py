@@ -511,17 +511,32 @@ class ExportablePolicyMixin:
 
         extra_export_kwargs.update(export_kwargs)
 
-        ov_model = self._export_ready_model()(self._openvino_convert_step)(
-            extra_model_args=extra_model_args,
-            input_sample=input_sample,
-            arg_name=arg_name,
-            input_shapes=input_shapes,
-            extra_export_kwargs=extra_export_kwargs,
-        )
-        _set_openvino_input_names(ov_model, extra_model_args.inputs)
-        _postprocess_openvino_model(ov_model, extra_model_args.outputs)
+        # Convert and save on CPU. ``openvino.convert_model`` shares weight
+        # memory with the source tensors by default, and for non-CPU weights
+        # (e.g. bf16 on CUDA) ``save_model`` then reads device pointers as host
+        # memory and segfaults. ``save_model`` must stay inside this block:
+        # moving the model back frees the CPU tensors the OpenVINO constants
+        # still point to. The original device is always restored; train mode
+        # is restored by _export_ready_model().
+        original_device = self.device
+        cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
+        self.model.to("cpu")
+        try:
+            ov_model = self._export_ready_model()(self._openvino_convert_step)(
+                extra_model_args=extra_model_args,
+                input_sample=cpu_input_sample,
+                arg_name=arg_name,
+                input_shapes=input_shapes,
+                extra_export_kwargs=extra_export_kwargs,
+            )
+            _set_openvino_input_names(ov_model, extra_model_args.inputs)
+            _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
-        openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
+            openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
+            del ov_model
+        finally:
+            self.model.to(original_device)
+
         if extra_model_args.export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
                 self._preprocessor.tokenizer,
