@@ -52,6 +52,12 @@ class _TokenizerLike(Protocol):
 def export_image_resolution_from_stats(dataset_stats: dict[str, dict[str, Any]] | None) -> tuple[int, int]:
     """Return ``(height, width)`` from the first visual dataset-stats entry.
 
+    Args:
+        dataset_stats: Per-feature dataset statistics with ``type`` and ``shape``.
+
+    Returns:
+        The ``(height, width)`` of the first visual feature.
+
     Raises:
         RuntimeError: If no visual stats entry is available.
     """
@@ -81,6 +87,15 @@ def export_image_resolution_after_preprocessor_from_stats(
     Mirrors :class:`AspectAreaResizeAndCrop` geometry: area-budget resize then
     ``m_alignment`` center-crop. The runtime RLDX-1 preprocessor assumes this
     frozen post-transform shape.
+
+    Args:
+        dataset_stats: Per-feature dataset statistics with ``type`` and ``shape``.
+        image_max_area: Pixel-area budget above which images are downscaled.
+        image_resize_m: Alignment multiple for the center crop.
+        image_min_area: Pixel area below which images are upscaled, or ``None``.
+
+    Returns:
+        The ``(height, width)`` after resize and crop.
     """
     orig_h, orig_w = export_image_resolution_from_stats(dataset_stats)
     current_area = orig_h * orig_w
@@ -109,6 +124,13 @@ def build_rldx1_token_composer_params(
     max_token_len: int,
 ) -> dict[str, Any]:
     """Build manifest params for runtime RLDX-1 token composition.
+
+    Args:
+        tokenizer: Tokenizer used to encode the chat-template prefix/suffix.
+        image_resolution: Post-preprocessor ``(height, width)`` of each image.
+        num_views: Number of camera views.
+        num_frames: Number of frames per view.
+        max_token_len: Fixed prompt length after padding/truncation.
 
     Returns:
         A manifest-serializable parameter mapping for ``rldx1_token_composer``.
@@ -144,6 +166,9 @@ def build_rldx1_token_composer_params(
 def build_compress_reference_ids(token_composer_params: dict[str, Any]) -> torch.Tensor:
     """Build canonical ``input_ids`` whose image-token span matches runtime.
 
+    Args:
+        token_composer_params: Params from :func:`build_rldx1_token_composer_params`.
+
     Returns:
         A ``(1, max_token_len)`` tensor with runtime-aligned image token span.
     """
@@ -165,6 +190,9 @@ def build_compress_reference_ids(token_composer_params: dict[str, Any]) -> torch
 def cast_sample_fp32(sample: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     """Cast floating tensors in an export sample to fp32 (ints untouched).
 
+    Args:
+        sample: Export sample keyed by input name.
+
     Returns:
         A shallow-copied sample where floating tensors are ``float32``.
     """
@@ -176,6 +204,9 @@ def cast_sample_fp32(sample: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]
 
 def trim_export_sample(input_sample: dict[str, torch.Tensor] | None) -> dict[str, torch.Tensor] | None:
     """Trim export sample to the graph-safe model's declared inputs.
+
+    Args:
+        input_sample: Full export sample, or ``None``.
 
     Returns:
         A filtered sample containing only declared tracing inputs, or ``None``.
@@ -195,6 +226,11 @@ def fp32_weights_for_export(model: torch.nn.Module | None) -> Generator[None, No
     fp32. ``bf16 -> fp32 -> bf16`` round-trips losslessly, and per-tensor
     restore preserves mixed-dtype modules (e.g. an fp32 ``cog_emb``).
 
+    Args:
+        model: Module to cast, or ``None`` for a no-op.
+
+    Yields:
+        None: Control while the model weights are fp32.
     """
     if model is None:
         yield
@@ -223,6 +259,9 @@ def _residual_stream_layout(
     msat: MSAT,
 ) -> tuple[list[nn.Linear], list[nn.LayerNorm | RMSNorm], list[nn.Module]] | None:
     """Return the linear writers, norm readers and pass-through writers of the SA residual stream.
+
+    Args:
+        msat: The action head to inspect.
 
     Returns:
         ``(linears, norms, passthrough)`` or ``None`` when some reader of the
@@ -257,6 +296,13 @@ def f16_safe_residual_stream(msat: MSAT, scale: float = F16_SAFE_RESIDUAL_SCALE)
     (65504), so f16 inference (e.g. OpenVINO GPU) returns NaN actions. Every
     reader of the stream is a LayerNorm/RMSNorm, so dividing every writer by
     ``scale`` and each norm's eps by ``scale**2`` leaves the outputs unchanged.
+
+    Args:
+        msat: The action head to rescale in place.
+        scale: Divisor for the residual stream; a power of two keeps it exact.
+
+    Yields:
+        None: Control while the residual stream is rescaled.
     """
     layout = _residual_stream_layout(msat)
     if layout is None:
@@ -305,6 +351,11 @@ class _FirstCallOwnWeight(nn.Module):
     """``nn.Linear`` whose first call per forward reads a separate copy of its weights."""
 
     def __init__(self, linear: nn.Linear) -> None:
+        """Wrap ``linear`` and clone its weights for the first call.
+
+        Args:
+            linear: Shared linear layer used by every call after the first.
+        """
         super().__init__()
         self.linear = linear
         self.first_weight = nn.Parameter(linear.weight.detach().clone(), requires_grad=False)
@@ -314,6 +365,14 @@ class _FirstCallOwnWeight(nn.Module):
         self.calls = 0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the cloned weights on the first call, the shared ones afterwards.
+
+        Args:
+            x: Input features.
+
+        Returns:
+            The linear projection of ``x``.
+        """
         self.calls += 1
         if self.calls == 1:
             return F.linear(x, self.first_weight, self.first_bias)
@@ -333,6 +392,9 @@ def untie_first_denoising_step(root: nn.Module, msat: MSAT) -> Generator[None, N
     Args:
         root: Module traced for export; resets the per-forward call count.
         msat: The action head whose double blocks are patched.
+
+    Yields:
+        None: Control while the first step uses its own weights.
     """
     wrapped: list[tuple[SwiGLUFFN, nn.Linear, _FirstCallOwnWeight]] = []
     for block in cast("list[DoubleStreamBlock]", list(msat.double_blocks)):
@@ -366,6 +428,13 @@ def build_padded_sample(  # noqa: PLR0914
 
     Produces fixed-shape ``input_ids`` / ``position_ids`` / ``attention_mask``
     over ``[padded ids | cog placeholders]`` for graph-safe export tracing.
+
+    Args:
+        model: RLDX-1 model whose backbone computes the M-RoPE position ids.
+        input_ids: Unpadded prompt token ids of shape ``(1, L)``.
+        image_grid_thw: Per-image ``(t, h, w)`` patch grid.
+        embodiment_id: Embodiment id tensor.
+        config: Policy config providing ``tokenizer_max_length`` and ``n_cog_tokens``.
 
     Returns:
         A sample dict containing padded prompt tensors plus
