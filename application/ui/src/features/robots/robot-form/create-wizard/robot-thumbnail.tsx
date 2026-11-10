@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
+import { useRobotCatalogDefinitionQuery } from '../../robot-catalog.hooks';
 import { useLoadModelQuery } from '../../robot-models-context';
 import { SCENE_COLORS } from '../../robot-viewer-scene';
 
@@ -47,8 +48,12 @@ const Overlay = ({ children }: { children: string }) => (
     </View>
 );
 
-const ThumbnailCanvas = ({ type, isActive }: { type: string; isActive: boolean }) => {
+const ThumbnailScene = ({ type, isActive }: { type: string; isActive: boolean }) => {
     const { data: model, isPending, error } = useLoadModelQuery(type);
+
+    if (error) {
+        return <Overlay>No preview</Overlay>;
+    }
 
     return (
         <>
@@ -73,9 +78,18 @@ const ThumbnailCanvas = ({ type, isActive }: { type: string; isActive: boolean }
                 )}
             </Canvas>
             {isPending && <Overlay>Loading…</Overlay>}
-            {error && <Overlay>No preview</Overlay>}
         </>
     );
+};
+
+const ThumbnailCanvas = ({ type, isActive }: { type: string; isActive: boolean }) => {
+    const { data: definition } = useRobotCatalogDefinitionQuery(type);
+
+    if (!definition.urdf_path) {
+        return <Overlay>No preview</Overlay>;
+    }
+
+    return <ThumbnailScene type={type} isActive={isActive} />;
 };
 
 /** Small, non-interactive URDF preview for cards. Spins while `isActive`. */
