@@ -179,6 +179,30 @@ class TestAugmentDatasetQuantileStats:
 
             mock_compute.assert_called_once_with(ds)
 
+    @pytest.mark.parametrize("raises", [False, True])
+    def test_clears_lerobot_video_decoder_cache(self, *, raises: bool) -> None:
+        """Decoders opened while computing stats must not leak into forked DataLoader workers."""
+        ds = _FakeLeRobotDataset()
+
+        from physicalai.data.lerobot.utils import quantile_stats
+
+        with (
+            patch.object(quantile_stats.video_utils, "_default_decoder_cache") as mock_cache,
+            patch.object(
+                quantile_stats,
+                "compute_quantile_stats_for_dataset",
+                side_effect=RuntimeError("boom") if raises else None,
+                return_value={},
+            ),
+        ):
+            if raises:
+                with pytest.raises(RuntimeError, match="boom"):
+                    quantile_stats.augment_dataset_quantile_stats(ds)
+            else:
+                quantile_stats.augment_dataset_quantile_stats(ds)
+
+            mock_cache.clear.assert_called_once_with()
+
     def test_deterministic(self) -> None:
         """Verify that results are deterministic with the same seed."""
         ds1 = _FakeLeRobotDataset(seed=42)
