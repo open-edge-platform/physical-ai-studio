@@ -10,7 +10,7 @@
 #                          (~10% of parameters) toward 1-NFE inference.
 #
 # Run:
-#   physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml
+#   physicalai fit --config configs/physicalai/pi05/so101/finetune_and_snapflow.yaml
 #
 # Handy overrides:
 #   --data.train_batch_size 8                       # if you hit OOM
@@ -147,7 +147,7 @@ trainer:
         num_inference_steps: 1 # 1-NFE inference
     # Monitored -> best_model_path restores the best phase-1 teacher before
     # SnapFlow activates, then gets reset to track phase-2's own best (see
-    # snapflow_distillation.md). save_top_k=3 keeps the 3 best per phase.
+    # snapflow_distillation.md). save_top_k=1 keeps the best of each phase.
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
         monitor: val/loss
@@ -155,10 +155,3 @@ trainer:
         save_top_k: 1
         filename: "epoch{epoch:03d}"
         auto_insert_metric_name: false
-        dirpath: ./experiments/snapflow-multi-object-augment-best-ckpt
-  logger:
-    class_path: lightning.pytorch.loggers.WandbLogger
-    init_args:
-      project: "physicalai_snapflow"
-      name: "pi05_finetune_and_snapflow_augment_best_ckpt"
-      log_model: false

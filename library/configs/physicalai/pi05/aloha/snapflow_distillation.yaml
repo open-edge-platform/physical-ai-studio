@@ -11,13 +11,13 @@
 #
 #   # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start
 #   physicalai fit \
-#       --config configs/physicalai/pi05/aloha/snapflow.yaml \
-#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
+#       --config configs/physicalai/pi05/aloha/snapflow_distillation.yaml \
+#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/<phase-1>.ckpt
 #
 # `--weights_from` loads only the phase-1 state_dict and then re-applies this
 # config's model init_args (train_expert_only, snapflow_enabled, ...) on top of
 # it. It does NOT resume the optimizer, LR schedule, or global step — training
-# starts fresh at step 0 with this file's own trainer.max_steps budget.
+# starts fresh at step 0 with this file's own trainer.max_epochs budget.
 #
 # Do not use `--fit.ckpt_path` for the phase-2 handoff: that performs a full
 # Lightning resume, which restores the phase-1 optimizer state (one param group
@@ -29,7 +29,7 @@
 # its own earlier checkpoint).
 #
 # Single-run alternative (recommended):
-#   configs/physicalai/pi05/so101/snapflow.yaml uses
+#   configs/physicalai/pi05/so101/finetune_and_snapflow.yaml uses
 #   SnapFlowPhaseCallback to run both phases in one `physicalai fit`, with no
 #   checkpoint handoff.
 #
@@ -69,8 +69,6 @@ model:
     # Memory / throughput. Phase 2 only trains ~10% of params, so the
     # compile-friendly SnapFlow loss split (static FM/CD branch sizes) keeps
     # torch.compile stable across steps instead of recompiling on every batch.
-    # compile_model: true
-    # compile_mode: max-autotune
     gradient_checkpointing: true
     compile_model: true # disable compile_model if you hit OOM
 
