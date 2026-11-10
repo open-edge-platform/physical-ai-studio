@@ -11,7 +11,7 @@ export const getMockedFollowerRobot = (overrides: Partial<SO101Follower> = {}): 
     id: 'follower-1',
     name: 'Follower arm 1',
     type: 'SO101_Follower',
-    payload: { connection_string: '', serial_number: 'SO101-001', calibration: {} },
+    payload: { connection_string: '', serial_number: 'SO101-001', calibration: {}, unit: 'normalized' },
     ...overrides,
 });
 
@@ -19,7 +19,7 @@ export const getMockedLeaderRobot = (overrides: Partial<SO101Leader> = {}): SO10
     id: 'leader-1',
     name: 'Leader arm 1',
     type: 'SO101_Leader',
-    payload: { connection_string: '', serial_number: 'SO101-002', calibration: {} },
+    payload: { connection_string: '', serial_number: 'SO101-002', calibration: {}, unit: 'normalized' },
     ...overrides,
 });
 
