@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import types
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
@@ -600,8 +601,16 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         # fine-tuning). Stats from ``action_mean``/``action_std`` or a loaded
         # checkpoint are kept so resume/eval use the stats the weights saw.
         if self._action_mean is None or self._action_std is None:
+            # LeRobot datasets: read action/state straight from parquet. A dataloader
+            # scan would decode every video frame for nothing (images are unused).
+            iter_batches = getattr(train_dataset, "iter_action_state_batches", None)
+            scan_source = (
+                datamodule
+                if iter_batches is None
+                else types.SimpleNamespace(train_dataloader=lambda: iter_batches(datamodule.train_batch_size))
+            )
             mean, std = compute_action_chunk_stats(
-                datamodule,
+                scan_source,
                 chunk_size=self.config.chunk_size,
                 action_dim=action_dim,
                 max_action_dim=self.config.max_action_dim,
