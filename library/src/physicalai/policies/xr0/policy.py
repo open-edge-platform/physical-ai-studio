@@ -280,8 +280,9 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             (``(chunk_size, max_action_dim)``). Training computes it from the
             chunked dataset when omitted. Applies to both action modes.
         action_std: Per-timestep action std, same shape as ``action_mean``.
-        action_stats_max_batches: Optional cap on training batches scanned for
-            action stats. ``None`` scans the full training dataset.
+        action_stats_max_batches: Cap on training batches scanned for action
+            stats (defaults to 300). The train dataloader shuffles, so this is a
+            random sample. ``None`` scans the full training dataset.
         normalization_mode: Normalization method for state/action features.
         optimizer_type: AdamW implementation: ``"adamw8bit"`` (default),
             ``"adamw4bit"`` or ``"adamw"``. The low-bit variants need torchao.
@@ -347,7 +348,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         action_mode: Literal["absolute", "delta"] = "absolute",
         action_mean: Sequence[float] | torch.Tensor | None = None,
         action_std: Sequence[float] | torch.Tensor | None = None,
-        action_stats_max_batches: int | None = None,
+        action_stats_max_batches: int | None = 300,
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         optimizer_type: Literal["adamw", "adamw4bit", "adamw8bit"] = "adamw8bit",
         optimizer_lr: float = 1.0e-4,
