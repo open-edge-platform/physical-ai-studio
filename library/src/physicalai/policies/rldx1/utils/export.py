@@ -7,12 +7,15 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import torch
+import torch.nn.functional as F  # noqa: N812
+from torch import nn
 
 from physicalai.data import FeatureType
 from physicalai.data.observation import STATE
+from physicalai.policies.rldx1.components.norms import RMSNorm
 from physicalai.policies.rldx1.constants import (
     ATTENTION_MASK,
     EMBODIMENT_ID,
@@ -25,6 +28,9 @@ from physicalai.policies.rldx1.constants import (
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    from physicalai.policies.rldx1.components.action_model.blocks import DoubleStreamBlock, SingleStreamBlock
+    from physicalai.policies.rldx1.components.action_model.msat import MSAT
+    from physicalai.policies.rldx1.components.action_model.ops import SwiGLUFFN
     from physicalai.policies.rldx1.config import Rldx1Config
     from physicalai.policies.rldx1.model import Rldx1Model
 
@@ -207,6 +213,145 @@ def fp32_weights_for_export(model: torch.nn.Module | None) -> Generator[None, No
             tensor = by_name.get(name)
             if tensor is not None:
                 tensor.data = tensor.data.to(dtype)
+
+
+# Power of two, so dividing the weights and multiplying them back is exact.
+F16_SAFE_RESIDUAL_SCALE = 16.0
+
+
+def _residual_stream_layout(
+    msat: MSAT,
+) -> tuple[list[nn.Linear], list[nn.LayerNorm | RMSNorm], list[nn.Module]] | None:
+    """Return the linear writers, norm readers and pass-through writers of the SA residual stream.
+
+    Returns:
+        ``(linears, norms, passthrough)`` or ``None`` when some reader of the
+        stream is not scale-invariant, so the stream cannot be rescaled exactly.
+    """
+    if msat.use_physics:
+        return None
+    double = cast("list[DoubleStreamBlock]", list(msat.double_blocks))
+    single = cast("list[SingleStreamBlock]", list(msat.single_blocks))
+    post_norms = [m for b in double for m in (b.sa_norm2_attn, b.sa_norm3_mlp)] + [b.post_norm for b in single]
+    norms = [m for b in double for m in (b.sa_norm1, b.sa_norm2_mlp)] + [b.pre_norm for b in single]
+    norms.append(msat.norm_out)
+    if not all(isinstance(m, nn.Identity) for m in post_norms):
+        return None
+    scale_invariant = [m for m in norms if isinstance(m, (nn.LayerNorm, RMSNorm))]
+    if len(scale_invariant) != len(norms):
+        return None
+    linears = [m for b in double for m in (b.sa_proj, b.sa_mlp.w3)] + [b.linear2 for b in single]
+    passthrough: list[nn.Module] = [msat.time_token_proj]
+    if isinstance(msat.vl_proj_to_sa, nn.Linear):
+        linears.append(msat.vl_proj_to_sa)
+    else:
+        passthrough.append(msat.vl_proj_to_sa)
+    return linears, scale_invariant, passthrough
+
+
+@contextmanager
+def f16_safe_residual_stream(msat: MSAT, scale: float = F16_SAFE_RESIDUAL_SCALE) -> Generator[None, None, None]:
+    """Temporarily shrink the MSAT state-action residual stream by ``scale``.
+
+    Trained heads carry residual activations near 1e5, past the f16 maximum
+    (65504), so f16 inference (e.g. OpenVINO GPU) returns NaN actions. Every
+    reader of the stream is a LayerNorm/RMSNorm, so dividing every writer by
+    ``scale`` and each norm's eps by ``scale**2`` leaves the outputs unchanged.
+    """
+    layout = _residual_stream_layout(msat)
+    if layout is None:
+        yield
+        return
+    linears, norms, passthrough = layout
+    inv = 1.0 / scale
+
+    def scale_stream_input(
+        _module: nn.Module,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
+        if "hidden_states" in kwargs:
+            return args, {**kwargs, "hidden_states": kwargs["hidden_states"] * inv}
+        return (args[0] * inv, *args[1:]), kwargs
+
+    def scale_output(_module: nn.Module, _args: tuple[Any, ...], output: torch.Tensor) -> torch.Tensor:
+        return output * inv
+
+    original_eps = [norm.eps for norm in norms]
+    handles = [msat.register_forward_pre_hook(scale_stream_input, with_kwargs=True)]
+    handles.extend(module.register_forward_hook(scale_output) for module in passthrough)
+    with torch.no_grad():
+        for linear in linears:
+            linear.weight.mul_(inv)
+            if linear.bias is not None:
+                linear.bias.mul_(inv)
+    for norm, eps in zip(norms, original_eps, strict=True):
+        norm.eps = eps * inv * inv
+    try:
+        yield
+    finally:
+        for handle in handles:
+            handle.remove()
+        with torch.no_grad():
+            for linear in linears:
+                linear.weight.mul_(scale)
+                if linear.bias is not None:
+                    linear.bias.mul_(scale)
+        for norm, eps in zip(norms, original_eps, strict=True):
+            norm.eps = eps
+
+
+class _FirstCallOwnWeight(nn.Module):
+    """``nn.Linear`` whose first call per forward reads a separate copy of its weights."""
+
+    def __init__(self, linear: nn.Linear) -> None:
+        super().__init__()
+        self.linear = linear
+        self.first_weight = nn.Parameter(linear.weight.detach().clone(), requires_grad=False)
+        self.first_bias = (
+            nn.Parameter(linear.bias.detach().clone(), requires_grad=False) if linear.bias is not None else None
+        )
+        self.calls = 0
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.calls += 1
+        if self.calls == 1:
+            return F.linear(x, self.first_weight, self.first_bias)
+        return self.linear(x)
+
+
+@contextmanager
+def untie_first_denoising_step(root: nn.Module, msat: MSAT) -> Generator[None, None, None]:
+    """Give the first denoising step its own copy of the VL MLP down-projection weights.
+
+    The unrolled denoising steps share every MSAT weight. On the OpenVINO 2026.4
+    GPU plugin at f16, the later steps' ``vl_mlp.w3`` FullyConnected layers
+    return garbage when they share the weight constant with the first step.
+    The IR writer stores identical weight blobs once, so the ``.bin`` size
+    does not change.
+
+    Args:
+        root: Module traced for export; resets the per-forward call count.
+        msat: The action head whose double blocks are patched.
+    """
+    wrapped: list[tuple[SwiGLUFFN, nn.Linear, _FirstCallOwnWeight]] = []
+    for block in cast("list[DoubleStreamBlock]", list(msat.double_blocks)):
+        mlp = cast("SwiGLUFFN", block.vl_mlp)
+        wrapper = _FirstCallOwnWeight(mlp.w3)
+        wrapped.append((mlp, mlp.w3, wrapper))
+        mlp.w3 = wrapper  # type: ignore[assignment]
+
+    def reset_calls(_module: nn.Module, _args: tuple[Any, ...]) -> None:
+        for _, _, wrapper in wrapped:
+            wrapper.calls = 0
+
+    handle = root.register_forward_pre_hook(reset_calls)
+    try:
+        yield
+    finally:
+        handle.remove()
+        for owner, linear, _ in wrapped:
+            owner.w3 = linear
 
 
 def build_padded_sample(  # noqa: PLR0914
