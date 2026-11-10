@@ -1,16 +1,14 @@
 import type { FormEvent } from 'react';
 
-import { Button, Divider, Flex, Form, View } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
-import { $api } from '../../../api/client';
-import type { SchemaSo101RobotPayload } from '../../../api/openapi-spec';
-import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../paths';
-import { useRobotCatalogQuery } from '../robot-catalog.hooks';
-import { FormFields, RobotFormHeading, RobotType } from './form';
-import { useRobotForm, useRobotFormBody } from './provider';
+import { $api } from '../../../../api/client';
+import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
+import { useProjectId } from '../../../../features/projects/use-project';
+import { paths } from '../../../../paths';
+import { useRobotCatalogQuery } from '../../robot-catalog.hooks';
+import { useRobotForm, useRobotFormBody } from '../provider';
 
 const hasUploadedCalibration = (payload: unknown): boolean => {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
@@ -20,11 +18,12 @@ const hasUploadedCalibration = (payload: unknown): boolean => {
     return typeof calibration === 'object' && calibration !== null && Object.keys(calibration).length > 0;
 };
 
-export const CreateRobotForm = () => {
+export const useSubmitRobot = () => {
     const navigate = useNavigate();
     const { project_id } = useProjectId();
     const { activeType } = useRobotForm();
     const { data: catalog } = useRobotCatalogQuery();
+    const body = useRobotFormBody(uuidv4());
 
     const addRobotMutation = $api.useMutation('post', '/api/projects/{project_id}/robots', {
         meta: {
@@ -35,7 +34,6 @@ export const CreateRobotForm = () => {
         },
     });
 
-    const body = useRobotFormBody(uuidv4());
     const isSO101 = activeType === 'SO101_Follower' || activeType === 'SO101_Leader';
     const shouldRunSO101Setup = isSO101 && !hasUploadedCalibration(body?.payload);
     const shouldRunZeroCalibration = catalog.some(
@@ -65,43 +63,15 @@ export const CreateRobotForm = () => {
             return;
         }
 
-        const createdRobot = await addRobotMutation.mutateAsync({
-            params: { path: { project_id } },
-            body,
-        });
+        const createdRobot = await addRobotMutation.mutateAsync({ params: { path: { project_id } }, body });
 
         navigate(paths.project.robots.show({ project_id, robot_id: createdRobot.id }));
     };
 
-    const isCreateDisabled = body === null;
-
-    return (
-        <Flex direction='column' gap='size-200'>
-            <RobotFormHeading heading='Configure new robot' />
-            <Divider orientation='horizontal' size='S' />
-            <Form onSubmit={handleSubmit}>
-                <Flex direction='column' gap='size-200'>
-                    <Flex direction='column' gap='size-200' width='100%'>
-                        <RobotType />
-                        <FormFields />
-                    </Flex>
-                    <Divider orientation='horizontal' size='S' />
-                    <View>
-                        <Button
-                            variant='accent'
-                            type='submit'
-                            isDisabled={isCreateDisabled}
-                            isPending={addRobotMutation.isPending}
-                        >
-                            {shouldRunSO101Setup
-                                ? 'Begin Setup'
-                                : shouldRunZeroCalibration
-                                  ? 'Begin Calibration'
-                                  : 'Add robot'}
-                        </Button>
-                    </View>
-                </Flex>
-            </Form>
-        </Flex>
-    );
+    return {
+        handleSubmit,
+        isDisabled: body === null,
+        isPending: addRobotMutation.isPending,
+        label: shouldRunSO101Setup ? 'Begin Setup' : shouldRunZeroCalibration ? 'Begin Calibration' : 'Add robot',
+    };
 };
