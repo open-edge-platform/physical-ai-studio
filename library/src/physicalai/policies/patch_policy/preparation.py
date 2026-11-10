@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
@@ -71,7 +71,7 @@ def _validate_preparation(policy: PatchPolicy, tokenizer: ResidualActionQuantize
     Raises:
         ValueError: If the trainer, precision, or dataset is unsupported.
     """
-    trainer = policy.trainer
+    trainer = cast("Any", policy.trainer)
     if not isinstance(trainer.strategy, SingleDeviceStrategy) or trainer.world_size != 1:
         msg = "PATCH tokenizer fitting currently supports single-device training only."
         raise ValueError(msg)
@@ -171,7 +171,7 @@ def _lerobot_action_targets(dataset: Any) -> Iterator[torch.Tensor]:  # noqa: AN
     keys = getattr(dataset, "_action_columns", None) or ["action"]
     table = source.hf_dataset.select_columns(["index", "episode_index", *keys]).with_format("torch")
     absolute = np.asarray(list(table["index"]), dtype=np.int64)
-    for row in table:
+    for row in cast("Iterator[dict[str, Any]]", iter(table)):
         episode = source.meta.episodes[int(row["episode_index"])]
         values = {}
         for key in keys:

@@ -13,7 +13,7 @@ import warnings
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, cast
 
 import torch
 from torch import Tensor
@@ -357,7 +357,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         config = self._resolve_config(self.input_features, self.output_features)
 
         # Validate before creating modules or changing policy state.
-        model = self.model
+        model = cast("PatchPolicyModel | None", self.model)
         if model is not None:
             self._validate_model_config(config)
 
