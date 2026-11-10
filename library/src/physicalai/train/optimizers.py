@@ -68,7 +68,7 @@ class AdamWBF16Kahan(torch.optim.Optimizer):
 
     Each bf16 update is computed in fp32 on ``weight + compensation``, rounded to bf16, and
     the rounding residual is stored in a bf16 ``compensation`` buffer for the next step. The
-    weights follow the fp32-weight trajectory at 2 extra bytes per bf16 parameter. On CUDA the
+    weights follow the fp32-weight trajectory at 2 extra bytes per bf16 parameter. On CUDA and XPU the
     bf16 update is one fused Triton kernel per tensor; without Triton, or for non-contiguous
     tensors, it falls back to chunked eager ops. Other parameters use torch's foreach AdamW.
 
@@ -160,7 +160,7 @@ class AdamWBF16Kahan(torch.optim.Optimizer):
         decay = 1 - lr * group["weight_decay"]
         tensors = (p, grad, state["compensation"], state["exp_avg"], state["exp_avg_sq"])
         contiguous = all(t.is_contiguous() for t in tensors)
-        if p.is_cuda and contiguous and (fused := _fused_update()) is not None:
+        if p.device.type in {"cuda", "xpu"} and contiguous and (fused := _fused_update()) is not None:
             fused(*tensors, beta1, beta2, step_size, bias_correction2_sqrt, group["eps"], decay)
             return
         chunks: Iterable[tuple[torch.Tensor, ...]] = (
