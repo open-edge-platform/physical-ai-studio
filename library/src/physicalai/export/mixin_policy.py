@@ -850,11 +850,19 @@ class ExportablePolicyMixin:
                         example_input={arg_name: input_sample},
                         input=input_shapes,
                     )
+        # Copy weights into the OpenVINO model instead of aliasing them.
+        # OpenVINO's TorchScript frontend builds a bf16 constant from a
+        # temporary host buffer whenever the tensor is not already contiguous
+        # on CPU, and frees that buffer right away. With shared weights the
+        # constant then points at freed memory, which gives corrupted weights
+        # or a segfault in ``save_model``. Converting on CPU (see
+        # ``to_openvino``) covers CUDA tensors but not non-contiguous ones.
+        # Copying costs one extra copy of the weights at peak.
         return openvino.convert_model(
             self.model,
             example_input={arg_name: input_sample},
             input=input_shapes,
-            **extra_export_kwargs,
+            **{"share_weights": False, **extra_export_kwargs},
         )
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:

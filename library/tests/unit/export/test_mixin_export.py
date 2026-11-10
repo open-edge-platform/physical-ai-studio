@@ -74,6 +74,24 @@ class ModelWithSampleInput(torch.nn.Module):
         return {"input_tensor": torch.randn(1, self.input_dim)}
 
 
+class ModelWithNonContiguousBf16Weight(torch.nn.Module):
+    """bf16 weight that OpenVINO must copy before reading, as it must for any CUDA tensor."""
+
+    def __init__(self, input_dim: int = 64, output_dim: int = 32):
+        super().__init__()
+        self.input_dim = input_dim
+        # A transposed view is non-contiguous, so OpenVINO's ``.contiguous()``
+        # yields a temporary tensor, the same as ``.numpy(force=True)`` on CUDA.
+        self.weight = torch.nn.Parameter(torch.randn(output_dim, input_dim).to(torch.bfloat16).t())
+
+    def forward(self, batch):
+        return batch["input_tensor"] @ self.weight.to(torch.float32)
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor]:
+        return {"input_tensor": torch.randn(1, self.input_dim)}
+
+
 class ModelWithExtraExportArgs(torch.nn.Module):
     """Model implementing extra_export_args property."""
 
@@ -484,6 +502,45 @@ class TestToOpenVINO:
 
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
+
+    def test_bf16_weights_survive_conversion(self, tmp_path):
+        """OpenVINO aliases bf16 constants to a temporary buffer unless told to copy them.
+
+        A non-contiguous bf16 weight takes that path even on CPU, and without a
+        copy the exported model reads freed memory (garbage outputs or a
+        segfault in ``save_model``).
+        """
+        torch.manual_seed(0)
+        model = ModelWithNonContiguousBf16Weight()
+        wrapper = ExportWrapper(model)
+        wrapper._extra_export_args = {}
+        sample = model.sample_input
+        output_path = tmp_path / "model.xml"
+
+        wrapper.to_openvino(output_path, input_sample=sample)
+        # Allocate after conversion so freed buffers get reused and corrupted.
+        _ = [torch.full((64, 32), 7.0, dtype=torch.bfloat16) for _ in range(200)]
+
+        compiled = openvino.Core().compile_model(str(output_path), "CPU")
+        actual = compiled({0: sample["input_tensor"].numpy()})[0]
+        expected = model(sample).detach().numpy()
+        assert abs(actual - expected).max() < 1e-2
+
+    def test_policy_can_opt_back_into_shared_weights(self, tmp_path):
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        wrapper._extra_export_args = {
+            ExportBackend.OPENVINO: OpenVINOExportParameters(exporter_kwargs={"share_weights": True}),
+        }
+
+        with (
+            patch("physicalai.export.mixin_policy.openvino.convert_model") as convert,
+            patch("physicalai.export.mixin_policy.openvino.save_model"),
+            patch("physicalai.export.mixin_policy._postprocess_openvino_model"),
+        ):
+            wrapper.to_openvino(tmp_path / "model.xml")
+
+        assert convert.call_args.kwargs["share_weights"] is True
 
     def test_to_openvino_via_onnx(self, tmp_path):
         """Test OpenVINO export via ONNX intermediate model."""
