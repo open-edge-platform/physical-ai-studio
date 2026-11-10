@@ -32,7 +32,7 @@ const ThumbnailModel = ({ model }: { model: URDFRobot }) => {
 
     return (
         <group rotation={[0, degToRad(-45), 0]}>
-            <group rotation={[-Math.PI / 2, 0, -Math.PI / 4]} scale={[3, 3, 3]}>
+            <group rotation={[degToRad(-95), 0, degToRad(-45)]} scale={[3, 3, 3]}>
                 <primitive object={clone} />
             </group>
         </group>
