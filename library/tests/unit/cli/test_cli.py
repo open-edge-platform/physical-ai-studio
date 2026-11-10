@@ -54,7 +54,7 @@ def _libero_config_path() -> Path:
 
 
 def _pi05_snapflow_config_path() -> Path:
-    return _library_root() / "configs" / "physicalai" / "pi05" / "aloha" / "snapflow.yaml"
+    return _library_root() / "configs" / "physicalai" / "pi05" / "aloha" / "snapflow_distillation.yaml"
 
 
 class TestRegister:
