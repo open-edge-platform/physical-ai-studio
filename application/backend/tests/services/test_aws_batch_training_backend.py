@@ -181,7 +181,7 @@ async def test_reattach_does_not_resubmit_or_upload(context, aws, monkeypatch) -
     context.snapshot = None
     backend = await get_training_backend(context.payload)
     monkeypatch.setattr(backend, "_download", MagicMock())
-    monkeypatch.setattr(backend, "_extract", MagicMock())
+    monkeypatch.setattr(f"{MODULE}.extract_training_artifact", MagicMock())
     await backend.train(context)
     batch.submit_job.assert_not_called()
     s3.upload_file.assert_not_called()
@@ -233,7 +233,7 @@ async def test_expired_credentials_wait_and_recover_without_resubmitting(context
     monkeypatch.setattr(backend, "_poll", poll)
     monkeypatch.setattr(backend, "_download", download)
     monkeypatch.setattr(backend, "_relay_logs", logs)
-    monkeypatch.setattr(backend, "_extract", MagicMock())
+    monkeypatch.setattr(f"{MODULE}.extract_training_artifact", MagicMock())
     await backend.train(context)
     assert context.remote_job_id == original_id
     aws[0].submit_job.assert_not_called()
@@ -338,7 +338,7 @@ async def test_progress_survives_missing_status_and_retry(context, aws, monkeypa
     )
     monkeypatch.setattr(f"{MODULE}.asyncio.sleep", AsyncMock())
     monkeypatch.setattr(backend, "_download", MagicMock())
-    monkeypatch.setattr(backend, "_extract", MagicMock())
+    monkeypatch.setattr(f"{MODULE}.extract_training_artifact", MagicMock())
     await backend.train(context)
     updates = context.progress.call_args_list
     assert [call.args[0] for call in updates] == sorted(call.args[0] for call in updates)

@@ -83,6 +83,31 @@ describe('TrainingTargetsTable', () => {
         expect(screen.queryByText('no storage reported')).not.toBeInTheDocument();
     });
 
+    it('keeps Modal deployment status compact and shows the full phase only in the details', async () => {
+        const phase = 'Building and deploying the NVIDIA trainer. The first deployment can take several minutes.';
+        const modalTrainer = getMockedRemoteTrainer({
+            connection_mode: 'modal',
+            url: null,
+            connection: {
+                connection_mode: 'modal',
+                app_name: 'physicalai-trainer',
+                function_name: 'train',
+                volume_name: 'physicalai-training',
+                environment_name: 'main',
+            },
+        });
+        server.use(
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({ ...healthyTrainer, status: 'starting', reason_code: phase })
+            )
+        );
+        render(<TrainingTargetsTable rows={[directUrlRow(modalTrainer)]} onEdit={rs.fn()} onDelete={rs.fn()} />);
+
+        expect(await screen.findByText(phase)).toBeInTheDocument();
+        expect(screen.getAllByText('Starting')).toHaveLength(2);
+        expect(screen.queryByText(`Starting: ${phase}`)).not.toBeInTheDocument();
+    });
+
     it('disables installation while SSH host setup is in progress', async () => {
         const user = userEvent.setup();
         server.use(
@@ -102,7 +127,8 @@ describe('TrainingTargetsTable', () => {
                 onSetup={rs.fn()}
             />
         );
-        expect(await screen.findAllByText('Starting: Installing host prerequisites')).not.toHaveLength(0);
+        expect(await screen.findByText('Installing host prerequisites')).toBeInTheDocument();
+        expect(screen.getAllByText('Starting')).toHaveLength(2);
         await user.click(screen.getByRole('button', { name: `More actions ${remoteTrainer.name}` }));
         expect(screen.getByRole('menuitem', { name: 'Install prerequisites' })).toHaveAttribute(
             'aria-disabled',

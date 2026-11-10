@@ -24,13 +24,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from loguru import logger
-from physicalai.data.archive_safety import SafeZipArchive
 from pydantic import ValidationError
 
 from schemas.hardware import DeviceInfo
 from services.dataset_download_service import DatasetDownloadService
 from services.staged_archive import cleanup_staged_archive
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
+from services.training_backends.artifacts import extract_training_artifact
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
 from settings import get_settings
 from training.log_format import render_progress_log
@@ -181,6 +181,8 @@ class RemoteTrainingBackend:
         model rather than submitting a new job.
         """
         if context.remote_job_id:
+            if not isinstance(context.remote_job_id, uuid.UUID):
+                raise ValueError("HTTP trainers require a UUID remote job ID")
             if context.should_cancel_job():
                 await self._handle_stop_request(context, context.remote_job_id)
             self._log.info("Reattaching to in-flight remote training job")
@@ -626,7 +628,7 @@ class RemoteTrainingBackend:
 
             self._log.info("Extracting model artifact into {}", context.output_dir)
             await asyncio.to_thread(
-                self._extract_archive,
+                extract_training_artifact,
                 tmp_archive,
                 context.output_dir,
                 settings.data_import_max_uncompressed_bytes,
@@ -709,19 +711,6 @@ class RemoteTrainingBackend:
             return TRAINING_PROGRESS_END
         span = 100 - TRAINING_PROGRESS_END
         return min(99, TRAINING_PROGRESS_END + round(received_bytes / total_bytes * span))
-
-    @staticmethod
-    def _extract_archive(
-        tmp_archive: Path,
-        output_dir: Path,
-        max_uncompressed_bytes: int,
-        min_free_bytes: int,
-    ) -> None:
-        """Validate and extract the archive into ``output_dir`` (blocking)."""
-        archive = SafeZipArchive(tmp_archive, max_uncompressed_bytes=max_uncompressed_bytes)
-        archive.validate()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
     async def _handle_stop_request(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Cancel on a user stop request; suspend on shutdown.

@@ -22,6 +22,7 @@ class RemoteTrainerConnectionMode(StrEnum):
     DIRECT = "direct"
     SSH = "ssh"
     AWS_BATCH = "aws_batch"
+    MODAL = "modal"
 
 
 class ManualSshConnection(BaseModel):
@@ -199,8 +200,42 @@ class AwsBatchConnection(_AwsBatchResources):
     profile_name: AwsProfileName = "default"
 
 
+class ModalConnection(BaseModel):
+    """A Modal function and its persistent job Volume; credentials stay outside Studio."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    connection_mode: Literal[RemoteTrainerConnectionMode.MODAL] = RemoteTrainerConnectionMode.MODAL
+    app_name: str = Field(default="physicalai-trainer", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    function_name: str = Field(default="train", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    volume_name: str = Field(default="physicalai-training", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    environment_name: str = Field(default="main", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_policy_list(cls, value: object) -> object:
+        """Keep saved targets readable after removing the manual policy list."""
+        if isinstance(value, dict) and "policies" in value:
+            return {key: item for key, item in value.items() if key != "policies"}
+        return value
+
+
+ModalGpu = Literal["A10G", "A100-80GB", "H100"]
+
+
+class ModalDeploymentRequest(BaseModel):
+    """Explicitly provision a new NVIDIA trainer using backend-managed credentials."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    environment_name: str = Field(default="main", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    hf_secret_name: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    confirm_deployment: Literal[True]
+
+
 TrainerConnection = Annotated[
-    DirectConnection | SshConnection | AwsBatchConnection,
+    DirectConnection | SshConnection | AwsBatchConnection | ModalConnection,
     Field(discriminator="connection_mode"),
 ]
 

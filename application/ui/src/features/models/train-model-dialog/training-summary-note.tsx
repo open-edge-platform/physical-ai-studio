@@ -10,7 +10,7 @@ interface TrainingSummaryNoteProps {
 }
 
 const SummaryItem = ({ label, value }: { label: string; value: string }) => (
-    <Flex direction='row' gap='size-75' alignItems='baseline'>
+    <Flex direction='column' gap='size-50' minWidth={0}>
         <Text UNSAFE_className={classes.summaryLabel}>{label}</Text>
         <Text UNSAFE_className={classes.summaryValue}>{value}</Text>
     </Flex>
@@ -26,11 +26,11 @@ const SummaryItem = ({ label, value }: { label: string; value: string }) => (
  */
 export const TrainingSummaryNote = ({ name, device, dataset, policy }: TrainingSummaryNoteProps) => (
     <View backgroundColor='gray-75' borderRadius='regular' paddingX='size-150' paddingY='size-100'>
-        <Flex direction='column' gap='size-300' wrap alignItems='baseline'>
+        <div className={classes.summaryGrid}>
             {name !== undefined && <SummaryItem label='Name' value={name} />}
             <SummaryItem label='Device' value={device} />
             <SummaryItem label='Dataset' value={dataset} />
             <SummaryItem label='Policy' value={policy} />
-        </Flex>
+        </div>
     </View>
 );

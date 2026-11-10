@@ -4,6 +4,12 @@ Remote training executes a training job on a GPU-equipped trainer host. Studio u
 
 Use remote training when the Studio backend host does not meet the policy's GPU requirements or when training must run on dedicated infrastructure.
 
+## Modal
+
+Select **Modal Provider** in **Settings → Training Targets** to train on an on-demand GPU function without SSH or an AWS account. Configure Modal credentials on the Studio backend, then enter a target name and choose **Deploy and connect** to create a new app and storage Volume automatically. Existing saved targets remain editable. Studio forwards its configured Hugging Face token through a Modal runtime Secret, with deployment secrets as a fallback. See [Modal setup and operations](../modal/README.md) for cloud costs, GPU selection, credential handling, advanced manual deployment, and storage cleanup.
+
+Modal jobs support progress, live metrics, cancellation, and reattachment after a Studio restart. Each execution uses one GPU with a maximum duration of 24 hours; checkpoint continuation and remote base-model resume are not supported. GPU and persistent Volume storage incur Modal charges.
+
 ## Prepare an SSH host
 
 If you select **Set up Docker and GPU support** for an Ubuntu SSH trainer, Studio installs missing packages and configures Docker on that host. The SSH user needs passwordless sudo for these changes (and for a separately confirmed reboot); an already-ready host does not need it for the prerequisite check. A root SSH user does not need sudo.

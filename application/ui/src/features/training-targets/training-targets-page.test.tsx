@@ -102,7 +102,8 @@ describe('TrainingTargetsPage', () => {
         for (const [title, description] of [
             ['Self Managed Remote Trainer', 'Connect to a trainer service you deploy and manage.'],
             ['SSH Remote Trainer', 'Let Studio set up and manage a trainer over SSH.'],
-            ['AWS Provider', 'Run training jobs on on-demand GPU compute on AWS.'],
+            ['AWS', 'Run training jobs on on-demand GPU compute on AWS.'],
+            ['Modal', 'Run training on a deployed Modal GPU function with persistent Volume storage.'],
         ]) {
             const card = screen.getByRole('button', { name: `Add training target: ${title}` });
             expect(within(card).getByText(description)).toBeInTheDocument();
@@ -110,6 +111,175 @@ describe('TrainingTargetsPage', () => {
         }
         expect(await screen.findAllByText('managed-trainer')).not.toHaveLength(0);
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
+    });
+
+    it('edits existing Modal connection details without deploying or requesting credentials', async () => {
+        const user = userEvent.setup();
+        let updated: unknown;
+        let deployments = 0;
+        const trainer: SchemaRemoteTrainer = {
+            ...remoteTrainer,
+            name: 'Modal ACT',
+            connection_mode: 'modal',
+            url: null,
+            connection: {
+                connection_mode: 'modal',
+                app_name: 'physicalai-trainer',
+                function_name: 'train',
+                volume_name: 'physicalai-training',
+                environment_name: 'main',
+            },
+        };
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([trainer])),
+            http.patch(REMOTE_TRAINER_PATH, async ({ request }) => {
+                updated = await request.json();
+                return HttpResponse.json(trainer);
+            }),
+            http.post('/api/remote-trainers/providers/modal/deploy', () => {
+                deployments++;
+                return HttpResponse.json(trainer, { status: 202 });
+            })
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Edit Modal ACT' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Edit Modal training target' });
+        expect(within(dialog).getByRole('heading', { name: 'Modal resources' })).toBeInTheDocument();
+        expect(within(dialog).getByRole('textbox', { name: /^Environment/ })).toHaveAccessibleDescription(
+            /An existing environment in your Modal workspace.*Keep main.*not a Python or robot environment/
+        );
+        expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('button', { name: 'Deploy and connect' })).not.toBeInTheDocument();
+        const deploymentHelp = within(dialog).getByRole('button', { name: 'Deployment & credentials' });
+        expect(deploymentHelp).toHaveAttribute('aria-expanded', 'false');
+        await user.click(deploymentHelp);
+        expect(deploymentHelp).toHaveAttribute('aria-expanded', 'true');
+        expect(within(dialog).getByText('modal setup')).toBeVisible();
+        expect(within(dialog).getByText('MODAL_TOKEN_ID')).toBeVisible();
+        expect(within(dialog).getByText('MODAL_TOKEN_SECRET')).toBeVisible();
+        await user.click(deploymentHelp);
+        expect(deploymentHelp).toHaveAttribute('aria-expanded', 'false');
+        expect(within(dialog).queryByRole('textbox', { name: /token secret/i })).not.toBeInTheDocument();
+        const appName = within(dialog).getByRole('textbox', { name: /^App name/ });
+        expect(appName).toHaveValue('physicalai-trainer');
+        await user.type(appName, '/invalid');
+        expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeDisabled();
+        await user.clear(appName);
+        await user.type(appName, 'physicalai-trainer');
+        await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+        await waitFor(() => expect(updated).toEqual({ name: 'Modal ACT', connection: trainer.connection }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(deployments).toBe(0);
+    });
+
+    it('deploys a new trainer directly and polls health until connected', async () => {
+        const user = userEvent.setup();
+        let requested: unknown;
+        let ready = false;
+        const trainer: SchemaRemoteTrainer = {
+            ...remoteTrainer,
+            name: 'Automatic Modal',
+            connection_mode: 'modal',
+            url: null,
+            connection: {
+                connection_mode: 'modal',
+                app_name: 'physicalai-unique',
+                function_name: 'train',
+                volume_name: 'physicalai-training-unique',
+                environment_name: 'main',
+            },
+        };
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.post('/api/remote-trainers/providers/modal/deploy', async ({ request }) => {
+                requested = await request.json();
+                return HttpResponse.json(trainer, { status: 202 });
+            }),
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({
+                    ...healthyTrainer,
+                    status: ready ? 'healthy' : 'starting',
+                    reason_code: ready ? null : 'Building the NVIDIA trainer',
+                })
+            )
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Add training target: Modal' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Connect to Modal' });
+        expect(within(dialog).queryByText('NVIDIA GPU')).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+        expect(within(dialog).getByText(/Cloud charges may apply/)).toBeInTheDocument();
+        expect(within(dialog).queryByRole('textbox', { name: 'App name' })).not.toBeInTheDocument();
+        const advancedSettings = within(dialog).getByRole('button', { name: 'Advanced settings' });
+        expect(advancedSettings).toHaveAttribute('aria-expanded', 'false');
+        await user.click(advancedSettings);
+        const environment = within(dialog).getByRole('textbox', { name: /^Environment/ });
+        expect(environment).toHaveValue('main');
+        expect(environment).toHaveAccessibleDescription(
+            /Environments isolate apps, storage Volumes, and Secrets.*Keep main.*not a Python or robot environment/
+        );
+        await user.click(advancedSettings);
+        expect(advancedSettings).toHaveAttribute('aria-expanded', 'false');
+        const deployButton = within(dialog).getByRole('button', { name: 'Deploy and connect' });
+        expect(deployButton).toBeDisabled();
+        await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'Automatic Modal');
+        expect(deployButton).toBeEnabled();
+        expect(requested).toBeUndefined();
+        await user.click(deployButton);
+        expect(await within(dialog).findByText('Building the NVIDIA trainer')).toBeInTheDocument();
+        expect(requested).toEqual({
+            name: 'Automatic Modal',
+            environment_name: 'main',
+            hf_secret_name: null,
+            confirm_deployment: true,
+        });
+        expect(within(dialog).getByRole('button', { name: 'Close' })).toBeEnabled();
+        ready = true;
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), { timeout: 5000 });
+    });
+
+    it('shows deployment errors without resubmitting or hiding the saved target', async () => {
+        const user = userEvent.setup();
+        let deployments = 0;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.post('/api/remote-trainers/providers/modal/deploy', () => {
+                deployments += 1;
+                return HttpResponse.json(
+                    {
+                        ...remoteTrainer,
+                        connection_mode: 'modal',
+                        url: null,
+                        connection: {
+                            connection_mode: 'modal',
+                            app_name: 'physicalai-new',
+                            function_name: 'train',
+                            volume_name: 'physicalai-training-new',
+                            environment_name: 'main',
+                        },
+                    },
+                    { status: 202 }
+                );
+            }),
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({
+                    ...healthyTrainer,
+                    status: 'degraded',
+                    reason_code: 'Modal authentication failed. Configure backend credentials.',
+                })
+            )
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Add training target: Modal' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Connect to Modal' });
+        await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'Modal');
+        await user.click(within(dialog).getByRole('button', { name: 'Deploy and connect' }));
+        expect(await within(dialog).findByText(/Modal authentication failed/)).toBeInTheDocument();
+        expect(within(dialog).queryByRole('button', { name: 'Deploy and connect' })).not.toBeInTheDocument();
+        expect(deployments).toBe(1);
+        await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     });
 
     it('opens the SSH card with only SSH configuration', async () => {
@@ -243,7 +413,8 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        expect(await screen.findAllByText('Starting: Pulling trainer image')).not.toHaveLength(0);
+        expect(await screen.findByText('Pulling trainer image')).toBeInTheDocument();
+        expect(screen.getAllByText('Starting')).toHaveLength(2);
         expect(screen.queryByLabelText('Trainer setup in progress')).not.toBeInTheDocument();
     });
 
@@ -368,6 +539,43 @@ describe('TrainingTargetsPage', () => {
         expect(forgetLocally).toEqual(['true']);
     });
 
+    it('warns that removing a Modal target stops compute and permanently deletes cloud data', async () => {
+        const user = userEvent.setup();
+        const trainer: SchemaRemoteTrainer = {
+            ...remoteTrainer,
+            name: 'Modal ACT',
+            connection_mode: 'modal',
+            connection: {
+                connection_mode: 'modal',
+                app_name: 'physicalai-trainer',
+                function_name: 'train',
+                volume_name: 'physicalai-training',
+                environment_name: 'main',
+            },
+        };
+        let trainers = [trainer];
+        const deleted = rs.fn();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers)),
+            http.delete(REMOTE_TRAINER_PATH, () => {
+                deleted();
+                trainers = [];
+                return new HttpResponse(null, { status: 204 });
+            })
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: `Remove ${trainer.name}` }));
+        const dialog = await screen.findByRole('alertdialog', { name: 'Remove training target' });
+        expect(within(dialog).getByText(/permanently delete its Volume/)).toBeInTheDocument();
+        expect(within(dialog).getByText(/Results not yet imported into Studio will be lost/)).toBeInTheDocument();
+        expect(within(dialog).getByText(/target will still be removed if cleanup fails/)).toBeInTheDocument();
+        expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+        expect(deleted).not.toHaveBeenCalled();
+        await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+        expect(await screen.findByText('No training targets added')).toBeInTheDocument();
+        expect(deleted).toHaveBeenCalledOnce();
+    });
+
     it('clears an expired AWS target warning only after deletion succeeds', async () => {
         const user = userEvent.setup();
         const close = rs.fn();
@@ -435,7 +643,7 @@ describe('TrainingTargetsPage', () => {
 
         expect(await screen.findByText('No training targets added')).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Training targets' })).toBeInTheDocument();
-        expect(screen.getAllByRole('button', { name: /^Add training target:/ })).toHaveLength(3);
+        expect(screen.getAllByRole('button', { name: /^Add training target:/ })).toHaveLength(4);
     });
 
     it('shows multiple instances of the same type alongside other types', async () => {
@@ -452,7 +660,7 @@ describe('TrainingTargetsPage', () => {
         expect(await screen.findByRole('heading', { name: 'Training targets' })).toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: /^Edit / })).toHaveLength(3);
         expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(3);
-        expect(screen.getAllByRole('button', { name: /^Add training target:/ })).toHaveLength(3);
+        expect(screen.getAllByRole('button', { name: /^Add training target:/ })).toHaveLength(4);
     });
 
     it('validates the URI before advancing and preserves inputs when going back', async () => {
@@ -469,7 +677,7 @@ describe('TrainingTargetsPage', () => {
             })
         );
         render(<TrainingTargetsPage />);
-        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS Provider' }));
+        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS' }));
         const dialog = await screen.findByRole('dialog', { name: 'Deploy and configure AWS stack' });
         expect(within(dialog).queryByRole('button', { name: /AWS profile/ })).not.toBeInTheDocument();
         await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'AWS US East');
@@ -521,7 +729,7 @@ describe('TrainingTargetsPage', () => {
             })
         );
         render(<TrainingTargetsPage />);
-        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS Provider' }));
+        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS' }));
         const dialog = await screen.findByRole('dialog', { name: 'Deploy and configure AWS stack' });
         expect(within(dialog).getByRole('button', { name: 'Next' })).toBeDisabled();
         expect(dialog).not.toHaveTextContent(/instance/i);
@@ -626,7 +834,7 @@ describe('TrainingTargetsPage', () => {
             )
         );
         render(<TrainingTargetsPage />);
-        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS Provider' }));
+        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS' }));
         const dialog = await screen.findByRole('dialog', { name: 'Deploy and configure AWS stack' });
         await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'AWS Duplicate');
         await user.type(

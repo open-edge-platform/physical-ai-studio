@@ -118,9 +118,10 @@
 
 .checkContent {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--spectrum-global-dimension-size-75);
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: start;
+    gap: var(--spectrum-global-dimension-size-50);
     min-width: 0;
     overflow-wrap: anywhere;
 }
@@ -140,6 +141,7 @@
 }
 
 .checkRow {
+    padding-block: var(--spectrum-global-dimension-size-100);
     border-bottom: 1px solid var(--spectrum-global-color-gray-200);
 }
 

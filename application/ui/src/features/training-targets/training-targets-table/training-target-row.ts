@@ -12,8 +12,13 @@ export const INSTANCE_TYPES = [
         description: 'Let Studio set up and manage a trainer over SSH.',
     },
     {
+        id: 'modal',
+        label: 'Modal',
+        description: 'Run training on a deployed Modal GPU function with persistent Volume storage.',
+    },
+    {
         id: 'aws_batch',
-        label: 'AWS Provider',
+        label: 'AWS',
         description: 'Run training jobs on on-demand GPU compute on AWS.',
     },
 ] as const;

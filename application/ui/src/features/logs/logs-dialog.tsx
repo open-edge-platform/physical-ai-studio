@@ -84,6 +84,7 @@ const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
         }),
         select: selectLogs,
         staleTime: Infinity,
+        refetchOnMount: 'always',
     });
 
     const validLogs = useMemo(() => {

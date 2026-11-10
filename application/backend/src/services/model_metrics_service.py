@@ -114,19 +114,12 @@ class ModelMetricsService:
                     }:
                         raise
                     contents = ""
-                lines = contents.splitlines(keepends=True)
-                if lines and not lines[-1].endswith("\n"):
-                    lines.pop()
-                rows = list(csv.DictReader(lines))
                 if needs_issue_snapshot:
                     yield ServerSentEvent(event="issues", data="[]")
                     needs_issue_snapshot = False
-                for row in rows[rows_sent:]:
-                    data = {
-                        key.replace("/", "_"): ModelMetricsService._parse_value(value) for key, value in row.items()
-                    }
-                    yield ServerSentEvent(data=json.dumps(data))
-                rows_sent = max(rows_sent, len(rows))
+                events, rows_sent = ModelMetricsService._metric_snapshot_events(contents, rows_sent)
+                for event in events:
+                    yield event
                 await asyncio.sleep(5)
         except (BotoCoreError, ClientError) as error:
             logger.warning("Batch metrics stream failed for {}: {}", job_id, error)
@@ -134,6 +127,43 @@ class ModelMetricsService:
             logger.debug("Batch metrics stream cancelled for {}", job_id)
         except GeneratorExit:
             logger.debug("Batch metrics stream closed for {}", job_id)
+
+    @staticmethod
+    async def tail_modal_csv_file(trainer_url: str, job_id: str) -> AsyncGenerator[ServerSentEvent]:
+        """Stream complete rows from successive Modal Volume snapshots."""
+        import modal
+
+        from services.modal_training import modal_connection_from_url, modal_resources, read_volume_file
+
+        _, volume = modal_resources(modal_connection_from_url(trainer_url))
+        rows_sent = 0
+        yield ServerSentEvent(event="issues", data="[]")
+        try:
+            while True:
+                contents = await asyncio.to_thread(read_volume_file, volume, f"jobs/{job_id}/metrics.csv")
+                events, rows_sent = ModelMetricsService._metric_snapshot_events((contents or b"").decode(), rows_sent)
+                for event in events:
+                    yield event
+                await asyncio.sleep(5)
+        except (modal.exception.Error, ValueError, UnicodeError):
+            logger.opt(exception=True).warning("Modal metrics stream failed for {}", job_id)
+        except asyncio.CancelledError:
+            logger.debug("Modal metrics stream cancelled for {}", job_id)
+
+    @classmethod
+    def _metric_snapshot_events(cls, contents: str, rows_sent: int) -> tuple[list[ServerSentEvent], int]:
+        """Convert new, complete snapshot rows to events without replaying older rows."""
+        lines = contents.splitlines(keepends=True)
+        if lines and not lines[-1].endswith("\n"):
+            lines.pop()
+        rows = list(csv.DictReader(lines))
+        events = [
+            ServerSentEvent(
+                data=json.dumps({key.replace("/", "_"): cls._parse_value(value) for key, value in row.items()})
+            )
+            for row in rows[rows_sent:]
+        ]
+        return events, max(rows_sent, len(rows))
 
     @staticmethod
     async def empty_metrics_stream() -> AsyncGenerator[ServerSentEvent]:

@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from threading import Event
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import modal
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -14,9 +17,11 @@ from db.schema import Base, ProjectDB
 from exceptions import InvalidJobStateError
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload, ImportStep
-from schemas.job import DatasetImportJob
+from schemas.job import DatasetImportJob, RemoteTrainJobPayload, TrainJob
 from services.job_handlers import get_job_handler
 from services.job_service import JobService
+from services.training_backends.base import TrainingCanceledError, TrainingContext, TrainingSuspendedError
+from services.training_backends.modal import ModalTrainingBackend
 
 
 @pytest.fixture
@@ -39,6 +44,67 @@ def import_job(project_id, step, status=JobStatus.PENDING):
         status=status,
         payload=DatasetImportJobPayload(archive_staging_id=str(uuid4()), step=step),
     )
+
+
+@pytest.mark.anyio
+async def test_modal_stop_survives_shutdown_during_cancellation_outage(jobs, tmp_path):
+    service, project_id = jobs
+    job = TrainJob(
+        project_id=project_id,
+        status=JobStatus.RUNNING,
+        payload=RemoteTrainJobPayload(
+            project_id=project_id,
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="Modal",
+            remote_trainer_id=uuid4(),
+            remote_trainer_url="modal://trainer",
+            remote_job_id="fc-test",
+        ),
+    )
+    await service.create_job(job)
+    cancel_event = Event()
+    await service.interrupt_job(job.id, lambda _: cancel_event.set())
+    assert cancel_event.is_set()
+    # A worker saving the call identity must not erase the concurrent Stop request.
+    await service.update_remote_job_state(job.id, remote_job_id="fc-test")
+    context = TrainingContext(
+        job=job,
+        model=MagicMock(),
+        snapshot=None,
+        payload=job.payload,
+        base_model=None,
+        output_dir=tmp_path / "model",
+        cache_dir=tmp_path / "cache",
+        progress=MagicMock(),
+        should_stop=cancel_event.is_set,
+        should_cancel_job=cancel_event.is_set,
+        should_suspend=lambda: True,
+        remote_job_id=job.payload.remote_job_id,
+    )
+    call = MagicMock()
+    call.cancel.side_effect = modal.exception.AuthError("credentials unavailable")
+    with pytest.raises(TrainingSuspendedError):
+        await ModalTrainingBackend._check_stop(context, call)
+    await service.update_job_status(job.id, JobStatus.PENDING)
+
+    # Restart drops the process-local event, but not the saved cancellation request.
+    cancel_event.clear()
+    restored = await JobService(service.session).get_job_by_id(job.id)
+    assert restored.status == JobStatus.PENDING
+    assert restored.payload.cancel_requested is True
+    assert restored.payload.remote_job_id == "fc-test"
+    reattached = replace(
+        context,
+        job=restored,
+        payload=restored.payload,
+        should_suspend=lambda: False,
+        should_cancel_job=lambda: bool(restored.payload.cancel_requested),
+    )
+    call.cancel.side_effect = None
+    with pytest.raises(TrainingCanceledError):
+        await ModalTrainingBackend._check_stop(reattached, call)
+    assert call.cancel.call_count == 2
 
 
 @pytest.mark.anyio

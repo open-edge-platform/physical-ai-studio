@@ -26,6 +26,9 @@ interface SetupStepProps {
     policiesUnavailable?: boolean;
     onSelectedPolicyChange: (policy: string) => void;
     isPolicyDisabled: boolean;
+    isModalTarget?: boolean;
+    modalGpu?: Key | null;
+    onModalGpuChange?: (value: Key | null) => void;
     activeDevice: SchemaDeviceInfo | null;
 }
 
@@ -48,6 +51,9 @@ export const SetupStep = ({
     policiesUnavailable,
     onSelectedPolicyChange,
     isPolicyDisabled,
+    isModalTarget = false,
+    modalGpu = 'A10G',
+    onModalGpuChange,
     activeDevice,
 }: SetupStepProps) => (
     <Flex direction='column' gap='size-200' width='100%'>
@@ -85,6 +91,20 @@ export const SetupStep = ({
                 </Item>
             )}
         </Picker>
+
+        {isModalTarget && (
+            <Picker
+                label='NVIDIA GPU'
+                selectedKey={modalGpu}
+                onSelectionChange={onModalGpuChange}
+                description='Applies to this training job only. No redeployment is needed.'
+                width='100%'
+            >
+                <Item key='A10G'>A10G · 24 GB</Item>
+                <Item key='A100-80GB'>A100 · 80 GB</Item>
+                <Item key='H100'>H100 · 80 GB</Item>
+            </Picker>
+        )}
 
         {(remoteDevices.length > 1 || selectedGpuKey !== null) && (
             <Picker
@@ -128,6 +148,14 @@ export const SetupStep = ({
             isDisabled={isPolicyDisabled}
             trainingDevice={activeDevice}
         />
-        <PolicyAccessAlert policy={selectedPolicy} />
+        {isModalTarget ? (
+            <InlineAlert variant='warning'>
+                Studio securely forwards the Hugging Face token from Settings to your Modal training container. If none
+                is configured, the deployed function’s HF_TOKEN secret is used. Grant the token access to any gated
+                models. Studio does not verify these remote credentials.
+            </InlineAlert>
+        ) : (
+            <PolicyAccessAlert policy={selectedPolicy} />
+        )}
     </Flex>
 );

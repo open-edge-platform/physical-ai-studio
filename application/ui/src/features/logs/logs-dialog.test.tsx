@@ -7,6 +7,7 @@ import { HttpResponse } from 'msw';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
+import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { LogsDialog } from './logs-dialog';
 
@@ -71,6 +72,50 @@ describe('LogsDialog', () => {
         render(<LogsDialog close={rs.fn()} initialSourceId='job-abc' />);
 
         expect(await screen.findByText('hello world')).toBeInTheDocument();
+    });
+
+    it('reconnects to live logs when reopening a cached source', async () => {
+        const queryClient = createQueryClient();
+        let message = 'before closing';
+        const close = rs.fn();
+        rs.stubGlobal(
+            'EventSource',
+            class extends EventTarget {
+                onmessage: ((event: { data: string }) => void) | null = null;
+                onerror: (() => void) | null = null;
+
+                constructor() {
+                    super();
+                    queueMicrotask(() => {
+                        this.onmessage?.({
+                            data: JSON.stringify({
+                                record: {
+                                    message,
+                                    module: 'training_worker',
+                                    function: 'run',
+                                    line: 12,
+                                    level: { name: 'INFO' },
+                                    time: { timestamp: 1_700_000_000, repr: '2023-11-14 22:13:20' },
+                                },
+                            }),
+                        });
+                    });
+                }
+
+                close = close;
+            }
+        );
+
+        const first = render(<LogsDialog close={rs.fn()} initialSourceId='job-abc' />, { queryClient });
+        expect(await screen.findByText('before closing')).toBeInTheDocument();
+        first.unmount();
+        expect(close).toHaveBeenCalled();
+
+        message = 'after reopening';
+        const reopened = render(<LogsDialog close={rs.fn()} initialSourceId='job-abc' />, { queryClient });
+        expect(await screen.findByText('after reopening')).toBeInTheDocument();
+        reopened.unmount();
+        queryClient.clear();
     });
 
     // Regression test: a just-started job's log source can briefly surface

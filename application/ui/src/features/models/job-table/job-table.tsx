@@ -56,6 +56,7 @@ const TrainerCell = ({ job }: { job: SchemaTrainJob }) => {
             : getTrainerLabel(payload);
     const devices = health?.devices ?? [];
     const selected = payload.device;
+    const modalGpu = payload.training_target === 'remote' ? payload.modal_gpu : undefined;
     const gpu = devices.find(
         (device) => device.index === (selected?.index ?? 0) && (!selected || device.type === selected.type)
     );
@@ -65,7 +66,13 @@ const TrainerCell = ({ job }: { job: SchemaTrainJob }) => {
     return (
         <Flex direction='column' data-testid='trainer-cell'>
             <Text>{remoteId && trainer !== 'Remote' ? `Remote · ${trainer}` : trainer || '-'}</Text>
-            {showDevice && <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>}
+            {modalGpu ? (
+                <Text>GPU · {modalGpu}</Text>
+            ) : (
+                showDevice && (
+                    <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>
+                )
+            )}
             {image && <Text UNSAFE_className={classes.rowInfo}>Trainer image: {image}</Text>}
         </Flex>
     );

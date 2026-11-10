@@ -11,7 +11,6 @@ from uuid import UUID
 
 from botocore.exceptions import BotoCoreError, ClientError
 from loguru import logger
-from physicalai.data.archive_safety import SafeZipArchive
 
 from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.remote_trainer import AwsBatchConnection
@@ -19,6 +18,7 @@ from services.aws_auth_service import authentication_issue
 from services.aws_batch import POLICY_INSTANCE_TYPES, _make_session
 from services.dataset_download_service import DatasetDownloadService
 from services.staged_archive import cleanup_staged_archive
+from services.training_backends.artifacts import extract_training_artifact
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
 from services.training_backends.local import build_spec, resolve_hf_token
 from settings import get_settings
@@ -139,7 +139,14 @@ class AwsBatchTrainingBackend:
                 await self._check_stop(context, job_id)
                 raise
             await self._check_stop(context, job_id)
-            await asyncio.to_thread(self._extract, archive, context.output_dir)
+            settings = get_settings()
+            await asyncio.to_thread(
+                extract_training_artifact,
+                archive,
+                context.output_dir,
+                settings.data_import_max_uncompressed_bytes,
+                settings.data_import_min_free_bytes,
+            )
         await self._check_stop(context, job_id)
         context.progress(99, message="Model downloaded")
 
@@ -355,11 +362,3 @@ class AwsBatchTrainingBackend:
             )
             logger.info("Terminated AWS Batch job {}", job_id)
         raise TrainingCanceledError("Training canceled")
-
-    @staticmethod
-    def _extract(archive: Path, output_dir: Path) -> None:
-        settings = get_settings()
-        safe = SafeZipArchive(archive, max_uncompressed_bytes=settings.data_import_max_uncompressed_bytes)
-        safe.validate()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        safe.extract_to(output_dir, min_free_bytes=settings.data_import_min_free_bytes)

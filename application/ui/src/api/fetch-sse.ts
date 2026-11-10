@@ -25,56 +25,56 @@ export function fetchSSE<T = unknown>(url: string, options: FetchSSEOptions = {}
             eventSource.addEventListener('issues', (event) => {
                 options.onIssues?.((event as MessageEvent<string>).data);
             });
-            let aborted = false;
-            let onAbort: (() => void) | undefined;
+            const messages: string[] = [];
+            let wake = Promise.withResolvers<void>();
+            let finished = false;
+            let error: Error | undefined;
+            const onAbort = () => {
+                finished = true;
+                messages.length = 0;
+                eventSource.close();
+                wake.resolve();
+            };
 
             try {
-                let { promise, resolve, reject } = Promise.withResolvers<string>();
-
-                onAbort = () => {
-                    aborted = true;
-                    eventSource.close();
-                    resolve('DONE');
-                };
-
                 options.signal?.addEventListener('abort', onAbort, { once: true });
 
                 eventSource.onmessage = (event) => {
+                    if (finished) return;
                     if (event.data === 'DONE' || event.data.includes('COMPLETED')) {
+                        finished = true;
                         eventSource.close();
-                        resolve('DONE');
-                        return;
+                    } else {
+                        // Preserve bursts and rows received while the consumer is paused at yield.
+                        messages.push(event.data);
                     }
-                    resolve(event.data);
+                    wake.resolve();
                 };
 
                 eventSource.onerror = () => {
+                    if (finished) return;
+                    finished = true;
+                    error = new Error('EventSource connection failed');
                     eventSource.close();
-                    reject(new Error('EventSource connection failed'));
+                    wake.resolve();
                 };
 
-                while (true) {
-                    const message = await promise;
-
-                    if (message === 'DONE') {
-                        break;
+                while (!finished || messages.length > 0) {
+                    if (messages.length === 0) {
+                        await wake.promise;
+                        wake = Promise.withResolvers<void>();
+                        continue;
                     }
-
+                    const message = messages.shift()!;
                     try {
                         yield JSON.parse(message);
                     } catch {
                         // Skip unparseable messages
                     }
-
-                    ({ promise, resolve, reject } = Promise.withResolvers<string>());
                 }
+                if (error) throw error;
             } finally {
-                if (onAbort) {
-                    options.signal?.removeEventListener('abort', onAbort);
-                }
-                if (!aborted && options.signal?.aborted) {
-                    aborted = true;
-                }
+                options.signal?.removeEventListener('abort', onAbort);
                 eventSource.close();
             }
         },

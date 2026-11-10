@@ -10,7 +10,11 @@ from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
+from schemas.remote_trainer import ModalGpu
 from training.job import PEFT_POLICIES, SNAPFLOW_POLICIES
+
+RemoteJobId = UUID | Annotated[str, Field(pattern=r"^fc-[a-zA-Z0-9]+$", max_length=128)]
+RemoteJobIdAdapter = TypeAdapter(RemoteJobId)
 
 
 class ExportBackend(StrEnum):
@@ -329,7 +333,7 @@ class TrainJobPayloadBase(BaseModel):
     # Set by the worker for every target (not just remote ones): a snapshot is
     # taken up front so a job's model has stable provenance, and a remote/SSH
     # run additionally needs its remote job id to reattach after a restart.
-    remote_job_id: UUID | None = Field(
+    remote_job_id: RemoteJobId | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
     )
     snapshot_id: UUID | None = Field(
@@ -353,7 +357,7 @@ class TrainJobPayloadBase(BaseModel):
         return str(snapshot_id) if snapshot_id else None
 
     @field_serializer("remote_job_id")
-    def serialize_remote_job_id(self, remote_job_id: UUID | None, _info: Any) -> str | None:
+    def serialize_remote_job_id(self, remote_job_id: RemoteJobId | None, _info: Any) -> str | None:
         return str(remote_job_id) if remote_job_id else None
 
 
@@ -374,6 +378,9 @@ class RemoteTrainJobPayload(TrainJobPayloadBase):
 
     training_target: Literal[TrainingTarget.REMOTE] = TrainingTarget.REMOTE
     remote_trainer_id: UUID = Field(..., description="Configured remote trainer selected for a remote run")
+    modal_gpu: ModalGpu | None = Field(
+        default=None, description="NVIDIA GPU for this Modal job; null uses the deployed function's default GPU"
+    )
     remote_trainer_url: str | None = Field(
         default=None,
         description="Resolved remote trainer URL pinned when the job is submitted for restart recovery",

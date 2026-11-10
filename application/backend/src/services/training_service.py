@@ -8,7 +8,7 @@ from loguru import logger
 
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import RemoteTrainJobPayload, TrainingTarget
+from schemas.job import RemoteJobId, RemoteJobIdAdapter, RemoteTrainJobPayload, TrainingTarget
 from services.event_processor import EventType
 from services.job_service import JobService
 from workers.base import ThreadWorker
@@ -118,7 +118,7 @@ class TrainingService:
     _REATTACHABLE_TARGETS = (TrainingTarget.REMOTE,)
 
     @staticmethod
-    def _reattachable_remote_job_id(job: object) -> UUID | None:
+    def _reattachable_remote_job_id(job: object) -> RemoteJobId | None:
         """Return the persisted remote job id for a training job, if any.
 
         Only `RemoteTrainJobPayload` carries a reattachable `remote_job_id`;
@@ -133,7 +133,7 @@ class TrainingService:
             if payload.get("training_target") not in {target.value for target in TrainingService._REATTACHABLE_TARGETS}:
                 return None
             try:
-                return UUID(str(remote_job_id))
+                return RemoteJobIdAdapter.validate_python(str(remote_job_id))
             except (TypeError, ValueError, AttributeError):
                 return None
         return None

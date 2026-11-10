@@ -95,6 +95,15 @@ async def get_model_job_metrics(
         isinstance(job, TrainJob)
         and isinstance(job.payload, RemoteTrainJobPayload)
         and job.payload.remote_trainer_url is not None
+        and job.payload.remote_trainer_url.startswith("modal://")
+    ):
+        return EventSourceResponse(
+            model_metrics_service.tail_modal_csv_file(job.payload.remote_trainer_url, str(job.id))
+        )
+    if (
+        isinstance(job, TrainJob)
+        and isinstance(job.payload, RemoteTrainJobPayload)
+        and job.payload.remote_trainer_url is not None
         and job.payload.remote_trainer_url.startswith(("http://", "https://"))
         and job.payload.remote_job_id is not None
     ):

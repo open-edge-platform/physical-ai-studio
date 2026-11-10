@@ -20,7 +20,7 @@ from repositories import JobRepository
 from schemas import Job
 from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, RemoteJobId, RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services.job_handlers import get_job_handler
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
@@ -100,7 +100,7 @@ class JobService:
         *,
         authentication_issue: AwsAuthenticationIssue | _Unset | None = _Unset.VALUE,
         cancel_requested: bool | None = None,
-        remote_job_id: UUID | None = None,
+        remote_job_id: RemoteJobId | None = None,
         snapshot_id: UUID | None = None,
     ) -> Job:
         """Update worker-owned state without overwriting a concurrent cancellation request."""

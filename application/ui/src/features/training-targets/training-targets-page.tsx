@@ -5,7 +5,9 @@ import { Deployments, Lock } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
 import { ReactComponent as AwsIcon } from '../../assets/icons/aws-icon.svg';
+import { ReactComponent as ModalIcon } from '../../assets/icons/modal-icon.svg';
 import { CloudProviderForm } from './training-target-form/cloud-provider-form';
+import { ModalProviderForm } from './training-target-form/modal-provider-form';
 import { DeleteRemoteTrainerDialog } from './training-targets-table/delete-remote-trainer-dialog';
 import { InstallPrerequisitesDialog } from './training-targets-table/install-prerequisites-dialog';
 import { RemoteTrainerForm } from './training-targets-table/remote-trainer-form/remote-trainer-form';
@@ -62,7 +64,15 @@ export const TrainingTargetsPage = () => {
                         onClick={() => setAction({ type: 'create', instanceType: id })}
                     >
                         <span className={classes.typeIcon} aria-hidden='true'>
-                            {id === 'direct' ? <Deployments /> : id === 'ssh' ? <Lock /> : <AwsIcon />}
+                            {id === 'ssh' ? (
+                                <Lock />
+                            ) : id === 'aws_batch' ? (
+                                <AwsIcon />
+                            ) : id === 'modal' ? (
+                                <ModalIcon />
+                            ) : (
+                                <Deployments />
+                            )}
                         </span>
                         <span className={classes.typeCopy}>
                             <span className={classes.typeName}>{label}</span>
@@ -100,7 +110,10 @@ export const TrainingTargetsPage = () => {
                 {action?.type === 'create' && action.instanceType === 'aws_batch' && (
                     <CloudProviderForm close={closeForm} />
                 )}
-                {action?.type === 'create' && action.instanceType !== 'aws_batch' && (
+                {action?.type === 'create' && action.instanceType === 'modal' && (
+                    <ModalProviderForm close={closeForm} />
+                )}
+                {action?.type === 'create' && (action.instanceType === 'direct' || action.instanceType === 'ssh') && (
                     <RemoteTrainerForm
                         instanceType={action.instanceType}
                         close={closeForm}
@@ -111,15 +124,20 @@ export const TrainingTargetsPage = () => {
                 {action?.type === 'edit' && action.row.trainer.connection_mode === 'aws_batch' && (
                     <CloudProviderForm remoteTrainer={action.row.trainer} close={closeForm} />
                 )}
-                {action?.type === 'edit' && action.row.trainer.connection_mode !== 'aws_batch' && (
-                    <RemoteTrainerForm
-                        instanceType={action.row.trainer.connection_mode}
-                        remoteTrainer={action.row.trainer}
-                        close={closeForm}
-                        requestHostKeyConfirmation={setHostKeyConfirmation}
-                        sshAvailable={sshAvailable}
-                    />
+                {action?.type === 'edit' && action.row.trainer.connection_mode === 'modal' && (
+                    <ModalProviderForm remoteTrainer={action.row.trainer} close={closeForm} />
                 )}
+                {action?.type === 'edit' &&
+                    (action.row.trainer.connection_mode === 'direct' ||
+                        action.row.trainer.connection_mode === 'ssh') && (
+                        <RemoteTrainerForm
+                            instanceType={action.row.trainer.connection_mode}
+                            remoteTrainer={action.row.trainer}
+                            close={closeForm}
+                            requestHostKeyConfirmation={setHostKeyConfirmation}
+                            sshAvailable={sshAvailable}
+                        />
+                    )}
                 {action?.type === 'delete' && action.row.kind === 'direct-url' && (
                     <DeleteRemoteTrainerDialog
                         remoteTrainer={action.row.trainer}

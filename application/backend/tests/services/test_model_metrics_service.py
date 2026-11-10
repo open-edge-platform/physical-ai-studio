@@ -14,6 +14,24 @@ from services.aws_batch import aws_batch_trainer_url
 from services.model_metrics_service import ModelMetricsService
 
 
+def test_metric_snapshots_normalize_values_and_do_not_replay_missing_or_shorter_snapshots() -> None:
+    contents = "step,train/loss,note,empty\n0,2.5,warmup,\n1,"
+    events, rows_sent = ModelMetricsService._metric_snapshot_events(contents, 0)
+    assert rows_sent == 1
+    assert [json.loads(event.data) for event in events] == [
+        {"step": 0, "train_loss": 2.5, "note": "warmup", "empty": None}
+    ]
+    for snapshot in [contents, "", "step,train/loss,note,empty\n"]:
+        events, rows_sent = ModelMetricsService._metric_snapshot_events(snapshot, rows_sent)
+        assert events == [] and rows_sent == 1
+    contents += "1.25,training,\n"
+    events, rows_sent = ModelMetricsService._metric_snapshot_events(contents, rows_sent)
+    assert rows_sent == 2
+    assert [json.loads(event.data) for event in events] == [
+        {"step": 1, "train_loss": 1.25, "note": "training", "empty": None}
+    ]
+
+
 async def test_batch_metrics_wait_for_s3_and_emit_only_new_complete_rows(monkeypatch) -> None:
     connection = AwsBatchConnection(
         region="us-east-1",

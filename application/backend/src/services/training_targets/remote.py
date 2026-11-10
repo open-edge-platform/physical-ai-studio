@@ -11,9 +11,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from exceptions import InvalidResourceError, RemoteResumeUnsupportedError
 from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJobPayload
-from schemas.remote_trainer import AwsBatchConnection
+from schemas.remote_trainer import AwsBatchConnection, ModalConnection
 from services.aws_auth_service import AwsAuthenticationRequiredError, authentication_issue
 from services.aws_batch import _make_session, aws_batch_trainer_url
+from services.modal_training import modal_trainer_url
 from services.remote_trainer_service import RemoteTrainerService
 
 
@@ -38,7 +39,9 @@ class RemoteTrainingTargetHandler:
         if payload.base_model_id is not None:
             raise RemoteResumeUnsupportedError
         remote_trainer = await self.remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
-        is_batch = isinstance(remote_trainer.connection, AwsBatchConnection)
+        if payload.modal_gpu is not None and not isinstance(remote_trainer.connection, ModalConnection):
+            raise InvalidResourceError("modal_gpu", "GPU overrides are only supported on Modal training targets")
+        is_batch = isinstance(remote_trainer.connection, AwsBatchConnection | ModalConnection)
         if isinstance(remote_trainer.connection, AwsBatchConnection):
             try:
                 await asyncio.to_thread(_make_session, remote_trainer.connection)
@@ -56,6 +59,8 @@ class RemoteTrainingTargetHandler:
                 "remote_trainer_url": (
                     aws_batch_trainer_url(remote_trainer.connection)
                     if isinstance(remote_trainer.connection, AwsBatchConnection)
+                    else modal_trainer_url(remote_trainer.connection)
+                    if isinstance(remote_trainer.connection, ModalConnection)
                     else str(remote_trainer.url)
                 ),
                 "remote_trainer_name": remote_trainer.name,
@@ -70,6 +75,6 @@ class RemoteTrainingTargetHandler:
         if not isinstance(payload, RemoteTrainJobPayload):
             raise TypeError("RemoteTrainingTargetHandler.target_key requires a RemoteTrainJobPayload")
         trainer_key = f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
-        if payload.remote_trainer_url and payload.remote_trainer_url.startswith("aws-batch://"):
+        if payload.remote_trainer_url and payload.remote_trainer_url.startswith(("aws-batch://", "modal://")):
             return f"batch:{payload.remote_trainer_id}:{payload.policy}"
         return f"{trainer_key}:{payload.device.type}:{payload.device.index}" if payload.device else trainer_key

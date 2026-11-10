@@ -457,7 +457,14 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
         await goToSmolVlaTrainingParameters(user);
-        await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        expect(screen.getByRole('region', { name: 'Additional options' })).toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        const snapflowCheckbox = await screen.findByRole('checkbox', { name: /snapflow distillation/i });
+        await user.click(snapflowCheckbox);
+        expect(screen.getByRole('textbox', { name: 'Distillation epochs' })).toBeEnabled();
+        await user.click(snapflowCheckbox);
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        await user.click(snapflowCheckbox);
         await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
@@ -579,6 +586,62 @@ describe('TrainModelDialog', () => {
 
         expect(await screen.findByText(/couldn.t verify Hugging Face access/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('uses remote credentials for Modal Pi0.5 and restores local access gating when switching back', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer([testDataset]);
+        const modalTrainer = getMockedRemoteTrainer({
+            id: remoteTrainerId,
+            name: 'Modal trainer',
+            connection_mode: 'modal',
+            connection: {
+                connection_mode: 'modal',
+                app_name: 'physicalai-trainer',
+                function_name: 'train',
+                volume_name: 'physicalai-training',
+                environment_name: 'main',
+            },
+        });
+        let pi05AccessChecks = 0;
+        server.use(
+            http.get('/api/remote-trainers', () => HttpResponse.json([modalTrainer])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => HttpResponse.json(healthyRemoteTrainer)),
+            http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {
+                if (params.policy === 'pi05') pi05AccessChecks++;
+                return HttpResponse.json({
+                    requirements:
+                        params.policy === 'pi05'
+                            ? [
+                                  {
+                                      repository: 'google/paligemma-3b-pt-224',
+                                      status: 'missing_token',
+                                      required: true,
+                                      access_url: 'https://huggingface.co/google/paligemma-3b-pt-224',
+                                  },
+                              ]
+                            : [],
+                });
+            })
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: modalTrainer.name }));
+        await user.click(await screen.findByLabelText('Select Pi0.5 policy'));
+        expect(
+            await screen.findByText(/Studio securely forwards the Hugging Face token from Settings/i)
+        ).toBeInTheDocument();
+        expect(screen.getByText(/the deployed function’s HF_TOKEN secret is used/i)).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.queryByText(/Studio does not verify these remote credentials/i)).not.toBeInTheDocument();
+        expect(pi05AccessChecks).toBe(0);
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByRole('button', { name: /Modal trainer/ }));
+        await user.click(await screen.findByRole('option', { name: /this machine \(local\)/i }));
+        expect(await screen.findByText(/no token is configured/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+        expect(pi05AccessChecks).toBeGreaterThan(0);
     });
 
     it('shows a status indicator for each run target so its health is clear at a glance', async () => {
@@ -1172,62 +1235,120 @@ describe('TrainModelDialog', () => {
         expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
-    it('submits AWS Batch training without an instance or GPU selection', async () => {
-        const user = userEvent.setup();
-        mockProjectWithRemoteTrainer();
-        const batchTrainer = getMockedRemoteTrainer({
-            id: remoteTrainerId,
-            name: 'AWS Provider',
-            connection_mode: 'aws_batch',
-            url: null,
-            connection: {
-                connection_mode: 'aws_batch',
-                schema_version: 1,
-                profile_name: 'studio',
-                region: 'us-east-1',
-                studio_role_arn: 'arn:aws:iam::123:role/studio',
-                bucket: 'jobs-bucket',
-                targets: {
-                    'g4dn.2xlarge': { queue: 'small', job_definition: 'small' },
-                    'g6e.2xlarge': { queue: 'medium', job_definition: 'medium' },
-                },
-            },
-        });
-        let submitted: Record<string, unknown> | null = null;
-        server.use(
-            http.get('/api/remote-trainers', () => HttpResponse.json([batchTrainer])),
-            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
-                HttpResponse.json({
-                    ...healthyRemoteTrainer,
-                    devices: [
-                        { type: 'cuda', name: 'g4dn.2xlarge', index: 0 },
-                        { type: 'cuda', name: 'g6e.2xlarge', index: 1 },
-                    ],
+    it.each([
+        ['aws_batch', 'cpu', null],
+        ['modal', 'cpu', null],
+        ['modal', 'xpu', 'H100'],
+        ['modal', 'cpu', 'A100-80GB'],
+        ['modal', 'cpu', 'A10G'],
+    ] as const)(
+        'submits %s training from a %s host with %s GPU override and no physical device selection',
+        async (mode, localDeviceType, gpu) => {
+            const user = userEvent.setup();
+            mockProjectWithRemoteTrainer();
+            const batchTrainer =
+                mode === 'modal'
+                    ? getMockedRemoteTrainer({
+                          id: remoteTrainerId,
+                          name: 'Modal Provider',
+                          connection_mode: 'modal',
+                          url: null,
+                          connection: {
+                              connection_mode: 'modal',
+                              app_name: 'physicalai-trainer',
+                              function_name: 'train',
+                              volume_name: 'physicalai-training',
+                              environment_name: 'main',
+                          },
+                      })
+                    : getMockedRemoteTrainer({
+                          id: remoteTrainerId,
+                          name: 'AWS Provider',
+                          connection_mode: 'aws_batch',
+                          url: null,
+                          connection: {
+                              connection_mode: 'aws_batch',
+                              schema_version: 1,
+                              profile_name: 'studio',
+                              region: 'us-east-1',
+                              studio_role_arn: 'arn:aws:iam::123:role/studio',
+                              bucket: 'jobs-bucket',
+                              targets: {
+                                  'g4dn.2xlarge': { queue: 'small', job_definition: 'small' },
+                                  'g6e.2xlarge': { queue: 'medium', job_definition: 'medium' },
+                              },
+                          },
+                      });
+            let submitted: Record<string, unknown> | null = null;
+            server.use(
+                http.get('/api/system/devices/training', () =>
+                    HttpResponse.json({
+                        mode: 'local',
+                        remote_available: true,
+                        devices: [{ type: localDeviceType, index: 0, name: 'Local device' }],
+                    })
+                ),
+                http.get('/api/remote-trainers', () => HttpResponse.json([batchTrainer])),
+                http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                    HttpResponse.json({
+                        ...healthyRemoteTrainer,
+                        devices: [
+                            { type: 'cuda', name: 'g4dn.2xlarge', index: 0 },
+                            { type: 'cuda', name: 'g6e.2xlarge', index: 1 },
+                        ],
+                    })
+                ),
+                http.post('/api/jobs:train', async ({ request }) => {
+                    submitted = (await request.json()) as Record<string, unknown>;
+                    return HttpResponse.json({}, { status: 201 });
                 })
-            ),
-            http.post('/api/jobs:train', async ({ request }) => {
-                submitted = (await request.json()) as Record<string, unknown>;
-                return HttpResponse.json({}, { status: 201 });
-            })
-        );
-        renderDialog();
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
-        await user.click(await screen.findByRole('option', { name: 'AWS Provider' }));
-        expect(screen.queryByRole('button', { name: /^GPU/ })).not.toBeInTheDocument();
-        await goToLastStep(user);
-        await user.click(screen.getByRole('button', { name: 'Train' }));
-        await waitFor(() => expect(submitted).not.toBeNull());
-        expect(submitted).toMatchObject({
-            training_target: 'remote',
-            remote_trainer_id: remoteTrainerId,
-            policy: 'act',
-            precision: '32-true',
-        });
-        expect(submitted).not.toHaveProperty('device');
-        expect(submitted).not.toHaveProperty('instance_type');
-    });
+            );
+            renderDialog();
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+            await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+            await user.click(await screen.findByRole('option', { name: batchTrainer.name }));
+            expect(screen.queryByRole('button', { name: /^GPU/ })).not.toBeInTheDocument();
+            if (mode === 'modal') {
+                const gpuPicker = screen.getByRole('button', { name: /NVIDIA GPU/ });
+                expect(gpuPicker).toHaveTextContent('A10G');
+                await user.click(gpuPicker);
+                expect(screen.queryByRole('option', { name: 'Deployment default' })).not.toBeInTheDocument();
+                if (gpu !== null) {
+                    const gpuLabel = gpu === 'A100-80GB' ? 'A100' : gpu;
+                    await user.click(await screen.findByRole('option', { name: new RegExp(gpuLabel) }));
+                } else {
+                    await user.keyboard('{Escape}');
+                }
+            } else {
+                expect(screen.queryByRole('button', { name: /NVIDIA GPU/ })).not.toBeInTheDocument();
+            }
+            await user.click(screen.getByRole('button', { name: 'Next' }));
+            const autoScaleBatchSize = screen.getByRole('switch', { name: 'Auto' });
+            if (mode === 'modal') {
+                expect(autoScaleBatchSize).toBeEnabled();
+                expect(screen.getByText('BF16 Mixed recommended for CUDA')).toBeInTheDocument();
+            } else {
+                expect(autoScaleBatchSize).toBeDisabled();
+            }
+            await goToLastStep(user);
+            await user.click(screen.getByRole('button', { name: 'Train' }));
+            await waitFor(() => expect(submitted).not.toBeNull());
+            expect(submitted).toMatchObject({
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainerId,
+                policy: 'act',
+                precision: mode === 'modal' ? 'bf16-mixed' : '32-true',
+            });
+            expect(submitted).not.toHaveProperty('device');
+            expect(submitted).not.toHaveProperty('instance_type');
+            if (mode === 'modal') {
+                expect(submitted).toHaveProperty('modal_gpu', gpu ?? 'A10G');
+            } else {
+                expect(submitted).not.toHaveProperty('modal_gpu');
+            }
+        }
+    );
 
     it('walks through the wizard steps and back', async () => {
         const user = userEvent.setup();

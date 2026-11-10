@@ -13,6 +13,8 @@ import {
     Text,
 } from '@geti-ui/ui';
 
+import classes from './train-model-dialog.module.css';
+
 export const MIN_BATCH_SIZE_EXPONENT = 0;
 export const MAX_BATCH_SIZE_EXPONENT = 8;
 
@@ -115,55 +117,54 @@ export const TrainingParameters = ({
     snapflowDistillEpochs,
     onSnapflowDistillEpochsChange,
 }: TrainingParametersProps) => (
-    <Flex direction='column' gap='size-150' width='100%'>
-        <Flex direction='row' gap='size-150' width='100%'>
-            <Flex direction='row' gap='size-300' width='100%'>
-                <Slider
-                    label='Batch Size'
-                    value={batchSizeToExponent(batchSize)}
-                    onChange={(exponent) => onBatchSizeChange(exponentToBatchSize(exponent))}
-                    getValueLabel={(exponent) => `${exponentToBatchSize(exponent)}`}
-                    minValue={MIN_BATCH_SIZE_EXPONENT}
-                    maxValue={MAX_BATCH_SIZE_EXPONENT}
-                    step={1}
-                    flex
-                    isFilled
-                    isDisabled={autoScaleBatchSize}
-                    contextualHelp={
-                        <ContextualHelp variant='info'>
-                            <Heading>Batch size</Heading>
-                            <Content>
-                                <Text>
-                                    Number of samples processed in each training step. Larger batches use the device
-                                    more efficiently and give smoother gradient updates, but need more memory and a much
-                                    larger batch may need a higher learning rate to train as well.
-                                </Text>
-                            </Content>
-                        </ContextualHelp>
-                    }
-                />
-                <Flex direction='row' gap='size-100' alignItems='center'>
-                    <Switch
-                        isEmphasized
-                        isSelected={autoScaleBatchSize}
-                        onChange={onAutoScaleBatchSizeChange}
-                        isDisabled={isAutoScaleBatchDisabled}
-                    >
-                        Auto
-                    </Switch>
+    <Flex direction='column' gap='size-250' width='100%'>
+        <h3 className={classes.sectionHeading}>Training settings</h3>
+        <div className={classes.batchSizeRow}>
+            <Slider
+                label='Batch Size'
+                value={batchSizeToExponent(batchSize)}
+                onChange={(exponent) => onBatchSizeChange(exponentToBatchSize(exponent))}
+                getValueLabel={(exponent) => `${exponentToBatchSize(exponent)}`}
+                minValue={MIN_BATCH_SIZE_EXPONENT}
+                maxValue={MAX_BATCH_SIZE_EXPONENT}
+                step={1}
+                flex
+                isFilled
+                isDisabled={autoScaleBatchSize}
+                contextualHelp={
                     <ContextualHelp variant='info'>
-                        <Heading>Auto scale batch size</Heading>
+                        <Heading>Batch size</Heading>
                         <Content>
                             <Text>
-                                Automatically finds the largest batch size that fits in GPU memory before training
-                                starts, so the batch size slider is ignored. On XPU auto batch size is disabled.
+                                Number of samples processed in each training step. Larger batches use the device more
+                                efficiently and give smoother gradient updates, but need more memory and a much larger
+                                batch may need a higher learning rate to train as well.
                             </Text>
                         </Content>
                     </ContextualHelp>
-                </Flex>
+                }
+            />
+            <Flex direction='row' gap='size-100' alignItems='center'>
+                <Switch
+                    isEmphasized
+                    isSelected={autoScaleBatchSize}
+                    onChange={onAutoScaleBatchSizeChange}
+                    isDisabled={isAutoScaleBatchDisabled}
+                >
+                    Auto
+                </Switch>
+                <ContextualHelp variant='info'>
+                    <Heading>Auto scale batch size</Heading>
+                    <Content>
+                        <Text>
+                            Automatically finds the largest batch size that fits in GPU memory before training starts,
+                            so the batch size slider is ignored. On XPU auto batch size is disabled.
+                        </Text>
+                    </Content>
+                </ContextualHelp>
             </Flex>
-        </Flex>
-        <Flex direction='row' gap='size-150' width='100%'>
+        </div>
+        <div className={classes.parameterGrid}>
             <NumberField
                 label='Max Epochs'
                 description={
@@ -216,9 +217,8 @@ export const TrainingParameters = ({
                 <Item key='8'>8</Item>
                 <Item key='16'>16</Item>
             </Picker>
-        </Flex>
-        <Flex direction='row' gap='size-200' width='100%'>
             <Picker
+                width='100%'
                 label='Precision'
                 description={
                     deviceType
@@ -246,23 +246,24 @@ export const TrainingParameters = ({
                 <Item key='bf16-true'>BF16 True</Item>
                 <Item key='32-true'>32-bit</Item>
             </Picker>
-        </Flex>
-        <Flex direction='row' gap='size-200' width='100%'>
-            <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
-                Compile model
-            </Checkbox>
-            <ContextualHelp variant='info'>
-                <Heading>Compile model</Heading>
-                <Content>
-                    <Text>
-                        Enables torch.compile for all policies. Can significantly speed up training after an initial
-                        compilation warmup, but increases startup time.
-                    </Text>
-                </Content>
-            </ContextualHelp>
-        </Flex>
-        <Flex direction='row' gap='size-200' width='100%'>
-            <Flex direction='row' alignItems='center'>
+        </div>
+        <section className={classes.trainingOptions} aria-label='Additional options'>
+            <h3 className={classes.sectionHeading}>Additional options</h3>
+            <Flex direction='row' gap='size-100' alignItems='center'>
+                <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
+                    Compile model
+                </Checkbox>
+                <ContextualHelp variant='info'>
+                    <Heading>Compile model</Heading>
+                    <Content>
+                        <Text>
+                            Enables torch.compile for all policies. Can significantly speed up training after an initial
+                            compilation warmup, but increases startup time.
+                        </Text>
+                    </Content>
+                </ContextualHelp>
+            </Flex>
+            <Flex direction='row' gap='size-100' alignItems='center'>
                 <Checkbox isEmphasized isSelected={augmentImages} onChange={onAugmentImagesChange}>
                     Augment images
                 </Checkbox>
@@ -279,83 +280,82 @@ export const TrainingParameters = ({
                     </Content>
                 </ContextualHelp>
             </Flex>
-        </Flex>
-        {isLoraSupported && (
-            <Flex direction='column' gap='size-150' width='100%'>
-                <Flex direction='row' gap='size-100' alignItems='center'>
-                    <Checkbox isEmphasized isSelected={loraEnabled} onChange={onLoraEnabledChange}>
-                        LoRA fine-tuning
-                    </Checkbox>
-                    <ContextualHelp variant='info'>
-                        <Heading>LoRA fine-tuning</Heading>
-                        <Content>
-                            <Text>
-                                Freezes the base model and trains small low-rank adapters instead of every parameter.
-                                Uses far less memory and trains faster, at the cost of some capacity versus full
-                                fine-tuning. The learning rate is automatically scaled up to suit adapter training.
-                            </Text>
-                        </Content>
-                    </ContextualHelp>
-                </Flex>
-                {loraEnabled && (
-                    <Flex direction='row' gap='size-150' width='100%'>
-                        <NumberField
-                            label='LoRA rank'
-                            value={loraRank}
-                            onChange={onLoraRankChange}
-                            minValue={8}
-                            maxValue={256}
-                            step={8}
-                            width='100%'
-                            contextualHelp={
-                                <ContextualHelp variant='info'>
-                                    <Heading>LoRA rank</Heading>
-                                    <Content>
-                                        <Text>
-                                            Dimension of the low-rank decomposition. Higher rank means more trainable
-                                            parameters and closer to full fine-tuning. 16 is lighter, 32 is a reasonable
-                                            default, 64 gives more capacity for larger datasets.
-                                        </Text>
-                                    </Content>
-                                </ContextualHelp>
-                            }
-                        />
-                        <NumberField
-                            label='LoRA alpha'
-                            value={loraAlpha ?? undefined}
-                            onChange={onLoraAlphaChange}
-                            minValue={1}
-                            width='100%'
-                            contextualHelp={
-                                <ContextualHelp variant='info'>
-                                    <Heading>LoRA alpha</Heading>
-                                    <Content>
-                                        <Text>
-                                            Scaling numerator (scaling = alpha / rank). Leave empty to default to the
-                                            rank (scaling = 1.0). Increase for a stronger adaptation signal.
-                                        </Text>
-                                    </Content>
-                                </ContextualHelp>
-                            }
-                        />
-                        <NumberField
-                            label='LoRA dropout'
-                            value={loraDropout}
-                            onChange={onLoraDropoutChange}
-                            minValue={0}
-                            maxValue={0.99}
-                            step={0.01}
-                            width='100%'
-                            contextualHelp={
-                                <ContextualHelp variant='info'>
-                                    <Heading>LoRA dropout</Heading>
-                                    <Content>
-                                        <Text>Dropout probability applied to LoRA adapter inputs.</Text>
-                                    </Content>
-                                </ContextualHelp>
-                            }
-                        />
-                        <Flex direction='column' gap='size-150' width='100%' justifyContent='center'>
+            {isLoraSupported && (
+                <Flex direction='column' gap='size-150' width='100%'>
+                    <Flex direction='row' gap='size-100' alignItems='center'>
+                        <Checkbox isEmphasized isSelected={loraEnabled} onChange={onLoraEnabledChange}>
+                            LoRA fine-tuning
+                        </Checkbox>
+                        <ContextualHelp variant='info'>
+                            <Heading>LoRA fine-tuning</Heading>
+                            <Content>
+                                <Text>
+                                    Freezes the base model and trains small low-rank adapters instead of every
+                                    parameter. Uses far less memory and trains faster, at the cost of some capacity
+                                    versus full fine-tuning. The learning rate is automatically scaled up to suit
+                                    adapter training.
+                                </Text>
+                            </Content>
+                        </ContextualHelp>
+                    </Flex>
+                    {loraEnabled && (
+                        <div className={classes.optionFields}>
+                            <NumberField
+                                label='LoRA rank'
+                                value={loraRank}
+                                onChange={onLoraRankChange}
+                                minValue={8}
+                                maxValue={256}
+                                step={8}
+                                width='100%'
+                                contextualHelp={
+                                    <ContextualHelp variant='info'>
+                                        <Heading>LoRA rank</Heading>
+                                        <Content>
+                                            <Text>
+                                                Dimension of the low-rank decomposition. Higher rank means more
+                                                trainable parameters and closer to full fine-tuning. 16 is lighter, 32
+                                                is a reasonable default, 64 gives more capacity for larger datasets.
+                                            </Text>
+                                        </Content>
+                                    </ContextualHelp>
+                                }
+                            />
+                            <NumberField
+                                label='LoRA alpha'
+                                value={loraAlpha ?? undefined}
+                                onChange={onLoraAlphaChange}
+                                minValue={1}
+                                width='100%'
+                                contextualHelp={
+                                    <ContextualHelp variant='info'>
+                                        <Heading>LoRA alpha</Heading>
+                                        <Content>
+                                            <Text>
+                                                Scaling numerator (scaling = alpha / rank). Leave empty to default to
+                                                the rank (scaling = 1.0). Increase for a stronger adaptation signal.
+                                            </Text>
+                                        </Content>
+                                    </ContextualHelp>
+                                }
+                            />
+                            <NumberField
+                                label='LoRA dropout'
+                                value={loraDropout}
+                                onChange={onLoraDropoutChange}
+                                minValue={0}
+                                maxValue={0.99}
+                                step={0.01}
+                                width='100%'
+                                contextualHelp={
+                                    <ContextualHelp variant='info'>
+                                        <Heading>LoRA dropout</Heading>
+                                        <Content>
+                                            <Text>Dropout probability applied to LoRA adapter inputs.</Text>
+                                        </Content>
+                                    </ContextualHelp>
+                                }
+                            />
                             <Flex direction='row' gap='size-100' alignItems='center'>
                                 <Checkbox isEmphasized isSelected={loraUseDora} onChange={onLoraUseDoraChange}>
                                     Use DoRA
@@ -371,14 +371,12 @@ export const TrainingParameters = ({
                                     </Content>
                                 </ContextualHelp>
                             </Flex>
-                        </Flex>
-                    </Flex>
-                )}
-            </Flex>
-        )}
-        {isSnapflowSupported && (
-            <Flex direction='row' gap='size-150' width='100%' alignItems='end'>
-                <Flex direction='column' gap='size-150' width='100%' justifyContent='center'>
+                        </div>
+                    )}
+                </Flex>
+            )}
+            {isSnapflowSupported && (
+                <Flex direction='column' gap='size-150' width='100%'>
                     <Flex direction='row' gap='size-100' alignItems='center'>
                         {/* A single-epoch run has no epoch left over to train the policy that gets distilled. */}
                         <Checkbox
@@ -401,29 +399,34 @@ export const TrainingParameters = ({
                             </Content>
                         </ContextualHelp>
                     </Flex>
+                    {snapflowEnabled && (
+                        <div className={classes.optionFields}>
+                            <NumberField
+                                label='Distillation epochs'
+                                maxWidth='size-2400'
+                                value={snapflowDistillEpochs}
+                                onChange={onSnapflowDistillEpochsChange}
+                                minValue={1}
+                                maxValue={10_000}
+                                step={1}
+                                width='100%'
+                                isDisabled={!snapflowEnabled || maxEpochs < MIN_EPOCHS_FOR_SNAPFLOW}
+                                contextualHelp={
+                                    <ContextualHelp variant='info'>
+                                        <Heading>Distillation epochs</Heading>
+                                        <Content>
+                                            <Text>
+                                                How many additional epochs to perform distilling after normal
+                                                finetuning. We recommend 2-5 epochs.
+                                            </Text>
+                                        </Content>
+                                    </ContextualHelp>
+                                }
+                            />
+                        </div>
+                    )}
                 </Flex>
-                <NumberField
-                    label='Distillation epochs'
-                    value={snapflowDistillEpochs}
-                    onChange={onSnapflowDistillEpochsChange}
-                    minValue={1}
-                    maxValue={10_000}
-                    step={1}
-                    width='100%'
-                    isDisabled={!snapflowEnabled || maxEpochs < MIN_EPOCHS_FOR_SNAPFLOW}
-                    contextualHelp={
-                        <ContextualHelp variant='info'>
-                            <Heading>Distillation epochs</Heading>
-                            <Content>
-                                <Text>
-                                    How many additional epochs to perform distilling after normal finetuning. We
-                                    recommend 2-5 epochs.
-                                </Text>
-                            </Content>
-                        </ContextualHelp>
-                    }
-                />
-            </Flex>
-        )}
+            )}
+        </section>
     </Flex>
 );

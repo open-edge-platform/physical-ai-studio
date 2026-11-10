@@ -6,13 +6,15 @@ from fastapi import APIRouter, Depends, Header, status
 from fastapi.responses import JSONResponse
 
 from api.aws_auth import router as aws_auth_router
-from api.dependencies import get_remote_trainer_service
+from api.dependencies import get_remote_trainer_service, get_scheduler
+from core.scheduler import Scheduler
 from schemas.operational_issue import OperationalIssue
 from schemas.remote_trainer import (
     AwsBatchConnection,
     AwsBatchProviderConfiguration,
     CloudProviderField,
     CloudProviderSchema,
+    ModalDeploymentRequest,
     RemoteTrainer,
     RemoteTrainerCreate,
     RemoteTrainerHealth,
@@ -20,6 +22,7 @@ from schemas.remote_trainer import (
 )
 from services.aws_auth_service import operational_aws_error
 from services.aws_batch import resolve_aws_batch_configuration
+from services.modal_deployment import new_modal_connection, start_modal_deployment
 from services.remote_trainer_service import RemoteTrainerService
 
 router = APIRouter(prefix="/api/remote-trainers", tags=["Remote trainers"])
@@ -66,6 +69,20 @@ async def resolve_cloud_provider_configuration(
         return JSONResponse(
             status_code=400, content=operational_aws_error(error, configuration.profile_name).model_dump()
         )
+
+
+@router.post("/providers/modal/deploy", status_code=status.HTTP_202_ACCEPTED)
+async def deploy_modal_trainer(
+    deployment: ModalDeploymentRequest,
+    remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+) -> RemoteTrainer:
+    """Create a unique trainer and deploy in the background; poll its health for progress."""
+    connection = new_modal_connection(deployment.environment_name)
+    trainer = await remote_trainer_service.create_remote_trainer(
+        RemoteTrainerCreate(name=deployment.name, connection=connection)
+    )
+    start_modal_deployment(trainer.id, connection, deployment)
+    return trainer
 
 
 @router.get("")
@@ -131,10 +148,14 @@ async def update_remote_trainer(
 async def delete_remote_trainer(
     remote_trainer_id: UUID,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+    scheduler: Annotated[Scheduler, Depends(get_scheduler)],
     forget_locally: bool = False,
 ) -> None:
-    """Delete a trainer with no queued or running managed SSH jobs.
+    """Remove a target, attempting to cancel Modal jobs and delete its cloud resources.
 
-    Forget locally skips remote container and volume cleanup when the SSH host is gone.
+    Modal cleanup is best-effort; failures never prevent local deletion.
+    Forget locally skips cleanup only for SSH targets.
     """
-    await remote_trainer_service.delete_remote_trainer(remote_trainer_id, forget_locally=forget_locally)
+    await remote_trainer_service.delete_remote_trainer(
+        remote_trainer_id, forget_locally=forget_locally, signal_cancel=scheduler.cancel_job
+    )

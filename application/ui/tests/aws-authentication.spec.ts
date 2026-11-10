@@ -31,7 +31,7 @@ test('AWS setup requires a named profile and explains backend configuration', as
         )
     );
     await page.goto('/settings/training-targets');
-    await page.getByRole('button', { name: 'Add training target: AWS Provider' }).click();
+    await page.getByRole('button', { name: 'Add training target: AWS' }).click();
     const configure = page.getByRole('dialog', { name: 'Deploy and configure AWS stack' });
     await expect(configure.getByRole('button', { name: 'Next' })).toBeDisabled();
     await expect(configure.getByRole('heading')).toHaveCount(1);

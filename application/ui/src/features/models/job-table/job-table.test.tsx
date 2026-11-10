@@ -196,6 +196,44 @@ describe('TrainingRow', () => {
         await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
     });
 
+    it.each([
+        { status: 'running', modalGpu: 'A10G' },
+        { status: 'completed', modalGpu: 'A100-80GB' },
+        { status: 'failed', modalGpu: 'H100' },
+    ] as const)('shows the saved Modal GPU $modalGpu for a $status job', async ({ status, modalGpu }) => {
+        renderTrainingRow({
+            status,
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: 'Modal',
+                modal_gpu: modalGpu,
+                device: { type: 'cuda', index: 0 },
+            },
+        });
+
+        const trainerCell = screen.getByTestId('trainer-cell');
+        await waitFor(() => expect(trainerCell).toHaveTextContent('Remote · Modal'));
+        expect(trainerCell).toHaveTextContent(`GPU · ${modalGpu}`);
+        expect(trainerCell).not.toHaveTextContent('CUDA 0');
+    });
+
+    it.each([undefined, null])('omits the Modal GPU for older jobs with selection %s', (modalGpu) => {
+        renderTrainingRow({
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: 'Modal',
+                modal_gpu: modalGpu,
+            },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Remote · Modal');
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('GPU ·');
+    });
+
     it.each(['running', 'completed', 'failed'] as const)('shows the recorded Batch image for a %s job', (status) => {
         const image = 'ghcr.io/example/physicalai-trainer-cuda:job-version';
         renderTrainingRow({
