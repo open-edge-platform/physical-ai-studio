@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 
 import { fetchClient } from '../../api/client';
 import { VirtualizedGridLayout } from '../../components/virtualized-grid-layout/virtualized-grid-layout';
-import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { EpisodeDurationTag } from '../../features/datasets/episodes/episode-tag';
 import { EpisodeThumbnail } from '../../features/datasets/episodes/episode-thumbnail/episode-thumbnail';
 import { EpisodeSummary, useDataset } from './dataset-provider';
 
@@ -119,7 +119,7 @@ export const EpisodeList = ({
                                     height='size-400'
                                     width='100%'
                                 >
-                                    <EpisodeTag episode={episode} variant='small' />
+                                    <EpisodeDurationTag episode={episode} variant='small' />
 
                                     <Checkbox
                                         isEmphasized
