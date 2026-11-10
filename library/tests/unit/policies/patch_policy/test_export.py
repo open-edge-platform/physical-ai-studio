@@ -28,23 +28,23 @@ from physicalai.policies.patch_policy.policy import PatchPolicy
 from physicalai.policies.patch_policy.processors import make_policy_processors
 
 
-def test_export_mixin_supports_only_torch() -> None:
+def test_export_mixin_supports_torch_and_openvino() -> None:
     assert issubclass(PatchPolicyExportMixin, ExportablePolicyMixin)
-    assert PatchPolicyExportMixin.get_supported_export_backends() == [ExportBackend.TORCH]
+    assert PatchPolicyExportMixin.get_supported_export_backends() == [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
 
 def test_policy_declares_torch_support_without_building_model() -> None:
     policy = PatchPolicy(encoder_pretrained=False, hidden_dim=4, num_layers=1, num_heads=1)
     assert isinstance(policy, PatchPolicyExportMixin)
     assert policy.model is None
-    assert policy.get_supported_export_backends() == [ExportBackend.TORCH]
+    assert policy.get_supported_export_backends() == [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
 
 def test_backend_list_is_not_shared_mutable_state() -> None:
     backends = PatchPolicyExportMixin.get_supported_export_backends()
     backends.append("onnx")
-    assert PatchPolicyExportMixin.get_supported_export_backends() == [ExportBackend.TORCH]
-    assert PatchPolicy.get_supported_export_backends() == [ExportBackend.TORCH]
+    assert PatchPolicyExportMixin.get_supported_export_backends() == [ExportBackend.TORCH, ExportBackend.OPENVINO]
+    assert PatchPolicy.get_supported_export_backends() == [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
 
 def _run_processors(
@@ -168,6 +168,24 @@ def test_unconfigured_torch_export_fails(tmp_path) -> None:
     export_dir = tmp_path / "unconfigured"
     with pytest.raises(RuntimeError, match="config is not initialized"):
         policy.to_torch(export_dir)
+
+
+def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path) -> None:
+    ov = pytest.importorskip("openvino")
+    policy = PatchPolicy.from_config(small_config).eval()
+    images = np.random.default_rng(42).integers(0, 256, (1, small_config.n_obs_steps, 3, 7, 9), dtype=np.uint8)
+    expected = policy.predict_action_chunk(Observation(images={"front": torch.from_numpy(images)})).numpy()
+
+    policy.export(tmp_path, backend="openvino")
+    manifest = Manifest.load(tmp_path)
+    assert manifest.model.artifacts == {"openvino": "patchpolicy.xml"}
+    graph = ov.Core().read_model(tmp_path / "patchpolicy.xml")
+    assert graph.input(0).get_names() == {"images.front"}
+    assert graph.output(0).get_names() == {"action"}
+    with InferenceModel(tmp_path, device="CPU", INFERENCE_PRECISION_HINT="f32") as model:
+        actual = model({"images.front": images})["action"]
+    assert actual.shape == expected.shape
+    np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-5)
 
 
 def test_package_exports_policy_config_and_model_classes() -> None:

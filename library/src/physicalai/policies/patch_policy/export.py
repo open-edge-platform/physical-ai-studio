@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Torch export and NumPy processing specifications for Patch Policy."""
+"""Torch and OpenVINO export specifications for Patch Policy."""
 
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Describe camera preparation, normalization, and action processing in order.
 
-        OpenVINO processor specifications are ready for a future model-only export;
-        only Torch export is enabled. Torch invokes the whole policy and therefore
+        OpenVINO runs the model with external NumPy processing.
+        Torch invokes the whole policy and therefore
         must not apply normalization or action postprocessing a second time.
 
         Raises:
@@ -96,9 +96,13 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
                 ComponentSpec(type="to_float_tensor"),
             ])
 
+        # Map adapter-specific output names to the canonical action key.
+        postprocessors = [
+            ComponentSpec(class_path="physicalai.inference.postprocessors.ActionNormalizer"),
+        ]
+
         # Diffusion predicts normalized actions; concatenate stats in output-feature order.
         # Missing statistics and masked dimensions remain identity; BeT needs no denormalization.
-        postprocessors = []
         if config.action_head == "diffusion":
             minimum, maximum, mask = [], [], []
             for feature in config.output_features:
@@ -138,6 +142,7 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
         return {
             "torch": TorchExportParameters(preprocessors_specs=preproc_specs),
             "openvino": OpenVINOExportParameters(
+                inputs=[feature.name for feature in (self.inputs_schema or [])],
                 preprocessors_specs=model_preproc_specs,
                 postprocessors_specs=postprocessors,
             ),
@@ -185,5 +190,5 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
-        """Return only the validated Torch checkpoint backend."""
-        return [ExportBackend.TORCH]
+        """Return the supported checkpoint and model-only backends."""
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO]
