@@ -72,6 +72,7 @@ from services.camera_claims import CameraClaim, settings_from_camera
 from workers import dataset_worker as dataset_rpc
 from workers.base import WorkerStartupError
 from workers.dataset_worker import RecordingStatus
+from workers.robot_worker import RobotWorker
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -97,6 +98,9 @@ _RELOAD_S = 120.0
 
 _RELEASE_S = 10.0
 """How long a load waits for a closing session to disconnect the devices it held."""
+
+_PARK_S = RobotWorker.stop_timeout_s + 5.0
+"""How long a load waits for a closing session that holds one of its robots, which may park first."""
 
 _CONTROL = "control"
 """What the session reports a control as: a control is a thread in the session, not on the bus itself."""
@@ -399,6 +403,7 @@ class RuntimeSession:
     ) -> AsyncIterator[LoadedEnvironment]:
         """Claim and connect the environment for as long as it is loaded."""
         store = cast("Store", self._store)  # created before the environment is loaded
+        await self._registry.until_closed(within=_PARK_S, holding=description.robot_names)
         await self._registry.until_closed(within=_RELEASE_S)
         with self._claim(description):
             async with Environment(description, self.id, store) as held:

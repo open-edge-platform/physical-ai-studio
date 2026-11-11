@@ -17,7 +17,7 @@ from exceptions import DeviceInUseError
 from runtime_session.dataset import sessions_recording_into
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from uuid import UUID
 
     from runtime_session.session import RuntimeSession
@@ -96,13 +96,18 @@ class RuntimeSessionRegistry:
             return session.label if session is not None else "a runtime session that is closing"
         return None
 
-    async def until_closed(self, within: float) -> None:
+    async def until_closed(self, within: float, *, holding: Iterable[UUID] | None = None) -> None:
         """Wait for every session that is closing to let go of its devices; give up after ``within`` seconds.
 
         A page that opens a session usually just closed one on the same devices, which
-        takes a moment to disconnect them.
+        takes a moment to disconnect them. With ``holding``, wait only for the closing sessions
+        that hold one of those robots.
         """
-        closing = [session.finished.wait() for session in self.sessions() if session.closed.is_set()]
+        sessions = self.sessions()
+        if holding is not None:
+            holders = {id(holder) for robot_id in holding if (holder := self._robots.get(robot_id)) is not None}
+            sessions = [session for session in sessions if id(session) in holders]
+        closing = [session.finished.wait() for session in sessions if session.closed.is_set()]
         if closing:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(asyncio.gather(*closing), within)
