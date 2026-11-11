@@ -242,13 +242,30 @@ four denoising steps, bfloat16 Qwen
 weights, a float32 action head, and gradient checkpointing.
 
 These are synthetic smoke measurements, not minimum requirements. The backward
-measurement excludes AdamW optimizer state, and no robot task-success evaluation
-was run. Camera/token count, batch size, precision, and optimizer state change
-memory usage. Preprocessing matched the upstream reference exactly; the loaded
+measurement excludes AdamW optimizer state. Camera/token count, batch size,
+precision, and optimizer state change memory usage. Preprocessing matched the
+upstream reference exactly; the loaded
 DiT's action predictions differed by less than `4e-7` with matched noise.
 The CLI also completed one fast-dev-run optimizer step in each training mode on
 a single PushT episode. This checks dataset and training integration, not task
 performance.
+
+## LIBERO results
+
+Success rates from Studio's `LiberoBenchmark` with seed 42 and 10 episodes per
+task (100 per suite), so differences of a few points are noise:
+
+| Policy                                             | Spatial | Object | Goal | LIBERO-10 | Average |
+| -------------------------------------------------- | ------: | -----: | ---: | --------: | ------: |
+| `lerobot/VLA-JEPA-LIBERO`, PyTorch on an H100      |      95 |    100 |   99 |        99 |    98.2 |
+| `lerobot/VLA-JEPA-LIBERO`, OpenVINO export on CPU  |      97 |    100 |   99 |        98 |    98.5 |
+| Fine-tuned from `lerobot/VLA-JEPA-Pretrain`, run 1 |      99 |     99 |   98 |        92 |    97.0 |
+| Fine-tuned from `lerobot/VLA-JEPA-Pretrain`, run 2 |      96 |     99 |   98 |        85 |    94.5 |
+| Paper, 50 episodes per task                        |    96.2 |   99.6 | 97.2 |      95.8 |    97.2 |
+
+The fine-tunes trained on `HuggingFaceVLA/libero` (all four suites) for 30k steps
+with the default joint objective and learning rates, batch size 8, bfloat16
+weights and `bf16-mixed` precision on one H100.
 
 ## Released weights and limits
 
