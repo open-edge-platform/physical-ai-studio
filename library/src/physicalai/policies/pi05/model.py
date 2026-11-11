@@ -559,9 +559,10 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
         Targets the full attention block (`q`/`k`/`v`/`o_proj`) and MLP (`gate`/`up`/
         `down_proj`) of *both* the action expert and the PaliGemma VLM's language model,
-        plus the action/time projection heads.
+        the SigLIP vision tower's attention and MLP plus its `multi_modal_projector`, and
+        the action/time projection heads.
 
-        Two design choices drive this, deliberately going wider than a q/v-attention-only,
+        Three design choices drive this, deliberately going wider than a q/v-attention-only,
         action-expert-only adapter set:
 
         1. VLM coverage: adapting only the action expert starves LoRA of the same "the VLM
@@ -578,10 +579,12 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
            with `num_kv_heads=1` (GQA) in these Gemma variants, `k_proj`/`v_proj` are cheap
            to adapt (output dim is just `head_dim`), so the "full attention" addition here
            is mostly `q_proj`/`o_proj` plus MLP.
+        3. Vision tower: LoRA freezes every untargeted module, so leaving SigLIP out
+           freezes it, while full fine-tuning trains it. On LIBERO (pi05_base, 30k steps)
+           adding SigLIP and the projector raised average success from 59.5% to 69.5%,
+           against 72.8% for full fine-tuning.
 
-        The vision tower (SigLIP backbone) is still excluded by default; pass an explicit
-        `lora_target_modules` to include it if needed. Excludes the SnapFlow-only
-        `target_time_mlp_*` heads.
+        Excludes the SnapFlow-only `target_time_mlp_*` heads.
 
         Returns:
             A regex string matching the default LoRA-adapted submodule names.
@@ -590,6 +593,8 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         return (
             rf"(.*\.gemma_expert\..*\.{attn_and_mlp}|"
             rf".*\.paligemma\.model\.language_model\..*\.{attn_and_mlp}|"
+            r".*\.vision_tower\..*\.(self_attn\.(q|k|v|out)_proj|mlp\.fc(1|2))|"
+            r".*\.multi_modal_projector\.linear|"
             r"(action_in_proj|action_out_proj|time_mlp_in|time_mlp_out))"
         )
 

@@ -16,7 +16,9 @@
 #   - MLP: gate/up/down_proj (holds the bulk of a transformer block's parameters; q/v-only
 #     attention adaptation touches a disproportionately small slice of model capacity)
 #   - the always-trainable action/time projection heads
-# The vision tower (SigLIP backbone) is still left frozen by default.
+# plus attention/MLP of the SigLIP vision tower and its multi_modal_projector. LoRA
+# freezes everything it doesn't target, and a frozen vision tower cost ~10 points of
+# LIBERO success.
 #
 # Usage:
 #   physicalai fit --config configs/physicalai/pi05/aloha/lora.yaml
