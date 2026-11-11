@@ -7,6 +7,11 @@ Older LeRobot datasets (pre-quantile era) only store mean/std/min/max.
 This module delegates to LeRobot's own statistics computation so that
 the resulting q01/q99 values are identical to those produced by
 ``lerobot.scripts.augment_dataset_quantile_stats``.
+
+Computed stats are also persisted to disk under the dataset's local root
+(``<dataset_root>/meta/stats.json``) so subsequent runs skip the heavy
+parallel computation. This makes the first dataset load slow (minutes,
+proportional to episode count) and all later loads near-instant.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import torch
+from lerobot.datasets.io_utils import write_stats
 from lerobot.scripts.augment_dataset_quantile_stats import compute_quantile_stats_for_dataset
 
 if TYPE_CHECKING:
@@ -42,9 +48,13 @@ def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
     Only injects the ``q01`` and ``q99`` keys into ``dataset.meta.stats``;
     existing keys (mean, std, min, max) are left untouched.
 
+    The merged stats are also written to ``<dataset_root>/meta/stats.json``
+    so that subsequent runs detect the q01/q99 keys at load time and skip
+    the heavy computation entirely.
+
     Args:
         dataset: A ``LeRobotDataset`` instance.  Its ``meta.stats`` is
-            modified in-place.
+            modified in-place and persisted to ``dataset.meta.root``.
     """
     logger.info(
         "Computing quantile stats via LeRobot for %d episodes",
@@ -64,4 +74,14 @@ def augment_dataset_quantile_stats(dataset: LeRobotDataset) -> None:
                     val = torch.from_numpy(val).float()
                 dataset.meta.stats[key][q_key] = val
 
-    logger.info("Quantile stats computed via LeRobot for dataset")
+    # Persist merged stats so the next load skips this work. Best-effort:
+    # a read-only cache or missing root should not break dataset loading.
+    try:
+        write_stats(dataset.meta.stats, dataset.meta.root)
+        logger.info("Quantile stats persisted to %s/meta/stats.json", dataset.meta.root)
+    except OSError as exc:
+        logger.warning(
+            "Could not persist quantile stats to %s (%s); they will be recomputed next run.",
+            dataset.meta.root,
+            exc,
+        )
