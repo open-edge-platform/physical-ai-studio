@@ -322,12 +322,10 @@ class PatchPolicyModel(Model):
         Returns:
             The scalar loss and detached logging metrics.
         """
-        valid_steps = in_episode_bound(batch)
         context = self._context(batch)
-        if isinstance(self.action_head, BehaviourTransformerHead):
-            loss = self.action_head.compute_loss(batch["action"], context, valid_steps=valid_steps)
-            return loss, {"loss": loss.detach()}
         losses = self.action_head.compute_loss(batch["action"], context)
+        # VQ-BeT includes padded overlapping windows for upstream objective parity.
+        valid_steps = None if isinstance(self.action_head, BehaviourTransformerHead) else in_episode_bound(batch)
         loss = reduce_losses(losses, valid_steps)
         return loss, {"loss": loss.detach()}
 

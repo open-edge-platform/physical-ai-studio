@@ -48,6 +48,8 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
         Raises:
             ValueError: If an action feature has no concrete shape.
         """
+        if self.model is None:
+            return {}
         config = self.config
         model = cast("PatchPolicyModel", self.model)
 

@@ -37,6 +37,7 @@ def test_policy_declares_torch_support_without_building_model() -> None:
     policy = PatchPolicy(encoder_pretrained=False, hidden_dim=4, num_layers=1, num_heads=1)
     assert isinstance(policy, PatchPolicyExportMixin)
     assert policy.model is None
+    assert policy.extra_export_args == {}
     assert policy.get_supported_export_backends() == [ExportBackend.TORCH, ExportBackend.OPENVINO]
 
 
@@ -166,7 +167,7 @@ def test_torch_export_round_trip_is_offline(tiny_encoder, small_config, tmp_path
 def test_unconfigured_torch_export_fails(tmp_path) -> None:
     policy = PatchPolicy(encoder_pretrained=False)
     export_dir = tmp_path / "unconfigured"
-    with pytest.raises(RuntimeError, match="config is not initialized"):
+    with pytest.raises(RuntimeError, match="before the policy is configured"):
         policy.to_torch(export_dir)
 
 

@@ -156,6 +156,34 @@ def test_changed_statistics_refresh_processors_not_parameters(tiny_encoder, smal
     torch.testing.assert_close(policy._postprocessor(torch.ones(1, 2, 2)), torch.full((1, 1, 2), 4.0))
 
 
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA is unavailable"
+))])
+@pytest.mark.parametrize("refresh", ["statistics", "missing_processor"])
+def test_processor_refresh_preserves_device_and_mode_with_float32_stats(tiny_encoder, small_config, device, refresh):
+    policy = PatchPolicy.from_config(small_config).to(device=device, dtype=torch.float64).eval()
+    model = policy.model
+    if refresh == "statistics":
+        policy.output_features = [replace(
+            policy.output_features[0],
+            normalization_data=NormalizationParameters(min=[0.0, 0.0], max=[4.0, 4.0]),
+        )]
+    else:
+        policy._preprocessor = None
+
+    policy.configure_model()
+
+    assert policy.model is model
+    assert next(model.parameters()).dtype == torch.float64
+    for processor in (policy._preprocessor, policy._postprocessor):
+        assert not processor.training
+        for parameter in processor.parameters():
+            assert parameter.device == next(model.parameters()).device
+            assert parameter.dtype == torch.float32
+    actions = torch.ones(1, 2, 2, device=device, dtype=torch.float64)
+    assert policy._postprocessor(actions).device == actions.device
+
+
 @pytest.mark.parametrize("missing", ["_preprocessor", "_postprocessor"])
 def test_missing_processor_is_repaired_without_rebuilding(tiny_encoder, small_config, missing):
     policy = PatchPolicy.from_config(small_config)
@@ -207,8 +235,9 @@ def test_incompatible_checkpoint_is_rejected_before_mutation(tiny_encoder, small
 
 
 @pytest.mark.parametrize("n_action_steps", [None, 1])
+@pytest.mark.parametrize("sampling_overrides", [{}, {"use_random_noise": True, "num_inference_steps": 1}])
 def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon(
-    tiny_encoder, small_config, tmp_path, monkeypatch, n_action_steps
+    tiny_encoder, small_config, tmp_path, monkeypatch, n_action_steps, sampling_overrides
 ):
     config = replace(small_config, n_action_steps=2)
     policy = PatchPolicy.from_config(config)
@@ -229,10 +258,15 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
 
     monkeypatch.setattr(policy_module, "resolve_encoder_artifacts", forbid_download)
     overrides = {} if n_action_steps is None else {"n_action_steps": n_action_steps}
-    restored = PatchPolicy.load_from_checkpoint(path, **overrides)
+    restored = PatchPolicy.load_from_checkpoint(path, **overrides, **sampling_overrides)
     expected_steps = config.n_action_steps if n_action_steps is None else n_action_steps
+    expected_random = sampling_overrides.get("use_random_noise", config.use_random_input_noise)
+    expected_inference_steps = sampling_overrides.get("num_inference_steps", config.num_inference_steps)
 
-    assert restored.config == replace(policy.config, n_action_steps=expected_steps)
+    assert restored.config == replace(
+        policy.config, n_action_steps=expected_steps, use_random_input_noise=expected_random,
+        num_inference_steps=expected_inference_steps,
+    )
     assert restored.n_action_steps == expected_steps
     assert restored._n_action_steps == expected_steps
     assert restored._action_queue.maxlen == expected_steps
@@ -243,12 +277,94 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
     queued = restored._action_queue
     restored.configure_model()
     assert restored._action_queue is queued
-    assert restored.use_random_noise is False
-    assert restored.hparams["use_random_noise"] is False
-    assert restored.model.ema_action_head.use_random_input_noise is False
+    assert restored.use_random_noise is expected_random
+    assert restored.hparams["use_random_noise"] is expected_random
+    assert restored.model.ema_action_head.use_random_input_noise is expected_random
+    assert restored.model.action_head.num_inference_steps == expected_inference_steps
+    assert restored.model.ema_action_head.num_inference_steps == expected_inference_steps
     assert not restored.encoder_pretrained
     for name, expected in policy.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[name], expected)
+    # CLI warm-starts pass complete parsed constructor arguments, not just overrides.
+    from physicalai.cli._dispatch import _build_lightning_parser, _model_init_args
+
+    parser = _build_lightning_parser("fit")
+    cfg = parser.parse_object({
+        "model": {"class_path": "physicalai.policies.PatchPolicy", "init_args": dict(policy.hparams)},
+        "data": {"class_path": "physicalai.data.lerobot.LeRobotDataModule", "init_args": {"repo_id": "unused"}},
+    })
+    warm_started = PatchPolicy.load_from_checkpoint(path, **_model_init_args(cfg))
+    assert warm_started.config == policy.config
+    restored_from_config = PatchPolicy.load_from_checkpoint(path, hidden_dim=16)
+    assert restored_from_config.config == policy.config
+    assert restored_from_config.hidden_dim == policy.config.hidden_dim
+
+
+@pytest.mark.parametrize("overrides", [{"input_features": []}, {"output_features": []}])
+def test_checkpoint_rejects_feature_overrides_before_loading(overrides):
+    with pytest.raises(ValueError, match="cannot be overridden"):
+        PatchPolicy.load_from_checkpoint("unused.ckpt", **overrides)
+
+
+@pytest.mark.parametrize("override", [
+    {"encoder_name": "resnet18"}, {"action_head": "behavior_transformer"},
+    {"n_obs_steps": 3}, {"chunk_size": 3}, {"hidden_dim": 16},
+    {"num_layers": 2}, {"num_heads": 1},
+])
+def test_checkpoint_uses_saved_architecture_for_unbuilt_model(tiny_encoder, small_config, override):
+    settings = {
+        "encoder_pretrained": False, "action_head": small_config.action_head,
+        "n_obs_steps": small_config.n_obs_steps, "chunk_size": small_config.chunk_size,
+        "hidden_dim": small_config.hidden_dim, "num_layers": small_config.num_layers,
+        "num_heads": small_config.num_heads,
+        "num_inference_steps": small_config.num_inference_steps,
+        "use_random_noise": small_config.use_random_input_noise,
+    }
+    policy = PatchPolicy(**(settings | override))
+
+    policy.on_load_checkpoint({"policy_config": small_config.to_dict()})
+
+    assert policy.model is not None
+    assert policy.config.encoder_name == small_config.encoder_name
+    assert policy.config.action_head == small_config.action_head
+    assert policy.config.n_obs_steps == small_config.n_obs_steps
+    assert policy.config.chunk_size == small_config.chunk_size
+    assert policy.config.hidden_dim == small_config.hidden_dim
+    assert policy.config.num_layers == small_config.num_layers
+    assert policy.config.num_heads == small_config.num_heads
+
+
+def test_compatible_checkpoint_preserves_materialized_modules(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    original = (policy.model, policy.config, policy._preprocessor, policy._postprocessor)
+    queue = policy._action_queue
+    queue.append(torch.ones(1, 2))
+
+    policy.on_load_checkpoint({"policy_config": policy.config.to_dict()})
+
+    assert policy.model is original[0]
+    assert policy.config is original[1]
+    assert policy._preprocessor is original[2]
+    assert policy._postprocessor is original[3]
+    assert policy._action_queue is queue
+    assert len(queue) == 1
+
+
+def test_checkpoint_statistics_refresh_processors_without_rebuilding(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    model = policy.model
+    original_preprocessor = policy._preprocessor
+    statistics = NormalizationParameters(min=[-2.0, -2.0], max=[4.0, 4.0])
+    config = replace(policy.config, output_features=[replace(
+        policy.output_features[0], normalization_data=statistics,
+    )])
+
+    policy.on_load_checkpoint({"policy_config": config.to_dict()})
+
+    assert policy.model is model
+    assert policy._preprocessor is not original_preprocessor
+    assert policy.config.output_features[0].normalization_data == statistics
+    torch.testing.assert_close(policy._postprocessor(torch.ones(1, 2, 2)), torch.full((1, 1, 2), 4.0))
 
 
 def test_training_and_prediction_use_processors(tiny_encoder, small_config, monkeypatch):

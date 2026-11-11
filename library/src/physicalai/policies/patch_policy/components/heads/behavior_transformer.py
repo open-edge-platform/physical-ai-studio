@@ -348,17 +348,22 @@ class BehaviourTransformerHead(ActionHead):
         codes = None if self.use_random_noise else logits.argmax(dim=-1)
         return self._actions(logits, offsets, codes)[:, -1]
 
-    def compute_loss(self, actions: Tensor, context: Context, *, valid_steps: Tensor | None = None) -> Tensor:
+    def compute_loss(self, actions: Tensor, context: Context) -> Tensor:
         """Compute the upstream focal-code and continuous-offset loss.
 
+        All overlapping windows, including padded action steps, intentionally
+        contribute for upstream parity. Masking belongs to the caller, but a
+        trajectory mask must not be applied to this overlapping-window layout.
+
         Returns:
-            Combined code-prediction and action-offset loss.
+            Loss shaped ``[B, n_obs_steps, chunk_size, action_dim]``. Each
+            observation's weighted code loss is broadcast across its window;
+            ``mean()`` recovers the upstream unmasked scalar objective.
 
         Raises:
             ValueError: If actions do not cover every overlapping target window.
             RuntimeError: If head training starts before the tokenizer is fitted.
         """
-        del valid_steps
         expected = self.n_obs_steps + self.chunk_size - 1
         if actions.shape[1] != expected:
             message = f"Expected {expected} action steps, got {actions.shape[1]}."
@@ -375,11 +380,8 @@ class BehaviourTransformerHead(ActionHead):
         )
         predicted = self._actions(logits, offsets)
 
-        probabilities = logits.softmax(-1)
-        target_probability = probabilities.gather(-1, target_codes[..., None]).squeeze(-1).clamp_min(1e-8)
-        focal = -((1 - target_probability) ** self.focal_loss_gamma) * target_probability.log()
-        code_loss = 5 * focal[..., 0].mean()
-        if self.groups > 1:
-            code_loss = torch.add(code_loss, self.secondary_code_weight * focal[..., 1:].mean())
-        offset_loss = F.l1_loss(predicted, windows)
-        return code_loss + self.offset_loss_weight * offset_loss
+        target_log_probability = logits.log_softmax(-1).gather(-1, target_codes[..., None]).squeeze(-1)
+        focal = -((1 - target_log_probability.exp()) ** self.focal_loss_gamma) * target_log_probability
+        code_loss = 5 * focal[..., 0] + self.secondary_code_weight * focal[..., 1:].sum(-1)
+        offset_loss = F.l1_loss(predicted, windows, reduction="none")
+        return code_loss[..., None, None] + self.offset_loss_weight * offset_loss

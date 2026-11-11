@@ -3,13 +3,17 @@
 
 """Real residual tokenizer and Behavior Transformer tests on CPU."""
 
+from dataclasses import replace
+
 import pytest
 import torch
+import torch.nn.functional as F  # noqa: N812
 
 from physicalai.policies.patch_policy.components.heads.behavior_transformer import (
     BehaviourTransformerHead,
     ResidualActionQuantizer,
 )
+from physicalai.policies.patch_policy.model import PatchPolicyModel
 
 
 def _make_action_quantizer() -> ResidualActionQuantizer:
@@ -17,11 +21,11 @@ def _make_action_quantizer() -> ResidualActionQuantizer:
     return ResidualActionQuantizer(1, 2, latent_dim=4, num_embeddings=2, groups=2, action_scale=2.0)
 
 
-def _make_small_behavior_head() -> BehaviourTransformerHead:
+def _make_small_behavior_head(*, groups: int = 2, action_dim: int = 1) -> BehaviourTransformerHead:
     torch.manual_seed(17)
     return BehaviourTransformerHead(
         context_dim=2,
-        action_dim=1,
+        action_dim=action_dim,
         chunk_size=2,
         n_obs_steps=2,
         n_patches=1,
@@ -30,7 +34,7 @@ def _make_small_behavior_head() -> BehaviourTransformerHead:
         num_heads=1,
         latent_dim=4,
         num_embeddings=2,
-        groups=2,
+        groups=groups,
         action_scale=2.0,
     )
 
@@ -98,9 +102,9 @@ def test_head_training_keeps_quantizer_frozen_and_requires_fitting() -> None:
     head.quantizer.fitted.fill_(True)
     before = {name: value.clone() for name, value in head.quantizer.state_dict().items()}
     loss = head.compute_loss(actions, _behavior_context())
-    assert loss.ndim == 0
-    assert torch.isfinite(loss)
-    loss.backward()
+    assert loss.shape == (1, 2, 2, 1)
+    assert torch.isfinite(loss).all()
+    loss.mean().backward()
     for gradient in (head.trunk.lm_head.weight.grad, head.code_head[0].weight.grad, head.offset_head[0].weight.grad):
         assert gradient is not None
         assert torch.isfinite(gradient).all()
@@ -152,6 +156,89 @@ def test_loss_rejects_short_action_trajectory() -> None:
     head = _make_small_behavior_head().eval()
     with pytest.raises(ValueError, match="Expected 3 action steps, got 2"):
         head.compute_loss(torch.tensor([[[0.1], [0.2]]]), _behavior_context())
+
+
+@pytest.mark.parametrize("groups", [1, 2, 3])
+def test_unreduced_loss_mean_matches_upstream_objective(groups: int) -> None:
+    """Window losses preserve group weighting and the upstream scalar mean."""
+    head = _make_small_behavior_head(groups=groups, action_dim=2).eval()
+    head.offset_loss_weight = 3.0
+    head.secondary_code_weight = 0.7
+    actions = torch.tensor([[[0.1, 0.2], [-0.2, 0.5], [0.3, -0.4]], [[0.4, 0.1], [0.6, -0.3], [0.8, 0.9]]])
+    context = {"tokens": _behavior_context()["tokens"].expand(2, -1, -1)}
+    windows = actions.unfold(1, head.chunk_size, 1).transpose(-1, -2)
+    logits, offsets = head._predictions(context)
+    codes = head.quantizer.encode(windows.flatten(0, 1)).reshape(2, 2, groups)
+    torch.manual_seed(29)
+    predicted = head._actions(logits, offsets)
+    # Upstream computes one mean focal loss per group, then sums weighted groups.
+    group_losses = []
+    for group in range(groups):
+        logpt = F.log_softmax(logits[:, :, group].flatten(0, 1), dim=-1)
+        logpt = logpt.gather(1, codes[:, :, group].reshape(-1, 1)).view(-1)
+        group_losses.append((-((1 - logpt.exp()) ** head.focal_loss_gamma) * logpt).mean())
+    expected = 5 * group_losses[0] + head.secondary_code_weight * sum(group_losses[1:])
+    expected += head.offset_loss_weight * F.l1_loss(predicted, windows)
+
+    torch.manual_seed(29)
+    losses = head.compute_loss(actions, context)
+
+    assert losses.shape == (2, 2, 2, 2)
+    torch.testing.assert_close(losses.mean(), expected)
+    logpt = logits.log_softmax(-1).gather(-1, codes[..., None]).squeeze(-1)
+    focal = -((1 - logpt.exp()) ** head.focal_loss_gamma) * logpt
+    window_code_loss = 5 * focal[..., 0] + head.secondary_code_weight * focal[..., 1:].sum(-1)
+    torch.testing.assert_close(
+        losses,
+        window_code_loss[..., None, None] + head.offset_loss_weight * (predicted - windows).abs(),
+    )
+
+
+def test_extreme_logits_have_finite_nonzero_focal_gradients(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wrong codes retain upstream focal gradients even after softmax underflows."""
+    head = _make_small_behavior_head().eval()
+    head.offset_loss_weight = 0.0
+    actions = torch.tensor([[[0.1], [-0.2], [0.3]]])
+    windows = actions.unfold(1, 2, 1).transpose(-1, -2)
+    codes = head.quantizer.encode(windows.flatten(0, 1)).reshape(1, 2, 2)
+    logits = torch.full((1, 2, 2, 2), 1000.0).scatter_(-1, codes[..., None], -1000.0).requires_grad_()
+    offsets = torch.zeros(1, 2, 2, 2, 2, 1)
+    monkeypatch.setattr(head, "_predictions", lambda _context: (logits, offsets))
+
+    loss = head.compute_loss(actions, _behavior_context()).mean()
+    loss.backward()
+
+    torch.testing.assert_close(loss, torch.tensor(11000.0))
+    assert torch.isfinite(logits.grad).all()
+    target_gradients = logits.grad.gather(-1, codes[..., None]).squeeze(-1)
+    torch.testing.assert_close(target_gradients, torch.tensor([[[-2.5, -0.25], [-2.5, -0.25]]]))
+
+
+def test_loss_rejects_mask_argument_instead_of_silently_ignoring_it() -> None:
+    """The head follows the shared mask-free compute_loss signature."""
+    head = _make_small_behavior_head().eval()
+    with pytest.raises(TypeError, match="valid_steps"):
+        head.compute_loss(torch.zeros(1, 3, 1), _behavior_context(), valid_steps=torch.ones(1, 3))
+
+
+def test_model_reduces_all_behavior_windows_including_padding(
+    tiny_encoder,
+    small_config,
+    model_batch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Trajectory padding does not mask or misalign overlapping VQ-BeT windows."""
+    model = PatchPolicyModel.from_config(replace(small_config, action_head="behavior_transformer"))
+    losses = torch.arange(8.0).reshape(1, 2, 2, 2).requires_grad_()
+    monkeypatch.setattr(model.action_head, "compute_loss", lambda _actions, _context: losses)
+    model_batch["extra.action_is_pad"] = torch.tensor([[False, False, True]])
+
+    loss, metrics = model.compute_loss(model_batch)
+    loss.backward()
+
+    torch.testing.assert_close(loss, losses.mean())
+    torch.testing.assert_close(losses.grad, torch.full_like(losses, 1 / losses.numel()))
+    assert not metrics["loss"].requires_grad
 
 
 def test_argmax_sampling_is_repeatable_without_random_ops(monkeypatch) -> None:

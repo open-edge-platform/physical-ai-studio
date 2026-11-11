@@ -37,8 +37,8 @@ class _SinusoidalPositionalEmbedding(nn.Module):
         """
         half_dim = self.hidden_dim // 2
         scale = math.log(10000) / (half_dim - 1)
-        frequencies = torch.exp(torch.arange(half_dim, device=timesteps.device) * -scale)
-        values = timesteps[:, None] * frequencies[None]
+        frequencies = torch.exp(torch.arange(half_dim, device=timesteps.device, dtype=torch.float32) * -scale)
+        values = timesteps.float()[:, None] * frequencies[None]
         return torch.cat((values.sin(), values.cos()), dim=-1)
 
 
@@ -151,8 +151,9 @@ class DiffusionHead(DiffusionActionHead):
             Predicted diffusion targets with the noisy action tensor's shape.
         """
         tokens = context["tokens"]
-        time = self.time_encoder(t.to(x_t.dtype))[:, None]
-        memory = torch.cat((time, self.context_in(tokens)), dim=1)
+        projected_context = self.context_in(tokens)
+        time = self.time_encoder(t).to(projected_context.dtype)[:, None]
+        memory = torch.cat((time, projected_context), dim=1)
         memory = self.context_encoder(self.input_dropout(memory + self.context_position))
         hidden = self.input_dropout(self.action_in(x_t) + self.action_position)
         decoded = self.decoder(

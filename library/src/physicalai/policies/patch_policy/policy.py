@@ -279,7 +279,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.output_features = output_features
 
     def on_fit_start(self) -> None:
-        """Fit the action tokenizer after checkpoint restoration and device placement."""
+        """Fit the tokenizer after placement and Studio's temporal-dataset callback."""
         super().on_fit_start()
         fit_tokenizer(self)
 
@@ -335,12 +335,26 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         weights_only: bool | None = None,  # noqa: FBT001
         **kwargs: Any,  # noqa: ANN401
     ) -> PatchPolicy:
-        """Restore a policy, allowing ``n_action_steps`` to override the saved execution horizon.
+        """Restore weights and config without downloading encoder artifacts.
+
+        Inference overrides are ``n_action_steps``, ``num_inference_steps``, and
+        ``use_random_noise``. Training and compilation controls may also be
+        overridden. Architecture and features are restored from the saved config.
+
+        To resume training, load the policy here first, then pass the same
+        checkpoint to ``Trainer.fit(..., ckpt_path=...)`` to restore loop and
+        optimizer state as well.
 
         Returns:
             Policy restored with its configuration and learned weights.
+
+        Raises:
+            ValueError: If input or output features are supplied.
         """
-        # Saved config supplies encoder metadata; Lightning supplies all weights.
+        if kwargs.get("input_features") is not None or kwargs.get("output_features") is not None:
+            msg = "Checkpoint features are restored from the saved config and cannot be overridden."
+            raise ValueError(msg)
+        # A checkpoint supplies encoder weights regardless of CLI constructor defaults.
         kwargs.update(encoder_pretrained=False, input_features=None, output_features=None)
         return super().load_from_checkpoint(
             checkpoint_path,
@@ -386,6 +400,9 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             refresh_processors = True
         if refresh_processors:
             preprocessor, postprocessor = make_policy_processors(config, model.encoder.image_size)
+            parameter = next(model.parameters())
+            preprocessor.to(device=parameter.device)
+            postprocessor.to(device=parameter.device)
 
         if self.compile_model and not self._encoder_compiled:
             model.encoder.compile()
@@ -487,13 +504,18 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         if not isinstance(config_data, Mapping):
             msg = "Patch Policy checkpoint is missing a valid policy_config."
             raise TypeError(msg)
-        config = replace(PatchPolicyConfig.from_dict(config_data), n_action_steps=self.n_action_steps)
+        config = PatchPolicyConfig.from_dict(config_data)
+        config = replace(
+            config,
+            n_action_steps=self.n_action_steps,
+            num_inference_steps=self.num_inference_steps,
+            use_random_input_noise=self.use_random_noise,
+        )
         if self.model is not None:
             self._validate_model_config(config)
         self._encoder_weights = None
-        self.encoder_pretrained = False
-        self.hparams.update(encoder_pretrained=False)
-        self._config = config
+        if config != self._config:
+            self._config = config
         self.input_features = config.input_features
         self.output_features = config.output_features
         self.configure_model()
@@ -578,12 +600,6 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.log_dict({f"train/{name}": value for name, value in metrics.items()}, prog_bar=True)
         return loss
 
-    def on_before_zero_grad(self, optimizer: torch.optim.Optimizer) -> None:
-        """Update diffusion EMA weights after each optimizer step."""
-        del optimizer
-        if isinstance(self.model, PatchPolicyModel):
-            self.model.update_ema()
-
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Create the optimizer for trainable policy parameters.
 
@@ -596,7 +612,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         if self.model is None:
             msg = "Cannot configure optimizers before Patch Policy features and model are resolved."
             raise RuntimeError(msg)
-        head = self.model.action_head
+        model = cast("PatchPolicyModel", self.model)
+        head = model.action_head
         if isinstance(head, BehaviourTransformerHead):
             decay: dict[str, torch.nn.Parameter] = {}
             no_decay: dict[str, torch.nn.Parameter] = {}
@@ -615,8 +632,11 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
                 lr=self.optimizer_lr,
                 betas=(0.9, 0.999),
             )
-        return torch.optim.AdamW(
+        optimizer = torch.optim.AdamW(
             (parameter for parameter in self.parameters() if parameter.requires_grad),
             lr=self.optimizer_lr,
             weight_decay=self.optimizer_weight_decay,
         )
+        # A skipped GradScaler step does not run the optimizer's post-step hooks.
+        optimizer.register_step_post_hook(lambda *_args, **_kwargs: model.update_ema())
+        return optimizer
