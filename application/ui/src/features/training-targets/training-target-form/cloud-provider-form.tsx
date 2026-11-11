@@ -29,7 +29,7 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
     const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [profileName, setProfileName] = useState(existing?.profile_name ?? '');
     const [values, setValues] = useState<Record<string, string>>({
-        configuration_uri: existing?.configuration_uri ?? '',
+        stack_id: existing?.stack_id ?? '',
     });
     const {
         data: providers,
@@ -71,7 +71,7 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
         try {
             const connection = await resolve.mutateAsync({
                 body: {
-                    configuration_uri: values.configuration_uri.trim(),
+                    stack_id: values.stack_id.trim(),
                     profile_name: profileName.trim(),
                 },
             });
@@ -135,8 +135,8 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
                                     <TextField
                                         key={field.name}
                                         label={field.title}
-                                        placeholder='s3://your-bucket/studio-config.json'
-                                        description='Paste ConfigurationUri from the stack’s Outputs tab.'
+                                        placeholder='123456789012-us-east-1-f4a9b2c0'
+                                        description='Paste StackId from the stack’s Outputs tab.'
                                         isRequired
                                         value={values[field.name] ?? ''}
                                         onChange={(value) =>

@@ -39,9 +39,7 @@ def test_requires_explicit_named_profile(body: dict, endpoint: str) -> None:
     with patch("api.aws_auth.aws_auth_service.check_credentials") as check:
         response = client.post(
             f"{BASE}/{endpoint}",
-            json={"configuration_uri": "s3://config-bucket/studio-config.json", **body}
-            if endpoint == "configuration"
-            else body,
+            json={"stack_id": "123456789012-eu-west-1-f4a9b2c0", **body} if endpoint == "configuration" else body,
         )
     assert response.status_code == 422
     check.assert_not_called()
@@ -65,7 +63,7 @@ def test_sso_error_contains_structured_recovery_in_both_flows(endpoint: str) -> 
     )
     body = {"profile_name": "team studio"}
     if endpoint == "configuration":
-        body["configuration_uri"] = "s3://config-bucket/studio-config.json"
+        body["stack_id"] = "123456789012-eu-west-1-f4a9b2c0"
     with patch(target, side_effect=SSOTokenLoadError(error_msg="private")):
         response = client.post(f"{BASE}/{endpoint}", json=body)
     assert response.status_code == 400

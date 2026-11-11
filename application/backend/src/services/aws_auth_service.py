@@ -1,13 +1,15 @@
-"""Discover and validate backend-local AWS named profiles."""
+"""Discover and validate backend-local AWS credentials via polymorphic providers."""
 
 import asyncio
 import shlex
+from abc import ABC, abstractmethod
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from core.security import require_aws_feature_active
 from schemas.aws_auth import AwsAuthCapabilities, AwsAuthenticationIssue, AwsCredentialSelection, AwsIdentity
 from schemas.operational_issue import OperationalIssue
-from schemas.remote_trainer import CloudProviderError
+from schemas.remote_trainer import AwsBatchConnection, CloudProviderError
 
 
 def credential_error_reason(error: Exception) -> str | None:
@@ -91,13 +93,78 @@ def aws_auth_error(error: Exception, profile_name: str | None = None) -> CloudPr
     return CloudProviderError(code=reason or "aws_unavailable", title=title, detail=detail, command=command)
 
 
+class AwsCredentialProvider(ABC):
+    """Strategy interface for acquiring AWS sessions and diagnosing authentication failures."""
+
+    @abstractmethod
+    def create_session(
+        self,
+        *,
+        region: str | None = None,
+        role_arn: str | None = None,
+    ) -> Any:
+        """Return an authenticated boto3.Session, optionally scoped to role_arn."""
+
+    @abstractmethod
+    def diagnose_error(self, error: Exception) -> AwsAuthenticationIssue | None:
+        """Return a recoverable credential issue, excluding permission and network failures."""
+
+    @abstractmethod
+    def to_operational_error(self, error: Exception) -> OperationalIssue:
+        """Translate a provider failure into the common public OperationalIssue contract."""
+
+
+class ProfileCredentialProvider(AwsCredentialProvider):
+    """Authenticate AWS operations using a backend-local named profile."""
+
+    def __init__(self, profile_name: str) -> None:
+        self.profile_name = profile_name
+
+    def create_session(
+        self,
+        *,
+        region: str | None = None,
+        role_arn: str | None = None,
+    ) -> Any:
+        require_aws_feature_active()
+        import boto3
+        from botocore.config import Config
+
+        source = boto3.Session(profile_name=self.profile_name)
+        if role_arn is None:
+            return source
+        sts = source.client(
+            "sts",
+            region_name=region or source.region_name or "us-east-1",
+            config=Config(connect_timeout=5, read_timeout=10),
+        )
+        creds = sts.assume_role(RoleArn=role_arn, RoleSessionName="physicalai-studio")["Credentials"]
+        return boto3.Session(
+            aws_access_key_id=creds["AccessKeyId"],
+            aws_secret_access_key=creds["SecretAccessKey"],
+            aws_session_token=creds["SessionToken"],
+            region_name=region,
+        )
+
+    def diagnose_error(self, error: Exception) -> AwsAuthenticationIssue | None:
+        return authentication_issue(error, self.profile_name)
+
+    def to_operational_error(self, error: Exception) -> OperationalIssue:
+        return operational_aws_error(error, self.profile_name)
+
+
+def get_credential_provider(source: AwsCredentialSelection | AwsBatchConnection | str) -> AwsCredentialProvider:
+    """Resolve the credential provider strategy for the given configuration or connection."""
+    if isinstance(source, str):
+        return ProfileCredentialProvider(source)
+    return ProfileCredentialProvider(source.profile_name)
+
+
 def check_credentials(selection: AwsCredentialSelection) -> AwsIdentity:
     """Validate the selected named profile without changing AWS configuration."""
-    require_aws_feature_active()
-    import boto3
     from botocore.config import Config
 
-    session = boto3.Session(profile_name=selection.profile_name)
+    session = get_credential_provider(selection).create_session()
     identity = session.client(
         "sts", region_name=session.region_name or "us-east-1", config=Config(connect_timeout=5, read_timeout=10)
     ).get_caller_identity()

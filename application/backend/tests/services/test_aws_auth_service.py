@@ -88,3 +88,14 @@ def test_generic_expiration_does_not_suggest_sso_for_non_sso_profile() -> None:
     result = auth.aws_auth_error(ClientError({"Error": {"Code": "ExpiredToken"}}, "GetObject"), "studio")
     assert result.code == "aws_credentials_expired"
     assert result.command is None
+
+
+def test_credential_provider_factory_returns_profile_provider() -> None:
+    provider = auth.get_credential_provider(AwsCredentialSelection(profile_name="studio"))
+    assert isinstance(provider, auth.AwsCredentialProvider)
+    assert isinstance(provider, auth.ProfileCredentialProvider)
+    issue = provider.diagnose_error(SSOTokenLoadError(error_msg="expired"))
+    assert issue is not None
+    assert issue.profile_name == "studio"
+    op_error = provider.to_operational_error(SSOTokenLoadError(error_msg="expired"))
+    assert op_error.copy_text == "aws sso login --profile=studio"

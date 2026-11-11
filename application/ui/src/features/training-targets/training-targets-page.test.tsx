@@ -56,10 +56,10 @@ const awsTrainer: SchemaRemoteTrainer = {
         connection_mode: 'aws_batch',
         schema_version: 1,
         region: 'eu-west-1',
-        studio_role_arn: 'arn:aws:iam::123456789012:role/studio',
-        configuration_uri: 's3://config-bucket/studio-config.json',
+        studio_role_arn: 'arn:aws:iam::123456789012:role/pai-studio-f4a9b2c0',
+        stack_id: '123456789012-eu-west-1-f4a9b2c0',
         profile_name: 'studio',
-        bucket: 'jobs-bucket',
+        bucket: 'pai-jobs-f4a9b2c0',
         targets: { 'g4dn.xlarge': { queue: 'queue-name', job_definition: 'definition-name' } },
     },
 };
@@ -70,9 +70,9 @@ const providerSchema = [
         title: 'AWS',
         fields: [
             {
-                name: 'configuration_uri',
-                title: 'S3 configuration file URI',
-                pattern: '^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[^?#]+$',
+                name: 'stack_id',
+                title: 'AWS stack ID',
+                pattern: '^[0-9]{12}-[a-z]{2,}(-[a-z]+)+-\\d-[0-9a-f]{8}$',
             },
         ],
     },
@@ -473,10 +473,10 @@ describe('TrainingTargetsPage', () => {
         const dialog = await screen.findByRole('dialog', { name: 'Deploy and configure AWS stack' });
         expect(within(dialog).queryByRole('button', { name: /AWS profile/ })).not.toBeInTheDocument();
         await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'AWS US East');
-        const uri = await within(dialog).findByRole('textbox', { name: /^S3 configuration file URI/ });
-        await user.type(uri, 's3://config-bucket');
+        const stackIdField = await within(dialog).findByRole('textbox', { name: /^AWS stack ID/ });
+        await user.type(stackIdField, '123456789012-eu-west-1');
         expect(within(dialog).getByRole('button', { name: 'Next' })).toBeDisabled();
-        await user.type(uri, '/studio-config.json');
+        await user.type(stackIdField, '-f4a9b2c0');
         await user.click(within(dialog).getByRole('button', { name: 'Next' }));
         expect(within(dialog).getByRole('button', { name: 'Connect' })).toBeDisabled();
         expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
@@ -490,8 +490,8 @@ describe('TrainingTargetsPage', () => {
         expect(resolutions).toBe(0);
         expect(dialog).toBeInTheDocument();
         expect(within(dialog).getByRole('textbox', { name: /^Name/ })).toHaveValue('AWS US East');
-        expect(within(dialog).getByRole('textbox', { name: /^S3 configuration file URI/ })).toHaveValue(
-            's3://config-bucket/studio-config.json'
+        expect(within(dialog).getByRole('textbox', { name: /^AWS stack ID/ })).toHaveValue(
+            '123456789012-eu-west-1-f4a9b2c0'
         );
         await user.click(within(dialog).getByRole('button', { name: 'Next' }));
         expect(within(dialog).getByRole('button', { name: /AWS profile/ })).toHaveTextContent('studio');
@@ -542,8 +542,8 @@ describe('TrainingTargetsPage', () => {
         await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'AWS US East');
         expect(within(dialog).getByRole('button', { name: 'Next' })).toBeDisabled();
         await user.type(
-            await within(dialog).findByRole('textbox', { name: /^S3 configuration file URI/ }),
-            's3://config-bucket/studio-config.json'
+            await within(dialog).findByRole('textbox', { name: /^AWS stack ID/ }),
+            '123456789012-eu-west-1-f4a9b2c0'
         );
         expect(within(dialog).getAllByRole('textbox')).toHaveLength(2);
         await user.click(within(dialog).getByRole('button', { name: 'Next' }));
@@ -558,7 +558,7 @@ describe('TrainingTargetsPage', () => {
         await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(resolution).toEqual({
-            configuration_uri: 's3://config-bucket/studio-config.json',
+            stack_id: '123456789012-eu-west-1-f4a9b2c0',
             profile_name: profileName,
         });
         expect(await screen.findByRole('button', { name: 'Edit AWS US East' })).toBeInTheDocument();
@@ -592,7 +592,7 @@ describe('TrainingTargetsPage', () => {
         await user.click(await screen.findByRole('button', { name: 'Edit AWS Provider' }));
         const dialog = await screen.findByRole('dialog', { name: 'Configure AWS stack' });
         expect(within(dialog).getByRole('textbox', { name: /^Name/ })).toHaveValue('AWS Provider');
-        expect(await within(dialog).findByDisplayValue('s3://config-bucket/studio-config.json')).toBeInTheDocument();
+        expect(await within(dialog).findByDisplayValue('123456789012-eu-west-1-f4a9b2c0')).toBeInTheDocument();
         expect(within(dialog).getAllByRole('textbox')).toHaveLength(2);
         expect(within(dialog).queryByRole('link', { name: 'Deploy AWS Batch stack' })).not.toBeInTheDocument();
         await user.clear(within(dialog).getByRole('textbox', { name: /^Name/ }));
@@ -630,8 +630,8 @@ describe('TrainingTargetsPage', () => {
         const dialog = await screen.findByRole('dialog', { name: 'Deploy and configure AWS stack' });
         await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'AWS Duplicate');
         await user.type(
-            await within(dialog).findByRole('textbox', { name: /^S3 configuration file URI/ }),
-            's3://config-bucket/studio-config.json'
+            await within(dialog).findByRole('textbox', { name: /^AWS stack ID/ }),
+            '123456789012-eu-west-1-f4a9b2c0'
         );
         await user.click(within(dialog).getByRole('button', { name: 'Next' }));
         const picker = within(dialog).getByRole('button', { name: /AWS profile/ });
@@ -666,7 +666,7 @@ describe('TrainingTargetsPage', () => {
         render(<TrainingTargetsPage />);
         await user.click(await screen.findByRole('button', { name: 'Edit AWS Provider' }));
         const dialog = await screen.findByRole('dialog', { name: 'Configure AWS stack' });
-        await within(dialog).findByDisplayValue('s3://config-bucket/studio-config.json');
+        await within(dialog).findByDisplayValue('123456789012-eu-west-1-f4a9b2c0');
         await user.click(within(dialog).getByRole('button', { name: 'Next' }));
         await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
         await waitFor(() =>

@@ -25,7 +25,7 @@ test('AWS setup requires a named profile and explains backend configuration', as
                 {
                     id: 'aws',
                     title: 'AWS',
-                    fields: [{ name: 'configuration_uri', title: 'S3 configuration file URI' }],
+                    fields: [{ name: 'stack_id', title: 'AWS stack ID' }],
                 },
             ])
         )
@@ -38,8 +38,8 @@ test('AWS setup requires a named profile and explains backend configuration', as
     await expect(configure.getByRole('button', { name: /AWS profile/ })).toHaveCount(0);
     await configure.getByRole('textbox', { name: 'Name' }).fill('AWS Provider');
     await configure
-        .getByRole('textbox', { name: 'S3 configuration file URI' })
-        .fill('s3://your-bucket/studio-config.json');
+        .getByRole('textbox', { name: 'AWS stack ID' })
+        .fill('123456789012-eu-west-1-f4a9b2c0');
     await configure.getByRole('button', { name: 'Next' }).click();
     const dialog = page.getByRole('dialog', { name: 'Connect to AWS remote training stack' });
     await expect(dialog.getByText(/Configure and authenticate this profile on the Studio backend host/)).toBeVisible();
@@ -70,7 +70,7 @@ test('AWS setup requires a named profile and explains backend configuration', as
     expect(await picker.boundingBox()).toEqual(fieldBounds);
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Back' }).click();
-    await expect(configure.getByRole('textbox', { name: 'S3 configuration file URI' })).toHaveValue(
-        's3://your-bucket/studio-config.json'
+    await expect(configure.getByRole('textbox', { name: 'AWS stack ID' })).toHaveValue(
+        '123456789012-eu-west-1-f4a9b2c0'
     );
 });

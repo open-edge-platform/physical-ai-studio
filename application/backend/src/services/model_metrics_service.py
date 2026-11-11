@@ -79,10 +79,11 @@ class ModelMetricsService:
         """Stream successive metric snapshots published by a Batch trainer to S3."""
         from botocore.exceptions import BotoCoreError, ClientError
 
-        from services.aws_auth_service import authentication_issue, operational_authentication_issue
+        from services.aws_auth_service import get_credential_provider, operational_authentication_issue
         from services.aws_batch import _make_session, aws_batch_connection_from_url
 
         connection = aws_batch_connection_from_url(trainer_url)
+        provider = get_credential_provider(connection)
         client, session_created, rows_sent, needs_issue_snapshot = None, 0.0, 0, True
         try:
             while True:
@@ -100,7 +101,7 @@ class ModelMetricsService:
                     finally:
                         body.close()
                 except (BotoCoreError, ClientError) as error:
-                    if issue := authentication_issue(error, connection.profile_name):
+                    if issue := provider.diagnose_error(error):
                         client = None
                         needs_issue_snapshot = True
                         yield ServerSentEvent(

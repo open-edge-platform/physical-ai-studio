@@ -12,13 +12,7 @@ from loguru import logger
 
 from core.security import require_aws_feature_active
 from schemas.aws_auth import AwsAuthenticationIssue
-from schemas.remote_trainer import (
-    AwsBatchConnection,
-    AwsBatchProviderConfiguration,
-    AwsBatchResourceConfiguration,
-    HealthStatus,
-    RemoteTrainerHealth,
-)
+from schemas.remote_trainer import AwsBatchConnection, AwsBatchProviderConfiguration, HealthStatus, RemoteTrainerHealth
 from training.policy_catalog import PolicyCatalog
 
 if TYPE_CHECKING:
@@ -26,7 +20,6 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 _PROBE_TIMEOUT_S = 10.0
-_MAX_CONFIGURATION_BYTES = 65536
 
 POLICY_INSTANCE_TYPES = {
     "act": "g4dn.2xlarge",
@@ -42,7 +35,7 @@ def aws_batch_trainer_url(connection: AwsBatchConnection) -> str:
         {
             "studio_role_arn": connection.studio_role_arn,
             "targets": json.dumps({key: target.model_dump() for key, target in connection.targets.items()}),
-            **({"configuration_uri": connection.configuration_uri} if connection.configuration_uri else {}),
+            **({"stack_id": connection.stack_id} if connection.stack_id else {}),
             "profile_name": connection.profile_name,
         }
     )
@@ -62,7 +55,7 @@ def aws_batch_connection_from_url(url: str) -> AwsBatchConnection:
                 "bucket": location.path.removeprefix("/"),
                 "studio_role_arn": query["studio_role_arn"][0],
                 "targets": json.loads(query["targets"][0]),
-                "configuration_uri": query.get("configuration_uri", [None])[0],
+                "stack_id": query.get("stack_id", [None])[0],
                 "profile_name": query.get("profile_name", ["default"])[0],
             }
         )
@@ -84,39 +77,32 @@ def batch_policy_catalog(connection: AwsBatchConnection) -> PolicyCatalog:
 
 
 def _make_session(connection: AwsBatchConnection) -> Any:
-    """Assume the stack's Studio role using the selected named profile."""
-    require_aws_feature_active()
-    import boto3
-    from botocore.config import Config
+    """Create a session scoped to the stack's Studio role using the configured credential provider."""
+    from services.aws_auth_service import get_credential_provider
 
-    source = boto3.Session(profile_name=connection.profile_name)
-    sts = source.client("sts", region_name=connection.region, config=Config(connect_timeout=5, read_timeout=10))
-    creds = sts.assume_role(RoleArn=connection.studio_role_arn, RoleSessionName="physicalai-studio")["Credentials"]
-    return boto3.Session(
-        aws_access_key_id=creds["AccessKeyId"],
-        aws_secret_access_key=creds["SecretAccessKey"],
-        aws_session_token=creds["SessionToken"],
-        region_name=connection.region,
+    return get_credential_provider(connection).create_session(
+        region=connection.region,
+        role_arn=connection.studio_role_arn,
     )
 
 
 def resolve_aws_batch_configuration(configuration: AwsBatchProviderConfiguration) -> AwsBatchConnection:
-    """Load and validate configuration using the selected named profile."""
+    """Derive stack resources from stack_id and verify Batch queues using the selected credential provider."""
     require_aws_feature_active()
-    import boto3
-
-    location = urlsplit(configuration.configuration_uri)
-    session = boto3.Session(profile_name=configuration.profile_name)
-    response = session.client("s3").get_object(Bucket=location.netloc, Key=location.path[1:])
-    body = response["Body"]
-    try:
-        payload = body.read(_MAX_CONFIGURATION_BYTES + 1)
-    finally:
-        body.close()
-    if len(payload) > _MAX_CONFIGURATION_BYTES:
-        raise ValueError("AWS configuration exceeds 64 KiB.")
-    resources = AwsBatchResourceConfiguration.model_validate_json(payload)
-    return AwsBatchConnection(**configuration.model_dump(), **resources.model_dump())
+    connection = AwsBatchConnection.model_validate(
+        {
+            "stack_id": configuration.stack_id,
+            "profile_name": configuration.profile_name,
+        }
+    )
+    session = _make_session(connection)
+    queue_names = list(dict.fromkeys(t.queue for t in connection.targets.values()))
+    queues = session.client("batch").describe_job_queues(jobQueues=queue_names)["jobQueues"]
+    if len(queues) != len(queue_names) or any(
+        q.get("state") != "ENABLED" or q.get("status") != "VALID" for q in queues
+    ):
+        raise ValueError("AWS Batch resources for the specified stack ID are missing or disabled.")
+    return connection
 
 
 def _probe_sync(connection: AwsBatchConnection) -> tuple[HealthStatus, str | None, AwsAuthenticationIssue | None]:
@@ -128,13 +114,13 @@ def _probe_sync(connection: AwsBatchConnection) -> tuple[HealthStatus, str | Non
         queue_names = list(dict.fromkeys(t.queue for t in connection.targets.values()))
         queues = batch.describe_job_queues(jobQueues=queue_names)["jobQueues"]
     except (BotoCoreError, ClientError) as exc:
-        from services.aws_auth_service import authentication_issue, credential_error_reason
+        from services.aws_auth_service import credential_error_reason, get_credential_provider
 
         if reason := credential_error_reason(exc):
             return (
                 "degraded",
                 "access_denied" if reason == "aws_access_denied" else "authentication_required",
-                authentication_issue(exc, connection.profile_name),
+                get_credential_provider(connection).diagnose_error(exc),
             )
         logger.debug("AWS Batch probe failed: {}", exc)
         return "unreachable", "service_error" if isinstance(exc, ClientError) else "connection_failed", None
