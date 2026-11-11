@@ -280,6 +280,8 @@ class GraphSafeQwen3VLTextModel(nn.Module):
         batch, length = pad_2d.shape
         causal = torch.tril(torch.ones(length, length, dtype=torch.bool, device=device))
         keep = causal[None, None] & pad_2d[:, None, None, :].to(torch.bool)
+        # Unmask fully masked (left-padding) rows: dtype.min overflows to -inf in bf16/f16 backends and softmax returns NaN.
+        keep |= ~keep.any(dim=-1, keepdim=True)
         mask = torch.zeros(batch, 1, length, length, dtype=dtype, device=device)
         return mask.masked_fill(~keep, torch.finfo(dtype).min)
 

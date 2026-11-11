@@ -14,7 +14,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from physicalai.policies.rldx1.components.backbone.graph_safe_text import _find_compress_info
+from physicalai.policies.rldx1.components.backbone.graph_safe_text import (
+    GraphSafeQwen3VLTextModel,
+    _find_compress_info,
+)
 from physicalai.policies.rldx1.components.backbone.layer_wrapper import LayerWrapper
 
 IMG = 151652
@@ -67,3 +70,18 @@ def test_find_compress_info_no_compress_layer() -> None:
     ids = torch.tensor([[10, IMG, IMG, IMG, 12]])
 
     assert _find_compress_info(lm, ids, n_cog_tokens=0, num_views=1) is None
+
+
+def test_causal_pad_mask_left_padding_rows_stay_finite() -> None:
+    """Left-padding rows have no visible keys; bf16/f16 backends turn the dtype.min fill into -inf (NaN softmax)."""
+    pad_2d = torch.tensor([[0, 0, 1, 1, 1]])
+    mask = GraphSafeQwen3VLTextModel._causal_pad_mask(pad_2d, torch.float32, torch.device("cpu"))
+    # Emulate the low-precision overflow of the masking constant.
+    mask = mask.masked_fill(mask < 0, float("-inf"))
+    # Plain softmax: torch SDPA special-cases fully masked rows, OpenVINO does not.
+    probs = torch.softmax(torch.randn(1, 2, 5, 5) + mask, dim=-1)
+
+    assert torch.isfinite(probs).all()
+    # Real-token rows keep the causal + padding pattern.
+    expected = torch.tensor([[0, 0, 1, 0, 0], [0, 0, 1, 1, 0], [0, 0, 1, 1, 1]], dtype=torch.bool)
+    torch.testing.assert_close(mask[0, 0, 2:] == 0, expected)
