@@ -95,8 +95,10 @@ For cloud-based remote training, the Hugging Face token may be exposed in logs d
 
 The supplied stack scales compute to zero when idle. Keep it deployed for future training jobs; storage charges still apply.
 
+The same stack also creates the shared AWS IoT Greengrass entities used to provision robots; see [Greengrass Robot Provisioning](./10-greengrass-robot-provisioning.md). These resources have no running cost. Because the robot IAM role and policy have explicit names, creating or updating the stack requires acknowledging that it creates IAM resources with custom names (`CAPABILITY_NAMED_IAM` on the AWS CLI). Named resources end with the stack identifier `<account-id>-<region>-<8-char-stack-uuid>`, published as the `StackIdentifier` output.
+
 1. Open **Settings**, then **Training Targets**, and select **AWS Provider**.
-2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in one of the supported regions (**US East (N. Virginia)** `us-east-1`, **US West (Oregon)** `us-west-2`, or **Europe (Frankfurt)** `eu-central-1`), or use an existing deployment. Wait for stack creation to complete and copy `ConfigurationUri` from its **Outputs** tab.
+2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in one of the supported regions (**US East (N. Virginia)** `us-east-1`, **US West (Oregon)** `us-west-2`, or **Europe (Frankfurt)** `eu-central-1`), or use an existing deployment. Select the IAM acknowledgement checkboxes, wait for stack creation to complete, and copy `ConfigurationUri` from its **Outputs** tab.
 3. Enter a **Name** for the training target and paste `ConfigurationUri` into **S3 configuration file URI**, then select **Next**. Use the configuration file URI, not just the bucket URL.
 4. In **Connect to AWS remote training stack**, select an **AWS profile** that is configured and authenticated on the Studio backend host. The information button explains credential setup.
 5. Select **Connect**. Studio reads and validates the configuration using the selected profile, then saves the target. If it fails, an error toast explains recovery and the form preserves your inputs. **Back** returns to the URI without discarding your profile selection.

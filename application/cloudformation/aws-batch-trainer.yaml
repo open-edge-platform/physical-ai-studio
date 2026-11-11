@@ -1,9 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |-
-  Creates AWS Batch resources for Physical AI Studio training jobs.
+  Creates AWS Batch resources for Physical AI Studio training jobs and the shared
+  AWS IoT Greengrass V2 entities for the robot fleet.
   Supported regions: us-east-1 (N. Virginia), us-west-2 (Oregon), and eu-central-1 (Frankfurt).
   Switch the AWS Console to one of the supported regions before creating this stack.
   Compute environments scale to zero when no jobs are running.
+  Named resources use the stack identifier <account-id>-<region>-<8-char-stack-uuid>.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -12,9 +14,18 @@ Metadata:
           default: Job limits
         Parameters:
           - JobTimeoutSeconds
+      - Label:
+          default: Robot fleet (AWS IoT Greengrass)
+        Parameters:
+          - RobotArtifactBucketName
+          - RobotCredentialDurationSeconds
     ParameterLabels:
       JobTimeoutSeconds:
         default: Maximum job duration (seconds)
+      RobotArtifactBucketName:
+        default: Additional S3 bucket robots can read and write (optional)
+      RobotCredentialDurationSeconds:
+        default: Robot credential duration (seconds)
 
 Parameters:
   JobTimeoutSeconds:
@@ -25,6 +36,22 @@ Parameters:
     Description: >-
       AWS Batch terminates a job that runs longer than this (default 24 hours), so a hung
       run cannot accrue charges indefinitely.
+
+  RobotArtifactBucketName:
+    Type: String
+    Default: ""
+    Description: Leave empty to grant robots no additional S3 access.
+    AllowedPattern: "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+
+  RobotCredentialDurationSeconds:
+    Type: Number
+    Default: 3600
+    MinValue: 900
+    MaxValue: 43200
+    Description: Lifetime of credentials vended to robots through the IoT role alias.
+
+Conditions:
+  HasRobotArtifactBucket: !Not [!Equals [!Ref RobotArtifactBucketName, ""]]
 
 Mappings:
   RegionInstanceTypes:
@@ -660,7 +687,8 @@ Resources:
                   if event["RequestType"] == "Delete":
                       bucket = boto3.resource("s3").Bucket(event["ResourceProperties"]["BucketName"])
                       bucket.object_versions.delete()
-                      bucket.multipart_uploads.abort()
+                      for upload in bucket.multipart_uploads.all():
+                          upload.abort()
                   else:
                       configuration = event["ResourceProperties"]["Configuration"]
                       configuration["schema_version"] = int(configuration["schema_version"])
@@ -696,7 +724,197 @@ Resources:
             queue: !Ref G7eJobQueue
             job_definition: !Ref G7eJobDefinition
 
+  # Robot fleet: Greengrass token exchange role, IoT role alias and shared IoT policy.
+  GreengrassTokenExchangeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub
+        - GreengrassTokenExchange-${AWS::AccountId}-${AWS::Region}-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: credentials.iot.amazonaws.com
+            Action: sts:AssumeRole
+
+  GreengrassTokenExchangePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub
+        - GreengrassTokenExchange-${AWS::AccountId}-${AWS::Region}-${StackUuid}-Access
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      Roles:
+        - !Ref GreengrassTokenExchangeRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudWatchLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/greengrass/*
+          - Sid: EcrAuth
+            Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: "*"
+          - Sid: EcrPull
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
+          - Sid: AssumeStudioRole
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt StudioRole.Arn
+          - !If
+            - HasRobotArtifactBucket
+            - Sid: S3Bucket
+              Effect: Allow
+              Action:
+                - s3:GetBucketLocation
+                - s3:ListBucket
+              Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}
+            - !Ref AWS::NoValue
+          - !If
+            - HasRobotArtifactBucket
+            - Sid: S3Objects
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}/*
+            - !Ref AWS::NoValue
+
+  GreengrassRoleAlias:
+    Type: AWS::IoT::RoleAlias
+    Properties:
+      RoleAlias: !Sub
+        - GreengrassRoleAlias-${AWS::AccountId}-${AWS::Region}-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      RoleArn: !GetAtt GreengrassTokenExchangeRole.Arn
+      CredentialDurationSeconds: !Ref RobotCredentialDurationSeconds
+
+  GreengrassIoTPolicy:
+    Type: AWS::IoT::Policy
+    Properties:
+      PolicyName: !Sub
+        - GreengrassIoTPolicy-${AWS::AccountId}-${AWS::Region}-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: iot:Connect
+            Resource: !Sub arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:client/${!iot:Connection.Thing.ThingName}*
+          - Effect: Allow
+            Action:
+              - iot:Publish
+              - iot:Receive
+            Resource: !Sub arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topic/*
+          - Effect: Allow
+            Action: iot:Subscribe
+            Resource: !Sub arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topicfilter/*
+          - Effect: Allow
+            Action: greengrass:*
+            Resource: "*"
+          - Effect: Allow
+            Action: iot:AssumeRoleWithCertificate
+            Resource: !GetAtt GreengrassRoleAlias.RoleAliasArn
+
+  # CloudFormation has no native resource exposing the account IoT endpoints.
+  IoTEndpointLookupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DescribeIoTEndpoint
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iot:DescribeEndpoint
+                Resource: "*"
+
+  IoTEndpointLookupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 30
+      Role: !GetAtt IoTEndpointLookupRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              data = {}
+              status = cfnresponse.SUCCESS
+              try:
+                  if event["RequestType"] != "Delete":
+                      iot = boto3.client("iot")
+                      data["DataEndpoint"] = iot.describe_endpoint(endpointType="iot:Data-ATS")["endpointAddress"]
+                      data["CredentialEndpoint"] = iot.describe_endpoint(endpointType="iot:CredentialProvider")["endpointAddress"]
+              except Exception as error:
+                  print(error)
+                  status = cfnresponse.FAILED
+              cfnresponse.send(event, context, status, data, "IoTEndpoints")
+
+  IoTEndpoints:
+    Type: Custom::IoTEndpoints
+    Properties:
+      ServiceToken: !GetAtt IoTEndpointLookupFunction.Arn
+
 Outputs:
   ConfigurationUri:
     Description: S3 configuration URI for the Studio training target. The backend AWS identity requires s3:GetObject on this object.
     Value: !Sub s3://${JobsBucket}/studio-config.json
+
+  StackIdentifier:
+    Description: Composite identifier <account-id>-<region>-<8-char-stack-uuid> used in resource names.
+    Value: !Sub
+      - ${AWS::AccountId}-${AWS::Region}-${StackUuid}
+      - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+
+  StudioRoleArn:
+    Description: Studio role ARN; robots can assume it with their token exchange credentials.
+    Value: !GetAtt StudioRole.Arn
+
+  GreengrassTokenExchangeRoleArn:
+    Description: Robot token exchange IAM role ARN.
+    Value: !GetAtt GreengrassTokenExchangeRole.Arn
+
+  GreengrassRoleAliasName:
+    Description: Greengrass nucleus iotRoleAlias.
+    Value: !Ref GreengrassRoleAlias
+
+  GreengrassRoleAliasArn:
+    Description: IoT role alias ARN.
+    Value: !GetAtt GreengrassRoleAlias.RoleAliasArn
+
+  GreengrassIoTPolicyName:
+    Description: IoT policy to attach to robot certificates.
+    Value: !Ref GreengrassIoTPolicy
+
+  IoTDataEndpoint:
+    Description: Greengrass nucleus iotDataEndpoint.
+    Value: !GetAtt IoTEndpoints.DataEndpoint
+
+  IoTCredEndpoint:
+    Description: Greengrass nucleus iotCredEndpoint.
+    Value: !GetAtt IoTEndpoints.CredentialEndpoint

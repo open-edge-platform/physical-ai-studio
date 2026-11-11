@@ -41,6 +41,7 @@ The application provides a graphical interface to:
 | [Training Policies](./docs/06-training-policies.md)                       | Train model policies from recorded datasets.                                      |
 | [Remote Training](./docs/07-remote-training.md) (optional)                | Configure and use trainers on self-managed infrastructure or AWS.                 |
 | [Deploying Model Policies](./docs/08-deploying-model-policies.md)         | Run trained policies in Studio or deploy them externally.                         |
+| [Greengrass Robot Provisioning](./docs/10-greengrass-robot-provisioning.md) (optional) | Provision robots as AWS IoT Greengrass core devices and deploy software to them. |
 
 ## Components
 

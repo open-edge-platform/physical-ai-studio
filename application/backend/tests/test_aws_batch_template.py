@@ -58,7 +58,17 @@ def test_template_configuration_matches_resource_schema(region: str) -> None:
         }
     ]
     assert parsed.studio_role_arn == "arn:aws:iam::123456789012:role/studio"
-    assert set(template["Outputs"]) == {"ConfigurationUri"}
+    assert set(template["Outputs"]) == {
+        "ConfigurationUri",
+        "StackIdentifier",
+        "StudioRoleArn",
+        "GreengrassTokenExchangeRoleArn",
+        "GreengrassRoleAliasName",
+        "GreengrassRoleAliasArn",
+        "GreengrassIoTPolicyName",
+        "IoTDataEndpoint",
+        "IoTCredEndpoint",
+    }
 
 
 def test_configuration_object_is_excluded_from_data_expiration() -> None:
@@ -128,7 +138,11 @@ def test_job_prefix_parameter_reaches_trainer(definition: str, prefix: str, tmp_
 
 def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
     template = _template()
-    assert set(template["Parameters"]) == {"JobTimeoutSeconds"}
+    assert set(template["Parameters"]) == {
+        "JobTimeoutSeconds",
+        "RobotArtifactBucketName",
+        "RobotCredentialDurationSeconds",
+    }
     expected_region_mapping = {
         "Small": "g4dn.2xlarge",
         "Medium": "g6e.2xlarge",
