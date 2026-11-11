@@ -11,6 +11,9 @@ permissions: {} # No permissions by default on workflow level
 
 env:
   UV_EXCLUDE_NEWER: "7 days"
+  # egl-probe (libero -> robomimic) has no wheel and its CMakeLists predates CMake 3.5,
+  # which CMake 4 (ubuntu-26.04 runners) refuses to configure without this.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 concurrency:
   group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
