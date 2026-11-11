@@ -24,6 +24,7 @@ from physicalai.export import ExportBackend
 from physicalai.inference import InferenceModel
 from physicalai.policies.mixins.peft import is_lora_injected
 from physicalai.policies.vla_jepa import VLAJEPA, VLAJEPAConfig, VLAJEPAModel
+from physicalai.train.optimizers import AdamWBF16Kahan
 
 
 @pytest.mark.parametrize("use_dora", [False, True])
@@ -103,6 +104,14 @@ def test_lora_optimizer_scales_both_learning_rates(tiny_config: VLAJEPAConfig, *
     assert {id(p) for group in optimizer.param_groups for p in group["params"]} == {
         id(p) for p in policy.model.parameters() if p.requires_grad
     }
+
+
+@pytest.mark.parametrize(("dtype", "kahan"), [("float32", False), ("bfloat16", True)])
+def test_bf16_weights_use_kahan_adamw(tiny_config: VLAJEPAConfig, dtype: str, *, kahan: bool) -> None:
+    """bf16 weights get Kahan-compensated AdamW so small updates are not rounded away."""
+    policy = VLAJEPA.from_config(replace(tiny_config, dtype=dtype), scheduler_warmup_steps=0)
+    policy._trainer = SimpleNamespace(estimated_stepping_batches=10)
+    assert isinstance(policy.configure_optimizers()["optimizer"], AdamWBF16Kahan) == kahan
 
 
 @pytest.mark.parametrize("use_lora,use_dora", [(False, False), (True, False), (True, True)])

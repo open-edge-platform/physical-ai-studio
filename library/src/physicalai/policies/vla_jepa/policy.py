@@ -22,6 +22,7 @@ from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import ExportParameters, OpenVINOExportParameters, TorchExportParameters
 from physicalai.policies.base import Model, Policy
 from physicalai.policies.mixins.peft import PeftConfigMixin, PeftPolicyMixin, is_lora_injected
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -494,7 +495,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
                 ],
                 "lr": self.optimizer_lr * lr_scale,
             })
-        optimizer = torch.optim.AdamW(
+        optimizer = build_adamw_auto_precision(
             [group for group in groups if group["params"]],
             betas=(0.9, 0.95),
             eps=1e-8,
