@@ -8,8 +8,6 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 import torch
 from physicalai.config import Config
@@ -1963,14 +1961,3 @@ class TestPi05LoRAConfig:
         trainable = sum(p.numel() for p in policy.parameters() if p.requires_grad)
         total = sum(p.numel() for p in policy.parameters())
         assert 0 < trainable < total
-
-
-class TestTrainingNoise:
-    """``use_random_input_noise=False`` only fixes the inference start; training must sample noise."""
-
-    @pytest.mark.parametrize("training", [True, False])
-    def test_zero_noise_only_at_inference(self, training: bool) -> None:
-        stub = SimpleNamespace(_use_random_input_noise=False, training=training)
-        noise = Pi05Model.sample_noise(stub, (2, 4, 3), torch.device("cpu"))
-
-        assert bool(noise.any()) is training

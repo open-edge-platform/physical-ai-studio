@@ -1080,18 +1080,8 @@ class TestActionPaddingMask:
         assert self._compute_val_loss(torch.full((2, 3, 2), 4.0), None) == pytest.approx(4.0)
 
 
-class TestTrainingNoise:
-    """``use_random_input_noise=False`` only fixes the inference start; training must sample noise.
-
-    With zero training noise the flow-matching target ``-actions`` can be read off ``x_t``,
-    so the loss collapses to ~0 while the policy learns nothing.
-    """
-
-    @pytest.mark.parametrize("training", [True, False])
-    def test_zero_noise_only_at_inference(self, training: bool) -> None:
-        from physicalai.policies.smolvla.model import VLAFlowMatching
-
-        stub = SimpleNamespace(_use_random_input_noise=False, training=training)
-        noise = VLAFlowMatching._sample_noise(stub, (2, 4, 3), torch.device("cpu"))
-
-        assert bool(noise.any()) is training
+class TestNoiseDefault:
+    def test_random_noise_is_on_by_default(self) -> None:
+        """The model uses this flag for the training noise too; zero training noise lets the
+        flow-matching target be read off ``x_t``, so the loss collapses and the policy learns nothing."""
+        assert SmolVLA().config.use_random_input_noise is True

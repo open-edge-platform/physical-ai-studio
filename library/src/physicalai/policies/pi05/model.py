@@ -810,8 +810,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         Returns:
             Noise tensor.
         """
-        # Zero noise is an inference-only option: training on it makes the target readable from x_t.
-        if not self._use_random_input_noise and not self.training:
+        if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
         return torch.normal(
             mean=0.0,

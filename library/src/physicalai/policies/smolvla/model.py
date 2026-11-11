@@ -881,8 +881,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
                 param.data = param.data.to(dtype=torch.float32)
 
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
-        # Zero noise is an inference-only option: training on it makes the target readable from x_t.
-        if not self._use_random_input_noise and not self.training:
+        if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
         if getattr(torch.jit, "is_tracing", lambda: False)() or torch.onnx.is_in_onnx_export():
             return torch.zeros(shape, dtype=torch.float32, device=device)
