@@ -239,6 +239,8 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
+# Runtime noise preprocessor (openvinotoolkit/physicalai#455); move to the release once it ships.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "refs/pull/455/head" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

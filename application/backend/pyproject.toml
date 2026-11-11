@@ -127,6 +127,8 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
+# Runtime noise preprocessor (openvinotoolkit/physicalai#455); move to the release once it ships.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "refs/pull/455/head" }
 physicalai-train = { path = "../../library", editable = true }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
