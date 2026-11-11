@@ -82,11 +82,11 @@ def fix_device_frame_interval(device: str | Path, fps: int = DEFAULT_FPS) -> boo
         fd = os.open(device, os.O_RDWR | os.O_NONBLOCK)
     except OSError:
         return False
-
-    try:
-        return _repair_open_device(fd, device, fps)
-    finally:
-        os.close(fd)
+    else:
+        try:
+            return _repair_open_device(fd, device, fps)
+        finally:
+            os.close(fd)
 
 
 def _repair_open_device(fd: int, device: str | Path, fps: int) -> bool:

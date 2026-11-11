@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from modal.exception import AuthError, InternalError, PermissionDeniedError, ServiceError
 from modal.exception import ConnectionError as ModalConnectionError
+from modal.exception import Error as ModalError
 
 from schemas.job import RemoteTrainJobPayload
 from services.dataset_download_service import DatasetDownloadService
@@ -183,7 +184,7 @@ class ModalTrainingBackend:
                     line = render_progress_log(status.extra_info) if status.extra_info else None
                     line = line or status.message or f"Remote training progress: {status.progress}%"
                     if line != last_progress_log:
-                        logger.info("Modal: {} (call {})", line, call.object_id)
+                        logger.info("Modal: {} (call {})", line, context.remote_job_id)
                         last_progress_log = line
                     if status.status == "completed":
                         return
@@ -202,7 +203,7 @@ class ModalTrainingBackend:
                         raise RuntimeError(f"Modal trainer exited with code {code}; see Modal application logs")
                     return
             except _CONNECTION_ERRORS as error:
-                logger.warning("Modal monitoring unavailable for {}: {}", call.object_id, error)
+                logger.warning("Modal monitoring unavailable for {}: {}", context.remote_job_id, error)
                 context.progress(
                     progress, message="Modal connection unavailable; remote job may still run — reconnecting"
                 )
@@ -210,10 +211,20 @@ class ModalTrainingBackend:
 
     @staticmethod
     def _download(context: TrainingContext, volume: modal.Volume, remote_path: str, archive: Path) -> None:
-        logger.info("Downloading trained model from Modal Volume: {}", remote_path)
+        total = None
+        try:
+            entries = volume.listdir(remote_path)
+            total = entries[0].size if entries else None
+        except (ModalError, OSError) as error:
+            logger.warning("Could not read Modal artifact size ({}); downloading without a total", type(error).__name__)
+        logger.info(
+            "Downloading trained model from Modal Volume: {} ({})",
+            remote_path,
+            format_bytes(total) if total is not None else "unknown size",
+        )
         started = time.monotonic()
         received = 0
-        heartbeat = TransferProgressLogger("Model download", None, logger_=logger)
+        heartbeat = TransferProgressLogger("Model download", total, logger_=logger)
         with archive.open("wb") as destination:
             for chunk in volume.read_file(remote_path):
                 if context.should_stop():

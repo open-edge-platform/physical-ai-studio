@@ -5,7 +5,7 @@
 
 from datetime import UTC, datetime
 from io import BytesIO
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from uuid import uuid4
 from zipfile import ZipFile
 
@@ -86,6 +86,7 @@ def resources(context, monkeypatch, tmp_path):
         yield files[path]
 
     volume.read_file.side_effect = read_file
+    volume.listdir.return_value = []
     source = tmp_path / "dataset.zip"
     source.write_bytes(b"dataset")
     monkeypatch.setattr(f"{MODULE}.DatasetDownloadService.create_dataset_archive", lambda self, path: source)
@@ -196,8 +197,15 @@ def test_dataset_upload_logs_size_and_average_speed(context, resources, monkeypa
         assert lines[1] == "Snapshot uploaded to Modal Volume: 2.0 KiB in 4.0s (512 B/s)"
 
 
-def test_model_download_reuses_transfer_heartbeats_and_logs_average_speed(context, resources, monkeypatch, tmp_path):
+@pytest.mark.parametrize("size_status", ["known", "missing", "unavailable"])
+def test_model_download_reuses_transfer_heartbeats_and_logs_average_speed(
+    context, resources, monkeypatch, tmp_path, size_status
+):
     _, volume, _, _ = resources
+    if size_status == "known":
+        volume.listdir.return_value = [MagicMock(size=2048)]
+    elif size_status == "unavailable":
+        volume.listdir.side_effect = modal.exception.ConnectionError("offline")
     clock = [0.0]
     monkeypatch.setattr(f"{MODULE}.time.monotonic", lambda: clock[0])
     log = MagicMock()
@@ -214,12 +222,22 @@ def test_model_download_reuses_transfer_heartbeats_and_logs_average_speed(contex
     archive = tmp_path / "artifact.zip"
     ModalTrainingBackend._download(context, volume, "jobs/test/artifact.zip", archive)
     assert archive.read_bytes() == b"x" * 1024 + b"y" * 1024
-    assert [entry.args[0].format(*entry.args[1:]) for entry in log.info.call_args_list] == [
-        "Downloading trained model from Modal Volume: jobs/test/artifact.zip",
-        "Model download progress: 1.0 KiB transferred at 51 B/s",
-        "Model download progress: 2.0 KiB transferred at 51 B/s",
-        "Model downloaded from Modal Volume: 2.0 KiB in 40.0s (51 B/s)",
-    ]
+    volume.listdir.assert_called_once_with("jobs/test/artifact.zip")
+    if size_status == "known":
+        expected = [
+            "Downloading trained model from Modal Volume: jobs/test/artifact.zip (2.0 KiB)",
+            "Model download progress: 1.0 KiB/2.0 KiB (50%) at 51 B/s, ETA 20s",
+            "Model download progress: 2.0 KiB/2.0 KiB (100%) at 51 B/s, ETA 0s",
+        ]
+    else:
+        expected = [
+            "Downloading trained model from Modal Volume: jobs/test/artifact.zip (unknown size)",
+            "Model download progress: 1.0 KiB transferred at 51 B/s",
+            "Model download progress: 2.0 KiB transferred at 51 B/s",
+        ]
+    expected.append("Model downloaded from Modal Volume: 2.0 KiB in 40.0s (51 B/s)")
+    assert [entry.args[0].format(*entry.args[1:]) for entry in log.info.call_args_list] == expected
+    assert log.warning.call_count == (1 if size_status == "unavailable" else 0)
 
 
 @pytest.mark.asyncio
@@ -358,6 +376,46 @@ async def test_reattach_does_not_upload_or_spawn(context, resources, connection,
 
 
 @pytest.mark.asyncio
+async def test_interrupted_download_restarts_with_unhydrated_call(context, resources, connection):
+    function, volume, call, files = resources
+    read_file = volume.read_file.side_effect
+
+    def interrupted_read(path):
+        if path.endswith("artifact.zip"):
+            yield files[path][:10]
+            context.should_stop = lambda: True
+            context.should_suspend = lambda: True
+        yield from read_file(path)
+
+    volume.read_file.side_effect = interrupted_read
+    with pytest.raises(TrainingSuspendedError):
+        await ModalTrainingBackend(connection).train(context)
+    assert context.remote_job_id == CALL_ID
+    assert not context.output_dir.exists()
+    call.cancel.assert_not_called()
+
+    context.should_stop = lambda: False
+    context.should_suspend = lambda: False
+    context.snapshot = None
+    context.job.progress = 95
+    volume.read_file.side_effect = read_file
+    object_id = PropertyMock(side_effect=AttributeError("Attempting to get object_id of unhydrated FunctionCall"))
+    type(call).object_id = object_id
+
+    await ModalTrainingBackend(connection).train(context)
+
+    object_id.assert_not_called()
+    modal.FunctionCall.from_id.assert_called_once_with(CALL_ID)
+    function.spawn.assert_called_once()
+    volume.batch_upload.assert_called_once()
+    context.on_remote_job_id.assert_awaited_once_with(CALL_ID)
+    call.get.assert_not_called()
+    call.cancel.assert_not_called()
+    assert (context.output_dir / "model.ckpt").read_text() == "trained"
+    assert volume.read_file.call_args_list[-1].args == (f"jobs/{context.job.id}/artifact.zip",)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "suspend,cancel,expected",
     [
@@ -474,6 +532,8 @@ async def test_missing_status_polls_native_call(context, resources, connection, 
 async def test_monitoring_recovers_without_resubmitting(context, resources, connection, monkeypatch, phase, error_type):
     function, volume, call, files = resources
     context.remote_job_id = CALL_ID
+    object_id = PropertyMock(side_effect=AttributeError("Attempting to get object_id of unhydrated FunctionCall"))
+    type(call).object_id = object_id
     if phase == "status":
         volume.read_file.side_effect = [
             error_type("unavailable"),
@@ -487,6 +547,7 @@ async def test_monitoring_recovers_without_resubmitting(context, resources, conn
     monkeypatch.setattr(f"{MODULE}.asyncio.sleep", sleep)
     await ModalTrainingBackend(connection).train(context)
     sleep.assert_awaited_once_with(5)
+    object_id.assert_not_called()
     function.spawn.assert_not_called()
     call.cancel.assert_not_called()
     assert context.remote_job_id == CALL_ID
