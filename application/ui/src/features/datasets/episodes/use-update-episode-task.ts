@@ -1,8 +1,11 @@
+import { useQueryClient } from '@tanstack/react-query';
+
 import { $api } from '../../../api/client';
 import { getQueryKey } from '../../../query-client/query-client.interface';
 import { getEpisodesQueryKey } from './episodes-query-key';
 
 export const useUpdateEpisodeTask = (dataset_id: string, episode_index: number) => {
+    const queryClient = useQueryClient();
     const episodeQueryKey = getQueryKey([
         'get',
         '/api/dataset/{dataset_id}/episodes/{episode_index}',
@@ -17,5 +20,7 @@ export const useUpdateEpisodeTask = (dataset_id: string, episode_index: number) 
             // Resolve only once the viewer shows the new task, so the editor closes onto it.
             awaits: [episodeQueryKey],
         },
+        // Runs after the refetch: if that failed, the viewer still shows the saved task.
+        onSuccess: (episode) => queryClient.setQueryData(episodeQueryKey, episode),
     });
 };

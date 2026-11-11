@@ -69,7 +69,7 @@ describe('EpisodeTask', () => {
         await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Episode task' })).not.toBeInTheDocument());
         expect(receivedBody).toEqual({ task: 'place the cube' });
         expect(receivedPath).toEqual({ dataset_id: DATASET_ID, episode_index: '1' });
-        expect(queryClient.getQueryState(episodeQueryKey)?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryData(episodeQueryKey)).toEqual({ ...episode, tasks: ['place the cube'] });
         expect(queryClient.getQueryState(episodesQueryKey)?.isInvalidated).toBe(true);
     });
 
@@ -122,6 +122,40 @@ describe('EpisodeTask', () => {
         expect(screen.getByTestId('shown')).toHaveTextContent('place the cube');
         await delay(400);
         expect(screen.getByTestId('shown')).toHaveTextContent('place the cube');
+    });
+
+    it('shows the saved task when the refetch after saving fails', async () => {
+        let saved = false;
+        server.use(
+            http.get(EPISODE_PATH, () =>
+                saved ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(episode)
+            ),
+            http.patch(EPISODE_PATH, () => {
+                saved = true;
+                return HttpResponse.json({ ...episode, tasks: ['place the cube'] });
+            })
+        );
+        const Shown = () => {
+            const { data } = $api.useQuery('get', EPISODE_PATH, {
+                params: { path: { dataset_id: DATASET_ID, episode_index: 1 } },
+            });
+            return <span data-testid='shown'>{data?.tasks.join(', ')}</span>;
+        };
+        const user = userEvent.setup();
+        render(
+            <>
+                <Shown />
+                <EpisodeTask datasetId={DATASET_ID} episode={episode} />
+            </>,
+            { queryClient: createQueryClient() }
+        );
+        await waitFor(() => expect(screen.getByTestId('shown')).toHaveTextContent('plcae the cube'));
+
+        await editTask(user, 'place the cube');
+        await user.click(screen.getByRole('button', { name: 'Save task' }));
+
+        await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Episode task' })).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId('shown')).toHaveTextContent('place the cube'));
     });
 
     it('saves on Enter', async () => {
