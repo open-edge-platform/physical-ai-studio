@@ -820,6 +820,7 @@ class TestSampleInput:
             def __init__(self, stats: dict) -> None:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
+                self.config = Pi05Config()
                 self.rtc_enabled = False
 
         stub = _Stub(dataset_stats)
@@ -1160,6 +1161,17 @@ class TestPi05ExtraExportArgs:
         policy = Pi05()
         with pytest.raises(ValueError, match="Dataset stats are required"):
             _ = policy.extra_export_args
+
+    @pytest.mark.parametrize(("backend", "expected"), [("onnx", [[50, 32]]), ("openvino", [[50, 32]]), ("torch", [])])
+    def test_manifest_draws_the_noise_for_graph_exports(self, backend: str, expected: list) -> None:
+        """Graph exports get the start noise from the runtime; eager torch samples it itself."""
+        policy = Pi05()
+        policy._dataset_stats = self._mock_stats()
+
+        specs = policy.extra_export_args[backend].preprocessors_specs
+        noise = [spec.model_dump() for spec in specs if spec.type == "noise"]
+
+        assert [spec["shape"] for spec in noise] == expected
 
     def test_preprocessor_order_normalize_before_pi05(self) -> None:
         """Normalize must run before the pi05 image transform for both onnx and openvino."""

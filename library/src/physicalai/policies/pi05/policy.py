@@ -18,7 +18,7 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
-from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+from physicalai.data.constants import NOISE, RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
@@ -867,13 +867,22 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                     ),
                 )
 
-        schema.append(
-            InferenceFeature(
-                ftype=InferenceFeatureType.LANGUAGE,
-                shape=(),
-                name=TASK,
-                dtype=InferenceFeatureDtype.STRING,
-            ),
+        schema.extend(
+            [
+                InferenceFeature(
+                    ftype=InferenceFeatureType.LANGUAGE,
+                    shape=(),
+                    name=TASK,
+                    dtype=InferenceFeatureDtype.STRING,
+                ),
+                # The start noise is a graph input: OpenVINO's GPU plugin repeats in-graph random values.
+                InferenceFeature(
+                    ftype=InferenceFeatureType.COMMON,
+                    shape=(self.config.chunk_size, self.config.max_action_dim),
+                    name=NOISE,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            ],
         )
 
         if self.rtc_enabled:
@@ -965,6 +974,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                 image_resolution=self.config.image_resolution,
                 empty_cameras=self.config.empty_cameras,
             ),
+            ComponentSpec(type="noise", shape=[self.config.chunk_size, self.config.max_action_dim]),
         ]
         postproc_specs = [
             ComponentSpec(
@@ -1016,6 +1026,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
+            # Eager torch samples the noise itself; Observation has no noise field.
             preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=torch_postproc_specs,
         )
