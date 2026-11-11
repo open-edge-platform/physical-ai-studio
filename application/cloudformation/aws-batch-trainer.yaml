@@ -837,10 +837,6 @@ Resources:
             Resource: !GetAtt StudioRoleAlias.RoleAliasArn
 
 Outputs:
-  ConfigurationUri:
-    Description: S3 configuration URI for the Studio training target. The backend AWS identity requires s3:GetObject on this object.
-    Value: !Sub s3://${JobsBucket}/studio-config.json
-
   StackIdentifier:
     Description: <account-id>-<region>-<stack-uuid>; resource names and ARNs derive from it, e.g. pai-studio-<stack-uuid>.
     Value: !Sub
