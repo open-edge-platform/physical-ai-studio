@@ -1095,7 +1095,7 @@ class TestNoiseInput:
     """
 
     @staticmethod
-    def _stub(*, rtc: bool) -> Any:
+    def _stub(*, rtc: bool, random_noise: bool = True) -> Any:
         from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
 
         class _ModelStub:
@@ -1109,7 +1109,9 @@ class TestNoiseInput:
                 "action": {"name": "action", "shape": (7,), "type": "ACTION"},
             },
             model=_ModelStub(),
-            config=SmolVLAConfig(chunk_size=20, n_action_steps=20, max_action_dim=32),
+            config=SmolVLAConfig(
+                chunk_size=20, n_action_steps=20, max_action_dim=32, use_random_input_noise=random_noise
+            ),
             rtc_enabled=rtc,
         )
         stub.inputs_schema = SmolVLA.inputs_schema.fget(stub)  # type: ignore[attr-defined]
@@ -1135,6 +1137,17 @@ class TestNoiseInput:
         noise = [spec.model_dump() for spec in args[backend].preprocessors_specs if spec.type == "noise"]
 
         assert [spec["shape"] for spec in noise] == expected
+
+    def test_zero_start_noise_stays_in_the_graph(self) -> None:
+        """With ``use_random_input_noise=False`` eager inference starts from zeros; exports must too."""
+        from physicalai.data.constants import NOISE
+        from physicalai.policies.smolvla import SmolVLA
+
+        stub = self._stub(rtc=False, random_noise=False)
+        args = SmolVLA.extra_export_args.fget(stub)  # type: ignore[attr-defined]
+
+        assert NOISE not in {feature.name for feature in stub.inputs_schema}
+        assert not [spec for backend in args.values() for spec in backend.preprocessors_specs if spec.type == "noise"]
 
     def test_openvino_inputs_keep_one_name(self) -> None:
         """Tracing leaves aliases on the noise and RTC inputs; the runtime routes inputs by name."""

@@ -343,6 +343,7 @@ class TestSampleInputRtc:
             def __init__(self) -> None:
                 self.chunk_size = chunk_size
                 self.max_action_dim = max_action_dim
+                self.use_random_input_noise = True
 
         class _Stub:
             def __init__(self) -> None:

@@ -803,23 +803,25 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                     ),
                 )
 
-        schema.extend(
-            [
-                InferenceFeature(
-                    ftype=InferenceFeatureType.LANGUAGE,
-                    shape=(self.config.tokenizer_max_length,),
-                    name=TASK,
-                    dtype=InferenceFeatureDtype.STRING,
-                ),
-                # The start noise is a graph input: OpenVINO's GPU plugin repeats in-graph random values.
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(self.config.tokenizer_max_length,),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+        # The start noise is a graph input: OpenVINO's GPU plugin repeats in-graph random values.
+        # Without random noise the graph keeps its zero start, like eager inference.
+        if self.config.use_random_input_noise:
+            schema.append(
                 InferenceFeature(
                     ftype=InferenceFeatureType.COMMON,
                     shape=(self.config.chunk_size, self.config.max_action_dim),
                     name=NOISE,
                     dtype=InferenceFeatureDtype.FLOAT32,
                 ),
-            ],
-        )
+            )
 
         if self.rtc_enabled:
             action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
@@ -897,7 +899,11 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             raise ValueError(msg)
 
         normalize_stats: dict[str, Any] = {STATE: self._dataset_stats[f"observation.{STATE}"]}
-        noise_spec = ComponentSpec(type="noise", shape=[self.config.chunk_size, self.config.max_action_dim])
+        noise_specs = (
+            [ComponentSpec(type="noise", shape=[self.config.chunk_size, self.config.max_action_dim])]
+            if self.config.use_random_input_noise
+            else []
+        )
         if self.rtc_enabled:
             normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
 
@@ -914,7 +920,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 stats=normalize_stats,
                 mode="mean_std",
             ),
-            noise_spec,
+            *noise_specs,
         ]
         postproc_specs = [
             ComponentSpec(

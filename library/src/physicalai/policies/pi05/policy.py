@@ -867,23 +867,25 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                     ),
                 )
 
-        schema.extend(
-            [
-                InferenceFeature(
-                    ftype=InferenceFeatureType.LANGUAGE,
-                    shape=(),
-                    name=TASK,
-                    dtype=InferenceFeatureDtype.STRING,
-                ),
-                # The start noise is a graph input: OpenVINO's GPU plugin repeats in-graph random values.
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+        # The start noise is a graph input: OpenVINO's GPU plugin repeats in-graph random values.
+        # Without random noise the graph keeps its zero start, like eager inference.
+        if self.config.use_random_input_noise:
+            schema.append(
                 InferenceFeature(
                     ftype=InferenceFeatureType.COMMON,
                     shape=(self.config.chunk_size, self.config.max_action_dim),
                     name=NOISE,
                     dtype=InferenceFeatureDtype.FLOAT32,
                 ),
-            ],
-        )
+            )
 
         if self.rtc_enabled:
             action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
@@ -963,6 +965,11 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         if self.rtc_enabled:
             normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
 
+        noise_specs = (
+            [ComponentSpec(type="noise", shape=[self.config.chunk_size, self.config.max_action_dim])]
+            if self.config.use_random_input_noise
+            else []
+        )
         base_preproc_specs = [
             ComponentSpec(
                 type="normalize",
@@ -974,7 +981,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                 image_resolution=self.config.image_resolution,
                 empty_cameras=self.config.empty_cameras,
             ),
-            ComponentSpec(type="noise", shape=[self.config.chunk_size, self.config.max_action_dim]),
+            *noise_specs,
         ]
         postproc_specs = [
             ComponentSpec(
