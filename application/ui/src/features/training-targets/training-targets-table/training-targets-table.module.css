@@ -1,3 +1,8 @@
+.cellText {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .cardMetaText {
     color: var(--spectrum-global-color-gray-600);
     font-size: var(--spectrum-global-dimension-font-size-50);

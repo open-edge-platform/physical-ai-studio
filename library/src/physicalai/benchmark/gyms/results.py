@@ -174,7 +174,7 @@ class BenchmarkResults:
             f"  Success Rate: {self.aggregate_success_rate:.1f}%",
             f"  Avg Reward: {self.aggregate_reward:.4f}",
             f"  Avg Episode Length: {self.aggregate_episode_length:.1f}",
-            f"  Avg FPS: {self.aggregate_fps:.1f}",
+            f"  Avg gym speed: {self.aggregate_fps:.1f}",
             "",
             "PER-TASK RESULTS:",
         ]

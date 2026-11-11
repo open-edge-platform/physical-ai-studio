@@ -11,7 +11,9 @@ from typing import Any
 import torch
 from loguru import logger
 
+from internal_datasets.lerobot.video_encoding_settings import available_video_encoding_presets
 from schemas.hardware import DeviceInfo, DeviceType, InferenceBackend, InferenceDeviceInfo, TrainingDevices
+from schemas.video_recording import VideoRecordingPreset, VideoRecordingPresets
 
 
 class SystemService:
@@ -28,6 +30,16 @@ class SystemService:
         devices = cls._get_torch_inference_devices()
         devices.extend(cls._get_openvino_inference_devices())
         return devices
+
+    @staticmethod
+    def get_video_recording_presets() -> VideoRecordingPresets:
+        """Return recording presets that can encode a real frame on this backend."""
+        return VideoRecordingPresets(
+            presets=[
+                VideoRecordingPreset(id=preset.id, name=preset.name, description=preset.description)
+                for preset in available_video_encoding_presets()
+            ]
+        )
 
     @classmethod
     def _get_torch_inference_devices(cls) -> list[InferenceDeviceInfo]:

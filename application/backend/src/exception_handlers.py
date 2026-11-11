@@ -191,7 +191,16 @@ def _rewrite_validation_error_status_code(schema: dict) -> dict:
         for operation in path_item.values():
             responses = operation.get("responses") if isinstance(operation, dict) else None
             if isinstance(responses, dict) and "422" in responses:
-                responses["400"] = responses.pop("422")
+                validation = responses.pop("422")
+                if "400" not in responses:
+                    responses["400"] = validation
+                else:
+                    content = responses["400"].setdefault("content", {})
+                    for media_type, media in validation.get("content", {}).items():
+                        if media_type not in content:
+                            content[media_type] = media
+                        else:
+                            content[media_type]["schema"] = {"anyOf": [content[media_type]["schema"], media["schema"]]}
     return schema
 
 

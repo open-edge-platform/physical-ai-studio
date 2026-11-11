@@ -33,7 +33,7 @@ dependencies = [
     "lightning-utilities",
     "lerobot[dataset]==0.6.0",
     "gymnasium>=0.29.1",
-    "gym-pusht>=0.1.5",
+    "gym-pusht>=0.1.5,<=0.1.8",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
     "openvino>=2026.4",
@@ -45,16 +45,23 @@ dependencies = [
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
-    "physicalai~=0.3.0",
+    "physicalai~=0.4.0",
 ]
 
 [project.optional-dependencies]
 # PyTorch dependency groups
 cpu = ["torch", "torchvision"]
-cu128 = ["torch", "torchvision"]
+# The PyPI wheels for torchao 0.18+ are built against CUDA 13 and
+# fail to dlopen next to a cu128 torch.
+cu128 = [
+    "torch",
+    "torchvision",
+    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 xpu = [
     "torch",
     "torchvision",
+    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # Testing dependencies
 tests = [
@@ -195,7 +202,8 @@ exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
 # FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
-exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false }
+# Allow the explicitly selected Physical AI release before the default cutoff.
+exclude-newer-package = { physicalai = false, pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -237,7 +245,6 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "1cc910b451508ce40cd7319ece2a29283fadfcfb" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -245,6 +252,10 @@ torch = [
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+torchao = [
     { index = "pytorch-cu128", extra = "cu128" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]

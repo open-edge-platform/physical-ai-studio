@@ -1,10 +1,10 @@
-import { rs } from '@rstest/core';
-import { screen, within } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
 import { render } from '../../../test-utils/render';
 import { TrainingTargetRow } from './training-target-row';
 import { TrainingTargetsTable } from './training-targets-table';
@@ -16,8 +16,7 @@ const remoteTrainer = {
     name: 'managed-trainer',
     connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
-    ssh_remote_port: null,
-    ssh_local_port: null,
+    connection: { connection_mode: 'direct' as const, url: 'https://trainer.example.test/api' },
     created_at: '2026-07-14T12:00:00Z',
 };
 
@@ -42,6 +41,46 @@ const directUrlRow = (trainer: TrainingTargetRow['trainer']): TrainingTargetRow 
 describe('TrainingTargetsTable', () => {
     beforeEach(() => {
         server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
+    });
+
+    it('shows Batch compute configuration and S3 storage without missing-host warnings', async () => {
+        const batchTrainer = getMockedRemoteTrainer({
+            name: 'AWS Provider',
+            connection_mode: 'aws_batch',
+            url: null,
+            connection: {
+                connection_mode: 'aws_batch',
+                schema_version: 1,
+                profile_name: 'studio',
+                region: 'us-east-1',
+                studio_role_arn: 'arn:aws:iam::123:role/studio',
+                bucket: 'training-jobs',
+                targets: { 'g4dn.2xlarge': { queue: 'queue', job_definition: 'definition' } },
+            },
+        });
+        server.use(
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({
+                    ...healthyTrainer,
+                    remote_trainer_id: batchTrainer.id,
+                    devices: [],
+                    storage: null,
+                    issues: [],
+                })
+            )
+        );
+
+        render(<TrainingTargetsTable rows={[directUrlRow(batchTrainer)]} onEdit={rs.fn()} onDelete={rs.fn()} />);
+
+        expect(await screen.findByText('responded in 24 ms and is ready for training requests')).toBeInTheDocument();
+        expect(screen.getByText('Batch service')).toBeInTheDocument();
+        expect(screen.getByText('g4dn.2xlarge · allocated per job')).toBeInTheDocument();
+        expect(screen.getByText('On demand')).toBeInTheDocument();
+        expect(screen.getByText('s3://training-jobs')).toBeInTheDocument();
+        expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
+        expect(screen.queryByText('Not reported')).not.toBeInTheDocument();
+        expect(screen.queryByText('no compute device reported')).not.toBeInTheDocument();
+        expect(screen.queryByText('no storage reported')).not.toBeInTheDocument();
     });
 
     it('disables installation while SSH host setup is in progress', async () => {
@@ -141,9 +180,7 @@ describe('TrainingTargetsTable', () => {
 
             render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={onEdit} onDelete={rs.fn()} />);
 
-            await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-            expect(screen.queryByRole('menuitem', { name: 'Install prerequisites' })).not.toBeInTheDocument();
-            await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+            await user.click(await screen.findByRole('button', { name: `Edit ${remoteTrainer.name}` }));
 
             expect(onEdit).toHaveBeenCalledWith(directUrlRow(remoteTrainer));
         });
@@ -154,8 +191,7 @@ describe('TrainingTargetsTable', () => {
 
             render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={rs.fn()} onDelete={onDelete} />);
 
-            await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-            await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+            await user.click(await screen.findByRole('button', { name: `Remove ${remoteTrainer.name}` }));
 
             expect(onDelete).toHaveBeenCalledWith(directUrlRow(remoteTrainer));
         });
@@ -176,6 +212,7 @@ describe('TrainingTargetsTable', () => {
         });
 
         it('shows a failed health check for a row without swallowing other rows', async () => {
+            const user = userEvent.setup();
             server.use(
                 http.get(REMOTE_TRAINER_HEALTH_PATH, ({ params }) =>
                     params.remote_trainer_id === secondRemoteTrainer.id
@@ -192,11 +229,10 @@ describe('TrainingTargetsTable', () => {
                 />
             );
 
-            const unavailableRow = await screen.findByTestId(`training-target-row-${secondRemoteTrainer.id}`);
-            expect(await within(unavailableRow).findByText('Check failed')).toBeInTheDocument();
-
-            const healthyRow = await screen.findByTestId(`training-target-row-${remoteTrainer.id}`);
-            expect(await within(healthyRow).findAllByText('Healthy')).not.toHaveLength(0);
+            expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
+            await user.click(screen.getByRole('button', { name: `Show details for ${secondRemoteTrainer.name}` }));
+            expect(await screen.findAllByText('Check failed')).not.toHaveLength(0);
+            expect(screen.getByRole('button', { name: `Edit ${remoteTrainer.name}` })).toBeInTheDocument();
         });
     });
 });

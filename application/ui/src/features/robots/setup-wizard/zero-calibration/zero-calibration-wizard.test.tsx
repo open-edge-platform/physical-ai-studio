@@ -14,11 +14,11 @@ rs.mock('./use-zero-calibration-websocket', () => ({
     useZeroCalibrationWebSocket: rs.fn(),
 }));
 
-// The 3D viewer needs WebGL; the live sync is covered by use-joint-state.
+// The 3D viewer needs WebGL; the live sync is covered by use-synchronize-model-joints.
 rs.mock('../shared/setup-robot-viewer', () => ({
     SetupRobotViewer: () => <div>robot-viewer</div>,
 }));
-rs.mock('../../use-joint-state', () => ({
+rs.mock('../../use-synchronize-model-joints', () => ({
     useSynchronizeModelJoints: rs.fn(),
 }));
 

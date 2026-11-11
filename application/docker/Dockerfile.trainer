@@ -14,7 +14,7 @@ ARG PYTHON_VERSION=3.13
 # PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
 # artifacts. Kept in sync with application/docker/Dockerfile.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS ffmpeg-builder
+FROM python:${PYTHON_VERSION}-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS ffmpeg-builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -132,7 +132,7 @@ RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
 
 SHELL ["/bin/sh", "-c"]
 
-FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 # UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
@@ -229,7 +229,7 @@ RUN set -eu; \
     find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
         -exec rm -rf {} + 2>/dev/null || true
 
-FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS runtime-base
 
 ARG TRAINER_UID=10001
 ARG TRAINER_GID=10001
@@ -290,12 +290,16 @@ COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/traini
 # console script. Installing the studio package would additionally require its
 # compiled UI and robot assets, which this image deliberately excludes.
 RUN printf '#!/bin/sh\nexec python -m trainer.cli "$@"\n' > /usr/local/bin/physicalai-trainer \
-    && chmod 755 /usr/local/bin/physicalai-trainer
+    && chmod 755 /usr/local/bin/physicalai-trainer \
+    && printf '#!/bin/sh\nexec python -m trainer.batch "$@"\n' > /usr/local/bin/physicalai-trainer-batch \
+    && chmod 755 /usr/local/bin/physicalai-trainer-batch
 
 EXPOSE 8001
 USER trainer
 WORKDIR /var/lib/physicalai-trainer
-ENTRYPOINT ["physicalai-trainer"]
+# Starts the HTTP service by default. Pass `physicalai-trainer-batch` as the
+# container command to run a single training job and exit instead.
+CMD ["physicalai-trainer"]
 
 FROM runtime-base AS runtime-xpu
 

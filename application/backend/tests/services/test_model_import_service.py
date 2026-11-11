@@ -228,6 +228,28 @@ async def test_import_model_directory_rejects_nonexistent(tmp_path, project_id, 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("artifact", [r"..\..\..\outside.pt", r"nested\act.pt", "C:/outside.pt", "C:outside.pt"])
+@pytest.mark.parametrize("exports_only", [False, True])
+async def test_import_model_directory_rejects_windows_artifact_paths(
+    tmp_path, project_id, dataset_id, settings, dataset, artifact, exports_only
+):
+    files = _base_files()
+    files["exports/torch/manifest.json"] = json.dumps(_make_manifest(artifact=artifact))
+    if exports_only:
+        files = {name.removeprefix("exports/"): content for name, content in files.items() if name != "model.ckpt"}
+    source_dir = _create_model_directory(tmp_path, files)
+    with _mock_services(settings, dataset) as service, pytest.raises(InvalidArchiveError, match="unsafe"):
+        await service.import_model_directory(
+            source_dir=source_dir,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            model_name="imported",
+        )
+    assert source_dir.exists()
+    assert not settings.models_dir.exists()
+
+
+@pytest.mark.anyio
 async def test_import_model_directory_cleans_up_on_failure(tmp_path, project_id, dataset_id, settings, dataset):
     source_dir = _create_model_directory(tmp_path, _base_files())
 

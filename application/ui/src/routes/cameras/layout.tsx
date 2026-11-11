@@ -1,4 +1,4 @@
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 
 import {
     ActionButton,
@@ -12,10 +12,8 @@ import {
     Grid,
     Heading,
     Item,
-    Loading,
     Menu,
     MenuTrigger,
-    minmax,
     toast,
     View,
 } from '@geti-ui/ui';
@@ -27,6 +25,7 @@ import { $api } from '../../api/client';
 import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from '../../api/errors';
 import { SchemaProjectCamera } from '../../api/types';
 import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
+import { CollapsibleSidebarLayout } from '../../components/collapsible-sidebar-layout/collapsible-sidebar-layout';
 import { fingerprintKey, formatFingerprint } from '../../features/cameras/fingerprint';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
@@ -220,70 +219,45 @@ export const CamerasList = () => {
     });
 
     return (
-        <Flex direction='column' gap='size-200' height={'100%'}>
-            <AddResourceButton to={paths.project.cameras.new({ project_id })}>Configure new camera</AddResourceButton>
+        <Flex direction='column' gap='size-200'>
+            {projectCameras.map((camera) => {
+                const cameraFingerprint = fingerprintKey(camera.fingerprint);
+                const hardwareCamera = cameraFingerprint
+                    ? hardwareCameras.find((hardware) => fingerprintKey(hardware.fingerprint) === cameraFingerprint)
+                    : undefined;
+                const to = paths.project.cameras.show({ project_id, camera_id: camera.id ?? 'undefined' });
 
-            <Flex direction='column' gap='size-200'>
-                {projectCameras.map((camera) => {
-                    const cameraFingerprint = fingerprintKey(camera.fingerprint);
-                    const hardwareCamera = cameraFingerprint
-                        ? hardwareCameras.find((hardware) => fingerprintKey(hardware.fingerprint) === cameraFingerprint)
-                        : undefined;
-                    const to = paths.project.cameras.show({ project_id, camera_id: camera.id ?? 'undefined' });
-
-                    return (
-                        <NavLink key={camera.id} to={to}>
-                            {({ isActive }) => {
-                                return (
-                                    <CameraListItem
-                                        camera={camera}
-                                        isActive={isActive}
-                                        status={hardwareCamera !== undefined ? 'connected' : 'disconnected'}
-                                    />
-                                );
-                            }}
-                        </NavLink>
-                    );
-                })}
-            </Flex>
+                return (
+                    <NavLink key={camera.id} to={to}>
+                        {({ isActive }) => {
+                            return (
+                                <CameraListItem
+                                    camera={camera}
+                                    isActive={isActive}
+                                    status={hardwareCamera !== undefined ? 'connected' : 'disconnected'}
+                                />
+                            );
+                        }}
+                    </NavLink>
+                );
+            })}
         </Flex>
     );
 };
 
-const CamerasFallback = () => {
-    return (
-        <Grid width='100%' height='100%'>
-            <Loading mode='inline' />
-        </Grid>
-    );
-};
-
 export const Layout = () => {
+    const { project_id } = useProjectId();
+
     return (
-        <Grid
-            areas={['camera controls']}
-            columns={['size-6000', minmax(0, '1fr')]}
-            rows={[minmax(0, '1fr')]}
-            height={'100%'}
-            minHeight={0}
+        <CollapsibleSidebarLayout
+            toolbar={
+                <AddResourceButton to={paths.project.cameras.new({ project_id })}>
+                    Configure new camera
+                </AddResourceButton>
+            }
+            sidebar={<CamerasList />}
         >
-            <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
-                <Suspense fallback={<CamerasFallback />}>
-                    <CamerasList />
-                </Suspense>
-            </View>
-            <View
-                gridArea='controls'
-                backgroundColor={'gray-50'}
-                height='100%'
-                minHeight={0}
-                minWidth={0}
-                overflow='auto'
-            >
-                <Suspense fallback={<CamerasFallback />}>
-                    <Outlet />
-                </Suspense>
-            </View>
-        </Grid>
+            <Outlet />
+        </CollapsibleSidebarLayout>
     );
 };

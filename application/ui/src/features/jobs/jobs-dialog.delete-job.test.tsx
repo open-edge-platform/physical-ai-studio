@@ -4,6 +4,8 @@ import { HttpResponse } from 'msw';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
+import { getMockedTrainJob } from '../../test-utils/mocks/mock-train-job';
+import { getMockedTrainJobPayload } from '../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../test-utils/render';
 import { SchemaTrainJob } from '../models/train-model-dialog/train-model-dialog';
 import { JobsDialog } from './jobs-dialog';
@@ -13,7 +15,7 @@ const jobId = 'f1b3f8f0-1c1a-4b1a-9c1a-1c1a1c1a1c1a';
 
 let jobs: SchemaTrainJob[];
 
-const baseJob: SchemaTrainJob = {
+const baseJob = getMockedTrainJob({
     id: jobId,
     project_id: projectId,
     type: 'training',
@@ -24,13 +26,12 @@ const baseJob: SchemaTrainJob = {
     end_time: '2026-08-01T00:05:00Z',
     created_at: '2026-08-01T00:00:00Z',
     extra_info: {},
-    payload: {
-        training_target: 'local',
+    payload: getMockedTrainJobPayload({
         model_name: 'Cancelled model',
         policy: 'act',
         dataset_id: 'd1',
-    },
-} as unknown as SchemaTrainJob;
+    }),
+});
 
 const mockRoutes = () => {
     jobs = [baseJob];

@@ -9,7 +9,7 @@ import pytest
 
 from exceptions import TrainerContainerLaunchError
 from schemas.hardware import DeviceType
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode
+from schemas.remote_trainer import DirectConnection, RemoteTrainer, SshConnection
 from services.ssh import persistent_trainer
 from services.ssh.docker_ops import ContainerInspection, ResolvedImage
 
@@ -33,29 +33,28 @@ def _ssh_trainer() -> RemoteTrainer:
     return RemoteTrainer(
         id=uuid4(),
         name="gpu-trainer",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-        ssh_remote_port=8001,
-        ssh_local_port=8001,
+        connection=SshConnection(ssh_host_alias="gpu-box", ssh_remote_port=8001, ssh_local_port=8001),
     )
 
 
 def _fake_transport_cm() -> MagicMock:
     transport = AsyncMock()
-    transport.run_command = AsyncMock(return_value=MagicMock(ok=True))
+    transport.run_command = AsyncMock(return_value=MagicMock(ok=True, stdout=""))
     cm = MagicMock()
     cm.__aenter__ = AsyncMock(return_value=transport)
     cm.__aexit__ = AsyncMock(return_value=False)
     return cm
 
 
-async def test_get_launch_phase_is_none_before_and_after_a_successful_start() -> None:
+@pytest.mark.parametrize("proxy_names", ["", "HTTPS_PROXY\nNO_PROXY\nhttps_proxy\n"])
+async def test_get_launch_phase_is_none_before_and_after_a_successful_start(proxy_names: str) -> None:
     trainer = _ssh_trainer()
     assert persistent_trainer.get_launch_phase(trainer.id) is None
+    transport = _fake_transport_cm()
+    transport.__aenter__.return_value.run_command.return_value.stdout = proxy_names
 
     with (
-        patch(f"{MODULE}.SshTransport", return_value=_fake_transport_cm()),
+        patch(f"{MODULE}.SshTransport", return_value=transport),
         patch(f"{MODULE}.get_backend_instance_id", return_value="this-instance"),
         patch(f"{MODULE}.get_settings") as settings,
         patch(f"{MODULE}.docker_ops") as docker_ops_module,
@@ -76,6 +75,31 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
     assert persistent_trainer.get_launch_phase(trainer.id) is None
     assert docker_ops_module.build_run_argv.call_args.kwargs["shm_size_gb"] == 8
     docker_ops_module.launch_container.assert_awaited_once()
+    argv = docker_ops_module.launch_container.call_args.args[1]
+    assert argv == [
+        "docker",
+        "run",
+        *(f"--env={name}" for name in proxy_names.splitlines()),
+        "127.0.0.1:8001:8001",
+        "img",
+    ]
+
+
+async def test_proxy_environment_only_forwards_allowlisted_names() -> None:
+    transport = AsyncMock()
+    transport.run_command.return_value = MagicMock(
+        ok=True, stdout="HTTPS_PROXY\nHTTPS_PROXY\nHF_TOKEN\n--privileged\nHTTPS_PROXY=http://secret\n"
+    )
+
+    assert await persistent_trainer._proxy_environment_args(transport) == ["--env=HTTPS_PROXY"]
+
+
+async def test_proxy_environment_probe_failure_is_not_silently_ignored() -> None:
+    transport = AsyncMock()
+    transport.run_command.return_value = MagicMock(ok=False)
+
+    with pytest.raises(ValueError, match="proxy environment"):
+        await persistent_trainer._proxy_environment_args(transport)
 
 
 @pytest.mark.parametrize(
@@ -199,6 +223,7 @@ async def test_start_detects_intel_gpu_without_xpu_smi() -> None:
             ok=True,
             stdout="Platform #0: Intel(R) OpenCL Graphics\n `-- Device #0: Intel(R) Arc Pro B70 Graphics",
         ),
+        MagicMock(ok=True, stdout=""),
     ]
     with (
         patch(f"{MODULE}.SshTransport", return_value=transport),
@@ -242,7 +267,7 @@ async def test_start_records_missing_accelerator_for_the_health_ui() -> None:
 
 
 async def test_start_is_a_noop_for_a_direct_url_trainer() -> None:
-    trainer = RemoteTrainer(id=uuid4(), name="direct", url="https://trainer.test")
+    trainer = RemoteTrainer(id=uuid4(), name="direct", connection=DirectConnection(url="https://trainer.test"))
 
     with patch(f"{MODULE}.SshTransport") as ssh_transport:
         await persistent_trainer.start(trainer)

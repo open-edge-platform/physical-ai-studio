@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { DatasetCamera, useDatasetCameras } from '../../datasets/use-dataset-cameras';
 import { getPolicyCameraSlots, PolicyCameraSlot } from './policy-camera-slots';
-import { DatasetCamera, useDatasetCameras } from './use-dataset-cameras';
 
 export interface FeatureMapping {
     /** The policy's camera slots, in slot order. Empty when the policy has no fixed order. */

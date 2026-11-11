@@ -18,7 +18,8 @@ Core files:
 - `service.py`: Job lifecycle operations for dataset import
 - `adapters/base.py`: Adapter contract
 - `adapters/lerobot_v3.py`: Current adapter implementation
-- `workers/dataset_import_worker.py` (outside this folder): worker orchestration loop
+- `workers/dataset_import_worker.py` (outside this folder): executes one assigned import step in a short-lived process
+- `core/scheduler.py` (outside this folder): polls for runnable jobs and manages worker processes
 - `api/dataset_import.py` (outside this folder): HTTP endpoints
 
 ---

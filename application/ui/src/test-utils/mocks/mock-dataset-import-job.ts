@@ -14,6 +14,7 @@ export const getMockedDatasetImportJob = (overrides: Partial<SchemaDatasetImport
     end_time: null,
     created_at: '2026-07-14T09:00:00Z',
     extra_info: {},
+    issues: [],
     ...overrides,
     payload: {
         step: 'awaiting_archive_upload',

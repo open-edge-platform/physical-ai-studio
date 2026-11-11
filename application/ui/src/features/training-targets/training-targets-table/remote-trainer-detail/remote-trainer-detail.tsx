@@ -1,6 +1,7 @@
-import { Badge, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
+import { Badge, Button, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../../api/openapi-spec';
+import { showIssueError } from '../../../../components/notification/issue-toasts';
 import { connectionModeLabel, sshHostDisplay } from '../../remote-trainer-connection-utils';
 import {
     capabilityDetail,
@@ -70,6 +71,8 @@ type RemoteTrainerDetailProps = {
 };
 
 export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: RemoteTrainerDetailProps) => {
+    const batchConnection =
+        remoteTrainer.connection.connection_mode === 'aws_batch' ? remoteTrainer.connection : undefined;
     const types = deviceTypes(health);
     const state = healthVariant(health, isChecking);
     const deviceReportIsInvalid = health?.reason_code === 'invalid_devices_response';
@@ -84,6 +87,11 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
         <View backgroundColor={'gray-75'} padding={'size-300'} borderColor={'gray-300'} borderWidth={'thin'}>
             <div className={`${classes.detailGrid} ${classes.twoColumns}`}>
                 <View UNSAFE_className={classes.detailSection}>
+                    {!!health?.issues?.length && (
+                        <Button variant='secondary' onPress={() => health.issues?.forEach(showIssueError)}>
+                            Issue details
+                        </Button>
+                    )}
                     <div className={classes.sectionHeader}>
                         <Heading level={3} UNSAFE_className={classes.sectionHeading}>
                             Health &amp; capability
@@ -92,22 +100,28 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                     </div>
                     <div className={classes.checkList}>
                         <HealthCheckRow
-                            label='Trainer health endpoint'
+                            label={batchConnection ? 'Batch service' : 'Trainer health endpoint'}
                             detail={trainerHealthDetail(health, isChecking, deviceReportIsInvalid)}
                             state={trainerHealthState}
                             status={deviceReportIsInvalid ? 'Healthy' : healthLabel(health, isChecking)}
                         />
                         <HealthCheckRow
-                            label='Compute capability'
-                            detail={capabilityDetail(health, isChecking)}
-                            state={capabilityState}
-                            status={devicesReported ? 'Available' : 'Unknown'}
+                            label={batchConnection ? 'Provisioned compute' : 'Compute capability'}
+                            detail={
+                                batchConnection
+                                    ? `${Object.keys(batchConnection.targets).join(', ')} · allocated per job`
+                                    : capabilityDetail(health, isChecking)
+                            }
+                            state={batchConnection ? 'neutral' : capabilityState}
+                            status={batchConnection ? 'On demand' : devicesReported ? 'Available' : 'Unknown'}
                         />
                         <HealthCheckRow
-                            label='Storage capacity'
-                            detail={storageDetail(health, isChecking)}
-                            state={storageState}
-                            status={health?.storage ? 'Available' : 'Unknown'}
+                            label={batchConnection ? 'Artifact storage' : 'Storage capacity'}
+                            detail={
+                                batchConnection ? `s3://${batchConnection.bucket}` : storageDetail(health, isChecking)
+                            }
+                            state={batchConnection ? 'neutral' : storageState}
+                            status={batchConnection ? 'S3' : health?.storage ? 'Available' : 'Unknown'}
                         />
                     </div>
                 </View>
@@ -125,18 +139,38 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                                 {connectionModeLabel(remoteTrainer.connection_mode)}
                             </Badge>
                         </dd>
-                        <dt>Trainer URL</dt>
-                        <dd className={classes.definitionListMono}>{remoteTrainer.url}</dd>
+                        {remoteTrainer.url && (
+                            <>
+                                <dt>Trainer URL</dt>
+                                <dd className={classes.definitionListMono}>{remoteTrainer.url}</dd>
+                            </>
+                        )}
+                        {remoteTrainer.connection.connection_mode === 'aws_batch' && (
+                            <>
+                                <dt>Region</dt>
+                                <dd className={classes.definitionListMono}>{remoteTrainer.connection.region}</dd>
+                                <dt>Bucket</dt>
+                                <dd className={classes.definitionListMono}>{remoteTrainer.connection.bucket}</dd>
+                                <dt>Instance types</dt>
+                                <dd className={classes.definitionListMono}>
+                                    {Object.keys(remoteTrainer.connection.targets).join(', ')}
+                                </dd>
+                            </>
+                        )}
                         {sshHost !== undefined && (
                             <>
                                 <dt>SSH host</dt>
                                 <dd className={classes.definitionListMono}>{sshHost}</dd>
                             </>
                         )}
-                        <dt>Device type</dt>
-                        <dd className={classes.definitionListMono}>{types.join(', ') || 'Not reported'}</dd>
-                        <dt>Available storage</dt>
-                        <dd>{formatStorage(health?.storage) ?? 'Not reported'}</dd>
+                        {!batchConnection && (
+                            <>
+                                <dt>Device type</dt>
+                                <dd className={classes.definitionListMono}>{types.join(', ') || 'Not reported'}</dd>
+                                <dt>Available storage</dt>
+                                <dd>{formatStorage(health?.storage) ?? 'Not reported'}</dd>
+                            </>
+                        )}
                         <dt>Added</dt>
                         <dd className={classes.definitionListTabular}>
                             {remoteTrainer.created_at ? new Date(remoteTrainer.created_at).toLocaleString() : 'Unknown'}

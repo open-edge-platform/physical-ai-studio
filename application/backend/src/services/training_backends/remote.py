@@ -30,10 +30,10 @@ from pydantic import ValidationError
 from schemas.hardware import DeviceInfo
 from services.dataset_download_service import DatasetDownloadService
 from services.staged_archive import cleanup_staged_archive
-from services.training_backends._log_format import render_progress_log
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
 from settings import get_settings
+from training.log_format import render_progress_log
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -181,6 +181,8 @@ class RemoteTrainingBackend:
         model rather than submitting a new job.
         """
         if context.remote_job_id:
+            if context.should_cancel_job():
+                await self._handle_stop_request(context, context.remote_job_id)
             self._log.info("Reattaching to in-flight remote training job")
             await self._resume_pending_http_upload(context, context.remote_job_id)
             await self.await_and_ingest(context, context.remote_job_id)
@@ -731,14 +733,14 @@ class RemoteTrainingBackend:
         reattached to on the next startup.
         """
         if context.should_cancel_job():
-            await self._cancel(remote_job_id)
+            await self.cancel(remote_job_id)
             raise TrainingCanceledError("Training canceled")
         if context.should_suspend():
             raise TrainingSuspendedError("Studio shutting down; leaving remote training job running for reattach")
-        await self._cancel(remote_job_id)
+        await self.cancel(remote_job_id)
         raise TrainingCanceledError("Training canceled")
 
-    async def _cancel(self, remote_job_id: uuid.UUID) -> None:
+    async def cancel(self, remote_job_id: uuid.UUID) -> None:
         """Request remote cancellation; best effort."""
         try:
             async with await self._client() as client:

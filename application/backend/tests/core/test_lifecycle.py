@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import threading
+from queue import Queue
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -14,7 +16,8 @@ from loguru import logger
 
 from core import lifecycle as lifecycle_module
 from core.security import get_ssh_feature_availability
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode
+from schemas.remote_trainer import RemoteTrainer, SshConnection
+from services.event_processor import EventProcessor, EventType
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -39,6 +42,36 @@ def _stub_heavy_startup(monkeypatch):
     robot_manager = MagicMock()
     robot_manager.find_robots = AsyncMock()
     monkeypatch.setattr(lifecycle_module, "RobotConnectionManager", lambda: robot_manager)
+    return scheduler
+
+
+@pytest.mark.anyio
+async def test_shutdown_keeps_event_processor_draining(monkeypatch, _stub_heavy_startup) -> None:
+    scheduler = _stub_heavy_startup
+    scheduler.event_queue = Queue(maxsize=1)
+    monkeypatch.setattr(lifecycle_module, "EventProcessor", EventProcessor)
+    drained = threading.Event()
+    received = []
+    main_thread = threading.get_ident()
+
+    def shutdown() -> None:
+        assert threading.get_ident() != main_thread
+        for value in range(3):
+            scheduler.event_queue.put((EventType.JOB_UPDATE, value), timeout=2)
+        assert drained.wait(timeout=2), "Event loop stopped draining while workers shut down"
+
+    def receive(event, value) -> None:
+        received.append(value)
+        if value == 2:
+            drained.set()
+
+    scheduler.shutdown.side_effect = shutdown
+    app = FastAPI()
+    async with lifecycle_module.lifespan(app):
+        app.state.event_processor.subscribe([EventType.JOB_UPDATE], receive)
+
+    assert received == [0, 1, 2]
+    scheduler.shutdown.assert_called_once()
 
 
 async def _run_startup_and_capture_logs(app: FastAPI) -> list[str]:
@@ -54,13 +87,7 @@ async def _run_startup_and_capture_logs(app: FastAPI) -> list[str]:
 
 @pytest.mark.anyio
 async def test_startup_restores_persistent_ssh_trainers_as_well_as_tunnels() -> None:
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
+    trainer = RemoteTrainer(id=uuid4(), name="gpu", connection=SshConnection(ssh_host_alias="gpu-box"))
     service = MagicMock()
     service.list_remote_trainers = AsyncMock(return_value=[trainer])
     db = MagicMock()

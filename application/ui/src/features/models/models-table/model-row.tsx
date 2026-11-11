@@ -1,6 +1,18 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, DialogTrigger, Flex, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
+import {
+    ActionButton,
+    Button,
+    DialogContainer,
+    DialogTrigger,
+    Flex,
+    Item,
+    Key,
+    Menu,
+    MenuTrigger,
+    Text,
+    View,
+} from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
@@ -12,6 +24,7 @@ import { SnapflowBadge } from '../shared/snapflow-badge';
 import { getTrainerLabel } from '../shared/trainer';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
+import { RenameModelDialog } from './rename-model-dialog';
 import { StartInferenceDialog } from './start-inference-dialog';
 
 import classes from './model-table.module.css';
@@ -30,6 +43,7 @@ export const ModelRow = ({
     onViewLogs?: () => void;
 }) => {
     const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false);
+    const [isRenameDialogOpen, setRenameDialogOpen] = useState(false);
     const { data: dataset } = useDatasetQuery(model.dataset_id);
     const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
 
@@ -48,6 +62,9 @@ export const ModelRow = ({
         }
         if (action === 'download') {
             setDownloadDialogOpen(true);
+        }
+        if (action === 'rename') {
+            setRenameDialogOpen(true);
         }
     };
 
@@ -90,6 +107,7 @@ export const ModelRow = ({
                         <Item key='logs'>Logs</Item>
                         <Item key='download'>Download</Item>
                         <Item key='retrain'>Retrain</Item>
+                        <Item key='rename'>Rename</Item>
                         <Item key='delete'>Delete</Item>
                     </Menu>
                 </MenuTrigger>
@@ -98,6 +116,9 @@ export const ModelRow = ({
                     isOpen={isDownloadDialogOpen}
                     onClose={() => setDownloadDialogOpen(false)}
                 />
+                <DialogContainer onDismiss={() => setRenameDialogOpen(false)}>
+                    {isRenameDialogOpen && <RenameModelDialog model={model} close={() => setRenameDialogOpen(false)} />}
+                </DialogContainer>
             </View>
         </Table.ExpandableRow>
     );

@@ -7,7 +7,11 @@ import click
 
 @click.group(name="db")
 def database() -> None:
-    """Database management commands."""
+    """Check or maintain the configured local Studio database.
+
+    Confirm STORAGE_DIR and DATABASE_FILE before any maintenance. init/migrate can
+    upgrade the schema; clean is destructive. Back up existing data first.
+    """
 
 
 def _run_migrations() -> None:
@@ -31,7 +35,12 @@ def _run_migrations() -> None:
 
 @database.command("init")
 def init_db() -> None:
-    """Initialize database with migrations"""
+    """Initialize or upgrade the configured database using schema migrations.
+
+    Creates storage directories and applies pending migrations to existing data.
+    Do not use this to work around an unexpectedly missing project; first check
+    the storage/database configuration.
+    """
     from db.migration import MigrationManager
     from settings import get_settings
 
@@ -48,7 +57,11 @@ def init_db() -> None:
 
 @database.command("clean")
 def clean_db() -> None:
-    """Remove all data from the database (clean but don't drop tables)."""
+    """Delete project data and jobs from the database (DESTRUCTIVE).
+
+    Does not remove the schema or stored asset files. Runs without a confirmation
+    prompt. Never use this to repair a configuration mismatch; back up first.
+    """
     from db.engine import get_sync_db_session
     from db.schema import DatasetDB, JobDB, ProjectCameraDB, ProjectDB, ProjectEnvironmentDB, ProjectRobotDB, SnapshotDB
 
@@ -66,7 +79,12 @@ def clean_db() -> None:
 
 @database.command("check")
 def check_db() -> None:
-    """Check database status"""
+    """Check connectivity and migration status without applying migrations.
+
+    May create storage directories and an empty SQLite file if they do not exist.
+    Exit codes: 0 = current schema, 1 = connection/error, 2 = migrations needed
+    or migration status could not be determined.
+    """
     from db.migration import MigrationManager
     from settings import get_settings
 
@@ -93,7 +111,10 @@ def check_db() -> None:
 
 @database.command("migrate")
 def migrate() -> None:
-    """Run database migrations."""
+    """Migrate legacy storage if needed and upgrade the database schema.
+
+    Modifies the configured local installation. Back up data before upgrading.
+    """
     click.echo("Running database migrations...")
     _run_migrations()
     click.echo("✓ Migrations completed successfully!")

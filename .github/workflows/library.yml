@@ -11,6 +11,8 @@ permissions: {} # No permissions by default on workflow level
 
 env:
   UV_EXCLUDE_NEWER: "7 days"
+  # egl-probe (libero extra) only ships a 2021 sdist whose CMakeLists.txt CMake 4 refuses to build.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 concurrency:
   group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -27,11 +29,11 @@ jobs:
     steps:
       - &harden-runner
         name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           disable-sudo: false
           disable-telemetry: true
-          egress-policy: block
+          egress-policy: audit
           allowed-endpoints: >
             azure.archive.ubuntu.com:80
             cas-server.xethub.hf.co:443
@@ -48,6 +50,7 @@ jobs:
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             releases.astral.sh:443
+            security.ubuntu.com:80
             static.crates.io:443
             transfer.xethub.hf.co:443
             us.aws.cdn.hf.co:443

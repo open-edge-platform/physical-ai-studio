@@ -13,9 +13,15 @@ import shutil
 import sys
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 _INTEGRATION_TESTS_DIRECTORY = Path(__file__).parent
 _exitstatus: int | None = None
@@ -70,6 +76,19 @@ def migrated_db() -> None:
 
     manager = MigrationManager(get_settings())
     assert manager.initialize_database(), "Failed to initialize the isolated test database"
+
+
+@pytest.fixture
+def application_client(migrated_db: None, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """Run the real application lifecycle and workers without probing physical USB robots."""
+    from main import app
+    from utils.serial_robot_tools import RobotConnectionManager
+
+    if "SETTINGS_FILE" not in os.environ:
+        monkeypatch.setenv("SETTINGS_FILE", str(Path(os.environ["STORAGE_DIR"]) / "settings.json"))
+    monkeypatch.setattr(RobotConnectionManager, "find_robots", AsyncMock(return_value=None))
+    with TestClient(app) as client:
+        yield client
 
 
 def _build_synthetic_lerobot_v3_dataset(

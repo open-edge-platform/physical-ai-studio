@@ -10,7 +10,9 @@ from loguru import logger
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
 from db import get_async_db_session_ctx
-from schemas.remote_trainer import RemoteTrainerConnectionMode
+from runtime_session.registry import RuntimeSessionRegistry
+from runtime_session.store import sweep_stale_blocks
+from schemas.remote_trainer import SshConnection
 from services import remote_trainer_tunnel_manager
 from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
@@ -59,7 +61,7 @@ async def _start_remote_trainer_tunnels() -> None:
         await remote_trainer_tunnel_manager.start_all(remote_trainers)
         if get_ssh_feature_availability().active:
             for trainer in remote_trainers:
-                if trainer.connection_mode is RemoteTrainerConnectionMode.SSH:
+                if isinstance(trainer.connection, SshConnection):
                     RemoteTrainerService._start_persistent_trainer_in_background(trainer, None)
     except Exception:
         logger.exception("Failed to start configured remote-trainer SSH tunnels")
@@ -80,6 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # In-memory on purpose: see CameraClaimRegistry. Keyed by fingerprint so
     # aliased project rows for the same physical device share one pin.
     app.state.camera_claim_registry = CameraClaimRegistry()
+    app.state.runtime_session_registry = RuntimeSessionRegistry()
 
     # Fail the SSH remote-trainer feature closed if it is bound to a
     # non-loopback address: the feature has no authentication model, so a
@@ -98,6 +101,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
+    # No session is live yet, so any session block in shared memory is left over from a crash.
+    sweep_stale_blocks()
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
 
@@ -126,7 +131,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Ideally RobotHardwareManager would have a shutdown_all method too.
     # For now, we assume active workers unregistering will trigger releases.
 
-    app_scheduler.shutdown()
+    await app.state.runtime_session_registry.close_all()
+    # Keep draining worker events while shutdown waits for child processes to exit.
+    await asyncio.to_thread(app_scheduler.shutdown)
     app.state.event_processor.shutdown()
     logger.info("Application shutdown completed")
 

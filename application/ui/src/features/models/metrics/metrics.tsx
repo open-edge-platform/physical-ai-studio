@@ -1,11 +1,13 @@
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 
-import { Grid, Heading, IllustratedMessage, Loading } from '@geti-ui/ui';
+import { Grid, Heading, IllustratedMessage, Loading, StatusLight } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
 import { batchAsyncIterable } from '../../../api/batch-async-iterable';
 import { fetchClient } from '../../../api/client';
 import { fetchSSE } from '../../../api/fetch-sse';
+import { SchemaOperationalIssue } from '../../../api/openapi-spec';
+import { issueToasts } from '../../../components/notification/issue-toasts';
 import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
@@ -79,7 +81,8 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
 const METRICS_BATCH_INTERVAL_MS = 200;
 
 const useJobMetrics = (jobId: string) => {
-    return useQuery({
+    const [issues, setIssues] = useState<SchemaOperationalIssue[]>([]);
+    const query = useQuery({
         queryKey: getQueryKey(['get', '/api/jobs/{job_id}/model_metrics', { params: { path: { job_id: jobId } } }]),
         queryFn: streamedQuery({
             streamFn: (context) => {
@@ -88,7 +91,15 @@ const useJobMetrics = (jobId: string) => {
                 });
 
                 return batchAsyncIterable(
-                    fetchSSE<MetricsEntry>(url, { signal: context.signal }),
+                    fetchSSE<MetricsEntry>(url, {
+                        signal: context.signal,
+                        onIssues: (data) => {
+                            if (context.signal.aborted) return;
+                            const snapshot: SchemaOperationalIssue[] = JSON.parse(data);
+                            setIssues(snapshot);
+                            issueToasts.replaceSource(`metrics:${jobId}`, snapshot);
+                        },
+                    }),
                     METRICS_BATCH_INTERVAL_MS
                 );
             },
@@ -98,6 +109,7 @@ const useJobMetrics = (jobId: string) => {
         select: sortMetricsByStep,
         staleTime: Infinity,
     });
+    return { ...query, issues };
 };
 
 const lossFormatter = new Intl.NumberFormat('en-US', {
@@ -156,7 +168,16 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
         },
     ];
 
-    return <MetricsView series={metrics} isLoading={query.isLoading} />;
+    return (
+        <>
+            {query.issues.map((issue) => (
+                <StatusLight key={issue.id} variant='yellow'>
+                    {issue.detail}
+                </StatusLight>
+            ))}
+            <MetricsView series={metrics} isLoading={query.isLoading && query.issues.length === 0} />
+        </>
+    );
 };
 
 const useModelMetrics = (modelId: string) => {
