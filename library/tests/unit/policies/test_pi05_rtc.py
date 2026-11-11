@@ -329,29 +329,47 @@ class TestSampleInputRtc:
     """Tests for Pi05.sample_input property with enable_rtc=True."""
 
     @staticmethod
-    def _call_sample_input_rtc(dataset_stats: dict, chunk_size: int = 50, max_action_dim: int = 32) -> dict:
-        """Invoke the Pi05.sample_input property with enable_rtc=True on a minimal stub."""
+    def _call_sample_input_rtc(
+        dataset_stats: dict, chunk_size: int = 50, max_action_dim: int = 32, *, rtc: bool = True
+    ) -> dict:
+        """Invoke the Pi05.sample_input property on a minimal stub, with RTC on by default."""
         from physicalai.policies.pi05 import Pi05
 
         class _ModelStub:
-            enable_rtc = True
+            enable_rtc = rtc
             paligemma_with_expert = torch.nn.Linear(1, 1)
 
         class _ConfigStub:
             def __init__(self) -> None:
                 self.chunk_size = chunk_size
                 self.max_action_dim = max_action_dim
+                self.use_random_input_noise = True
 
         class _Stub:
             def __init__(self) -> None:
                 self._dataset_stats = dataset_stats
                 self.model = _ModelStub()
                 self.config = _ConfigStub()
-                self.rtc_enabled = True
+                self.rtc_enabled = rtc
 
         stub = _Stub()
         stub.inputs_schema = Pi05.inputs_schema.fget(stub)  # type: ignore[attr-defined]
         return Pi05.sample_input.fget(stub)  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize("rtc", [False, True])
+    def test_contains_noise(self, rtc: bool) -> None:
+        """Exports take the start noise as an input, so the runtime can draw it per call."""
+        from physicalai.data.constants import NOISE
+
+        stats = {
+            "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
+            "observation.image": {"name": "image", "shape": (3, 224, 224), "type": "VISUAL"},
+            "action": {"name": "action", "shape": (7,), "type": "ACTION"},
+        }
+        sample = self._call_sample_input_rtc(stats, chunk_size=20, max_action_dim=32, rtc=rtc)
+
+        assert sample[NOISE].shape == (1, 20, 32)
+        assert sample[NOISE].dtype == torch.float32
 
     def test_contains_rtc_keys(self) -> None:
         """RTC sample input contains the four RTC-specific keys."""
@@ -486,6 +504,17 @@ class TestSampleActionsRTC:
         tokens = torch.ones(1, 10, dtype=torch.long, device=device)
         masks = torch.ones(1, 10, dtype=torch.long, device=device)
         return images, img_masks, tokens, masks
+
+    def test_given_noise_is_not_modified(self, model, sample_batch) -> None:
+        """Denoising must not write into the caller's noise, or reusing it changes the result."""
+        images, img_masks, tokens, masks = sample_batch
+        noise = torch.randn(1, 50, 32, device=next(model.parameters()).device)
+        given = noise.clone()
+
+        with torch.no_grad():
+            model.sample_actions(images, img_masks, tokens, masks, noise=noise)
+
+        assert torch.equal(noise, given)
 
     def test_rtc_disabled_when_no_prev_chunk(self, model, sample_batch) -> None:
         """Without prev_chunk, sample_actions behaves identically regardless of RTC params."""
@@ -705,6 +734,22 @@ class TestPredictActionChunkRTC:
             TOKENIZED_PROMPT: torch.ones(1, 10, dtype=torch.long, device=device),
             TOKENIZED_PROMPT_MASK: torch.ones(1, 10, dtype=torch.long, device=device),
         }
+
+    def test_predict_action_chunk_uses_noise_from_batch(self, model) -> None:
+        """Exported graphs get their start noise as an input instead of sampling it."""
+        from physicalai.data.constants import NOISE
+
+        device = next(model.parameters()).device
+        batch = self._make_batch(model, device)
+        noise_a, noise_b = torch.randn(2, 1, 50, 32, device=device)
+
+        with torch.no_grad():
+            first = model.predict_action_chunk({**batch, NOISE: noise_a})
+            again = model.predict_action_chunk({**batch, NOISE: noise_a})
+            other = model.predict_action_chunk({**batch, NOISE: noise_b})
+
+        assert torch.equal(first, again)
+        assert not torch.allclose(first, other)
 
     def test_predict_action_chunk_without_rtc_keys(self, model) -> None:
         """predict_action_chunk works without RTC keys in batch."""

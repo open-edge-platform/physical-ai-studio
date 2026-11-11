@@ -10,7 +10,7 @@ dependencies = [
   "cv2-enumerate-cameras",
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
-  "physicalai[capture, transport]~=0.4.0",
+  "physicalai[capture, transport]>=0.4.1.dev0,<0.5",
   "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
@@ -127,6 +127,8 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
+# Runtime main with the noise preprocessor (openvinotoolkit/physicalai#455); move to the next release.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8381d439c2660d357b4b9d633f28ea7e7ed42c81" }
 physicalai-train = { path = "../../library", editable = true }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can

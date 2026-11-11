@@ -189,6 +189,22 @@ class TestConvertOpenVINOExport:
         assert result.noise_shape == (4, 3)
         assert {path.name: path.read_bytes() for path in export_dir.iterdir()} == before
 
+    def test_export_with_noise_preprocessor_is_already_converted(self, export_dir: Path) -> None:
+        """Current exports take the noise as input and list the runtime's generic ``noise`` preprocessor."""
+        convert_openvino_export(export_dir, backup=False)
+        manifest_path = export_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        _pi05_spec(export_dir)  # still exactly one pi05 preprocessor
+        for spec in manifest["model"]["preprocessors"]:
+            spec.pop("noise_shape", None)
+        manifest["model"]["preprocessors"].append({"type": "noise", "shape": [4, 3]})
+        manifest_path.write_text(json.dumps(manifest))
+
+        result = convert_openvino_export(export_dir)
+
+        assert result.status is ConversionStatus.ALREADY_CONVERTED
+        assert read_noise_shape(export_dir) == [4, 3]
+
     def test_main(self, export_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
         main([str(export_dir), "--no-backup"])
 
