@@ -131,6 +131,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         num_layers: Number of transformer layers in the action head.
         num_heads: Number of attention heads in each transformer layer.
         num_inference_steps: Number of denoising steps used during inference.
+        use_random_noise: Enable random inference sampling. If False, diffusion starts from zeros
+            and VQ-BeT selects each group's most likely code with argmax instead of sampling.
         vqvae_iters: Full passes over unique action windows when fitting a new tokenizer.
         vqvae_batch_size: Tokenizer fitting minibatch size.
         optimizer_lr: AdamW learning rate.
@@ -155,18 +157,19 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         encoder_name: FeatureEncoderName = "dinov2",
         encoder_pretrained: bool = True,
         action_head: ActionHeadName = "behavior_transformer",
-        n_obs_steps: int = 5,
+        n_obs_steps: int = 2,
         chunk_size: int = 5,
         n_action_steps: int = 1,
-        hidden_dim: int = 512,
+        hidden_dim: int = 384,
         num_layers: int = 8,
         num_heads: int = 8,
         num_inference_steps: int = 100,
+        use_random_noise: bool = True,
         vqvae_iters: int = 1000,
         vqvae_batch_size: int = 1024,
-        optimizer_lr: float = 5.5e-5,
-        optimizer_weight_decay: float = 2e-4,
-        compile_model: bool = False,
+        optimizer_lr: float = 3e-4,
+        optimizer_weight_decay: float = 1e-4,
+        compile_model: bool = True,
     ) -> None:
         """Initialize policy settings and configure the model when features are available.
 
@@ -203,6 +206,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.num_inference_steps = num_inference_steps
+        self.use_random_noise = use_random_noise
         self.vqvae_iters = vqvae_iters
         self.vqvae_batch_size = vqvae_batch_size
 
@@ -287,9 +291,9 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         cls,
         config: PatchPolicyConfig,
         *,
-        optimizer_lr: float = 5.5e-5,
-        optimizer_weight_decay: float = 2e-4,
-        compile_model: bool = False,
+        optimizer_lr: float = 3e-4,
+        optimizer_weight_decay: float = 1e-4,
+        compile_model: bool = True,
         vqvae_iters: int = 1000,
         vqvae_batch_size: int = 1024,
     ) -> PatchPolicy:
@@ -311,6 +315,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             num_layers=config.num_layers,
             num_heads=config.num_heads,
             num_inference_steps=config.num_inference_steps,
+            use_random_noise=config.use_random_input_noise,
             vqvae_iters=vqvae_iters,
             vqvae_batch_size=vqvae_batch_size,
             optimizer_lr=optimizer_lr,
@@ -421,6 +426,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             num_layers=self.num_layers,
             num_heads=self.num_heads,
             num_inference_steps=self.num_inference_steps,
+            use_random_input_noise=self.use_random_noise,
         )
 
     def _validate_model_config(self, config: PatchPolicyConfig) -> None:
@@ -451,6 +457,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.num_layers = config.num_layers
         self.num_heads = config.num_heads
         self.num_inference_steps = config.num_inference_steps
+        self.use_random_noise = config.use_random_input_noise
         self.hparams.update(
             encoder_name=config.encoder_name,
             action_head=config.action_head,
@@ -461,6 +468,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             num_layers=config.num_layers,
             num_heads=config.num_heads,
             num_inference_steps=config.num_inference_steps,
+            use_random_noise=config.use_random_input_noise,
         )
 
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:

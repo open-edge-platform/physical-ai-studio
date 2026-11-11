@@ -170,9 +170,10 @@ def test_unconfigured_torch_export_fails(tmp_path) -> None:
         policy.to_torch(export_dir)
 
 
-def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path) -> None:
+@pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
+def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path, action_head) -> None:
     ov = pytest.importorskip("openvino")
-    policy = PatchPolicy.from_config(small_config).eval()
+    policy = PatchPolicy.from_config(replace(small_config, action_head=action_head)).eval()
     images = np.random.default_rng(42).integers(0, 256, (1, small_config.n_obs_steps, 3, 7, 9), dtype=np.uint8)
     expected = policy.predict_action_chunk(Observation(images={"front": torch.from_numpy(images)})).numpy()
 
@@ -184,6 +185,7 @@ def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path) -> 
     assert graph.output(0).get_names() == {"action"}
     with InferenceModel(tmp_path, device="CPU", INFERENCE_PRECISION_HINT="f32") as model:
         actual = model({"images.front": images})["action"]
+        np.testing.assert_array_equal(model({"images.front": images})["action"], actual)
     assert actual.shape == expected.shape
     np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-5)
 

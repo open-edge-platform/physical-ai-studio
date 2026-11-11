@@ -152,3 +152,26 @@ def test_loss_rejects_short_action_trajectory() -> None:
     head = _make_small_behavior_head().eval()
     with pytest.raises(ValueError, match="Expected 3 action steps, got 2"):
         head.compute_loss(torch.tensor([[[0.1], [0.2]]]), _behavior_context())
+
+
+def test_argmax_sampling_is_repeatable_without_random_ops(monkeypatch) -> None:
+    head = _make_small_behavior_head().eval()
+    head.use_random_noise = False
+    context = _behavior_context()
+
+    def forbid_sampling(*args, **kwargs):
+        raise AssertionError("Argmax inference must not sample random codes")
+
+    monkeypatch.setattr(torch, "multinomial", forbid_sampling)
+    with torch.no_grad():
+        logits, offsets = head._predictions(context)
+        logits = torch.tensor([[[[0.0, 2.0], [3.0, 0.0]], [[0.0, 4.0], [0.0, 5.0]]]])
+        monkeypatch.setattr(head, "_predictions", lambda context: (logits, offsets))
+        codes = torch.tensor([[[1, 0], [1, 1]]])
+        expected = head._actions(logits, offsets, codes)[:, -1]
+        rng_state = torch.get_rng_state()
+        first = head.sample(context)
+        second = head.sample(context)
+    torch.testing.assert_close(first, expected)
+    torch.testing.assert_close(second, first)
+    assert torch.equal(torch.get_rng_state(), rng_state)

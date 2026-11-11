@@ -74,6 +74,40 @@ def test_constructor_builds_when_features_are_provided(tiny_encoder, small_confi
     assert policy.config.action_dim == 2
 
 
+@pytest.mark.parametrize("use_random_noise", [True, False])
+def test_diffusion_noise_setting_reaches_heads_and_config(tiny_encoder, small_config, use_random_noise):
+    policy = PatchPolicy(
+        input_features=small_config.input_features,
+        output_features=small_config.output_features,
+        encoder_pretrained=False,
+        action_head="diffusion",
+        hidden_dim=8,
+        num_layers=1,
+        num_heads=2,
+        use_random_noise=use_random_noise,
+    )
+
+    assert policy.config.use_random_input_noise is use_random_noise
+    assert policy.hparams["use_random_noise"] is use_random_noise
+    assert policy.model.action_head.use_random_input_noise is use_random_noise
+    assert policy.model.ema_action_head.use_random_input_noise is use_random_noise
+    restored = PatchPolicy.from_config(policy.config)
+    assert restored.use_random_noise is use_random_noise
+    assert restored.model.action_head.use_random_input_noise is use_random_noise
+    assert restored.model.ema_action_head.use_random_input_noise is use_random_noise
+
+
+@pytest.mark.parametrize("use_random_noise", [True, False])
+def test_vqbet_noise_setting_reaches_head_and_config(tiny_encoder, small_config, use_random_noise):
+    config = replace(small_config, action_head="behavior_transformer", use_random_input_noise=use_random_noise)
+    policy = PatchPolicy.from_config(config)
+
+    assert policy.use_random_noise is use_random_noise
+    assert policy.hparams["use_random_noise"] is use_random_noise
+    assert policy.model.action_head.use_random_noise is use_random_noise
+    assert policy.config.use_random_input_noise is use_random_noise
+
+
 def test_dataset_setup_resolves_features_without_building_modules(tiny_encoder, small_config):
     policy = PatchPolicy(encoder_pretrained=False, action_head="diffusion", hidden_dim=8, num_layers=1, num_heads=2)
     policy.trainer = SimpleNamespace(datamodule=SimpleNamespace(train_dataset=FeatureDataset(small_config)))
@@ -197,6 +231,9 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
     assert restored.config == policy.config
     assert restored._n_action_steps == 2
     assert restored._action_queue.maxlen == 2
+    assert restored.use_random_noise is False
+    assert restored.hparams["use_random_noise"] is False
+    assert restored.model.ema_action_head.use_random_input_noise is False
     assert not restored.encoder_pretrained
     for name, expected in policy.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[name], expected)
@@ -232,7 +269,7 @@ def test_optimizer_contains_only_trainable_parameters(tiny_encoder, small_config
     assert len(actual) == len({id(parameter) for parameter in actual})
     assert {id(parameter) for parameter in actual} == {id(parameter) for parameter in expected}
     if action_head == "behavior_transformer":
-        assert [group["weight_decay"] for group in optimizer.param_groups] == [2e-4, 0.0, 0.01, 2e-4]
+        assert [group["weight_decay"] for group in optimizer.param_groups] == [1e-4, 0.0, 0.01, 1e-4]
 
 
 def test_encoder_weights_and_compilation_are_applied_once(tiny_encoder, small_config, monkeypatch):

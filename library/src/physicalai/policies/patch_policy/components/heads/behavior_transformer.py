@@ -242,6 +242,7 @@ class BehaviourTransformerHead(ActionHead):
         offset_loss_weight: float = 10.0,
         secondary_code_weight: float = 0.5,
         focal_loss_gamma: float = 2.0,
+        use_random_noise: bool = True,
     ) -> None:
         """Initialize the transformer, action predictors, and quantizer."""
         super().__init__(chunk_size, action_dim)
@@ -252,6 +253,7 @@ class BehaviourTransformerHead(ActionHead):
         self.offset_loss_weight = offset_loss_weight
         self.secondary_code_weight = secondary_code_weight
         self.focal_loss_gamma = focal_loss_gamma
+        self.use_random_noise = use_random_noise
         self.trunk = PatchGPT(
             input_dim=context_dim,
             output_dim=256,
@@ -332,14 +334,19 @@ class BehaviourTransformerHead(ActionHead):
         return centers.detach() + selected_offsets
 
     def sample(self, context: Context, *, noise: Tensor | None = None, num_steps: int | None = None) -> Tensor:
-        """Sample the final observation timestep's action chunk.
+        """Sample the final chunk or select each group's highest-logit code with argmax.
+
+        When ``use_random_noise=False``, code selection is deterministic and uses
+        the predicted most likely code rather than multinomial sampling. Decoded
+        codebook centers and observation-dependent offsets still form the actions.
 
         Returns:
             Predicted actions shaped ``[B, chunk_size, action_dim]``.
         """
         del noise, num_steps
         logits, offsets = self._predictions(context)
-        return self._actions(logits, offsets)[:, -1]
+        codes = None if self.use_random_noise else logits.argmax(dim=-1)
+        return self._actions(logits, offsets, codes)[:, -1]
 
     def compute_loss(self, actions: Tensor, context: Context, *, valid_steps: Tensor | None = None) -> Tensor:
         """Compute the upstream focal-code and continuous-offset loss.

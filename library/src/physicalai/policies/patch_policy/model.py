@@ -54,7 +54,8 @@ class PatchPolicyModel(Model):
         clip_sample: Whether to clip diffusion samples after scheduler steps.
         clip_sample_range: Symmetric range used when clipping diffusion samples.
         eta: DDIM stochasticity coefficient used during inference.
-        use_random_input_noise: Whether diffusion sampling starts from random noise.
+        use_random_input_noise: Enable random inference sampling. If False, diffusion starts from zeros
+            and VQ-BeT selects each group's most likely code with argmax instead of sampling.
         vq_latent_dim: Latent width of the Behavior Transformer quantizer.
         vq_num_embeddings: Number of codebook entries in each residual VQ group.
         vq_num_groups: Number of residual vector-quantization groups.
@@ -69,14 +70,14 @@ class PatchPolicyModel(Model):
         *,
         action_dim: int,
         camera_names: list[str],
-        n_obs_steps: int = 5,
+        n_obs_steps: int = 2,
         chunk_size: int = 5,
         encoder_name: FeatureEncoderName = "dinov2",
         encoder_output: EncoderOutput = "patches",
         encoder_config: dict[str, Any] | None = None,
         image_size: tuple[int, int] = (224, 224),
         action_head: ActionHeadName = "behavior_transformer",
-        hidden_dim: int = 512,
+        hidden_dim: int = 384,
         num_layers: int = 8,
         num_heads: int = 8,
         dropout: float = 0.0,
@@ -158,6 +159,7 @@ class PatchPolicyModel(Model):
                 offset_loss_weight=offset_loss_weight,
                 secondary_code_weight=secondary_code_weight,
                 focal_loss_gamma=focal_loss_gamma,
+                use_random_noise=use_random_input_noise,
             )
 
     @classmethod

@@ -4,13 +4,21 @@
 """CPU-only tests for the Patch Policy configuration contract."""
 
 from dataclasses import replace
+from inspect import signature
 from pathlib import Path
 
 import pytest
+import torch
+from jsonargparse import ArgumentParser
 
+from physicalai.cli._dispatch import _build_lightning_parser
 from physicalai.config import Config
 from physicalai.data import Feature, FeatureType, NormalizationParameters
+from physicalai.gyms import Gym, HistoryGym, PushTGym
 from physicalai.policies.patch_policy.config import PatchPolicyConfig, resolve_action_dim
+from physicalai.policies.patch_policy.model import PatchPolicyModel
+from physicalai.policies.patch_policy.policy import PatchPolicy
+from physicalai.train import RolloutVideoRecorderCallback
 
 
 def _config() -> PatchPolicyConfig:
@@ -34,6 +42,92 @@ def _config() -> PatchPolicyConfig:
         ],
         action_dim=2,
     )
+
+
+def test_defaults_match_real_robot_recipe(tiny_encoder) -> None:
+    config = _config()
+    policy = PatchPolicy(encoder_pretrained=False)
+    restored = PatchPolicy.from_config(config)
+    expected = {
+        "encoder_name": "dinov2",
+        "action_head": "behavior_transformer",
+        "n_obs_steps": 2,
+        "chunk_size": 5,
+        "n_action_steps": 1,
+        "hidden_dim": 384,
+        "num_layers": 8,
+        "num_heads": 8,
+    }
+    for name, value in expected.items():
+        assert getattr(config, name) == value
+        assert getattr(policy, name) == value
+        assert getattr(restored, name) == value
+        if name != "n_action_steps":
+            assert signature(PatchPolicyModel).parameters[name].default == value
+    for instance in (policy, restored):
+        assert instance.optimizer_lr == 3e-4
+        assert instance.optimizer_weight_decay == 1e-4
+        assert instance.compile_model is True
+        assert instance.vqvae_iters == 1000
+        assert instance.vqvae_batch_size == 1024
+    assert config.vq_latent_dim == 512
+
+
+def test_pusht_yaml_preserves_reference_recipe() -> None:
+    path = Path(__file__).resolve().parents[4] / "configs/physicalai/patch_policy/pusht/dinov2-vqbet.yaml"
+    cfg = _build_lightning_parser("fit").parse_args(["--config", str(path)])
+    model = cfg.model.init_args
+    assert cfg.model.class_path == "physicalai.policies.PatchPolicy"
+    assert model.encoder_name == "dinov2"
+    assert model.encoder_pretrained is True
+    assert model.action_head == "behavior_transformer"
+    assert (model.n_obs_steps, model.chunk_size, model.n_action_steps) == (5, 5, 1)
+    assert (model.hidden_dim, model.num_layers, model.num_heads) == (512, 8, 8)
+    assert (model.vqvae_iters, model.vqvae_batch_size) == (1000, 1024)
+    assert model.optimizer_lr == 5.5e-5
+    assert model.optimizer_weight_decay == 2e-4
+    assert model.compile_model is True
+    assert model.use_random_noise is True
+    data = cfg.data.init_args
+    assert data.repo_id == "alfieroddan/pushT-224x224"
+    assert data.revision == "c50cea16d2f0884353c9bd65113ee9cc892d094f"
+    assert (data.train_batch_size, data.num_workers, data.num_rollouts_val) == (8, 0, 10)
+    assert data.val_split == 0.0
+    trainer = cfg.trainer
+    assert trainer.max_epochs == 400
+    assert trainer.max_steps == -1
+    assert (trainer.accelerator, trainer.devices, trainer.precision) == ("gpu", 1, "32-true")
+    assert trainer.accumulate_grad_batches == 1
+    assert trainer.num_sanity_val_steps == 1
+    assert trainer.check_val_every_n_epoch == 10
+    assert trainer.val_check_interval is None
+    assert trainer.log_every_n_steps == 100
+    assert trainer.logger.class_path == "lightning.pytorch.loggers.WandbLogger"
+    assert trainer.logger.init_args.project == "pushT-224x224"
+    assert trainer.logger.init_args.name == "dinov2-vqbet-hub224-v2"
+    assert trainer.logger.init_args.save_dir == "output"
+    callback = trainer.callbacks[0]
+    assert callback["class_path"] == "physicalai.train.RolloutVideoRecorderCallback"
+    recorder = RolloutVideoRecorderCallback(**callback["init_args"])
+    assert recorder.output_dir == Path("output/rollouts")
+    assert (recorder.fps, recorder.frame_key, recorder.record_mode) == (10, "top", "all")
+
+    parser = ArgumentParser()
+    parser.add_subclass_arguments(Gym, "gym")
+    gym = parser.instantiate(parser.parse_object({"gym": data.val_gym.as_dict()})).gym
+    try:
+        assert isinstance(gym, HistoryGym)
+        assert isinstance(gym.gym, PushTGym)
+        assert (gym.n_obs_steps, gym.stride) == (5, 1)
+        observation, _ = gym.reset(seed=42)
+        images = observation.images["top"]
+        assert images.shape == (1, 5, 3, 224, 224)
+        torch.testing.assert_close(images[:, 0], images[:, -1])
+        next_observation, *_ = gym.step(gym.sample_action())
+        torch.testing.assert_close(next_observation.images["top"][:, :-1], images[:, 1:])
+        assert gym.keys == {"images.top"}
+    finally:
+        gym.close()
 
 
 def test_dictionary_roundtrip_preserves_feature_types_shapes_and_statistics() -> None:
