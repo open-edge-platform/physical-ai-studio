@@ -45,7 +45,7 @@ dependencies = [
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
-    "physicalai~=0.4.0",
+    "physicalai>=0.4.1.dev0,<0.5",
 ]
 
 [project.optional-dependencies]
@@ -239,8 +239,8 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-# Runtime noise preprocessor (openvinotoolkit/physicalai#455); move to the release once it ships.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "refs/pull/455/head" }
+# Runtime main with the noise preprocessor (openvinotoolkit/physicalai#455); move to the next release.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8381d439c2660d357b4b9d633f28ea7e7ed42c81" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

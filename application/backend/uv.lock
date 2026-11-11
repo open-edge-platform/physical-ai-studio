@@ -2695,8 +2695,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.4.1.dev5+g88bea03"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=refs%2Fpull%2F455%2Fhead#88bea03a26af1841636e7a705c3c01292623ef86" }
+version = "0.4.1.dev5+g8381d43"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81#8381d439c2660d357b4b9d633f28ea7e7ed42c81" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2885,7 +2885,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=refs%2Fpull%2F455%2Fhead" },
+    { name = "physicalai", extras = ["capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81" },
     { name = "physicalai-mujoco-plugin", marker = "extra == 'sim-e2e'", specifier = "==0.5.0" },
     { name = "physicalai-so101-plugin", specifier = "~=0.3.0" },
     { name = "physicalai-studio-plugin", specifier = "~=0.5.0" },
@@ -3033,7 +3033,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'cosmos3'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=refs%2Fpull%2F455%2Fhead" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81" },
     { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
