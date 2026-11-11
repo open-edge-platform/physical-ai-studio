@@ -19,6 +19,7 @@ from loguru import logger
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.lerobot.episode_task import set_episode_task
 from internal_datasets.lerobot.video_encoding_settings import VideoEncodingSettings
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeInfo, EpisodeVideo
@@ -117,6 +118,14 @@ class InternalLeRobotDataset(DatasetClient):
         return InternalLeRobotDataset(
             output_path, recording_video_encoding_settings=self._recording_video_encoding_settings
         )
+
+    def set_episode_task(self, episode_index: int, task: str) -> None:
+        """Make ``task`` the only task of the episode, in place, without touching its videos."""
+        if self._access_mode is not DatasetAccessMode.READ_ONLY:
+            # A recording holds the dataset's metadata in memory and would write it back over the edit.
+            raise ValueError("Cannot edit episode tasks of a dataset opened for recording")
+        if set_episode_task(self.path, episode_index, task):
+            self.load_dataset()
 
     def get_tasks(self) -> list[str]:
         """Get Tasks in dataset."""
