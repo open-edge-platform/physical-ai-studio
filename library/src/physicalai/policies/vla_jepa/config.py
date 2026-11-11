@@ -14,6 +14,7 @@ from physicalai.config import Config
 
 from physicalai.data import Feature, FeatureType
 from physicalai.policies.mixins.peft import PeftConfigMixin
+from physicalai.policies.mixins.snapflow import SnapFlowConfigMixin
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -35,7 +36,7 @@ def feature_dimension(features: list[Feature], kind: FeatureType) -> int:
 
 
 @dataclass(frozen=True)
-class VLAJEPAConfig(PeftConfigMixin, Config):
+class VLAJEPAConfig(PeftConfigMixin, SnapFlowConfigMixin, Config):
     """Complete model/processor configuration, independent of pretrained downloads."""
 
     format_version: int = 2
@@ -142,6 +143,7 @@ class VLAJEPAConfig(PeftConfigMixin, Config):
         if self.action_num_heads * self.action_attention_head_dim % 2:
             msg = "The action embedding width must be even."
             raise ValueError(msg)
+        self._validate_snapflow()
         self._validate_world_model()
         self._validate_features()
 

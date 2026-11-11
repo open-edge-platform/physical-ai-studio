@@ -189,8 +189,9 @@ class SnapFlowCapable(Protocol):
 
     Satisfied by any policy mixing in
     :class:`~physicalai.policies.mixins.SnapFlowPolicyMixin`, which covers
-    :class:`~physicalai.policies.Pi05` and
-    :class:`~physicalai.policies.SmolVLA`.
+    :class:`~physicalai.policies.Pi05`,
+    :class:`~physicalai.policies.SmolVLA` and
+    :class:`~physicalai.policies.VLAJEPA`.
 
     Note:
         Used for static typing and documentation. Runtime detection goes through
@@ -464,9 +465,9 @@ class SnapFlowPhaseCallback(Callback):
     when the run is budgeted with ``Trainer(max_epochs=...)`` so the boundary
     does not have to be converted to steps by hand.
 
-    The policy must expose an ``enable_snapflow`` method — both
-    :class:`~physicalai.policies.SmolVLA` and
-    :class:`~physicalai.policies.Pi05` satisfy this contract.
+    The policy must expose an ``enable_snapflow`` method —
+    :class:`~physicalai.policies.SmolVLA`, :class:`~physicalai.policies.Pi05`
+    and :class:`~physicalai.policies.VLAJEPA` satisfy this contract.
 
     Phase 2 is made visible in three ways, so a run never switches objectives
     silently:
@@ -889,12 +890,12 @@ class SnapFlowPhaseCallback(Callback):
 
         Raises:
             TypeError: If ``pl_module`` does not expose an ``enable_snapflow``
-                method (i.e. is not a SmolVLA or Pi05 policy).
+                method (i.e. is not a SmolVLA, Pi05 or VLA-JEPA policy).
         """
         if not hasattr(pl_module, "enable_snapflow"):
             msg = (
                 f"{type(pl_module).__name__} does not implement enable_snapflow(); "
-                "SnapFlowPhaseCallback requires a SmolVLA or Pi05 policy."
+                "SnapFlowPhaseCallback requires a SmolVLA, Pi05 or VLA-JEPA policy."
             )
             raise TypeError(msg)
         policy = cast("SnapFlowCapable", pl_module)

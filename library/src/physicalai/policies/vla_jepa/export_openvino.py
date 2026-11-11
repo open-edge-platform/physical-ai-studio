@@ -50,6 +50,7 @@ class VLAJEPAOpenVINOModel(nn.Module):
         self.visual = model.qwen.visual
         self.text = model.qwen.language_model
         self.action_model = model.action_model
+        self.sample_actions = model.sample_actions
         device = next(model.parameters()).device
         self.normalizer = _normalizer(config).to(device)
         self.state_key = next((_batch_key(f) for f in config.input_features if f.ftype == FeatureType.STATE), None)
@@ -115,7 +116,7 @@ class VLAJEPAOpenVINOModel(nn.Module):
         if self.state_key is not None:
             state = self.normalizer({self.state_key: batch["state"].float()})[self.state_key]
             context["state"] = state[:, None].to(dtype)
-        actions = self.action_model.sample(context, noise=batch["noise"].to(dtype)).float()
+        actions = self.sample_actions(context, batch["noise"].to(dtype)).float()
         return self.postprocessor(actions)
 
 

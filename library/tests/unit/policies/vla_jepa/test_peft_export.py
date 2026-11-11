@@ -78,7 +78,10 @@ def test_adapters_train_and_restore(
 
 
 def test_default_targets_cover_active_linears_only(jepa_config: VLAJEPAConfig) -> None:
-    """Default targets include each active head/predictor Linear, but no frozen encoders."""
+    """Default targets include each active head/predictor Linear, but no frozen encoders.
+
+    SnapFlow's target-time embedding is idle outside distillation, which trains it in full.
+    """
     model = VLAJEPAModel.from_config(jepa_config)
     targets = model.get_default_peft_targets()
     matched = {name for name, module in model.named_modules() if re.fullmatch(targets, name)}
@@ -88,6 +91,7 @@ def test_default_targets_cover_active_linears_only(jepa_config: VLAJEPAConfig) -
         if isinstance(module, nn.Linear)
         and name.startswith(("qwen.language_model.", "action_model.", "video_predictor."))
         and module.weight.requires_grad
+        and ".target_time_encoder." not in name
     }
     assert matched == expected
 
@@ -97,7 +101,7 @@ def test_lora_optimizer_scales_both_learning_rates(tiny_config: VLAJEPAConfig, *
     """Adapter LR scaling preserves the backbone/head ratio and covers all trainable weights."""
     config = replace(tiny_config, lora_enabled=use_lora, lora_rank=2, lora_lr_scale=4)
     policy = VLAJEPA.from_config(config, scheduler_warmup_steps=0)
-    policy._trainer = SimpleNamespace(estimated_stepping_batches=10)
+    policy._trainer = SimpleNamespace(estimated_stepping_batches=10, global_step=0)
     optimizer = policy.configure_optimizers()["optimizer"]
     scale = 4 if use_lora else 1
     assert [group["lr"] for group in optimizer.param_groups] == pytest.approx([1e-5 * scale, 1e-4 * scale])
@@ -106,13 +110,23 @@ def test_lora_optimizer_scales_both_learning_rates(tiny_config: VLAJEPAConfig, *
     }
 
 
+def test_default_schedule(jepa_config: VLAJEPAConfig) -> None:
+    """Per-module peaks, 1000 warmup steps, then cosine decay to a 1e-6 floor on the backbone's scale."""
+    policy = VLAJEPA.from_config(jepa_config)
+    policy._trainer = SimpleNamespace(estimated_stepping_batches=2000, global_step=0)
+    optimizers = policy.configure_optimizers()
+    optimizer, scheduler = optimizers["optimizer"], optimizers["lr_scheduler"]["scheduler"]
+    assert [group["initial_lr"] for group in optimizer.param_groups] == pytest.approx([1e-5, 1e-4, 1e-5])
+    multiplier = scheduler.lr_lambdas[0]
+    assert [multiplier(step) for step in (0, 500, 1000, 2000)] == pytest.approx([0, 0.5, 1, 0.1])
+
+
 @pytest.mark.parametrize(("dtype", "kahan"), [("float32", False), ("bfloat16", True)])
 def test_bf16_weights_use_kahan_adamw(tiny_config: VLAJEPAConfig, dtype: str, *, kahan: bool) -> None:
     """bf16 weights get Kahan-compensated AdamW so small updates are not rounded away."""
     policy = VLAJEPA.from_config(replace(tiny_config, dtype=dtype), scheduler_warmup_steps=0)
-    policy._trainer = SimpleNamespace(estimated_stepping_batches=10)
+    policy._trainer = SimpleNamespace(estimated_stepping_batches=10, global_step=0)
     assert isinstance(policy.configure_optimizers()["optimizer"], AdamWBF16Kahan) == kahan
-
 
 @pytest.mark.parametrize("use_lora,use_dora", [(False, False), (True, False), (True, True)])
 @pytest.mark.parametrize("joint", [False, True])

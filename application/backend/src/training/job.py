@@ -58,7 +58,7 @@ SNAPFLOW_CHECKPOINT_NAME = f"{SNAPFLOW_CHECKPOINT_PREFIX}{CHECKPOINT_NAME}"
 reaches its phase boundary. Preferred over :data:`CHECKPOINT_NAME` by export,
 resume, and download whenever it exists; see :func:`resolve_checkpoint`."""
 
-SNAPFLOW_POLICIES = frozenset({"pi05", "smolvla"})
+SNAPFLOW_POLICIES = frozenset({"pi05", "smolvla", "vla_jepa"})
 """Policies that implement ``enable_snapflow()`` and can be distilled.
 
 SnapFlow is a flow-matching technique; only the flow-matching policies mix in

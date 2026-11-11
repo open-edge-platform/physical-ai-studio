@@ -106,6 +106,10 @@ class DiT(nn.Module):
         super().__init__()
         dim = heads * head_dim
         self.timestep_encoder = TimestepEncoder(dim)
+        # SnapFlow target-time embedding; zero output keeps the pretrained velocity field unchanged.
+        self.target_time_encoder = TimestepEncoder(dim)
+        nn.init.zeros_(self.target_time_encoder.timestep_embedder.linear_2.weight)
+        nn.init.zeros_(self.target_time_encoder.timestep_embedder.linear_2.bias)
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(dim, heads, head_dim, dropout, context_dim if index % 2 == 0 else None)
             for index in range(layers)
@@ -115,9 +119,11 @@ class DiT(nn.Module):
         self.proj_out_2 = nn.Linear(dim, output_dim)
         self.gradient_checkpointing = False
 
-    def forward(self, x: Tensor, tokens: Tensor, timesteps: Tensor) -> Tensor:
-        """Return time-conditioned hidden states."""
+    def forward(self, x: Tensor, tokens: Tensor, timesteps: Tensor, target_timesteps: Tensor | None = None) -> Tensor:
+        """Return time-conditioned hidden states, optionally conditioned on a SnapFlow target time."""
         temb = self.timestep_encoder(timesteps)
+        if target_timesteps is not None:
+            temb += self.target_time_encoder(target_timesteps)
         for block in self.transformer_blocks:
             if self.gradient_checkpointing and self.training:
                 x = cast("Tensor", checkpoint(block, x, tokens, temb, use_reentrant=False))
@@ -165,8 +171,14 @@ class VLAJEPAActionHead(IterativeActionHead):
         self.noise_s = noise_s
 
     def denoise(self, x_t: Tensor, t: Tensor, context: dict[str, Tensor]) -> Tensor:
-        """Return flow velocity using tensor-only time discretization."""
+        """Return flow velocity using tensor-only time discretization.
+
+        An optional ``context["target_time"]`` of shape (B,) conditions the velocity on the
+        SnapFlow shortcut target time.
+        """
         times = (t * self.num_timestep_buckets).long()
+        target = context.get("target_time")
+        target_times = None if target is None else (target * self.num_timestep_buckets).long()
         actions = self.action_encoder(x_t, times)
         positions = torch.arange(x_t.shape[1], device=x_t.device)
         actions = self.position_embedding(positions)[None] + actions
@@ -174,14 +186,18 @@ class VLAJEPAActionHead(IterativeActionHead):
         parts = [future, actions]
         if self.state_encoder is not None and "state" in context:
             parts.insert(0, self.state_encoder(context["state"]))
-        hidden = self.model(torch.cat(parts, dim=1), context["tokens"], times)
+        hidden = self.model(torch.cat(parts, dim=1), context["tokens"], times, target_times)
         return self.action_decoder(hidden[:, -x_t.shape[1] :])
+
+    def sample_time(self, batch_size: int, reference: Tensor) -> Tensor:
+        """Return training flow times (noise at 0, data at 1) on ``reference``'s device and dtype."""
+        beta = torch.distributions.Beta(self.noise_beta_alpha, self.noise_beta_beta)
+        return (self.noise_s - beta.sample((batch_size,)).to(reference)) / self.noise_s
 
     def compute_loss(self, actions: Tensor, context: dict[str, Tensor]) -> Tensor:
         """Return unreduced per-element flow loss."""
         noise = torch.randn_like(actions)
-        beta = torch.distributions.Beta(self.noise_beta_alpha, self.noise_beta_beta)
-        times = (self.noise_s - beta.sample((actions.shape[0],)).to(actions)) / self.noise_s
+        times = self.sample_time(actions.shape[0], actions)
         noisy = (1 - times[:, None, None]) * noise + times[:, None, None] * actions
         return (self.denoise(noisy, times, context) - (actions - noise)).square()
 

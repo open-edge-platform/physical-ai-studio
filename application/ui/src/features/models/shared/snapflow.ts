@@ -7,7 +7,7 @@
  * Mirrors `SNAPFLOW_POLICIES` in `application/backend/src/training/job.py`;
  * the backend rejects a mismatch, this only keeps the UI from offering one.
  */
-const SNAPFLOW_POLICIES: ReadonlySet<string> = new Set(['pi05', 'smolvla']);
+const SNAPFLOW_POLICIES: ReadonlySet<string> = new Set(['pi05', 'smolvla', 'vla_jepa']);
 
 /** Whether a policy can be distilled with SnapFlow. */
 export const supportsSnapflow = (policy: string): boolean => SNAPFLOW_POLICIES.has(policy.toLowerCase());

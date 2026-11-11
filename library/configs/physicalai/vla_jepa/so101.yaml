@@ -12,7 +12,6 @@ model:
     reinitialize_projections: true
     optimizer_lr: 1e-5
     optimizer_action_head_lr: 1e-4
-    scheduler_warmup_steps: 1000
 
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule

@@ -15,6 +15,7 @@ from transformers import Qwen3VLConfig, Qwen3VLModel, VJEPA2Config, VJEPA2Model
 
 from physicalai.policies.base import Model
 from physicalai.policies.mixins.peft import PeftModelMixin
+from physicalai.policies.mixins.snapflow import SnapFlowModelMixin
 from physicalai.policies.utils.loss import in_episode_bound, reduce_losses
 
 from .action_head import VLAJEPAActionHead
@@ -35,7 +36,7 @@ _PROJECTIONS = {
 }
 
 
-class VLAJEPAModel(PeftModelMixin, Model):
+class VLAJEPAModel(PeftModelMixin, SnapFlowModelMixin, Model):
     """Network-only VLA-JEPA with joint JEPA/action training and full-chunk inference."""
 
     def __init__(  # noqa: PLR0913
@@ -68,9 +69,19 @@ class VLAJEPAModel(PeftModelMixin, Model):
         predictor_depth: int,
         predictor_num_heads: int,
         predictor_mlp_ratio: float,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 0.1,
+        snapflow_num_inference_steps: int = 1,
     ) -> None:
         """Initialize Qwen and the checkpoint-compatible action head."""
         super().__init__()
+        self.init_snapflow_state(
+            enabled=snapflow_enabled,
+            alpha=snapflow_alpha,
+            lambda_=snapflow_lambda,
+            num_inference_steps=snapflow_num_inference_steps,
+        )
         self.qwen = Qwen3VLModel(Qwen3VLConfig.from_dict(qwen_config)).to(dtype=_DTYPES[dtype])
         self.qwen.config._attn_implementation = "sdpa"  # noqa: SLF001
         # The released policy conditions on the final decoder block BEFORE its RMSNorm.
@@ -147,6 +158,10 @@ class VLAJEPAModel(PeftModelMixin, Model):
             predictor_depth=config.predictor_depth,
             predictor_num_heads=config.predictor_num_heads,
             predictor_mlp_ratio=config.predictor_mlp_ratio,
+            snapflow_enabled=config.snapflow_enabled,
+            snapflow_alpha=config.snapflow_alpha,
+            snapflow_lambda=config.snapflow_lambda,
+            snapflow_num_inference_steps=config.snapflow_num_inference_steps,
         )
 
     @classmethod
@@ -211,6 +226,8 @@ class VLAJEPAModel(PeftModelMixin, Model):
                     raise ValueError(msg)
                 weights[key] = tensor
         missing = set(expected) - weights.keys() - skipped
+        # Released checkpoints predate SnapFlow; its zero-initialized embedding starts fresh.
+        missing = {key for key in missing if ".target_time_encoder." not in key}
         if reinitialize_projections and not source_has_state and self.action_model.state_encoder is not None:
             missing_state = {key for key in missing if key.startswith("action_model.state_encoder.")}
             skipped.update(missing_state)
@@ -227,6 +244,13 @@ class VLAJEPAModel(PeftModelMixin, Model):
         self.qwen.requires_grad_(requires_grad=False)
         self._backbone_frozen = True
         self.qwen.eval()
+
+    def freeze_for_snapflow(self) -> None:
+        """Train only the action head, including the target-time embedding PEFT leaves frozen."""
+        self.freeze_backbone()
+        if self.video_predictor is not None:
+            self.video_predictor.requires_grad_(requires_grad=False)
+        self.action_model.model.target_time_encoder.requires_grad_(requires_grad=True)
 
     def enable_gradient_checkpointing(self) -> None:
         """Checkpoint Qwen decoder and DiT layers without changing checkpoint keys."""
@@ -286,8 +310,11 @@ class VLAJEPAModel(PeftModelMixin, Model):
         """Return flow loss and metrics, excluding episode-end padding."""
         context = self._context(batch)
         world_loss = context["tokens"].new_zeros(())
-        if self.video_predictor is not None:
+        # SnapFlow freezes Qwen, so the JEPA loss could no longer shape the action context.
+        use_world_model = self.video_predictor is not None and not self._snapflow_enabled
+        if use_world_model:
             world_loss = self._world_model_loss(batch, context.pop("latent_tokens"))
+        context.pop("latent_tokens", None)
         repeats = self.repeated_diffusion_steps
         actions = batch["action"].to(context["tokens"]).repeat(repeats, 1, 1)
         context = {name: tensor.repeat(repeats, 1, 1) for name, tensor in context.items()}
@@ -295,14 +322,52 @@ class VLAJEPAModel(PeftModelMixin, Model):
         if bound is not None:
             bound = bound.repeat(repeats, 1)
         with torch.autocast(device_type=actions.device.type, enabled=False):
-            action_loss = reduce_losses(self.action_model.compute_loss(actions, context), bound)
+            if self._snapflow_enabled:
+                losses, cd_idx = self._snapflow_loss(actions, context)
+                if bound is not None:
+                    # Distillation samples do not regress onto (padded) dataset actions.
+                    bound[cd_idx] = True
+            else:
+                losses = self.action_model.compute_loss(actions, context)
+            action_loss = reduce_losses(losses, bound)
         # Adding a constant zero world loss makes inductor drop the loss's grad_fn.
-        loss = action_loss if self.video_predictor is None else action_loss + self.world_model_loss_weight * world_loss
+        loss = action_loss + self.world_model_loss_weight * world_loss if use_world_model else action_loss
         return loss, {
             "loss": loss.detach(),
             "action_flow_loss": action_loss.detach(),
             "world_model_loss": world_loss.detach(),
         }
+
+    def _snapflow_loss(self, actions: Tensor, context: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
+        """Return SnapFlow losses and distillation indices.
+
+        The shared mixin uses Pi0.5's convention (noise at ``t=1``, velocity ``noise - actions``),
+        so times are flipped and velocities negated around this head's (noise at ``t=0``).
+        """
+        head = self.action_model
+        noise = torch.randn_like(actions)
+        time = 1 - head.sample_time(actions.shape[0], actions.new_empty((), dtype=torch.float32))
+        mix = time[:, None, None].to(actions)
+        state = context.get("state")
+
+        def velocity(x_t: Tensor, t: Tensor, target: Tensor, tokens: Tensor, state_: Tensor, _: Tensor) -> Tensor:
+            cond = {"tokens": tokens, "target_time": 1 - target}
+            if state is not None:
+                cond["state"] = state_
+            return -head.denoise(x_t, 1 - t, cond)
+
+        # The mixin indexes three per-sample conditioning tensors; state rides in the second slot.
+        return self.snapflow_mixed_loss(
+            u_t=noise - actions,
+            x_t=mix * noise + (1 - mix) * actions,
+            time=time,
+            actions=actions,
+            prefix_embs=context["tokens"],
+            prefix_pad_masks=context["tokens"] if state is None else state,
+            prefix_att_masks=context["tokens"],
+            sample_noise=lambda shape, device: torch.randn(shape, device=device, dtype=actions.dtype),
+            predict_velocity=velocity,
+        )
 
     def _world_model_loss(self, batch: dict[str, Tensor], latent_tokens: Tensor) -> Tensor:
         if self.video_encoder is None or self.video_predictor is None:
@@ -334,7 +399,18 @@ class VLAJEPAModel(PeftModelMixin, Model):
         if noise is not None:
             noise = noise.to(context["tokens"])
         with torch.autocast(device_type=context["tokens"].device.type, enabled=False):
-            return self.action_model.sample(context, noise=noise).float()
+            return self.sample_actions(context, noise).float()
+
+    def sample_actions(self, context: dict[str, Tensor], noise: Tensor | None) -> Tensor:
+        """Integrate the action head, taking SnapFlow's shortcut to the data end when enabled.
+
+        Returns:
+            Normalized actions of shape (B, chunk_size, action_dim).
+        """
+        if self._snapflow_enabled:
+            context = {**context, "target_time": context["tokens"].new_ones(context["tokens"].shape[0])}
+        steps = self.snapflow_num_inference_steps(self.action_model.num_inference_steps)
+        return self.action_model.sample(context, noise=noise, num_steps=steps)
 
     @torch.no_grad()
     def compute_val_loss(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict[str, Tensor | float]]:

@@ -15,6 +15,7 @@ import torch
 from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
 from physicalai.inference.manifest import ComponentSpec
 from torch import Tensor
+from transformers import get_cosine_with_min_lr_schedule_with_warmup
 
 from physicalai.data import Feature, FeatureType, Observation
 from physicalai.data.dataset import Dataset
@@ -22,8 +23,13 @@ from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import ExportParameters, OpenVINOExportParameters, TorchExportParameters
 from physicalai.policies.base import Model, Policy
 from physicalai.policies.mixins.peft import PeftConfigMixin, PeftPolicyMixin, is_lora_injected
+from physicalai.policies.mixins.snapflow import (
+    SNAPFLOW_DEFAULT_ALPHA,
+    SNAPFLOW_DEFAULT_LAMBDA,
+    SNAPFLOW_DEFAULT_NUM_INFERENCE_STEPS,
+    SnapFlowPolicyMixin,
+)
 from physicalai.train.optimizers import build_adamw_auto_precision
-from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import VLAJEPAConfig, feature_dimension
@@ -41,7 +47,7 @@ def _feature_contract(features: list[Feature]) -> list[Feature]:
     return [replace(feature, normalization_data=None) for feature in features]
 
 
-class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
+class VLAJEPA(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):  # noqa: PLR0904
     """Native pretrained VLA-JEPA with joint JEPA/action or action-only fine-tuning.
 
     Construction without features is lazy; training resolves the dataset's ordered
@@ -49,10 +55,12 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
     ``from_config`` for a fully specified architecture. Full JEPA-assisted training
     is the default; disable ``enable_world_model`` for action-only training.
     LoRA/DoRA, Torch export, and batch-one OpenVINO export are supported.
+    ``snapflow_enabled`` (or ``enable_snapflow()``) distills the sampler to one step
+    with the Qwen backbone frozen.
     Human-video-only pretraining is not.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0915
         self,
         input_features: list[Feature] | None = None,
         output_features: list[Feature] | None = None,
@@ -79,8 +87,13 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,
         lora_lr_scale: float = 10.0,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = SNAPFLOW_DEFAULT_ALPHA,
+        snapflow_lambda: float = SNAPFLOW_DEFAULT_LAMBDA,
+        snapflow_num_inference_steps: int = SNAPFLOW_DEFAULT_NUM_INFERENCE_STEPS,
         optimizer_lr: float = 1e-5,
         optimizer_action_head_lr: float = 1e-4,
+        optimizer_predictor_lr: float = 1e-5,
         optimizer_weight_decay: float = 1e-8,
         scheduler_warmup_steps: int = 1000,
         scheduler_decay_lr: float = 1e-6,
@@ -97,7 +110,11 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         if any(value is not None and value <= 0 for value in (chunk_size, n_action_steps, num_inference_steps)):
             msg = "Action horizons and inference steps must be positive."
             raise ValueError(msg)
-        if min(optimizer_lr, optimizer_action_head_lr) <= 0 or optimizer_weight_decay < 0 or scheduler_warmup_steps < 0:
+        if (
+            min(optimizer_lr, optimizer_action_head_lr, optimizer_predictor_lr) <= 0
+            or optimizer_weight_decay < 0
+            or scheduler_warmup_steps < 0
+        ):
             msg = "Invalid optimizer settings."
             raise ValueError(msg)
         if not 0 <= scheduler_decay_lr <= optimizer_lr:
@@ -116,6 +133,12 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             lora_use_dora=lora_use_dora,
             lora_lr_scale=lora_lr_scale,
         )
+        self._snapflow_overrides: dict[str, Any] = {
+            "snapflow_enabled": snapflow_enabled,
+            "snapflow_alpha": snapflow_alpha,
+            "snapflow_lambda": snapflow_lambda,
+            "snapflow_num_inference_steps": snapflow_num_inference_steps,
+        }
         self.input_features = input_features
         self.output_features = output_features
         self.pretrained_name_or_path = pretrained_name_or_path
@@ -135,6 +158,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         self.binarize_gripper = binarize_gripper
         self.optimizer_lr = optimizer_lr
         self.optimizer_action_head_lr = optimizer_action_head_lr
+        self.optimizer_predictor_lr = optimizer_predictor_lr
         self.optimizer_weight_decay = optimizer_weight_decay
         self.scheduler_warmup_steps = scheduler_warmup_steps
         self.scheduler_decay_lr = scheduler_decay_lr
@@ -167,6 +191,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         compile_model: bool = False,
         optimizer_lr: float = 1e-5,
         optimizer_action_head_lr: float = 1e-4,
+        optimizer_predictor_lr: float = 1e-5,
         optimizer_weight_decay: float = 1e-8,
         scheduler_warmup_steps: int = 1000,
         scheduler_decay_lr: float = 1e-6,
@@ -198,6 +223,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             compile_model=compile_model,
             optimizer_lr=optimizer_lr,
             optimizer_action_head_lr=optimizer_action_head_lr,
+            optimizer_predictor_lr=optimizer_predictor_lr,
             optimizer_weight_decay=optimizer_weight_decay,
             scheduler_warmup_steps=scheduler_warmup_steps,
             scheduler_decay_lr=scheduler_decay_lr,
@@ -254,6 +280,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             pre_snap_gripper=self.pre_snap_gripper if self.pre_snap_gripper is not None else config.pre_snap_gripper,
             binarize_gripper=self.binarize_gripper if self.binarize_gripper is not None else config.binarize_gripper,
             **asdict(self._peft_config),
+            **self._snapflow_overrides,
         )
 
     def configure_model(self) -> None:
@@ -294,6 +321,8 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             except RuntimeError:
                 self.model = None
                 raise
+            if config.snapflow_enabled:
+                model.freeze_for_snapflow()
             self._weights_path = None
             self.train(self.training)
             self._n_action_steps = config.n_action_steps
@@ -368,6 +397,8 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             msg = "VLA-JEPA checkpoint is missing policy_config."
             raise TypeError(msg)
         config = VLAJEPAConfig.from_dict(dict(data))
+        if self._snapflow_overrides["snapflow_enabled"]:
+            config = replace(config, **self._snapflow_overrides)
         if config.use_lora and self.train_action_head_only:
             msg = "Cannot restore a LoRA checkpoint with train_action_head_only."
             raise ValueError(msg)
@@ -399,6 +430,11 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         self._weights_path = None
         self.config = config
         self.configure_model()
+        # Checkpoints from before SnapFlow support lack its zero-initialized embedding.
+        state = checkpoint.get("state_dict", {})
+        for name, value in self.state_dict().items():
+            if ".target_time_encoder." in name:
+                state.setdefault(name, value)
 
     @classmethod
     def load_from_checkpoint(
@@ -472,8 +508,32 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
             raise RuntimeError(msg)
         return self.model.compute_val_loss(self._prepare_batch(batch))
 
+    @property
+    def inner_model(self) -> VLAJEPAModel:
+        """The VLA-JEPA network that owns the flow-matching action head.
+
+        Raises:
+            RuntimeError: If accessed before the model was initialized.
+        """
+        if self.model is None:
+            msg = "inner_model accessed before the model was initialized (setup() has not run yet)."
+            raise RuntimeError(msg)
+        return cast("VLAJEPAModel", self.model)
+
+    def freeze_vlm(self) -> None:
+        """Freeze Qwen and the JEPA predictor so only the action head trains."""
+        self.inner_model.freeze_for_snapflow()
+
+    def _set_hparam_keys(self) -> None:
+        """Sync SnapFlow hparams so checkpoints reload in the distilled mode."""
+        for key in self._snapflow_overrides:
+            self._snapflow_overrides[key] = self.hparams[key] = getattr(self.config, key)
+
     def configure_optimizers(self) -> OptimizerLRScheduler:
-        """Return separate backbone/head optimizer groups and a shared cosine schedule.
+        """Return per-module optimizer groups and a shared cosine schedule with a floor.
+
+        Every group warms up linearly over ``scheduler_warmup_steps``, then decays with a cosine
+        to ``scheduler_decay_lr / optimizer_lr`` of its peak.
 
         Raises:
             TypeError: If the policy has not been initialized.
@@ -497,7 +557,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
                 "params": [
                     parameter for parameter in self.model.video_predictor.parameters() if parameter.requires_grad
                 ],
-                "lr": self.optimizer_lr * lr_scale,
+                "lr": self.optimizer_predictor_lr * lr_scale,
             })
         optimizer = build_adamw_auto_precision(
             [group for group in groups if group["params"]],
@@ -509,12 +569,16 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         datamodule = getattr(self.trainer, "datamodule", None)
         if datamodule is not None:
             reformat_dataset_to_match_policy(self, datamodule)
-        scheduler = cosine_decay_with_warmup_scheduler(
+        # Rebuilding at a phase boundary (SnapFlow) schedules only the remaining steps. Lightning
+        # builds optimizers before restoring global_step, so a plain resume keeps the full horizon.
+        # shortcut: resuming after a SnapFlow boundary rebuilds the full-run horizon; store the
+        # phase start in the checkpoint if phase-2 resumes become common.
+        total_steps = max(1, int(self.trainer.estimated_stepping_batches) - self.trainer.global_step)
+        scheduler = get_cosine_with_min_lr_schedule_with_warmup(
             optimizer,
-            peak_lr=self.optimizer_lr * lr_scale,
-            decay_lr=self.scheduler_decay_lr * lr_scale,
-            num_warmup_steps=self.scheduler_warmup_steps,
-            num_decay_steps=max(1, int(self.trainer.estimated_stepping_batches)),
+            num_warmup_steps=min(self.scheduler_warmup_steps, total_steps),
+            num_training_steps=total_steps,
+            min_lr_rate=self.scheduler_decay_lr / self.optimizer_lr,
         )
         return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
 

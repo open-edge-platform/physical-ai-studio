@@ -1,0 +1,60 @@
+# VLA-JEPA + SnapFlow two-phase distillation in one run.
+#
+#   Phase 1 (epochs 0-6)  standard fine-tuning (flow matching + JEPA world model).
+#   Phase 2 (epochs 7-9)  SnapFlowPhaseCallback freezes Qwen and the JEPA
+#                         predictor, skips the world-model loss, and trains only
+#                         the action head + target-time embedding for 1-step sampling.
+#                         The rebuilt schedule warms up again and decays over epochs 7-9.
+#
+#   physicalai fit --config configs/physicalai/vla_jepa/so101_snapflow.yaml
+#
+# The released VLA-JEPA checkpoints already have a trained flow head. To distill
+# one without phase 1, set `snapflow_enabled: true` on the model and drop the callback.
+#
+# See docs/how-to/training/snapflow_distillation.md.
+model:
+  class_path: physicalai.policies.VLAJEPA
+  init_args:
+    pretrained_name_or_path: lerobot/VLA-JEPA-Pretrain
+    chunk_size: 7
+    n_action_steps: 7
+    gradient_checkpointing: true
+    enable_world_model: true
+    world_model_loss_weight: 0.1
+    reinitialize_projections: true
+    optimizer_lr: 1e-5
+    optimizer_action_head_lr: 1e-4
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: Daankrol/pick-and-place-multi-obj
+    data_format: physicalai
+    train_batch_size: 4
+    val_batch_size: 4
+    val_split: 0.1
+    val_split_seed: 42
+    num_workers: 4
+
+trainer:
+  max_epochs: 10
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+  log_every_n_steps: 20
+  callbacks:
+    - class_path: physicalai.train.SnapFlowPhaseCallback
+      init_args:
+        start_epoch: 7
+        alpha: 0.5
+        lambda_: 0.1
+        num_inference_steps: 1
+    # A monitored checkpoint lets phase 2 distill from the best phase-1 weights.
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 2
+        filename: "epoch{epoch:03d}"
+        auto_insert_metric_name: false

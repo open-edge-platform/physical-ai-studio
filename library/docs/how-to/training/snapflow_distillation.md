@@ -16,7 +16,8 @@ results: on Pi0.5 / LIBERO it reaches 98.75% success against 97.75% for the
 10-step teacher, with a 9.6x denoising speedup (274 ms -> 83 ms end to end); on
 SmolVLA it cuts offline action MSE by 8.3% with a 3.56x end-to-end speedup.
 
-Both [`Pi05`](../../explanation/policy/README.md) and `SmolVLA` support it.
+[`Pi05`](../../explanation/policy/README.md), `SmolVLA` and
+[`VLAJEPA`](../../explanation/policy/vla-jepa.md#snapflow-one-step-sampling) support it.
 
 ## Why it needs two phases
 
@@ -234,6 +235,10 @@ standalone phase-2 run would. If you need an exact phase-2 decay horizon, use
 Option 3 (Python API), which warm-starts phase 2 from the phase-1 weights only
 and constructs a fresh `Trainer` — Option 2's `--fit.ckpt_path` is a full
 resume and has the same combined-horizon behavior as Option 1.
+
+VLA-JEPA is the exception: its scheduler spans only the steps left at the
+boundary, so phase 2 warms up again and decays to the floor by the last step.
+Resuming a VLA-JEPA run after the boundary still restarts the full-run horizon.
 
 ---
 
