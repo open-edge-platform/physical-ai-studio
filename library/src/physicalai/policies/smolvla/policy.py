@@ -77,7 +77,8 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         min_period: Minimum period for sine-cosine positional encoding. Default: 4e-3.
         max_period: Maximum period for sine-cosine positional encoding. Default: 4.0.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising
-            process during inference. If False, zeros are used instead. Default: True.
+            process during inference. If False, zeros are used instead, also for the training noise,
+            which breaks training. Default: True.
         num_steps: Number of decoding steps. Default: 10.
         use_cache: Whether to use attention cache. Default: True.
         freeze_vision_encoder: Whether to freeze vision encoder during training. Default: True.
@@ -143,7 +144,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         expert_width_multiplier: float = 0.75,  # The action expert hidden size (wrt to the VLM)
         min_period: float = 4e-3,  # sensitivity range for the timestep used in sine-cosine positional encoding
         max_period: float = 4.0,
-        use_random_input_noise: bool = False,
+        use_random_input_noise: bool = True,
         # Compilation
         compile_model: bool = False,
         snapflow_enabled: bool = False,
@@ -363,7 +364,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         dtype: Literal["bfloat16", "float32"] = "bfloat16",
         tokenizer_max_length: int = 48,
         pad_language_to: str = "max_length",
-        use_random_input_noise: bool = False,
+        use_random_input_noise: bool = True,
         image_key_reorder_map: dict[str, int] | None = None,
         num_cameras: int = 0,
         compile_model: bool = False,
