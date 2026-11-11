@@ -25,9 +25,9 @@ from loguru import logger
 from pydantic import BaseModel
 
 from exceptions import RuntimeSessionCommandError
-from runtime_session.bus import Bus, command_key
+from runtime_session.bus import Bus, command_key, status_key
 from runtime_session.store import ACTION, STATE, FeatureSpec, Store
-from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand
+from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand, StatusMessage
 from workers.base import ProcessWorker
 from workers.rate import Rate
 
@@ -51,6 +51,8 @@ class RecordingStatus(BaseModel):
     is_recording: bool
     episodes_recorded: int
     """Episodes saved by this worker, not yet copied back into the dataset."""
+    error: str | None = None
+    """Why an episode was automatically discarded, on the event announcing that discard."""
 
 
 @dataclass
@@ -101,16 +103,32 @@ class Recorder:
         self.episodes_recorded += 1
         return self._changed()
 
-    def discard(self, _request: DiscardEpisodeCommand | None = None) -> RecordingStatus:
+    def discard(self, _request: DiscardEpisodeCommand | None = None, *, error: str | None = None) -> RecordingStatus:
         # Does not require an open episode: also how a too-short one is thrown away.
         self._open = False
         self.mutation.discard_buffer()
-        return self._changed()
+        return self._changed(error)
 
-    def _changed(self) -> RecordingStatus:
+    def _changed(self, error: str | None = None) -> RecordingStatus:
         status = self.status()
+        status.error = error
         self.publish(status)
         return status
+
+    def camera_status(self, status: StatusMessage) -> None:
+        """Discard on camera loss even if the feed recovers between recording ticks."""
+        key = status.component.removeprefix("environment/")
+        if key in self.store.spec.observations and status.state in {"starting", "failed"}:
+            self._camera_lost(key)
+
+    def _camera_lost(self, key: str) -> None:
+        if self._open:
+            error = (
+                f'Episode discarded because camera "{key}" stopped sending frames. '
+                "Start a new episode after it reconnects."
+            )
+            logger.warning(error)
+            self.discard(error=error)
 
     def record_frame(self) -> None:
         """Append the store's current values, if an episode is open and every feature has one."""
@@ -118,7 +136,11 @@ class Recorder:
             return
         state, action = self.store.read(STATE), self.store.read(ACTION)
         frames = {key: self.store.read_observation(key) for key in self.store.spec.observations}
-        if state is None or action is None or any(frame is None for frame in frames.values()):
+        for key, frame in frames.items():
+            if frame is None:
+                self._camera_lost(key)
+                return
+        if state is None or action is None:
             # A row is all or nothing: a default where a measurement belongs would be indistinguishable from data.
             self.skipped += 1
             return
@@ -183,6 +205,7 @@ class DatasetWorker(ProcessWorker[Recorder]):
             with Bus.join(self.session_id) as bus:
                 recorder = Recorder(self.open_mutation(), store, publish=lambda status: bus.publish(EVENTS, status))
                 try:
+                    bus.listen(status_key("environment/*"), StatusMessage, recorder.camera_status)
                     bus.serve(STATUS, Empty, recorder.status)
                     bus.serve(command_key("start_episode"), StartEpisodeCommand, recorder.start)
                     bus.serve(command_key("save_episode"), SaveEpisodeCommand, recorder.save)

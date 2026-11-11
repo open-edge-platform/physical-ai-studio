@@ -1078,3 +1078,10 @@ class TestActionPaddingMask:
     def test_val_loss_without_mask_falls_back_to_plain_mean(self) -> None:
         """Batches without the key keep the previous behaviour."""
         assert self._compute_val_loss(torch.full((2, 3, 2), 4.0), None) == pytest.approx(4.0)
+
+
+class TestNoiseDefault:
+    def test_random_noise_is_on_by_default(self) -> None:
+        """The model uses this flag for the training noise too; zero training noise lets the
+        flow-matching target be read off ``x_t``, so the loss collapses and the policy learns nothing."""
+        assert SmolVLA().config.use_random_input_noise is True
