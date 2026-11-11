@@ -233,9 +233,9 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
         raw_cfg = nucleus.get("configuration")
         nucleus_cfg: dict[str, Any] = raw_cfg if isinstance(raw_cfg, dict) else {}
         base_dir = path.parent
-        cert_path = Path(system.get("certificateFilePath") or (base_dir / "device.pem.crt"))
-        key_path = Path(system.get("privateKeyPath") or (base_dir / "private.pem.key"))
-        ca_path = Path(system.get("rootCaPath") or (base_dir / "AmazonRootCA1.pem"))
+        cert_path = self._resolve_bundle_file(base_dir, system.get("certificateFilePath"), "device.pem.crt")
+        key_path = self._resolve_bundle_file(base_dir, system.get("privateKeyPath"), "private.pem.key")
+        ca_path = self._resolve_bundle_file(base_dir, system.get("rootCaPath"), "AmazonRootCA1.pem")
         thing_name = system.get("thingName")
         cred_endpoint = nucleus_cfg.get("iotCredEndpoint")
         if not isinstance(thing_name, str) or not thing_name.strip():
@@ -272,6 +272,18 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
             iot_role_alias=role_alias.strip() if isinstance(role_alias, str) and role_alias.strip() else None,
             aws_region=aws_region.strip() if isinstance(aws_region, str) and aws_region.strip() else None,
         )
+
+    @staticmethod
+    def _resolve_bundle_file(base_dir: Path, configured: Any, default_name: str) -> Path:
+        if isinstance(configured, str) and configured.strip():
+            candidate = Path(configured.strip())
+            if candidate.is_file():
+                return candidate
+            sibling = base_dir / candidate.name
+            if sibling.is_file():
+                return sibling
+            return candidate
+        return base_dir / default_name
 
     @staticmethod
     def _resolve_role_alias(config: GreengrassDeviceConfig, role_arn: str | None) -> str:
@@ -320,7 +332,6 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
                 verify=ssl_context,
                 timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
                 follow_redirects=False,
-                trust_env=False,
             ) as client:
                 response = client.get(url, headers={"x-amzn-iot-thingname": config.thing_name})
         except ssl.SSLError as exc:

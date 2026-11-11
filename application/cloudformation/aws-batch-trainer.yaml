@@ -696,9 +696,15 @@ Resources:
           - Effect: Allow
             Action: batch:SubmitJob
             Resource:
-              - !Ref G4dnJobDefinition
-              - !Ref G6eJobDefinition
-              - !Ref G7eJobDefinition
+              - !Sub
+                - arn:${AWS::Partition}:batch:${AWS::Region}:${AWS::AccountId}:job-definition/pai-g4dn-${StackUuid}*
+                - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+              - !Sub
+                - arn:${AWS::Partition}:batch:${AWS::Region}:${AWS::AccountId}:job-definition/pai-g6e-${StackUuid}*
+                - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+              - !Sub
+                - arn:${AWS::Partition}:batch:${AWS::Region}:${AWS::AccountId}:job-definition/pai-g7e-${StackUuid}*
+                - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
               - !Ref G4dnJobQueue
               - !Ref G6eJobQueue
               - !Ref G7eJobQueue

@@ -262,3 +262,17 @@ aws iot update-certificate \
 
 
 now please check the updated cloudformation template, we need to add auth provider to enable authenticating with a robot certificate. please consider that the certificate is located at a standard path on the filesystem
+
+
+
+status update:
+
+- **AWS side:** Remote training stack now supports IOT core and robot authentication flow.  
+- **Robot side:** a shell script that enrolls a robot in IoT Core.
+- **Robot/Studio side** Studio now supports IOT core and robot authentication flow.  
+
+Plans for tomorrow:
+
+- Create a readme how to enroll a robot.
+- Create a script that installs nucleus from snap and copies certificates bundle 
+- Record a demo
