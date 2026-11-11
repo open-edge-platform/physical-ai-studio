@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import warnings
-from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import IO, TYPE_CHECKING, Any, cast
@@ -146,8 +145,6 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
     action_head: ActionHeadName
     _preprocessor: PatchPolicyPreprocessor | None  # pyrefly: ignore[bad-override-mutable-attribute]
     _postprocessor: PatchPolicyPostprocessor | None
-    _n_action_steps: int
-    _action_queue: deque[Tensor]
 
     def __init__(  # noqa: PLR0913
         self,
@@ -338,7 +335,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         weights_only: bool | None = None,  # noqa: FBT001
         **kwargs: Any,  # noqa: ANN401
     ) -> PatchPolicy:
-        """Restore a policy from a Lightning checkpoint.
+        """Restore a policy, allowing ``n_action_steps`` to override the saved execution horizon.
 
         Returns:
             Policy restored with its configuration and learned weights.
@@ -403,9 +400,6 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self._postprocessor = postprocessor
         self.input_features = config.input_features
         self.output_features = config.output_features
-        if self._n_action_steps != config.n_action_steps:
-            self._action_queue = deque(maxlen=config.n_action_steps)
-            self._n_action_steps = config.n_action_steps
         self._sync_config_settings(config)
 
     def _resolve_config(self, input_features: list[Feature], output_features: list[Feature]) -> PatchPolicyConfig:
@@ -493,7 +487,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         if not isinstance(config_data, Mapping):
             msg = "Patch Policy checkpoint is missing a valid policy_config."
             raise TypeError(msg)
-        config = PatchPolicyConfig.from_dict(config_data)
+        config = replace(PatchPolicyConfig.from_dict(config_data), n_action_steps=self.n_action_steps)
         if self.model is not None:
             self._validate_model_config(config)
         self._encoder_weights = None

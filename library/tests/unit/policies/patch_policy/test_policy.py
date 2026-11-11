@@ -206,8 +206,9 @@ def test_incompatible_checkpoint_is_rejected_before_mutation(tiny_encoder, small
     assert policy.model.camera_names == ("front", "back")
 
 
+@pytest.mark.parametrize("n_action_steps", [None, 1])
 def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon(
-    tiny_encoder, small_config, tmp_path, monkeypatch
+    tiny_encoder, small_config, tmp_path, monkeypatch, n_action_steps
 ):
     config = replace(small_config, n_action_steps=2)
     policy = PatchPolicy.from_config(config)
@@ -227,11 +228,21 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
         raise AssertionError("checkpoint restoration must not download encoder artifacts")
 
     monkeypatch.setattr(policy_module, "resolve_encoder_artifacts", forbid_download)
-    restored = PatchPolicy.load_from_checkpoint(path, n_action_steps=1)
+    overrides = {} if n_action_steps is None else {"n_action_steps": n_action_steps}
+    restored = PatchPolicy.load_from_checkpoint(path, **overrides)
+    expected_steps = config.n_action_steps if n_action_steps is None else n_action_steps
 
-    assert restored.config == policy.config
-    assert restored._n_action_steps == 2
-    assert restored._action_queue.maxlen == 2
+    assert restored.config == replace(policy.config, n_action_steps=expected_steps)
+    assert restored.n_action_steps == expected_steps
+    assert restored._n_action_steps == expected_steps
+    assert restored._action_queue.maxlen == expected_steps
+    assert restored.hparams["n_action_steps"] == expected_steps
+    observation = Observation(images={"front": torch.zeros(1, 2, 3, 4, 4)})
+    restored.eval()
+    assert restored.predict_action_chunk(observation).shape == (1, expected_steps, 2)
+    queued = restored._action_queue
+    restored.configure_model()
+    assert restored._action_queue is queued
     assert restored.use_random_noise is False
     assert restored.hparams["use_random_noise"] is False
     assert restored.model.ema_action_head.use_random_input_noise is False
