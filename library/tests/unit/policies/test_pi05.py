@@ -1313,6 +1313,35 @@ class TestPi05ExportNoiseInput:
         model.predict_action_chunk(batch)
         assert model.sample_actions.call_args.kwargs["noise"] is None
 
+    def test_sample_actions_leaves_caller_noise_unchanged(self) -> None:
+        """The real denoising loop never writes into the noise it was given."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        seq_len = 3
+        stub = SimpleNamespace(
+            _num_inference_steps=4,
+            snapflow_num_inference_steps=lambda n: n,
+            snapflow_target_time=lambda *_: None,
+            embed_prefix=lambda *_: (
+                torch.zeros(1, seq_len, 8),
+                torch.ones(1, seq_len, dtype=torch.bool),
+                torch.zeros(1, seq_len, dtype=torch.bool),
+            ),
+            _prepare_attention_masks_4d=lambda masks: masks,
+            paligemma_with_expert=MagicMock(forward=MagicMock(return_value=(None, None))),
+            denoise_step=lambda x_t, **_: x_t + 1.0,
+        )
+        noise = torch.randn(1, 5, 4)
+        before = noise.clone()
+
+        first = Pi05Model.sample_actions(stub, [], [], torch.zeros(1, 4), None, noise=noise)
+        second = Pi05Model.sample_actions(stub, [], [], torch.zeros(1, 4), None, noise=noise)
+
+        assert torch.equal(noise, before)
+        assert torch.equal(first, second)
+        assert not torch.equal(first, noise)
+
 
 # ============================================================================ #
 # embed_prefix Tests                                                           #
