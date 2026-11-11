@@ -2,11 +2,11 @@ import { describe, expect, it } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import { HttpResponse } from 'msw';
 
-import { http } from '../../../api/utils';
-import { server } from '../../../msw-node-setup';
-import { render } from '../../../test-utils/render';
+import { http } from '../../../../api/utils';
+import { server } from '../../../../msw-node-setup';
+import { render } from '../../../../test-utils/render';
+import { RobotFormProvider } from '../provider';
 import { CreateRobotForm } from './create-form';
-import { RobotFormProvider } from './provider';
 
 const definition = (type: string, calibration: { instructions: string; zero_tolerance_deg: number } | null) => ({
     type,
@@ -33,7 +33,7 @@ const renderCreateForm = (robotType: string) => {
 
     return render(
         <RobotFormProvider robot={{ type: robotType, name: 'Khaos', payload: {} }}>
-            <CreateRobotForm />
+            <CreateRobotForm onChangeRobot={() => {}} />
         </RobotFormProvider>,
         { route: '/projects/project-1/robots/new', path: '/projects/:project_id/robots/new' }
     );

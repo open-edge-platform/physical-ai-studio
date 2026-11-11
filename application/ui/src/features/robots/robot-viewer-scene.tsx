@@ -13,7 +13,7 @@ export const SCENE_COLORS = {
     gridSection: '#545870',
     checkerboardEven: '#2d2f35',
     checkerboardOdd: '#313339',
-    trossenReplacement: new THREE.Color('#585858'),
+    trossenReplacement: new THREE.Color('#efce58'),
 };
 
 const FLOOR_SIZE = 21;
