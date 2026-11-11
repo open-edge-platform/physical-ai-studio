@@ -219,19 +219,17 @@ Each certificate is a per-robot kill switch. Deactivating it immediately blocks 
 aws iot update-certificate --certificate-id <certificate-id> --new-status INACTIVE
 ```
 
-Use `REVOKED` instead of `INACTIVE` for a compromised key; revoked certificates cannot be reactivated. Existing temporary credentials remain valid until they expire, up to `CredentialDurationSeconds`.
+Use `REVOKED` instead of `INACTIVE` for a compromised key; revoked certificates cannot be reactivated. Existing temporary credentials remain valid until they expire, up to `RobotCredentialDurationSeconds`.
 
-To remove a robot completely:
+To remove a robot completely, run [`deprovision-robot.sh`](../cloudformation/deprovision-robot.sh) on the administrator machine. It accepts the same `--stack` or `--stack-identifier` options as the provisioning script and asks you to type the thing name to confirm (skip with `--yes`):
 
 ```bash
-CERT_ARN=arn:aws:iot:us-east-1:<account-id>:cert/<certificate-id>
-aws iot detach-thing-principal --thing-name robot-01 --principal "$CERT_ARN"
-aws iot detach-policy --policy-name pai-robot-<stack-uuid> --target "$CERT_ARN"
-aws iot update-certificate --certificate-id <certificate-id> --new-status INACTIVE
-aws iot delete-certificate --certificate-id <certificate-id>
-aws greengrassv2 delete-core-device --core-device-thing-name robot-01
-aws iot delete-thing --thing-name robot-01
+application/cloudformation/deprovision-robot.sh \
+  --thing-name robot-01 \
+  --stack-identifier 123456789012-us-east-1-6ba57d60
 ```
+
+For each certificate attached to the thing, the script detaches it, then deactivates it, detaches all IoT policies, and deletes it. A certificate still used by another thing is only detached from this robot. It then deletes the Greengrass core device record, if any, and the thing, which also removes it from its thing groups. On the robot, remove `/greengrass/v2` and the Greengrass system service, and delete any local bundle copy on the administrator machine.
 
 To rotate a robot's certificate, run the script again with a new `--output-dir`, deliver the bundle, restart Greengrass (`sudo systemctl restart greengrass`), then deactivate the old certificate.
 
