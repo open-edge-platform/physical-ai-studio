@@ -1308,9 +1308,9 @@ describe('TrainModelDialog', () => {
             await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
             await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
             await user.click(await screen.findByRole('option', { name: batchTrainer.name }));
-            expect(screen.queryByRole('button', { name: /^GPU/ })).not.toBeInTheDocument();
+            expect(screen.queryByText(/Applies to this training job only/)).not.toBeInTheDocument();
             if (mode === 'modal') {
-                const gpuPicker = screen.getByRole('button', { name: /NVIDIA GPU/ });
+                const gpuPicker = screen.getByRole('button', { name: /GPU$/ });
                 expect(gpuPicker).toHaveTextContent('A10G');
                 await user.click(gpuPicker);
                 expect(screen.queryByRole('option', { name: 'Deployment default' })).not.toBeInTheDocument();
@@ -1321,7 +1321,7 @@ describe('TrainModelDialog', () => {
                     await user.keyboard('{Escape}');
                 }
             } else {
-                expect(screen.queryByRole('button', { name: /NVIDIA GPU/ })).not.toBeInTheDocument();
+                expect(screen.queryByRole('button', { name: /GPU$/ })).not.toBeInTheDocument();
             }
             await user.click(screen.getByRole('button', { name: 'Next' }));
             const autoScaleBatchSize = screen.getByRole('switch', { name: 'Auto' });

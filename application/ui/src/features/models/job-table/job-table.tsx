@@ -16,6 +16,8 @@ import { MoreMenu } from '@geti-ui/ui/icons';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../../api/client';
+import { ReactComponent as AwsIcon } from '../../../assets/icons/aws-icon.svg';
+import { ReactComponent as ModalIcon } from '../../../assets/icons/modal-icon.svg';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
 import { showIssueError } from '../../../components/notification/issue-toasts';
 import { notify } from '../../../components/notification/notification.component';
@@ -47,13 +49,20 @@ const TrainerCell = ({ job }: { job: SchemaTrainJob }) => {
         {},
         { enabled: remoteId !== null }
     );
+    const remoteTrainer = remoteTrainers.find((trainer) => trainer.id === remoteId);
     const trainer =
         payload.training_target === 'remote'
-            ? (payload.remote_trainer_name ??
-              remoteTrainers.find((remoteTrainer) => remoteTrainer.id === remoteId)?.name ??
-              payload.remote_trainer_url ??
-              'Remote')
+            ? (payload.remote_trainer_name ?? remoteTrainer?.name ?? payload.remote_trainer_url ?? 'Remote')
             : getTrainerLabel(payload);
+    const provider =
+        payload.training_target !== 'remote'
+            ? undefined
+            : payload.remote_trainer_url?.startsWith('aws-batch://')
+              ? 'aws_batch'
+              : payload.remote_trainer_url?.startsWith('modal://')
+                ? 'modal'
+                : remoteTrainer?.connection_mode;
+    const ProviderIcon = provider === 'aws_batch' ? AwsIcon : provider === 'modal' ? ModalIcon : undefined;
     const devices = health?.devices ?? [];
     const selected = payload.device;
     const modalGpu = payload.training_target === 'remote' ? payload.modal_gpu : undefined;
@@ -65,7 +74,17 @@ const TrainerCell = ({ job }: { job: SchemaTrainJob }) => {
 
     return (
         <Flex direction='column' data-testid='trainer-cell'>
-            <Text>{remoteId && trainer !== 'Remote' ? `Remote · ${trainer}` : trainer || '-'}</Text>
+            <Flex alignItems='center' gap='size-75'>
+                {ProviderIcon && (
+                    <ProviderIcon
+                        width={24}
+                        height={16}
+                        role='img'
+                        aria-label={provider === 'aws_batch' ? 'AWS' : 'Modal'}
+                    />
+                )}
+                <Text>{trainer || '-'}</Text>
+            </Flex>
             {modalGpu ? (
                 <Text>GPU · {modalGpu}</Text>
             ) : (

@@ -194,7 +194,49 @@ describe('TrainingRow', () => {
         });
 
         await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('Remote ·');
+        expect(screen.queryByRole('img', { name: /AWS|Modal/ })).not.toBeInTheDocument();
     });
+
+    it.each([
+        { url: 'aws-batch://us-east-1/training-jobs', provider: 'AWS' },
+        { url: 'modal://trainer?connection=saved', provider: 'Modal' },
+    ])('shows the $provider logo from the saved job URL when the target is removed', ({ url, provider }) => {
+        server.use(http.get('/api/remote-trainers', () => HttpResponse.json([])));
+        renderTrainingRow({
+            status: 'completed',
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: 'deleted-trainer',
+                remote_trainer_name: 'Cloud training',
+                remote_trainer_url: url,
+            },
+        });
+
+        expect(screen.getByRole('img', { name: provider })).toBeInTheDocument();
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Cloud training');
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('Remote ·');
+    });
+
+    it.each([
+        { connectionMode: 'aws_batch', provider: 'AWS' },
+        { connectionMode: 'modal', provider: 'Modal' },
+    ] as const)(
+        'uses the registered $provider target for older jobs without a URL',
+        async ({ connectionMode, provider }) => {
+            server.use(
+                http.get('/api/remote-trainers', () =>
+                    HttpResponse.json([{ ...remoteTrainer, connection_mode: connectionMode }])
+                )
+            );
+            renderTrainingRow({
+                payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
+            });
+
+            expect(await screen.findByRole('img', { name: provider })).toBeInTheDocument();
+        }
+    );
 
     it.each([
         { status: 'running', modalGpu: 'A10G' },
@@ -214,7 +256,8 @@ describe('TrainingRow', () => {
         });
 
         const trainerCell = screen.getByTestId('trainer-cell');
-        await waitFor(() => expect(trainerCell).toHaveTextContent('Remote · Modal'));
+        await waitFor(() => expect(trainerCell).toHaveTextContent('Modal'));
+        expect(trainerCell).not.toHaveTextContent('Remote ·');
         expect(trainerCell).toHaveTextContent(`GPU · ${modalGpu}`);
         expect(trainerCell).not.toHaveTextContent('CUDA 0');
     });
@@ -230,7 +273,7 @@ describe('TrainingRow', () => {
             },
         });
 
-        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Remote · Modal');
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Modal');
         expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('GPU ·');
     });
 
@@ -282,11 +325,9 @@ describe('TrainingRow', () => {
 
             const trainerCell = screen.getByTestId('trainer-cell');
             await waitFor(() => expect(trainerCell).toHaveTextContent(`CUDA ${index ?? 0}`));
-            expect(trainerCell).toHaveTextContent(`Remote · ${remoteTrainer.name}`);
+            expect(trainerCell).toHaveTextContent(remoteTrainer.name);
             await waitFor(() => expect(trainerCell).toHaveTextContent(index === 1 ? 'Large GPU' : 'Small GPU'));
-            expect(
-                screen.queryByText(`Remote · ${remoteTrainer.name}`, { selector: '[title]' })
-            ).not.toBeInTheDocument();
+            expect(screen.queryByText(remoteTrainer.name, { selector: '[title]' })).not.toBeInTheDocument();
         }
     );
 
@@ -342,8 +383,8 @@ describe('TrainingRow', () => {
             },
         });
 
-        expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Remote · ${remoteTrainer.name}`);
-        expect(screen.queryByText(`Remote · ${remoteTrainer.name}`, { selector: '[title]' })).not.toBeInTheDocument();
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name);
+        expect(screen.queryByText(remoteTrainer.name, { selector: '[title]' })).not.toBeInTheDocument();
     });
 
     it('does not show an index for a single-GPU remote trainer', async () => {
@@ -375,15 +416,14 @@ describe('TrainingRow', () => {
             payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
         });
 
-        await waitFor(() =>
-            expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Remote · ${remoteTrainer.name}`)
-        );
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
     });
 
     it('shows Local for a local job in the Trainer column', async () => {
         renderTrainingRow();
 
         await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local'));
+        expect(screen.queryByRole('img', { name: /AWS|Modal/ })).not.toBeInTheDocument();
     });
 
     it('shows "-" in the Dataset and Environment cells when those requests fail', async () => {

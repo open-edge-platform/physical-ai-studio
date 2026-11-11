@@ -93,13 +93,7 @@ export const SetupStep = ({
         </Picker>
 
         {isModalTarget && (
-            <Picker
-                label='NVIDIA GPU'
-                selectedKey={modalGpu}
-                onSelectionChange={onModalGpuChange}
-                description='Applies to this training job only. No redeployment is needed.'
-                width='100%'
-            >
+            <Picker label='GPU' selectedKey={modalGpu} onSelectionChange={onModalGpuChange} width='100%'>
                 <Item key='A10G'>A10G · 24 GB</Item>
                 <Item key='A100-80GB'>A100 · 80 GB</Item>
                 <Item key='H100'>H100 · 80 GB</Item>
