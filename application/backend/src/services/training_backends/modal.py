@@ -180,7 +180,7 @@ class ModalTrainingBackend:
                 status = BatchJobStatus.model_validate_json(contents) if contents else None
                 if status:
                     progress = max(progress, min(95, 10 + round(status.progress * 0.85)))
-                    context.progress(progress, message=status.message, extra_info=status.extra_info)
+                    context.progress(progress, message=status.message or "Training model", extra_info=status.extra_info)
                     line = render_progress_log(status.extra_info) if status.extra_info else None
                     line = line or status.message or f"Remote training progress: {status.progress}%"
                     if line != last_progress_log:

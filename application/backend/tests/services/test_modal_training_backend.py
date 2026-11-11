@@ -469,7 +469,7 @@ async def test_training_telemetry_is_logged_without_duplicate_polls(context, res
     _, volume, call, _ = resources
     telemetry = {"global_step": 40, "max_steps": 100, "train/loss_step": 0.5}
     updates = [
-        ("Training model", None),
+        ("Dataset ready", None),
         (None, telemetry),
         (None, telemetry),
         (None, {**telemetry, "global_step": 45, "train/loss_step": 0.4}),
@@ -499,14 +499,16 @@ async def test_training_telemetry_is_logged_without_duplicate_polls(context, res
     await ModalTrainingBackend(connection)._wait(context, call, volume, f"jobs/{context.job.id}")
 
     assert [entry.args[1] for entry in log.info.call_args_list] == [
-        "Training model",
+        "Dataset ready",
         "Training progress: step=40/100 (40%), train/loss_step=0.5",
         "Training progress: step=45/100 (45%), train/loss_step=0.4",
         "Validation started at step=45/100",
         "Remote training progress: 45%",
         "Model uploaded",
     ]
-    assert context.progress.call_count == len(updates)
+    assert [entry.kwargs["message"] for entry in context.progress.call_args_list] == [
+        message or "Training model" for message, _ in updates
+    ]
 
 
 @pytest.mark.asyncio
