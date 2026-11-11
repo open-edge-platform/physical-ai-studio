@@ -195,8 +195,12 @@ def _check_device(
         step = f"run_{device}"
         from executorch.runtime import Runtime  # noqa: PLC0415
 
+        # Policies may trace a trimmed / fp32-cast sample (rldx1): feed the inputs the .pte was exported with.
+        manifest = json.loads((pte.parent / "manifest.json").read_text(encoding="utf-8"))
+        names = manifest.get("input_names") or list(sample)
+        inputs = [sample[n].float() if sample[n].is_floating_point() else sample[n] for n in names]
         method = Runtime.get().load_program(pte).load_method("forward")
-        output = _first_tensor(method.execute(list(sample.values()))).float()
+        output = _first_tensor(method.execute(inputs)).float()
     except Exception as exc:  # noqa: BLE001
         row[step] = "FAIL"
         errors.append(f"{step}: {_error(exc)}")

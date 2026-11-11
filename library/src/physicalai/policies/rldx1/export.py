@@ -44,7 +44,9 @@ from .vtc_buffer import VtcWindowBuffer
 if TYPE_CHECKING:
     from collections.abc import Generator
     from os import PathLike
+    from pathlib import Path
 
+    from physicalai.export.backends import ExecuTorchDelegate
     from physicalai.policies.rldx1.config import Rldx1Config
     from physicalai.policies.rldx1.model import Rldx1Model
 
@@ -440,6 +442,41 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
             trimmed_sample = trim_export_sample(traced_sample)
             base = cast("Any", super())
             base.to_openvino(output_path, input_sample=trimmed_sample, **export_kwargs)
+
+    @torch.no_grad()
+    def to_executorch(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        *,
+        delegate: ExecuTorchDelegate | None = None,
+        delegate_config: dict[str, Any] | None = None,
+        **export_kwargs: dict,
+    ) -> Path:
+        """Export to ExecuTorch using graph-safe tracing.
+
+        Returns:
+            Path to the exported ``.pte`` model file.
+        """
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+        with (
+            fp32_weights_for_export(self.model),
+            self._graph_safe_export_model(
+                input_ids=input_sample["input_ids"],
+                image_grid_thw=input_sample["image_grid_thw"],
+                embodiment_id=input_sample["embodiment_id"],
+                num_views=input_sample["num_views"],
+            ),
+        ):
+            trimmed_sample = trim_export_sample(cast_sample_fp32(input_sample))
+            return super().to_executorch(
+                output_path,
+                input_sample=trimmed_sample,
+                delegate=delegate,
+                delegate_config=delegate_config,
+                **export_kwargs,
+            )
 
     @torch.no_grad()
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor]:
