@@ -220,6 +220,7 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
     }
     policy.on_save_checkpoint(checkpoint)
     path = tmp_path / "policy.ckpt"
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch  # Trusted checkpoint created by this test.
     torch.save(checkpoint, path)
 
     def forbid_download(*args, **kwargs):
