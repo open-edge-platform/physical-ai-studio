@@ -1,7 +1,6 @@
 import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { HttpResponse } from 'msw';
 
 import { http } from '../../../../api/utils';
 import { server } from '../../../../msw-node-setup';
@@ -113,7 +112,8 @@ describe('ZeroCalibrationWizardContent', () => {
             http.post('/api/projects/{project_id}/robots', async ({ request }) => {
                 const body = await request.json();
                 created(body);
-                return HttpResponse.json({ ...(body as object), connection_status: 'unknown' } as never);
+                // Plugin robot responses are not part of the generated OpenAPI union.
+                return Response.json({ ...body, id: 'robot-1' }, { status: 201 });
             })
         );
         renderWizard({
@@ -140,7 +140,8 @@ describe('ZeroCalibrationWizardContent', () => {
             http.post('/api/projects/{project_id}/robots', async ({ request }) => {
                 const body = await request.json();
                 created(body);
-                return HttpResponse.json({ ...(body as object), connection_status: 'unknown' } as never);
+                // Plugin robot responses are not part of the generated OpenAPI union.
+                return Response.json({ ...body, id: 'robot-1' }, { status: 201 });
             })
         );
         renderWizard();

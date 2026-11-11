@@ -141,6 +141,7 @@
 }
 
 .checkRow {
+    position: relative;
     padding-block: var(--spectrum-global-dimension-size-100);
     border-bottom: 1px solid var(--spectrum-global-color-gray-200);
 }
