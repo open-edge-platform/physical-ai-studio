@@ -15,7 +15,7 @@ from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
 from internal_datasets.utils import get_internal_read_dataset
 from runtime_session import dataset as session_dataset
 from runtime_session.bus import BusRequestError, NoResponderError, command_key, publish_status
-from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec, sessions_recording_into
+from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec, editing, sessions_recording_into
 from runtime_session.session import RuntimeSession
 from runtime_session.store import FeatureSpecMismatchError, ImageSpec
 from schemas.dataset import Dataset
@@ -398,6 +398,19 @@ async def test_a_dataset_is_open_from_starting_its_worker_until_it_has_copied_ba
     await session.unload_dataset()
 
     assert seen == {"starting": [session.id], "stopped": [session.id]}
+    assert sessions_recording_into(dataset.id) == []
+    await session.stop()
+
+
+async def test_a_dataset_being_edited_is_not_opened_for_recording(new_session, fake_cameras, fake_worker) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+
+    with editing(dataset.id), pytest.raises(RuntimeSessionCommandError, match="is being edited"):
+        await session.load_dataset(dataset)
+
+    assert session.state().dataset is None
     assert sessions_recording_into(dataset.id) == []
     await session.stop()
 

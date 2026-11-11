@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from api.dependencies import get_dataset_service, get_runtime_session_registry
 from main import app
+from runtime_session.dataset import editing
 from runtime_session.registry import RuntimeSessionRegistry
 from schemas import Dataset
 from settings import Settings
@@ -99,6 +100,15 @@ def test_patch_is_refused_while_a_session_records_into_the_dataset(dataset: Data
 
     assert response.status_code == 409
     assert "the runtime session for 'Desk'" in response.json()["message"]
+    assert TestClient(app).get(_url(dataset, 1)).json()["tasks"] == ["plcae"]
+
+
+def test_patch_is_refused_while_the_dataset_is_being_edited(dataset: Dataset) -> None:
+    with editing(dataset.id):
+        response = TestClient(app).patch(_url(dataset, 1), json={"task": "place"})
+
+    assert response.status_code == 409
+    assert "is being edited" in response.json()["message"]
     assert TestClient(app).get(_url(dataset, 1)).json()["tasks"] == ["plcae"]
 
 

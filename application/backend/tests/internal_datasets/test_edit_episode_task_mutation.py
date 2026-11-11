@@ -126,7 +126,11 @@ def test_lerobot_reads_the_edited_dataset(root: Path) -> None:
         ["place the cube"],
         ["pick the cube"],
     ]
-    assert [dataset[index]["task"] for index in range(len(dataset))] == (
+    # LeRobot's own lookup (DatasetReader.get_item), on the raw rows: decoding the videos needs FFmpeg.
+    frame_tasks = [
+        dataset.meta.tasks.iloc[int(dataset.get_raw_item(index)["task_index"])].name for index in range(len(dataset))
+    ]
+    assert frame_tasks == (
         ["pick the cube"] * FRAMES_PER_EPISODE
         + ["place the cube"] * FRAMES_PER_EPISODE
         + ["pick the cube"] * FRAMES_PER_EPISODE
