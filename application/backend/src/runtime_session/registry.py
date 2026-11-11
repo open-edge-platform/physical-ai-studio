@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from exceptions import DeviceInUseError
+from runtime_session.dataset import sessions_recording_into
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -83,6 +84,17 @@ class RuntimeSessionRegistry:
         """Raises ``DeviceInUseError`` when a session holds the robot."""
         if (holder := self._robots.get(robot_id)) is not None:
             raise DeviceInUseError(device=f"Robot {name!r}", holder=holder.label)
+
+    def holder_of_dataset(self, dataset_id: UUID) -> str | None:
+        """How to name the session that has ``dataset_id`` open, or ``None``.
+
+        A recording copies the dataset when it opens and copies it back when it closes, so a session counts
+        from before its worker starts until the copy-back is done, also while the session itself is closing.
+        """
+        for session_id in sessions_recording_into(dataset_id):
+            session = self._sessions.get(session_id)
+            return session.label if session is not None else "a runtime session that is closing"
+        return None
 
     async def until_closed(self, within: float) -> None:
         """Wait for every session that is closing to let go of its devices; give up after ``within`` seconds.

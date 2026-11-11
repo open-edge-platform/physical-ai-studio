@@ -26,6 +26,8 @@ from workers import dataset_worker as dataset_rpc
 from workers.dataset_worker import DatasetWorker, RecordingStatus
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from runtime_session.store import Store
     from schemas.dataset import Dataset
 
@@ -34,6 +36,23 @@ COMPONENT = "dataset"
 
 _READY_S = 10.0
 """How long a started dataset worker has to answer on the bus."""
+
+_OPEN: dict[UUID, list[str]] = {}
+"""The sessions recording into each dataset, from before the worker opens it until it has copied back."""
+
+
+def sessions_recording_into(dataset_id: UUID) -> list[str]:
+    """Ids of the sessions with ``dataset_id`` open, including one still opening it or copying it back."""
+    return list(_OPEN.get(dataset_id, ()))
+
+
+def _close(dataset_id: UUID, session_id: str) -> None:
+    sessions = _OPEN.get(dataset_id, [])
+    if session_id in sessions:
+        sessions.remove(session_id)
+    if not sessions:
+        _OPEN.pop(dataset_id, None)
+
 
 DEFAULT_RECORDING_FPS = 30
 """The rate a new dataset is recorded at; an existing one keeps its own."""
@@ -143,6 +162,9 @@ class Recording:
             WorkerStartupError: The dataset could not be opened for recording.
         """
         async with AsyncExitStack() as stack:
+            _OPEN.setdefault(self.dataset.id, []).append(self._session_id)
+            # Registered first, so it runs last: after the worker has stopped and copied back.
+            stack.callback(_close, self.dataset.id, self._session_id)
             bus = stack.enter_context(Bus.join(self._session_id))
             publish_status(bus, COMPONENT, "starting")
             # Runs after the worker has stopped, while the bus is still open.
