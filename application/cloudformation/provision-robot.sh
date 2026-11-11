@@ -10,12 +10,10 @@ Usage: $(basename "$0") --thing-name NAME [options]
 Options:
   --thing-name NAME        IoT thing name for the robot (required, e.g. robot-01)
   --thing-group NAME       Thing group to add the robot to (created if missing)
-  --stack NAME             aws-batch-trainer.yaml stack name to read StackIdentifier from
-                           (default: physical-ai-studio-batch-trainer)
+  --stack NAME             aws-batch-trainer.yaml stack name to read StackIdentifier from,
+                           in the AWS CLI configured region (default: physical-ai-studio-batch-trainer)
   --stack-identifier ID    StackIdentifier output (<account-id>-<region>-<stack-uuid>);
                            skips the CloudFormation lookup
-  --region REGION          Region of the stack when reading StackIdentifier
-                           (default: AWS CLI configured region)
   --csr FILE               Sign this CSR instead of generating a key pair; the
                            private key stays on the robot
   --nucleus-version VER    Greengrass nucleus version installed on the robot (default: 2.15.0)
@@ -29,7 +27,6 @@ THING_NAME=""
 THING_GROUP=""
 STACK_NAME="physical-ai-studio-batch-trainer"
 STACK_IDENTIFIER=""
-REGION=""
 CSR_FILE=""
 NUCLEUS_VERSION="2.15.0"
 OUTPUT_DIR=""
@@ -43,7 +40,6 @@ while [[ $# -gt 0 ]]; do
     --thing-group) THING_GROUP="$2"; shift 2 ;;
     --stack) STACK_NAME="$2"; shift 2 ;;
     --stack-identifier) STACK_IDENTIFIER="$2"; shift 2 ;;
-    --region) REGION="$2"; shift 2 ;;
     --csr) CSR_FILE="$2"; shift 2 ;;
     --nucleus-version) NUCLEUS_VERSION="$2"; shift 2 ;;
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
@@ -71,13 +67,8 @@ for cmd in aws curl; do
 done
 
 if [[ -z "$STACK_IDENTIFIER" ]]; then
-  REGION="${REGION:-${AWS_REGION:-$(aws configure get region || true)}}"
-  if [[ -z "$REGION" ]]; then
-    echo "AWS region not set; pass --region or --stack-identifier." >&2
-    exit 1
-  fi
   echo "Reading StackIdentifier from stack $STACK_NAME..."
-  STACK_IDENTIFIER="$(aws cloudformation describe-stacks --region "$REGION" --output text \
+  STACK_IDENTIFIER="$(aws cloudformation describe-stacks --output text \
     --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='StackIdentifier'].OutputValue | [0]")"
 fi
 
