@@ -258,3 +258,7 @@ aws iot update-certificate \
 | **Single robot should stop receiving deployments** | IoT Core → Thing Groups | Remove `<robot-id>` from the Thing Group | Only that robot stops receiving fleet updates |
 | **Revoke S3/Batch permissions across stack** | IAM → Roles → `pai-studio-<stack_uid>` | Update the IAM policy on `StudioRole` | All operators and robots using that stack |
 | **Block all robots from exchanging certs for STS tokens** | IoT Core → Policies → `pai-robot-<stack_uid>` | Remove `iot:AssumeRoleWithCertificate` statement | All robots enrolled in that stack (human IAM profiles unaffected) |
+
+
+
+now please check the updated cloudformation template, we need to add auth provider to enable authenticating with a robot certificate. please consider that the certificate is located at a standard path on the filesystem

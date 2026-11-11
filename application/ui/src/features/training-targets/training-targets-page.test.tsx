@@ -83,7 +83,9 @@ describe('TrainingTargetsPage', () => {
         rs.spyOn(toast, 'negative').mockReturnValue(rs.fn());
         server.use(
             http.get('/api/remote-trainers/providers', () => HttpResponse.json(providerSchema)),
-            http.get('/api/remote-trainers/providers/aws/auth', () => HttpResponse.json({ profiles: ['studio'] })),
+            http.get('/api/remote-trainers/providers/aws/auth', () =>
+                HttpResponse.json({ profiles: ['studio'], use_device_certificate: false })
+            ),
             http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)),
             http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: false }))
         );
@@ -660,7 +662,7 @@ describe('TrainingTargetsPage', () => {
                 )
             ),
             http.get('/api/remote-trainers/providers/aws/auth', () =>
-                HttpResponse.json({ profiles: ['studio', 'another-profile'] })
+                HttpResponse.json({ profiles: ['studio', 'another-profile'], use_device_certificate: false })
             )
         );
         render(<TrainingTargetsPage />);
@@ -680,5 +682,42 @@ describe('TrainingTargetsPage', () => {
         await user.click(within(dialog).getByRole('button', { name: /AWS profile/ }));
         await user.click(await screen.findByRole('option', { name: 'another-profile' }));
         expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('connects directly from the first step when a robot device certificate is active', async () => {
+        const user = userEvent.setup();
+        let resolution: unknown;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get('/api/remote-trainers/providers/aws/auth', () =>
+                HttpResponse.json({ profiles: [], use_device_certificate: true })
+            ),
+            http.post('/api/remote-trainers/providers/aws/configuration', async ({ request }) => {
+                resolution = await request.json();
+                return HttpResponse.json({
+                    ...(awsTrainer.connection as Extract<
+                        SchemaRemoteTrainer['connection'],
+                        { connection_mode: 'aws_batch' }
+                    >),
+                    profile_name: null,
+                });
+            }),
+            http.post(REMOTE_TRAINERS_PATH, () => HttpResponse.json(awsTrainer, { status: 201 }))
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS Provider' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Deploy and configure AWS stack' });
+        await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'Robot AWS');
+        await user.type(
+            await within(dialog).findByRole('textbox', { name: /^AWS stack ID/ }),
+            '123456789012-eu-west-1-f4a9b2c0'
+        );
+        const connectButton = await within(dialog).findByRole('button', { name: 'Connect' });
+        expect(connectButton).toBeEnabled();
+        await user.click(connectButton);
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(resolution).toEqual({
+            stack_id: '123456789012-eu-west-1-f4a9b2c0',
+        });
     });
 });

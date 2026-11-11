@@ -37,9 +37,7 @@ test('AWS setup requires a named profile and explains backend configuration', as
     await expect(configure.getByRole('heading')).toHaveCount(1);
     await expect(configure.getByRole('button', { name: /AWS profile/ })).toHaveCount(0);
     await configure.getByRole('textbox', { name: 'Name' }).fill('AWS Provider');
-    await configure
-        .getByRole('textbox', { name: 'AWS stack ID' })
-        .fill('123456789012-eu-west-1-f4a9b2c0');
+    await configure.getByRole('textbox', { name: 'AWS stack ID' }).fill('123456789012-eu-west-1-f4a9b2c0');
     await configure.getByRole('button', { name: 'Next' }).click();
     const dialog = page.getByRole('dialog', { name: 'Connect to AWS remote training stack' });
     await expect(dialog.getByText(/Configure and authenticate this profile on the Studio backend host/)).toBeVisible();

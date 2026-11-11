@@ -1,7 +1,9 @@
 import shlex
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound, SSOTokenLoadError
 
 from schemas.aws_auth import AwsCredentialSelection
@@ -99,3 +101,115 @@ def test_credential_provider_factory_returns_profile_provider() -> None:
     assert issue.profile_name == "studio"
     op_error = provider.to_operational_error(SSOTokenLoadError(error_msg="expired"))
     assert op_error.copy_text == "aws sso login --profile=studio"
+
+
+def _write_greengrass_bundle(tmp_path: Path) -> Path:
+    cert = tmp_path / "device.pem.crt"
+    key = tmp_path / "private.pem.key"
+    ca = tmp_path / "AmazonRootCA1.pem"
+    for p in (cert, key, ca):
+        p.write_text("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n", encoding="utf-8")
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "system": {
+                    "certificateFilePath": str(cert),
+                    "privateKeyPath": str(key),
+                    "rootCaPath": str(ca),
+                    "thingName": "robot-01",
+                },
+                "services": {
+                    "aws.greengrass.Nucleus": {
+                        "configuration": {
+                            "awsRegion": "eu-central-1",
+                            "iotRoleAlias": "pai-studio-default",
+                            "iotCredEndpoint": "abc123def.credentials.iot.eu-central-1.amazonaws.com",
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config
+
+
+async def test_iot_certificate_provider_exchanges_cert_for_session_without_role_chaining(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_greengrass_bundle(tmp_path)
+    monkeypatch.setenv("GREENGRASS_CONFIG_PATH", str(config_path))
+
+    capabilities = await auth.get_capabilities()
+    assert capabilities.use_device_certificate is True
+
+    connection = AwsBatchConnection.model_validate(
+        {
+            "stack_id": "123456789012-eu-central-1-f4a9b2c0",
+            "profile_name": None,
+        }
+    )
+    provider = auth.get_credential_provider(connection)
+    assert isinstance(provider, auth.IotCertificateCredentialProvider)
+
+    http_response = MagicMock(status_code=200)
+    http_response.json.return_value = {
+        "credentials": {
+            "accessKeyId": "ASIAIOTKEY",
+            "secretAccessKey": "iot-secret",
+            "sessionToken": "iot-token",
+        }
+    }
+    http_client = MagicMock()
+    http_client.__enter__.return_value.get.return_value = http_response
+    ssl_ctx = MagicMock()
+
+    with (
+        patch("ssl.create_default_context", return_value=ssl_ctx) as create_ssl,
+        patch("httpx.Client", return_value=http_client),
+        patch("boto3.Session") as boto_session,
+    ):
+        session = _make_session(connection)
+
+    create_ssl.assert_called_once()
+    ssl_ctx.load_cert_chain.assert_called_once_with(
+        certfile=str(tmp_path / "device.pem.crt"),
+        keyfile=str(tmp_path / "private.pem.key"),
+    )
+    http_client.__enter__.return_value.get.assert_called_once_with(
+        "https://abc123def.credentials.iot.eu-central-1.amazonaws.com/role-aliases/pai-studio-f4a9b2c0/credentials",
+        headers={"x-amzn-iot-thingname": "robot-01"},
+    )
+    boto_session.assert_called_once_with(
+        aws_access_key_id="ASIAIOTKEY",
+        aws_secret_access_key="iot-secret",
+        aws_session_token="iot-token",
+        region_name="eu-central-1",
+    )
+    session.client.assert_not_called()
+
+
+def test_iot_certificate_provider_diagnoses_rejected_certificate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_greengrass_bundle(tmp_path)
+    monkeypatch.setenv("GREENGRASS_CONFIG_PATH", str(config_path))
+    provider = auth.IotCertificateCredentialProvider(config_path)
+
+    http_response = MagicMock(status_code=403)
+    http_client = MagicMock()
+    http_client.__enter__.return_value.get.return_value = http_response
+
+    with (
+        patch("ssl.create_default_context", return_value=MagicMock()),
+        patch("httpx.Client", return_value=http_client),
+        pytest.raises(auth.IotCertificateError) as exc_info,
+    ):
+        provider.create_session(region="eu-central-1", role_arn="arn:aws:iam::123456789012:role/pai-studio-f4a9b2c0")
+
+    issue = provider.diagnose_error(exc_info.value)
+    assert issue is not None
+    assert issue.code == "aws_credentials_expired"
+    assert "robot-01" in issue.detail
+    assert issue.command is None

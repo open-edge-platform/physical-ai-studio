@@ -91,7 +91,12 @@ def test_configuration_object_is_excluded_from_data_expiration() -> None:
 
 def test_studio_can_read_only_the_trainer_log_group() -> None:
     policies = _template()["Resources"]["StudioRole"]["Properties"]["Policies"]
-    statements = [statement for policy in policies for statement in policy["PolicyDocument"]["Statement"]]
+    statements = [
+        statement
+        for policy in policies
+        for statement in policy["PolicyDocument"]["Statement"]
+        if isinstance(statement, dict)
+    ]
     logs = next(statement for statement in statements if statement["Action"] == "logs:GetLogEvents")
     assert logs["Effect"] == "Allow"
     assert logs["Resource"] == ["TrainerLogGroup.Arn", "${TrainerLogGroup.Arn}:*"]
@@ -209,7 +214,12 @@ def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
 )
 def test_bucket_location_permission_has_no_prefix_condition(role: str, prefixes: list[str] | str) -> None:
     policies = _template()["Resources"][role]["Properties"]["Policies"]
-    statements = [statement for policy in policies for statement in policy["PolicyDocument"]["Statement"]]
+    statements = [
+        statement
+        for policy in policies
+        for statement in policy["PolicyDocument"]["Statement"]
+        if isinstance(statement, dict)
+    ]
     location = next(statement for statement in statements if statement["Action"] == "s3:GetBucketLocation")
     assert location["Effect"] == "Allow"
     assert location["Resource"] == "JobsBucket.Arn"

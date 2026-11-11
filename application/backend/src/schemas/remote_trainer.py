@@ -223,7 +223,7 @@ class AwsBatchConnection(_AwsBatchResources):
     connection_mode: Literal[RemoteTrainerConnectionMode.AWS_BATCH] = RemoteTrainerConnectionMode.AWS_BATCH
     schema_version: Literal[1] = 1
     stack_id: str | None = Field(default=None, max_length=64, pattern=AWS_STACK_ID_PATTERN)
-    profile_name: AwsProfileName = "default"
+    profile_name: AwsProfileName | None = "default"
 
     @model_validator(mode="before")
     @classmethod

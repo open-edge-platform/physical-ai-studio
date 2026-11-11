@@ -21,7 +21,7 @@ def test_lists_backend_profiles() -> None:
     ):
         response = client.get(f"{BASE}/auth")
     assert response.status_code == 200
-    assert response.json() == {"profiles": ["studio"]}
+    assert response.json() == {"profiles": ["studio"], "use_device_certificate": False}
 
 
 def test_credential_check_uses_selected_profile() -> None:

@@ -36,6 +36,8 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
         isPending: isLoadingSchema,
         isError: schemaError,
     } = $api.useQuery('get', '/api/remote-trainers/providers');
+    const authCapabilities = $api.useQuery('get', '/api/remote-trainers/providers/aws/auth');
+    const useDeviceCertificate = authCapabilities.data?.use_device_certificate === true;
     const provider = providers?.find(({ id }) => id === 'aws');
     const resolve = $api.useMutation('post', '/api/remote-trainers/providers/aws/configuration');
     const create = $api.useMutation('post', '/api/remote-trainers', {
@@ -61,18 +63,18 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
     const submit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!isConfigurationValid || isPending) return;
-        if (step === 'configure') {
+        if (step === 'configure' && !useDeviceCertificate) {
             setStep('connect');
             return;
         }
-        if (!profileName.trim()) return;
+        if (!useDeviceCertificate && !profileName.trim()) return;
         create.reset();
         update.reset();
         try {
             const connection = await resolve.mutateAsync({
                 body: {
                     stack_id: values.stack_id.trim(),
-                    profile_name: profileName.trim(),
+                    ...(useDeviceCertificate ? {} : { profile_name: profileName.trim() }),
                 },
             });
             const body = { name: name.trim(), connection };
@@ -188,10 +190,14 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
                     <Button
                         variant='accent'
                         type='submit'
-                        isDisabled={!isConfigurationValid || (step === 'connect' && !profileName.trim()) || isPending}
+                        isDisabled={
+                            !isConfigurationValid ||
+                            (!useDeviceCertificate && step === 'connect' && !profileName.trim()) ||
+                            isPending
+                        }
                         isPending={isPending}
                     >
-                        {step === 'configure'
+                        {step === 'configure' && !useDeviceCertificate
                             ? 'Next'
                             : isPending
                               ? 'Connecting…'

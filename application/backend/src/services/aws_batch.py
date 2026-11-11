@@ -36,7 +36,7 @@ def aws_batch_trainer_url(connection: AwsBatchConnection) -> str:
             "studio_role_arn": connection.studio_role_arn,
             "targets": json.dumps({key: target.model_dump() for key, target in connection.targets.items()}),
             **({"stack_id": connection.stack_id} if connection.stack_id else {}),
-            "profile_name": connection.profile_name,
+            **({"profile_name": connection.profile_name} if connection.profile_name else {}),
         }
     )
     return f"aws-batch://{connection.region}/{connection.bucket}?{query}"
@@ -44,6 +44,8 @@ def aws_batch_trainer_url(connection: AwsBatchConnection) -> str:
 
 def aws_batch_connection_from_url(url: str) -> AwsBatchConnection:
     """Restore pinned Batch resources without consulting mutable trainer configuration."""
+    from schemas.aws_auth import is_robot_enrolled
+
     location = urlsplit(url)
     if location.scheme != "aws-batch":
         raise ValueError("Expected an aws-batch trainer URL")
@@ -56,7 +58,9 @@ def aws_batch_connection_from_url(url: str) -> AwsBatchConnection:
                 "studio_role_arn": query["studio_role_arn"][0],
                 "targets": json.loads(query["targets"][0]),
                 "stack_id": query.get("stack_id", [None])[0],
-                "profile_name": query.get("profile_name", ["default"])[0],
+                "profile_name": query["profile_name"][0]
+                if "profile_name" in query
+                else (None if is_robot_enrolled() else "default"),
             }
         )
     except KeyError as exc:
