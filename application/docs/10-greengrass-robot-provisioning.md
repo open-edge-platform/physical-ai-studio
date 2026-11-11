@@ -119,15 +119,14 @@ application/cloudformation/provision-robot.sh \
   --ssh admin@robot-01.local
 ```
 
-Without `--stack-identifier`, the script reads the `StackIdentifier` output from `--stack` in `--region`. It derives the region, role alias (`pai-studio-<stack-uuid>`), and IoT policy (`pai-robot-<stack-uuid>`) from the identifier, checks that both exist and that the current AWS credentials belong to the identifier's account, and reads the IoT endpoints from the IoT API.
+Without `--stack-identifier`, the script reads the `StackIdentifier` output from `--stack` in the AWS CLI configured region. It derives the region, role alias (`pai-studio-<stack-uuid>`), and IoT policy (`pai-robot-<stack-uuid>`) from the identifier, checks that both exist and that the current AWS credentials belong to the identifier's account, and reads the IoT endpoints from the IoT API.
 
 | Option               | Default                            | Description                                                      |
 | -------------------- | ---------------------------------- | ---------------------------------------------------------------- |
 | `--thing-name`       | required                           | IoT thing name; also the MQTT client ID prefix.                  |
 | `--thing-group`      | none                               | Thing group to join; created if missing.                         |
 | `--stack-identifier` | none                               | `StackIdentifier` stack output; skips the CloudFormation lookup. |
-| `--stack`            | `physical-ai-studio-batch-trainer` | Stack to read `StackIdentifier` from.                            |
-| `--region`           | AWS CLI region                     | Region of `--stack`; ignored with `--stack-identifier`.          |
+| `--stack`            | `physical-ai-studio-batch-trainer` | Stack to read `StackIdentifier` from, in the AWS CLI configured region. |
 | `--csr`             | none                            | Sign a CSR instead of generating a key pair (see below).        |
 | `--nucleus-version` | `2.15.0`                        | Nucleus version installed on the robot.                         |
 | `--output-dir`      | `./robot-bundles/<thing-name>`  | Local bundle directory.                                         |
