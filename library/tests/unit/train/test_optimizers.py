@@ -6,8 +6,7 @@
 import pytest
 import torch
 
-from physicalai.train import optimizers
-from physicalai.train.optimizers import AdamWBF16Kahan, build_adamw_auto_precision
+from physicalai.train.optimizers import AdamWBF16Kahan, adamw_bf16_kahan, build_adamw_auto_precision
 
 _ACCELERATOR = "cuda" if torch.cuda.is_available() else "xpu" if torch.xpu.is_available() else None
 
@@ -67,7 +66,7 @@ class TestAdamW:
     @pytest.mark.parametrize("chunk_numel", [None, 1000])
     def test_bfloat16_tracks_float32_weights(self, monkeypatch: pytest.MonkeyPatch, chunk_numel: int | None) -> None:
         if chunk_numel is not None:
-            monkeypatch.setattr(optimizers, "_CHUNK_NUMEL", chunk_numel)
+            monkeypatch.setattr(adamw_bf16_kahan, "_CHUNK_NUMEL", chunk_numel)
         kwargs = {"lr": 1e-5, "betas": (0.9, 0.95), "weight_decay": 0.01}
         reference, plain, compensated = _params(torch.float32), _params(torch.bfloat16), _params(torch.bfloat16)
         _train(reference, torch.optim.AdamW(reference, **kwargs), steps=50)
@@ -135,7 +134,7 @@ class TestAdamW:
 
         def train(fused: bool) -> tuple[torch.Tensor, dict]:
             if not fused:
-                monkeypatch.setattr(optimizers, "_fused_update", lambda: None)
+                monkeypatch.setattr(adamw_bf16_kahan, "_fused_update", lambda: None)
             params = [torch.nn.Parameter(init.clone())]
             optimizer = build_adamw_auto_precision(params, lr=1e-5, betas=betas, weight_decay=0.01)
             generator = torch.Generator(device=_ACCELERATOR).manual_seed(0)
