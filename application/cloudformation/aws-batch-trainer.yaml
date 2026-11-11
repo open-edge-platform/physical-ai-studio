@@ -5,7 +5,8 @@ Description: |-
   Supported regions: us-east-1 (N. Virginia), us-west-2 (Oregon), and eu-central-1 (Frankfurt).
   Switch the AWS Console to one of the supported regions before creating this stack.
   Compute environments scale to zero when no jobs are running.
-  Named resources use the stack identifier <account-id>-<region>-<8-char-stack-uuid>.
+  Resource names end with the first 8 characters of the UUID CloudFormation generates
+  for this stack, for example pai-jobs-<stack-uuid>.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -191,6 +192,9 @@ Resources:
   JobsBucket:
     Type: AWS::S3::Bucket
     Properties:
+      BucketName: !Sub
+        - pai-jobs-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -242,6 +246,11 @@ Resources:
   StudioRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub
+        - pai-studio-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      # Must be at least the role alias credential duration.
+      MaxSessionDuration: 43200
       # Trusting the account root lets any IAM principal in this account that
       # holds sts:AssumeRole take this role. Suitable for a single-operator
       # development account; restrict Principal.AWS to specific users/roles
@@ -253,7 +262,52 @@ Resources:
             Principal:
               AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
             Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: credentials.iot.amazonaws.com
+            Action: sts:AssumeRole
       Policies:
+        - PolicyName: RobotGreengrass
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GreengrassLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/greengrass/*
+              - Sid: EcrAuth
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: EcrPull
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
+              - !If
+                - HasRobotArtifactBucket
+                - Sid: RobotArtifactBucket
+                  Effect: Allow
+                  Action:
+                    - s3:GetBucketLocation
+                    - s3:ListBucket
+                  Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}
+                - !Ref AWS::NoValue
+              - !If
+                - HasRobotArtifactBucket
+                - Sid: RobotArtifactObjects
+                  Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                  Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}/*
+                - !Ref AWS::NoValue
         - PolicyName: StudioJobStorage
           PolicyDocument:
             Version: "2012-10-17"
@@ -461,6 +515,9 @@ Resources:
   G4dnJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      JobQueueName: !Sub
+        - pai-g4dn-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       State: ENABLED
       Priority: 1
       ComputeEnvironmentOrder:
@@ -470,6 +527,9 @@ Resources:
   G6eJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      JobQueueName: !Sub
+        - pai-g6e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       State: ENABLED
       Priority: 1
       ComputeEnvironmentOrder:
@@ -479,6 +539,9 @@ Resources:
   G7eJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      JobQueueName: !Sub
+        - pai-g7e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       State: ENABLED
       Priority: 1
       ComputeEnvironmentOrder:
@@ -488,6 +551,9 @@ Resources:
   TrainerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
+      LogGroupName: !Sub
+        - /pai/trainer/${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       RetentionInDays: 14
 
   # S3 contract between Studio and the one-shot trainer container. Studio
@@ -498,6 +564,9 @@ Resources:
   G4dnJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
+      JobDefinitionName: !Sub
+        - pai-g4dn-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       Type: container
       Parameters:
         job_prefix: ""
@@ -536,6 +605,9 @@ Resources:
   G6eJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
+      JobDefinitionName: !Sub
+        - pai-g6e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       Type: container
       Parameters:
         job_prefix: ""
@@ -574,6 +646,9 @@ Resources:
   G7eJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
+      JobDefinitionName: !Sub
+        - pai-g7e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       Type: container
       Parameters:
         job_prefix: ""
@@ -724,88 +799,21 @@ Resources:
             queue: !Ref G7eJobQueue
             job_definition: !Ref G7eJobDefinition
 
-  # Robot fleet: Greengrass token exchange role, IoT role alias and shared IoT policy.
-  GreengrassTokenExchangeRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub
-        - GreengrassTokenExchange-${AWS::AccountId}-${AWS::Region}-${StackUuid}
-        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: credentials.iot.amazonaws.com
-            Action: sts:AssumeRole
-
-  GreengrassTokenExchangePolicy:
-    Type: AWS::IAM::ManagedPolicy
-    Properties:
-      ManagedPolicyName: !Sub
-        - GreengrassTokenExchange-${AWS::AccountId}-${AWS::Region}-${StackUuid}-Access
-        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
-      Roles:
-        - !Ref GreengrassTokenExchangeRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: CloudWatchLogs
-            Effect: Allow
-            Action:
-              - logs:CreateLogGroup
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-              - logs:DescribeLogStreams
-            Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/greengrass/*
-          - Sid: EcrAuth
-            Effect: Allow
-            Action: ecr:GetAuthorizationToken
-            Resource: "*"
-          - Sid: EcrPull
-            Effect: Allow
-            Action:
-              - ecr:BatchCheckLayerAvailability
-              - ecr:BatchGetImage
-              - ecr:GetDownloadUrlForLayer
-            Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
-          - Sid: AssumeStudioRole
-            Effect: Allow
-            Action: sts:AssumeRole
-            Resource: !GetAtt StudioRole.Arn
-          - !If
-            - HasRobotArtifactBucket
-            - Sid: S3Bucket
-              Effect: Allow
-              Action:
-                - s3:GetBucketLocation
-                - s3:ListBucket
-              Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}
-            - !Ref AWS::NoValue
-          - !If
-            - HasRobotArtifactBucket
-            - Sid: S3Objects
-              Effect: Allow
-              Action:
-                - s3:GetObject
-                - s3:PutObject
-              Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}/*
-            - !Ref AWS::NoValue
-
-  GreengrassRoleAlias:
+  # Robot fleet: robots exchange their certificate for StudioRole credentials.
+  StudioRoleAlias:
     Type: AWS::IoT::RoleAlias
     Properties:
       RoleAlias: !Sub
-        - GreengrassRoleAlias-${AWS::AccountId}-${AWS::Region}-${StackUuid}
+        - pai-studio-${StackUuid}
         - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
-      RoleArn: !GetAtt GreengrassTokenExchangeRole.Arn
+      RoleArn: !GetAtt StudioRole.Arn
       CredentialDurationSeconds: !Ref RobotCredentialDurationSeconds
 
-  GreengrassIoTPolicy:
+  RobotIoTPolicy:
     Type: AWS::IoT::Policy
     Properties:
       PolicyName: !Sub
-        - GreengrassIoTPolicy-${AWS::AccountId}-${AWS::Region}-${StackUuid}
+        - pai-robot-${StackUuid}
         - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       PolicyDocument:
         Version: "2012-10-17"
@@ -826,59 +834,7 @@ Resources:
             Resource: "*"
           - Effect: Allow
             Action: iot:AssumeRoleWithCertificate
-            Resource: !GetAtt GreengrassRoleAlias.RoleAliasArn
-
-  # CloudFormation has no native resource exposing the account IoT endpoints.
-  IoTEndpointLookupRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: DescribeIoTEndpoint
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: iot:DescribeEndpoint
-                Resource: "*"
-
-  IoTEndpointLookupFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      Runtime: python3.13
-      Handler: index.handler
-      Timeout: 30
-      Role: !GetAtt IoTEndpointLookupRole.Arn
-      Code:
-        ZipFile: |
-          import boto3
-          import cfnresponse
-
-          def handler(event, context):
-              data = {}
-              status = cfnresponse.SUCCESS
-              try:
-                  if event["RequestType"] != "Delete":
-                      iot = boto3.client("iot")
-                      data["DataEndpoint"] = iot.describe_endpoint(endpointType="iot:Data-ATS")["endpointAddress"]
-                      data["CredentialEndpoint"] = iot.describe_endpoint(endpointType="iot:CredentialProvider")["endpointAddress"]
-              except Exception as error:
-                  print(error)
-                  status = cfnresponse.FAILED
-              cfnresponse.send(event, context, status, data, "IoTEndpoints")
-
-  IoTEndpoints:
-    Type: Custom::IoTEndpoints
-    Properties:
-      ServiceToken: !GetAtt IoTEndpointLookupFunction.Arn
+            Resource: !GetAtt StudioRoleAlias.RoleAliasArn
 
 Outputs:
   ConfigurationUri:
@@ -886,35 +842,7 @@ Outputs:
     Value: !Sub s3://${JobsBucket}/studio-config.json
 
   StackIdentifier:
-    Description: Composite identifier <account-id>-<region>-<8-char-stack-uuid> used in resource names.
+    Description: <account-id>-<region>-<stack-uuid>; resource names and ARNs derive from it, e.g. pai-studio-<stack-uuid>.
     Value: !Sub
       - ${AWS::AccountId}-${AWS::Region}-${StackUuid}
       - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
-
-  StudioRoleArn:
-    Description: Studio role ARN; robots can assume it with their token exchange credentials.
-    Value: !GetAtt StudioRole.Arn
-
-  GreengrassTokenExchangeRoleArn:
-    Description: Robot token exchange IAM role ARN.
-    Value: !GetAtt GreengrassTokenExchangeRole.Arn
-
-  GreengrassRoleAliasName:
-    Description: Greengrass nucleus iotRoleAlias.
-    Value: !Ref GreengrassRoleAlias
-
-  GreengrassRoleAliasArn:
-    Description: IoT role alias ARN.
-    Value: !GetAtt GreengrassRoleAlias.RoleAliasArn
-
-  GreengrassIoTPolicyName:
-    Description: IoT policy to attach to robot certificates.
-    Value: !Ref GreengrassIoTPolicy
-
-  IoTDataEndpoint:
-    Description: Greengrass nucleus iotDataEndpoint.
-    Value: !GetAtt IoTEndpoints.DataEndpoint
-
-  IoTCredEndpoint:
-    Description: Greengrass nucleus iotCredEndpoint.
-    Value: !GetAtt IoTEndpoints.CredentialEndpoint

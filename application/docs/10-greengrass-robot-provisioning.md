@@ -5,7 +5,7 @@ Robots run the [AWS IoT Greengrass V2](https://docs.aws.amazon.com/greengrass/v2
 ```mermaid
 flowchart LR
   subgraph Account["One-time: aws-batch-trainer.yaml"]
-    Role[IAM token exchange role] --> Alias[IoT role alias]
+    Role[Studio IAM role] --> Alias[IoT role alias]
     Alias --> Policy[Shared IoT policy]
     Endpoints[IoT endpoints]
   end
@@ -18,7 +18,7 @@ flowchart LR
   Bundle --> Nucleus[Greengrass nucleus on robot]
 ```
 
-At runtime, the robot connects to the IoT data endpoint over MQTT with its certificate and calls the credentials endpoint with the role alias to obtain short-lived credentials for the token exchange role.
+At runtime, the robot connects to the IoT data endpoint over MQTT with its certificate and calls the credentials endpoint with the role alias to obtain short-lived credentials for the Studio role.
 
 ## Prerequisites
 
@@ -45,54 +45,49 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
-`CAPABILITY_NAMED_IAM` is required because the robot IAM role and policy have explicit names. In the AWS Console, confirm the corresponding acknowledgement checkbox.
+`CAPABILITY_NAMED_IAM` is required because the Studio IAM role has an explicit name. In the AWS Console, confirm the corresponding acknowledgement checkbox.
 
-Named resources use the stack identifier `<account-id>-<region>-<8-char-stack-uuid>`, for example `123456789012-us-east-1-6ba57d60`, where the last part is the first segment of the CloudFormation stack ID. This keeps names unique when several stacks share an account. The identifier is exported as the `StackIdentifier` output.
+`<stack-uuid>` is the first 8 characters of the UUID CloudFormation generates for the stack, the last segment of the stack ID (`arn:aws:cloudformation:<region>:<account-id>:stack/<stack-name>/6ba57d60-dddb-11f1-92b4-0affcf8b7305` gives `6ba57d60`). Every named resource ends with it, so the jobs bucket is `pai-jobs-6ba57d60`. The stack identifier `<account-id>-<region>-<stack-uuid>` is published as the `StackIdentifier` output.
 
 | Robot fleet parameter            | Default | Description                                                         |
 | -------------------------------- | ------- | ------------------------------------------------------------------- |
 | `RobotArtifactBucketName`        | empty   | Additional S3 bucket robots can read and write. Empty grants none.  |
 | `RobotCredentialDurationSeconds` | `3600`  | Lifetime of credentials vended through the role alias (900–43200).  |
 
-The stack creates, in addition to the AWS Batch resources:
+| Resource            | Logical ID          | Name                         | ARN                                                                 |
+| ------------------- | ------------------- | ---------------------------- | ------------------------------------------------------------------- |
+| S3 jobs bucket      | `JobsBucket`        | `pai-jobs-<stack-uuid>`      | `arn:aws:s3:::pai-jobs-<stack-uuid>`                                |
+| Studio IAM role     | `StudioRole`        | `pai-studio-<stack-uuid>`    | `arn:aws:iam::<account-id>:role/pai-studio-<stack-uuid>`            |
+| IoT role alias      | `StudioRoleAlias`   | `pai-studio-<stack-uuid>`    | `arn:aws:iot:<region>:<account-id>:rolealias/pai-studio-<stack-uuid>` |
+| IoT policy          | `RobotIoTPolicy`    | `pai-robot-<stack-uuid>`     | `arn:aws:iot:<region>:<account-id>:policy/pai-robot-<stack-uuid>`   |
+| Trainer log group   | `TrainerLogGroup`   | `/pai/trainer/<stack-uuid>`  | `arn:aws:logs:<region>:<account-id>:log-group:/pai/trainer/<stack-uuid>` |
+| g4dn job queue      | `G4dnJobQueue`      | `pai-g4dn-<stack-uuid>`      | `arn:aws:batch:<region>:<account-id>:job-queue/pai-g4dn-<stack-uuid>` |
+| g4dn job definition | `G4dnJobDefinition` | `pai-g4dn-<stack-uuid>`      | `arn:aws:batch:<region>:<account-id>:job-definition/pai-g4dn-<stack-uuid>` |
+| g6e job queue       | `G6eJobQueue`       | `pai-g6e-<stack-uuid>`       | `arn:aws:batch:<region>:<account-id>:job-queue/pai-g6e-<stack-uuid>` |
+| g6e job definition  | `G6eJobDefinition`  | `pai-g6e-<stack-uuid>`       | `arn:aws:batch:<region>:<account-id>:job-definition/pai-g6e-<stack-uuid>` |
+| g7e job queue       | `G7eJobQueue`       | `pai-g7e-<stack-uuid>`       | `arn:aws:batch:<region>:<account-id>:job-queue/pai-g7e-<stack-uuid>` |
+| g7e job definition  | `G7eJobDefinition`  | `pai-g7e-<stack-uuid>`       | `arn:aws:batch:<region>:<account-id>:job-definition/pai-g7e-<stack-uuid>` |
 
-| Resource                                     | Name                                                |
-| -------------------------------------------- | --------------------------------------------------- |
-| Token exchange IAM role                      | `GreengrassTokenExchange-<stack-identifier>`        |
-| Token exchange IAM policy                    | `GreengrassTokenExchange-<stack-identifier>-Access` |
-| IoT role alias                               | `GreengrassRoleAlias-<stack-identifier>`            |
-| Shared IoT policy                            | `GreengrassIoTPolicy-<stack-identifier>`            |
-| IoT endpoint lookup (Lambda custom resource) | generated                                           |
+Networking and Batch support resources use generated names.
 
-- **Token exchange role and policy**: trusted by `credentials.iot.amazonaws.com`; grants CloudWatch Logs under `/aws/greengrass/*`, ECR image pulls in the account, `sts:AssumeRole` on the stack's Studio role, and optional S3 access to `RobotArtifactBucketName`.
-- **Role alias**: bridges the IoT credential provider to the role and caps session duration. To restrict the whole fleet in an emergency, point the alias at a more restricted role.
-- **Shared IoT policy**: allows `iot:Connect` only with a client ID starting with the robot's thing name, MQTT publish/subscribe/receive, `greengrass:*`, and `iot:AssumeRoleWithCertificate` on the role alias only.
-- **Endpoint lookup**: a Lambda-backed custom resource that reads the account IoT endpoints.
+- **Studio role**: used by the Studio backend and, through the role alias, by robots. It trusts the account and `credentials.iot.amazonaws.com`, and in addition to Studio job permissions grants CloudWatch Logs under `/aws/greengrass/*`, ECR image pulls in the account, and optional S3 access to `RobotArtifactBucketName`.
+- **Role alias**: bridges the IoT credential provider to the Studio role and caps session duration. To restrict the whole fleet in an emergency, point the alias at a more restricted role.
+- **Robot IoT policy**: allows `iot:Connect` only with a client ID starting with the robot's thing name, MQTT publish/subscribe/receive, `greengrass:*`, and `iot:AssumeRoleWithCertificate` on the role alias only.
 
-| Output                           | Used as                                                 |
-| -------------------------------- | ------------------------------------------------------- |
-| `StackIdentifier`                | Suffix of the named resources.                          |
-| `StudioRoleArn`                  | Role robots can assume for Studio job storage access.   |
-| `GreengrassTokenExchangeRoleArn` | Token exchange IAM role ARN.                            |
-| `GreengrassRoleAliasName`        | Nucleus `iotRoleAlias`.                                 |
-| `GreengrassRoleAliasArn`         | Role alias ARN.                                         |
-| `GreengrassIoTPolicyName`        | Policy attached to robot certificates.                  |
-| `IoTDataEndpoint`                | Nucleus `iotDataEndpoint` (`<prefix>-ats.iot...`).      |
-| `IoTCredEndpoint`                | Nucleus `iotCredEndpoint` (`<prefix>.credentials...`).  |
+The stack has two outputs:
 
-To widen robot permissions, edit `GreengrassTokenExchangePolicy` in the template and update the stack. Changes apply to the fleet when robots next refresh credentials.
+| Output             | Used as                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| `ConfigurationUri` | S3 configuration URI for the Studio AWS Batch training target.             |
+| `StackIdentifier`  | `<account-id>-<region>-<stack-uuid>`; every name and ARN above derives from it. |
 
-### Assume the Studio role from robots
+The account IoT endpoints are not stack resources; read them with `aws iot describe-endpoint --endpoint-type iot:Data-ATS` and `--endpoint-type iot:CredentialProvider`. The provisioning script does this automatically.
 
-The token exchange role may assume the stack's Studio role, which trusts its own account. On the robot, components that depend on `aws.greengrass.TokenExchangeService` receive the token exchange credentials through the container credentials endpoint. Use them as the source for the Studio role, for example in an AWS config file:
+To change robot permissions, edit the `StudioRole` policies in the template and update the stack. Changes apply to the fleet when robots next refresh credentials.
 
-```ini
-[profile studio]
-role_arn = <StudioRoleArn>
-credential_source = EcsContainer
-```
+### Robot permissions
 
-The Studio role session is chained from the token exchange credentials, so it is limited to one hour regardless of the role's maximum session duration. The Studio role grants read and write access to the `jobs/` and `validation/` prefixes of the stack's jobs bucket, plus AWS Batch job submission; every provisioned robot inherits these permissions.
+Robots receive Studio role credentials directly from the credentials endpoint; components that depend on `aws.greengrass.TokenExchangeService` get them through the container credentials endpoint with no extra configuration. Every provisioned robot therefore has the Studio role's permissions, including read and write access to the `jobs/` and `validation/` prefixes of the jobs bucket and AWS Batch job submission.
 
 ## Prepare the robot
 
@@ -119,18 +114,20 @@ Run [`provision-robot.sh`](../cloudformation/provision-robot.sh) on the administ
 application/cloudformation/provision-robot.sh \
   --thing-name robot-01 \
   --thing-group warehouse-robots \
-  --stack physical-ai-studio-batch-trainer \
-  --region us-east-1 \
+  --stack-identifier 123456789012-us-east-1-6ba57d60 \
   --nucleus-version 2.15.0 \
   --ssh admin@robot-01.local
 ```
 
-| Option              | Default                         | Description                                                     |
-| ------------------- | ------------------------------- | --------------------------------------------------------------- |
-| `--thing-name`      | required                        | IoT thing name; also the MQTT client ID prefix.                 |
-| `--thing-group`     | none                            | Thing group to join; created if missing.                        |
-| `--stack`           | `physical-ai-studio-batch-trainer` | Name of the shared stack to read outputs from.               |
-| `--region`          | AWS CLI region                  | Region of the shared stack.                                     |
+Without `--stack-identifier`, the script reads the `StackIdentifier` output from `--stack` in `--region`. It derives the region, role alias (`pai-studio-<stack-uuid>`), and IoT policy (`pai-robot-<stack-uuid>`) from the identifier, checks that both exist and that the current AWS credentials belong to the identifier's account, and reads the IoT endpoints from the IoT API.
+
+| Option               | Default                            | Description                                                      |
+| -------------------- | ---------------------------------- | ---------------------------------------------------------------- |
+| `--thing-name`       | required                           | IoT thing name; also the MQTT client ID prefix.                  |
+| `--thing-group`      | none                               | Thing group to join; created if missing.                         |
+| `--stack-identifier` | none                               | `StackIdentifier` stack output; skips the CloudFormation lookup. |
+| `--stack`            | `physical-ai-studio-batch-trainer` | Stack to read `StackIdentifier` from.                            |
+| `--region`           | AWS CLI region                     | Region of `--stack`; ignored with `--stack-identifier`.          |
 | `--csr`             | none                            | Sign a CSR instead of generating a key pair (see below).        |
 | `--nucleus-version` | `2.15.0`                        | Nucleus version installed on the robot.                         |
 | `--output-dir`      | `./robot-bundles/<thing-name>`  | Local bundle directory.                                         |
@@ -172,12 +169,12 @@ Copy `robot-01.csr` to the administrator machine and pass `--csr robot-01.csr` t
 
 ## Verify the robot credentials
 
-Before installing Greengrass, you can confirm that the certificate, IoT policy, and role alias work together by requesting credentials directly from the credentials endpoint. Run this from the bundle directory, using the `GreengrassRoleAliasName` and `IoTCredEndpoint` stack outputs:
+Before installing Greengrass, you can confirm that the certificate, IoT policy, and role alias work together by requesting credentials directly from the credentials endpoint. Run this from the bundle directory; `iotRoleAlias` and `iotCredEndpoint` are in its `config.yaml`:
 
 ```bash
 curl --cert device.pem.crt --key private.pem.key --cacert AmazonRootCA1.pem \
   -H "x-amzn-iot-thingname: robot-01" \
-  "https://<IoTCredEndpoint>/role-aliases/<GreengrassRoleAliasName>/credentials"
+  "https://<iotCredEndpoint>/role-aliases/pai-studio-<stack-uuid>/credentials"
 ```
 
 A JSON response with `accessKeyId`, `secretAccessKey`, `sessionToken`, and `expiration` confirms the chain. The response contains live credentials; do not log or share it. If the certificate is inactive or revoked, the TLS handshake fails and `curl` returns no HTTP status.
@@ -213,7 +210,7 @@ aws greengrassv2 create-deployment \
   --region us-east-1
 ```
 
-Robots added to the group later receive the group's latest deployment automatically. Components pulling artifacts from S3 or images from ECR use the token exchange role permissions.
+Robots added to the group later receive the group's latest deployment automatically. Components pulling artifacts from S3 or images from ECR use the Studio role permissions.
 
 ## Revoke or decommission a robot
 
@@ -230,7 +227,7 @@ To remove a robot completely:
 ```bash
 CERT_ARN=arn:aws:iot:us-east-1:<account-id>:cert/<certificate-id>
 aws iot detach-thing-principal --thing-name robot-01 --principal "$CERT_ARN"
-aws iot detach-policy --policy-name GreengrassIoTPolicy-<stack-identifier> --target "$CERT_ARN"
+aws iot detach-policy --policy-name pai-robot-<stack-uuid> --target "$CERT_ARN"
 aws iot update-certificate --certificate-id <certificate-id> --new-status INACTIVE
 aws iot delete-certificate --certificate-id <certificate-id>
 aws greengrassv2 delete-core-device --core-device-thing-name robot-01

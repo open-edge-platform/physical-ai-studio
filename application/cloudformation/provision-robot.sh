@@ -10,8 +10,12 @@ Usage: $(basename "$0") --thing-name NAME [options]
 Options:
   --thing-name NAME        IoT thing name for the robot (required, e.g. robot-01)
   --thing-group NAME       Thing group to add the robot to (created if missing)
-  --stack NAME             aws-batch-trainer.yaml stack name (default: physical-ai-studio-batch-trainer)
-  --region REGION          AWS region (default: AWS CLI configured region)
+  --stack NAME             aws-batch-trainer.yaml stack name to read StackIdentifier from
+                           (default: physical-ai-studio-batch-trainer)
+  --stack-identifier ID    StackIdentifier output (<account-id>-<region>-<stack-uuid>);
+                           skips the CloudFormation lookup
+  --region REGION          Region of the stack when reading StackIdentifier
+                           (default: AWS CLI configured region)
   --csr FILE               Sign this CSR instead of generating a key pair; the
                            private key stays on the robot
   --nucleus-version VER    Greengrass nucleus version installed on the robot (default: 2.15.0)
@@ -24,6 +28,7 @@ EOF
 THING_NAME=""
 THING_GROUP=""
 STACK_NAME="physical-ai-studio-batch-trainer"
+STACK_IDENTIFIER=""
 REGION=""
 CSR_FILE=""
 NUCLEUS_VERSION="2.15.0"
@@ -37,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --thing-name) THING_NAME="$2"; shift 2 ;;
     --thing-group) THING_GROUP="$2"; shift 2 ;;
     --stack) STACK_NAME="$2"; shift 2 ;;
+    --stack-identifier) STACK_IDENTIFIER="$2"; shift 2 ;;
     --region) REGION="$2"; shift 2 ;;
     --csr) CSR_FILE="$2"; shift 2 ;;
     --nucleus-version) NUCLEUS_VERSION="$2"; shift 2 ;;
@@ -64,12 +70,30 @@ for cmd in aws curl; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
 
-REGION="${REGION:-${AWS_REGION:-$(aws configure get region || true)}}"
-if [[ -z "$REGION" ]]; then
-  echo "AWS region not set; pass --region." >&2
+if [[ -z "$STACK_IDENTIFIER" ]]; then
+  REGION="${REGION:-${AWS_REGION:-$(aws configure get region || true)}}"
+  if [[ -z "$REGION" ]]; then
+    echo "AWS region not set; pass --region or --stack-identifier." >&2
+    exit 1
+  fi
+  echo "Reading StackIdentifier from stack $STACK_NAME..."
+  STACK_IDENTIFIER="$(aws cloudformation describe-stacks --region "$REGION" --output text \
+    --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='StackIdentifier'].OutputValue | [0]")"
+fi
+
+if [[ ! "$STACK_IDENTIFIER" =~ ^([0-9]{12})-([a-z]{2}(-[a-z]+)+-[0-9]+)-([0-9a-f]{8})$ ]]; then
+  echo "Invalid StackIdentifier: $STACK_IDENTIFIER" >&2
   exit 1
 fi
+ACCOUNT_ID="${BASH_REMATCH[1]}"
+REGION="${BASH_REMATCH[2]}"
+STACK_UUID="${BASH_REMATCH[4]}"
 AWS=(aws --region "$REGION" --output text)
+
+if [[ "$("${AWS[@]}" sts get-caller-identity --query Account)" != "$ACCOUNT_ID" ]]; then
+  echo "Current AWS credentials are not for account $ACCOUNT_ID." >&2
+  exit 1
+fi
 
 OUTPUT_DIR="${OUTPUT_DIR:-./robot-bundles/$THING_NAME}"
 if [[ -e "$OUTPUT_DIR/device.pem.crt" ]]; then
@@ -79,22 +103,14 @@ fi
 umask 077
 mkdir -p "$OUTPUT_DIR"
 
-stack_output() {
-  "${AWS[@]}" cloudformation describe-stacks --stack-name "$STACK_NAME" \
-    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]"
-}
-
-echo "Reading outputs from stack $STACK_NAME..."
-ROLE_ALIAS="$(stack_output GreengrassRoleAliasName)"
-IOT_POLICY="$(stack_output GreengrassIoTPolicyName)"
-DATA_ENDPOINT="$(stack_output IoTDataEndpoint)"
-CRED_ENDPOINT="$(stack_output IoTCredEndpoint)"
-for value in "$ROLE_ALIAS" "$IOT_POLICY" "$DATA_ENDPOINT" "$CRED_ENDPOINT"; do
-  if [[ -z "$value" || "$value" == "None" ]]; then
-    echo "Stack $STACK_NAME is missing expected outputs." >&2
-    exit 1
-  fi
-done
+# Names follow the aws-batch-trainer.yaml convention.
+ROLE_ALIAS="pai-studio-$STACK_UUID"
+IOT_POLICY="pai-robot-$STACK_UUID"
+"${AWS[@]}" iot describe-role-alias --role-alias "$ROLE_ALIAS" >/dev/null
+"${AWS[@]}" iot get-policy --policy-name "$IOT_POLICY" >/dev/null
+DATA_ENDPOINT="$("${AWS[@]}" iot describe-endpoint --endpoint-type iot:Data-ATS --query endpointAddress)"
+CRED_ENDPOINT="$("${AWS[@]}" iot describe-endpoint --endpoint-type iot:CredentialProvider --query endpointAddress)"
+echo "Using stack $STACK_IDENTIFIER (role alias $ROLE_ALIAS, IoT policy $IOT_POLICY)."
 
 # 1. Robot identity
 if THING_ARN="$("${AWS[@]}" iot describe-thing --thing-name "$THING_NAME" --query thingArn 2>/dev/null)"; then

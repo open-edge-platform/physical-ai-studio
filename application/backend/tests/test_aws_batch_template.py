@@ -58,17 +58,29 @@ def test_template_configuration_matches_resource_schema(region: str) -> None:
         }
     ]
     assert parsed.studio_role_arn == "arn:aws:iam::123456789012:role/studio"
-    assert set(template["Outputs"]) == {
-        "ConfigurationUri",
-        "StackIdentifier",
-        "StudioRoleArn",
-        "GreengrassTokenExchangeRoleArn",
-        "GreengrassRoleAliasName",
-        "GreengrassRoleAliasArn",
-        "GreengrassIoTPolicyName",
-        "IoTDataEndpoint",
-        "IoTCredEndpoint",
-    }
+    assert set(template["Outputs"]) == {"ConfigurationUri", "StackIdentifier"}
+
+
+@pytest.mark.parametrize(
+    ("resource", "name_property", "prefix"),
+    [
+        ("JobsBucket", "BucketName", "pai-jobs-"),
+        ("StudioRole", "RoleName", "pai-studio-"),
+        ("StudioRoleAlias", "RoleAlias", "pai-studio-"),
+        ("RobotIoTPolicy", "PolicyName", "pai-robot-"),
+        ("TrainerLogGroup", "LogGroupName", "/pai/trainer/"),
+        ("G4dnJobQueue", "JobQueueName", "pai-g4dn-"),
+        ("G4dnJobDefinition", "JobDefinitionName", "pai-g4dn-"),
+        ("G6eJobQueue", "JobQueueName", "pai-g6e-"),
+        ("G6eJobDefinition", "JobDefinitionName", "pai-g6e-"),
+        ("G7eJobQueue", "JobQueueName", "pai-g7e-"),
+        ("G7eJobDefinition", "JobDefinitionName", "pai-g7e-"),
+    ],
+)
+def test_resource_names_derive_from_stack_identifier(resource: str, name_property: str, prefix: str) -> None:
+    template_string, variables = _template()["Resources"][resource]["Properties"][name_property]
+    assert template_string == f"{prefix}${{StackUuid}}"
+    assert variables == {"StackUuid": ["0", ["-", ["2", ["/", "AWS::StackId"]]]]}
 
 
 def test_configuration_object_is_excluded_from_data_expiration() -> None:
@@ -168,7 +180,7 @@ def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
         compute_resources = template["Resources"][compute_env]["Properties"]["ComputeResources"]
         assert compute_resources["InstanceTypes"] == [["RegionInstanceTypes", "AWS::Region", size_key]]
         assert compute_resources["Subnets"] == expected_subnets
-    assert template["Resources"]["TrainerLogGroup"]["Properties"] == {"RetentionInDays": "14"}
+    assert template["Resources"]["TrainerLogGroup"]["Properties"]["RetentionInDays"] == "14"
     for definition, vcpus, memory, shm_size in [
         ("G4dnJobDefinition", "8", "30000", "8192"),
         ("G6eJobDefinition", "8", "60000", "16384"),
