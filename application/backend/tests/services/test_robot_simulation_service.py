@@ -634,3 +634,18 @@ async def test_a_robot_that_cannot_be_deleted_keeps_its_simulation_cameras(studi
         stored = await ProjectCameraService(session, RobotCatalogRegistry()).get_camera_list(PROJECT_ID)
     assert [c.id for c in stored] == [camera.id]
     assert await linked_cameras(studio_db) == [str(camera.id)]
+
+
+def test_a_camera_without_a_source_is_a_scene_camera_and_one_with_an_unknown_source_is_skipped() -> None:
+    camera = {
+        "width": 640,
+        "height": 480,
+        "fps": 30,
+        "stream_url": "/cameras/overview/mjpeg",
+        "snapshot_url": "/cameras/overview/frame.jpg",
+    }
+    cameras = module._cameras(
+        EXTERNAL, [{**camera, "name": "overview"}, {**camera, "name": "odd", "source": "elsewhere"}]
+    )
+
+    assert [(camera.name, camera.source) for camera in cameras] == [("overview", "scene")]

@@ -6,7 +6,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
-import { SchemaEnvironmentWithRelations } from '../../api/openapi-spec';
+import { SchemaEnvironmentWithRelations, SchemaSimulationCameraInfo } from '../../api/openapi-spec';
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
 import { render } from '../../test-utils/render';
@@ -32,7 +32,7 @@ const environment = {
     cameras: [simulationCamera('cam-1', 'robot-1', 'wrist')],
 } as unknown as SchemaEnvironmentWithRelations;
 
-const camera = (name: string, source: string) => ({
+const camera = (name: string, source: SchemaSimulationCameraInfo['source']) => ({
     name,
     width: 640,
     height: 480,

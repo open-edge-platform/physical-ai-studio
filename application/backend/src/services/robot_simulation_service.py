@@ -341,7 +341,7 @@ def _cameras(http_url: str, cameras: object) -> list[SimulationCameraInfo]:
                     width=camera["width"],
                     height=camera["height"],
                     fps=camera["fps"],
-                    source=camera.get("source", ""),
+                    source=camera.get("source", "scene"),
                     stream_url=f"{http_url}{camera['stream_url']}",
                     snapshot_url=f"{http_url}{camera['snapshot_url']}",
                 )

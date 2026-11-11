@@ -74,6 +74,10 @@ class SimulationLogs(BaseModel):
     lines: list[str] = Field(..., description="Latest log lines of the current or last simulation, oldest first")
 
 
+SimulationCameraSource = Literal["override", "model", "default", "scene"]
+"""Where a simulation camera comes from, as the simulation reports it."""
+
+
 class SimulationCameraInfo(BaseModel):
     """A camera a running simulation reports."""
 
@@ -81,7 +85,9 @@ class SimulationCameraInfo(BaseModel):
     width: int
     height: int
     fps: int
-    source: str = Field(..., description="Where the camera comes from: override, model, default (robot) or scene")
+    source: SimulationCameraSource = Field(
+        ..., description="Where the camera comes from: override, model or default for a robot camera, else scene"
+    )
     stream_url: str = Field(..., description="MJPEG stream of the camera")
     snapshot_url: str = Field(..., description="Latest frame of the camera as a JPEG")
     snapshot_proxy_url: str | None = Field(

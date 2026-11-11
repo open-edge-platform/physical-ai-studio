@@ -73,10 +73,12 @@ class RobotService:
         return await self._repo(project_id).save(robot)
 
     async def update_robot(self, project_id: UUID, robot: Robot, *, commit: bool = True) -> Robot:
-        """Update *robot*; with ``commit=False`` the caller commits it, with more."""
-        return await self._repo(project_id).update(
-            robot, partial_update=robot.model_dump(exclude={"id"}), commit=commit
-        )
+        """Update *robot*; with ``commit=False`` the caller commits it, with more, and gets *robot* back."""
+        repo = self._repo(project_id)
+        if not commit:
+            await repo.stage_update(robot)
+            return robot
+        return await repo.update(robot, partial_update=robot.model_dump(exclude={"id"}))
 
     async def delete_robot(self, project_id: UUID, robot_id: UUID) -> None:
         repo = self._repo(project_id)
@@ -89,7 +91,7 @@ class RobotService:
             # One transaction, the robot first: deleting it takes the database's write lock, so the
             # cameras listed next include any that an addition committed before, and an addition
             # after it finds no robot. If the robot cannot be deleted, its cameras stay too.
-            await repo.delete_by_id(robot_id, commit=False)
+            await repo.stage_delete(robot_id)
             await ProjectCameraRepository(self.session, str(project_id)).delete_simulation_cameras(robot_id)
             await self.session.commit()
         except IntegrityError as e:

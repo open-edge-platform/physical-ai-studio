@@ -39,7 +39,7 @@ from exceptions import (
 )
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.robot_service import RobotService
-from schemas.robot import UnavailableRobot
+from schemas.robot import Robot, UnavailableRobot
 from schemas.simulation import (
     Simulation,
     SimulationDownload,
@@ -72,7 +72,7 @@ _ACTIVE = frozenset({SimulationStatus.STARTING, SimulationStatus.RUNNING, Simula
 class SimulationRobots(Protocol):
     """Where the manager reads the robot to simulate and writes back its address."""
 
-    async def get(self, project_id: UUID, robot_id: UUID) -> Any:
+    async def get(self, project_id: UUID, robot_id: UUID) -> Robot | UnavailableRobot:
         """Return the project's robot, or raise ``ResourceNotFoundError``."""
         ...
 
@@ -80,7 +80,9 @@ class SimulationRobots(Protocol):
         """Store *http_url* on the robot's payload."""
         ...
 
-    async def point_leader(self, project_id: UUID, follower_id: UUID, leader_id: UUID) -> tuple[Any, Any] | None:
+    async def point_leader(
+        self, project_id: UUID, follower_id: UUID, leader_id: UUID
+    ) -> tuple[Robot | UnavailableRobot, Robot | UnavailableRobot] | None:
         """Store the port of the follower's simulation on a leader that reads from a simulation.
 
         Returns the follower and the leader as stored, or ``None`` if the follower is not simulated
@@ -95,7 +97,7 @@ class DatabaseSimulationRobots:
     def __init__(self, registry: RobotCatalogRegistry) -> None:
         self._registry = registry
 
-    async def get(self, project_id: UUID, robot_id: UUID) -> Any:
+    async def get(self, project_id: UUID, robot_id: UUID) -> Robot | UnavailableRobot:
         async with get_async_db_session_ctx() as session:
             return await RobotService(session, self._registry).get_robot_by_id(project_id, robot_id)
 
@@ -118,7 +120,9 @@ class DatabaseSimulationRobots:
             await service.update_robot(project_id, robot.model_copy(update={"payload": payload}), commit=False)
             await session.commit()
 
-    async def point_leader(self, project_id: UUID, follower_id: UUID, leader_id: UUID) -> tuple[Any, Any] | None:
+    async def point_leader(
+        self, project_id: UUID, follower_id: UUID, leader_id: UUID
+    ) -> tuple[Robot | UnavailableRobot, Robot | UnavailableRobot] | None:
         async with get_async_db_session_ctx() as session:
             service = RobotService(session, self._registry)
             follower = await service.get_robot_by_id(project_id, follower_id)
@@ -189,7 +193,7 @@ async def _move_simulation_leaders(
         logger.info("Moved leader {!r} from port {} to its simulation's port {}", leader.name, port, new_port)
 
 
-def _virtual_leader_port(registry: RobotCatalogRegistry, robot: Any) -> int | None:
+def _virtual_leader_port(registry: RobotCatalogRegistry, robot: Robot | UnavailableRobot) -> int | None:
     """Return the port a leader reads from a simulation on, or ``None`` for any other robot.
 
     A leader of any robot type (role ``leader``) with an integer ``http_port`` payload field reads
@@ -201,7 +205,7 @@ def _virtual_leader_port(registry: RobotCatalogRegistry, robot: Any) -> int | No
     return port if type(port) is int else None
 
 
-def _simulation_port(registry: RobotCatalogRegistry, robot: Any) -> int | None:
+def _simulation_port(registry: RobotCatalogRegistry, robot: Robot | UnavailableRobot) -> int | None:
     """Return the port of a simulated robot's simulation on this machine, or ``None``.
 
     ``None`` for a robot type without a simulation, and for an address on another host or without a
@@ -301,7 +305,9 @@ class SimulationManager:
         async with self._address_lock:
             yield self._simulated_by_studio(project_id, robot_id)
 
-    async def point_leader_at_follower(self, project_id: UUID, follower: Any, leader: Any) -> tuple[Any, Any]:
+    async def point_leader_at_follower(
+        self, project_id: UUID, follower: Robot | UnavailableRobot, leader: Robot | UnavailableRobot
+    ) -> tuple[Robot | UnavailableRobot, Robot | UnavailableRobot]:
         """Point a leader that reads from a simulation at the follower's, for a session of the two.
 
         Returns the follower and the leader to start the session with. If the follower is simulated

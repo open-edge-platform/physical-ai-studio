@@ -32,10 +32,15 @@ const dismiss = (key: string) => {
     }
 };
 
-const SOURCE_LABEL: Record<string, string> = { scene: 'scene', override: 'robot', model: 'robot', default: 'robot' };
+const SOURCE_LABEL: Record<SchemaSimulationCameraInfo['source'], string> = {
+    scene: 'scene',
+    override: 'robot',
+    model: 'robot',
+    default: 'robot',
+};
 
 const cameraDetails = ({ source, width, height, fps }: SchemaSimulationCameraInfo) =>
-    `${SOURCE_LABEL[source] ?? source} camera · ${width}×${height} · ${fps} fps`;
+    `${SOURCE_LABEL[source]} camera · ${width}×${height} · ${fps} fps`;
 
 const RobotCamerasPrompt = ({
     environment,
