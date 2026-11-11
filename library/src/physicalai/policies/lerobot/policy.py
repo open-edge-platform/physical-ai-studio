@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import inspect
 import logging
 import warnings
 from pathlib import Path
@@ -77,6 +78,30 @@ def _load_dataset_to_policy_features() -> Any:  # noqa: ANN401
 dataset_to_policy_features = _load_dataset_to_policy_features()
 
 
+def _patch_pi_gemma_create_causal_mask() -> None:
+    """Drop the ``cache_position`` kwarg LeRobot's pi_gemma passes to ``create_causal_mask``.
+
+    lerobot 0.6.0 ``policies/pi_gemma.py`` calls
+    ``transformers.masking_utils.create_causal_mask(..., cache_position=...)``, but
+    transformers 5.15.x (our pin) removed that parameter, so pi0/pi05/pi0_fast fail
+    with ``TypeError``. lerobot 0.7.0 no longer passes it (but requires transformers
+    5.22.x). Remove this shim once lerobot is upgraded to >= 0.7.0.
+    """
+    try:
+        pi_gemma = importlib.import_module("lerobot.policies.pi_gemma")
+    except ImportError:
+        return
+    original = pi_gemma.create_causal_mask
+    # No-op if the installed transformers still accepts it, or if already patched.
+    if "cache_position" in inspect.signature(original).parameters:
+        return
+
+    def create_causal_mask(*args: Any, cache_position: Any = None, **kwargs: Any) -> Any:  # noqa: ANN401, ARG001
+        return original(*args, **kwargs)
+
+    pi_gemma.create_causal_mask = create_causal_mask
+
+
 def _to_plain(value: object) -> object:  # noqa: PLR0911
     """Convert nested dataclasses and tensors to checkpoint-safe plain values.
 
@@ -121,6 +146,9 @@ def _parse_dataclass(config_cls: type[Any], values: dict[str, Any]) -> Any:  # n
 
 
 _WARNED_UNSUPPORTED_NAMES: set[str] = set()
+
+# Prompt embeds the normalized state, so tokens cannot be a plain graph input yet.
+_STATE_IN_PROMPT_POLICIES = frozenset({"pi05", "pi0_fast"})
 
 
 def _coerce_policy_config_kwargs(
@@ -207,15 +235,43 @@ class _ActionChunkExportModule(torch.nn.Module):
 
     Bakes the LeRobot normalizer / unnormalizer steps into the graph and skips
     the processors' rename, batching and device steps, the action queue and the loss.
+    Prompt tokenization stays on the host: the graph takes padded token ids and an
+    int64 attention mask. XVLA's ImageNet image normalization and domain id are baked
+    in; its images are expected as float in [0, 1].
     """
 
-    def __init__(self, policy: PreTrainedPolicy, normalizer: Any, unnormalizer: Any) -> None:  # noqa: ANN401
+    def __init__(
+        self,
+        policy: PreTrainedPolicy,
+        normalizer: Any,  # noqa: ANN401
+        unnormalizer: Any,  # noqa: ANN401
+        *,
+        imagenet_normalize: bool = False,
+        domain_id: int | None = None,
+    ) -> None:
         super().__init__()
+        from lerobot.utils.constants import IMAGENET_STATS  # noqa: PLC0415
+
         self.policy = policy
         self.normalizer = normalizer
         self.unnormalizer = unnormalizer
+        self.imagenet_normalize = imagenet_normalize
+        self.domain_id = domain_id
+        self.register_buffer("image_mean", torch.tensor(IMAGENET_STATS["mean"]), persistent=False)
+        self.register_buffer("image_std", torch.tensor(IMAGENET_STATS["std"]), persistent=False)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        from lerobot.utils.constants import OBS_IMAGES, OBS_LANGUAGE_ATTENTION_MASK, OBS_STATE  # noqa: PLC0415
+
+        batch = dict(batch)
+        if OBS_LANGUAGE_ATTENTION_MASK in batch:
+            batch[OBS_LANGUAGE_ATTENTION_MASK] = batch[OBS_LANGUAGE_ATTENTION_MASK].bool()
+        if self.imagenet_normalize:
+            for key in [k for k in batch if k.startswith(OBS_IMAGES)]:
+                batch[key] = (batch[key] - self.image_mean) / self.image_std
+        if self.domain_id is not None:
+            batch_size = batch[OBS_STATE].shape[0]
+            batch["domain_id"] = torch.full((batch_size,), self.domain_id, dtype=torch.long)
         batch = self.normalizer._normalize_observation(batch, inverse=False)  # noqa: SLF001
         actions = self.policy.predict_action_chunk(batch)
         return self.unnormalizer._normalize_action(actions, inverse=True)  # noqa: SLF001
@@ -763,11 +819,39 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
 
         normalizer = next(s for s in self._preprocessor.steps if isinstance(s, NormalizerProcessorStep))
         unnormalizer = next(s for s in self._postprocessor.steps if isinstance(s, UnnormalizerProcessorStep))
+        domain_id = None
+        if self.policy_name == "xvla":
+            from lerobot.policies.xvla.processor_xvla import XVLAAddDomainIdProcessorStep  # noqa: PLC0415
+
+            domain_id = next(
+                (s.domain_id for s in self._preprocessor.steps if isinstance(s, XVLAAddDomainIdProcessorStep)),
+                None,
+            )
         # Populated observation queues (e.g. Diffusion after select_action) make
         # predict_action_chunk read the queues instead of its inputs; the trace
         # would bake them in as constants.
         self.lerobot_policy.reset()
-        return _ActionChunkExportModule(self.lerobot_policy, normalizer, unnormalizer)
+        return _ActionChunkExportModule(
+            self.lerobot_policy,
+            normalizer,
+            unnormalizer,
+            imagenet_normalize=self.policy_name == "xvla",
+            domain_id=domain_id,
+        )
+
+    @property
+    def _export_tokenizer(self) -> Any:  # noqa: ANN401
+        """Prompt tokenizer step whose ids become graph inputs, if any.
+
+        Returns:
+            The ``TokenizerProcessorStep``, or ``None`` when the policy has none or
+            its prompt embeds the state (pi05 / pi0_fast, not supported yet).
+        """
+        if self._preprocessor is None or self.policy_name in _STATE_IN_PROMPT_POLICIES:
+            return None
+        from lerobot.processor import TokenizerProcessorStep  # noqa: PLC0415
+
+        return next((s for s in self._preprocessor.steps if isinstance(s, TokenizerProcessorStep)), None)
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
         """Raw ``sample_input`` tensors; the export graph normalizes them itself.
@@ -792,7 +876,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
             return None
         # Diffusion consumes a stacked observation history: (n_obs_steps, *shape).
         obs_steps = (self._config.n_obs_steps,) if self.policy_name == "diffusion" else ()
-        return [
+        schema = [
             InferenceFeature(
                 ftype=InferenceFeatureType.__members__.get(feature.type.value, InferenceFeatureType.COMMON),
                 shape=(*obs_steps, *feature.shape),
@@ -801,6 +885,21 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
             )
             for key, feature in self._config.input_features.items()
         ]
+        tokenizer = self._export_tokenizer
+        if tokenizer is not None:
+            from lerobot.utils.constants import OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS  # noqa: PLC0415
+
+            # Host tokenizes and pads to max_length; the graph casts the mask to bool.
+            schema += [
+                InferenceFeature(
+                    ftype=InferenceFeatureType.LANGUAGE,
+                    shape=(tokenizer.max_length,),
+                    name=name,
+                    dtype=InferenceFeatureDtype.INT64,
+                )
+                for name in (OBS_LANGUAGE_TOKENS, OBS_LANGUAGE_ATTENTION_MASK)
+            ]
+        return schema
 
     def _initialize_policy(
         self,
@@ -852,6 +951,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
 
         # Get the policy class dynamically
         policy_cls = get_policy_class(self.policy_name)
+        _patch_pi_gemma_create_causal_mask()
 
         # Instantiate the LeRobot policy
         policy = policy_cls(config)

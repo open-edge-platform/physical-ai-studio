@@ -19,100 +19,225 @@ transformers 5.15.1, lerobot 0.6.0, diffusers 0.42.1. Host: 93 GB RAM, 1 GB swap
 | xr0 | physicalai | no | PASS | FAIL | — | — | Generic ET path misses policy export prep |
 | act | lerobot | yes | PASS | PASS | PASS | 1.43e-06 | Supported |
 | diffusion | lerobot | yes | PASS | FAIL | — | — | `torch.export` blocker in diffusers DDPM |
-| groot | lerobot | no | PASS | FAIL | — | — | Wrapper unsupported (no `NormalizerProcessorStep`) |
-| pi0 | lerobot | no | PASS | FAIL | — | — | Wrapper lacks language-token inputs |
+| groot | lerobot | no | PASS | FAIL | — | — | Wrapper unsupported (no `NormalizerProcessorStep`) + Qwen3-VL backbone |
+| pi0 | lerobot | no | PASS | PASS | PASS | 4.54 (noise) | Supported (with `cache_position` shim) |
 | pi05 | lerobot | no | PASS | FAIL | — | — | Wrapper lacks language-token inputs (state-in-prompt) |
 | pi0_fast | lerobot | no | PASS | FAIL | — | — | Wrapper lacks language-token inputs (state-in-prompt) |
-| smolvla | lerobot | no | PASS | FAIL | — | — | Wrapper lacks language-token inputs |
-| xvla | lerobot | no | PASS | FAIL | — | — | Wrapper lacks language-token inputs + skipped image steps |
+| smolvla | lerobot | no | PASS | FAIL | — | — | ExecuTorch op limitation (`aten.bucketize`) |
+| xvla | lerobot | no | PASS | FAIL | — | — | `torch.export` blocker in `forward_vlm` (data-dependent) |
 
 `diff_cpu` is max |pte − eager| on the export sample. It is informational: flow-matching / diffusion
-policies draw fresh noise per call, so a large diff (pi05) does not indicate a numerical problem.
+policies draw fresh noise per call, so a large diff (pi05, pi0) does not indicate a numerical problem.
 
-## Details
+## Where to fix: library vs ExecuTorch
 
-### LeRobot VLAs: pi0, pi05, pi0_fast, smolvla, xvla — `KeyError: 'observation.language.tokens'`
+The ExecuTorch flow is `torch.export.export` → `to_edge_transform_and_lower` (Core-ATen
+verification + OpenVINO partitioning) → `.pte` → runtime. ExecuTorch only consumes the
+`ExportedProgram`, so anything that fails *inside* `torch.export` (data-dependent Python control
+flow, `.item()`/`.tolist()`, boolean-mask shapes) cannot be fixed in ExecuTorch — the model code
+must change (upstream or a library shim). Failures after `torch.export` are ExecuTorch / OpenVINO
+backend territory and are fixed there by preference.
 
-`_ActionChunkExportModule` (`library/src/physicalai/policies/lerobot/policy.py`) bakes only the
-normalizer / unnormalizer into the graph and skips every other processor step, including
-`TokenizerProcessorStep`. The export sample (`sample_input` / `inputs_schema`) holds only
-state + image tensors, so the model's lookup of language tokens fails.
+| Problem | Fails in | Fix in | Why not ExecuTorch / why ExecuTorch |
+|---|---|---|---|
+| smolvla `aten.bucketize` (both sources) | `to_edge` verifier | **ExecuTorch + OpenVINO** (library fallback) | Post-export op coverage. OpenVINO has a native `Bucketize` op and the TorchScript frontend already maps `aten::bucketize`; the FX table (`openvino/frontend/pytorch/torchdynamo/op_support.py`) and the ET partitioner just don't list `aten.bucketize.Tensor`. |
+| molmoact2 OOM | unknown stage (SIGKILL) | **ExecuTorch** first, after measuring | If peak RSS is in lowering / OpenVINO compile / `.pte` serialization, it is ET memory use (model copies). If it is in `torch.export`, PyTorch. Library fallback: bf16. |
+| xvla `forward_vlm` | `torch.export` | Upstream LeRobot; library shim meanwhile | `int(mask.sum().item())` + boolean indexing in model code; never reaches ET. |
+| diffusion DDPM | `torch.export` | Upstream diffusers / LeRobot; library shim meanwhile | `nonzero()[0][0]` + `if index == ...` in the scheduler; never reaches ET. |
+| groot | library wrapper, then `torch.export` | Library | Wrapper design (no `NormalizerProcessorStep`) and Qwen3-VL `tolist()` geometry; XR0 patches already live in the library. |
+| pi05, pi0_fast | library wrapper (eager) | Library | Host/graph split: state is tokenized into the prompt; string ops cannot be in any graph. |
+| xr0, rldx1 | library `to_executorch` (eager) | Library | Policy-specific export prep exists for OpenVINO but is not called on the ET path. |
+| pi0 `cache_position` (done) | eager | Library shim; upstream already fixed in lerobot 0.7.0 | LeRobot / transformers API mismatch. |
 
-- **pi0, smolvla** — fixable: expose `observation.language.tokens` and
-  `observation.language.attention_mask` in `inputs_schema` / export sample, tokenize on the host.
-- **xvla** — same, plus `XVLAImageToFloatProcessorStep`, `XVLAImageNetNormalizeProcessorStep` and
-  `XVLAAddDomainIdProcessorStep` are also skipped and must be reproduced (in-graph or on host).
-- **pi05, pi0_fast** — harder: `Pi05PrepareStateTokenizerProcessorStep` /
-  `Pi0FastPrepareStateAndLanguageTokenizerProcessorStep` discretize the *normalized* state into the
-  prompt before tokenization, so normalization would have to move out of the graph to the host.
+## Changes already made (LeRobot wrapper)
+
+All in `library/src/physicalai/policies/lerobot/policy.py`.
+
+- **Language-token inputs.** `_ActionChunkExportModule` bakes only the normalizer / unnormalizer
+  into the graph; every other processor step runs on the host. Previously the export sample had no
+  language tokens → `KeyError: 'observation.language.tokens'` for every VLA. The wrapper now exposes
+  `observation.language.tokens` and `observation.language.attention_mask` (INT64,
+  `(tokenizer.max_length,)`) in `inputs_schema`; tokenization stays on the host (prompts need the
+  trailing `"\n"` LeRobot appends for pi0 and smolvla). For xvla it also applies ImageNet
+  normalization and adds `domain_id` in-graph. Eager check vs the full LeRobot pipeline: max
+  |diff| 0.0 for pi0, smolvla, xvla.
+- **pi0 `cache_position` shim.** lerobot 0.6.0 `pi_gemma.py` passes `cache_position=` to
+  `create_causal_mask`, which transformers 5.15.x no longer accepts (lerobot 0.7.0 drops it but
+  needs transformers 5.22.x). `_patch_pi_gemma_create_causal_mask` drops the kwarg; remove it once
+  lerobot >= 0.7.0. With both changes pi0 exports and runs (552 s).
+
+## Open issues
+
+Each section: **Error** (from the CSV), **Cause**, **Fix** (planned unless marked done).
+
+### LeRobot pi05, pi0_fast — `KeyError: 'observation.language.tokens'`
+
+**Cause.** `Pi05PrepareStateTokenizerProcessorStep` /
+`Pi0FastPrepareStateAndLanguageTokenizerProcessorStep` discretize the *normalized* state into the
+prompt text before tokenization. Normalization is in-graph, tokenization on the host, so the token
+inputs cannot be produced; the wrapper does not expose them for these two policies.
+
+**Fix.** Move normalization to the host for these policies (tokens become a function of state), or
+mark them not exportable via the wrapper.
+
+### LeRobot xvla — `GuardOnDataDependentSymNode ... expression u0` (`modeling_xvla.py:177`)
+
+**Cause.** `image_mask` is built in `XVLAPolicy._prepare_images` (`modeling_xvla.py:323-345`): one
+`torch.ones(B, dtype=bool)` per present camera key, then `new_zeros` padding up to
+`config.num_image_views`. Its layout is fixed by Python-level facts (e.g. `[[True, True, False]]`),
+but it is still a *tensor* in the graph. `XVLAModel.forward_vlm` (`modeling_xvla.py:175-183`)
+reads its values:
+
+```python
+flat_mask = image_mask.view(-1).to(dtype=torch.bool)
+num_valid = int(flat_mask.sum().item())        # (1) line 177
+if num_valid == 0: raise ValueError(...)       # (2)
+valid_images = flat_images[flat_mask]          # (3) shape (u1, C, H, W)
+valid_feats = self.vlm._encode_image(valid_images)
+image_features[flat_mask] = valid_feats        # (4)
+```
+
+1. `torch.export` traces with fake tensors: values are unknown, even for tensors created with
+   `torch.ones` inside `forward`. `.item()` therefore returns an *unbacked* SymInt `u0` ("number
+   of valid views"). `int(u0)` asks for a concrete Python int, which cannot be produced without a
+   guard on `u0` → `GuardOnDataDependentSymNode` (the error we see).
+2. Even without `int(...)`, `if num_valid == 0` is a branch on `u0` → same guard error.
+3. Boolean-mask indexing lowers to `nonzero`, so the vision encoder would run on a batch of
+   data-dependent size `u1`; OpenVINO / ExecuTorch need static shapes.
+4. Boolean-mask `index_put` back into `image_features`, again data-dependent.
+
+The code only skips encoding padded camera slots; the rest of the path is static (Florence2
+`_merge_input_ids_with_image_features` is a plain `cat`; the `nonzero` / `.item()` in
+`modeling_florence2.py:672-673` belong to the unused flash-attention path; `.item()` calls in
+`processor_xvla.py` run on the host).
+
+**Fix.** Export-only, instance-level `types.MethodType` patch of `forward_vlm`, installed in
+`LeRobotPolicy._export_module` for xvla (written against lerobot 0.6.0). Not fixable in
+ExecuTorch (fails inside `torch.export`); propose the same rewrite upstream to LeRobot:
+
+```python
+feats = self.vlm._encode_image(pixel_values.flatten(0, 1))      # encode all views, static batch
+feats = feats * image_mask.reshape(-1, 1, 1).to(feats.dtype)    # zero padded views
+```
+
+Same result as stock (padded views are zeros in both), at the cost of encoding padded slots.
+The `num_valid == 0` check is dropped (cannot be expressed statically). Validate with the eager
+equivalence check, then re-run the matrix; Florence2 DaViT window attention is the next thing to
+watch.
 
 ### LeRobot groot — `StopIteration`
 
-`LeRobotPolicy._export_module` does `next(s for s in preprocessor.steps if isinstance(s, NormalizerProcessorStep))`.
-Groot has no such step: `GrootN17PackInputsStep` normalizes internally, and `GrootN17VLMEncodeStep`
-runs the VLM encoder on the host. The wrapper's export design does not fit groot.
+**Cause.** `LeRobotPolicy._export_module` does
+`next(s for s in preprocessor.steps if isinstance(s, NormalizerProcessorStep))`. Groot has no such
+step: `GrootN17PackInputsStep` normalizes and pads internally, `GrootN17VLMEncodeStep` runs the
+Qwen3-VL processor (chat template, image transforms, tokenizer) on the host, and the Qwen3-VL
+backbone itself is data-dependent (`image_grid_thw.tolist()` in MRoPE and the vision tower).
+
+**Fix.** Dedicated `_GrootExportModule` (inputs: packed/normalized `state`, `input_ids`,
+`attention_mask`, `pixel_values`; baked `embodiment_id` and `image_grid_thw`; no bf16 autocast, no
+RTC) running `GR00TN17.get_action`. The Qwen3-VL backbone needs the same export patches XR0
+already has (`xr0/qwen3_vlm.py`, `xr0/export_openvino.py`) — move them to a shared module, compute
+text position ids in-graph from `attention_mask`. Pack / VLM-encode / action-decode steps stay on
+the host (not expressible as Runtime processors yet).
 
 ### LeRobot diffusion — `GuardOnDataDependentSymNode` (declares ET support)
 
-`torch.export` fails in diffusers 0.42.1 `DDPMScheduler.previous_timestep`:
+**Cause.** `torch.export` fails in diffusers 0.42.1 `DDPMScheduler.previous_timestep`:
 
 ```python
 index = (self.timesteps == timestep).nonzero(as_tuple=True)[0][0]
 if index == self.timesteps.shape[0] - 1:  # data-dependent guard
 ```
 
-No existing test exports LeRobot diffusion to ExecuTorch. Either the declared support is wrong for
-DDPM or it only holds for another scheduler (DDIM — not verified).
+No existing test exports LeRobot diffusion to ExecuTorch.
+
+**Fix.** Not fixable in ExecuTorch (fails inside `torch.export`). Either the declared support is
+wrong for DDPM or it only holds for another scheduler (DDIM — not verified). Check DDIM; otherwise
+upstream a static `previous_timestep` (timesteps are fixed per call) or drop the ExecuTorch claim
+for DDPM.
 
 ### physicalai xr0 — `You must specify exactly one of input_ids or inputs_embeds`
 
-`XR0.to_openvino` calls `_bake_ingraph_export()` (vision geometry, RMSNorm, input aliasing) before
-tracing. The generic `ExportablePolicyMixin.to_executorch` does not, while
+**Cause.** `XR0.to_openvino` calls `_bake_ingraph_export()` (vision geometry, RMSNorm, input
+aliasing) before tracing. The generic `ExportablePolicyMixin.to_executorch` does not, while
 `_get_default_export_input_sample` already renames token inputs to `tokenized_prompt` /
-`tokenized_prompt_mask`. The unprepared model likely receives no `input_ids` (fails in eager too).
+`tokenized_prompt_mask`. The unprepared model receives no `input_ids` (fails in eager too).
 
-Fix: add an `XR0.to_executorch` override mirroring `to_openvino`.
+**Fix.** Add an `XR0.to_executorch` override mirroring `to_openvino`.
 
 ### physicalai rldx1 — mask shape mismatch + `no attribute 'extra_export_args'`
 
-`Rldx1.to_onnx` / `to_openvino` wrap export in `_graph_safe_export_model(...)` and pass
+**Cause.** `Rldx1.to_onnx` / `to_openvino` wrap export in `_graph_safe_export_model(...)` and pass
 `trim_export_sample(cast_sample_fp32(...))`. `to_executorch` does neither, so the raw model runs on
-the padded sample → `IndexError: mask [1152] vs tensor [1088]`.
+the padded sample → `IndexError: mask [1152] vs tensor [1088]`. The `AttributeError` is masked:
+something inside the `extra_export_args` property raises `AttributeError`, which
+`nn.Module.__getattr__` reports as the property being missing.
 
-The `AttributeError` is masked: something inside the `extra_export_args` property raises
-`AttributeError`, which `nn.Module.__getattr__` reports as the property being missing.
+**Fix.** Add an `Rldx1.to_executorch` override mirroring `to_openvino`, then re-check `extra_export_args`.
 
-Fix: add an `Rldx1.to_executorch` override mirroring `to_openvino`, then re-check `extra_export_args`.
+### smolvla (physicalai and LeRobot) — `aten.bucketize.Tensor is not in Core ATen opset`
 
-### physicalai smolvla — `aten.bucketize.Tensor is not in Core ATen opset`
+**Cause.** Edge-dialect verification rejects `aten.bucketize`. Source: transformers
+`SmolVLMVisionEmbeddings.forward` (`modeling_smolvlm.py:123-124`) buckets patch coordinates to build
+position ids. physicalai smolvla reaches it via `vision_model.embeddings(...)`
+(`policies/smolvla/model.py:1631`), LeRobot smolvla via `vision_model(...)`.
 
-Edge-dialect verification rejects `aten.bucketize`, likely from the SmolVLM vision embeddings in
-transformers (not in physicalai policy code). Possible workaround in `_export_executorch_pte`:
+An `EdgeCompileConfig(_core_aten_ops_exception_list=[torch.ops.aten.bucketize.Tensor])` alone only
+silences the check: the OpenVINO FX op table does not list `aten.bucketize.Tensor` (only the
+TorchScript `aten::bucketize`), so the partitioner leaves it on the portable runtime, which has no
+kernel for it.
+
+**Fix (preferred, ExecuTorch + OpenVINO, no library change).**
+
+1. OpenVINO PyTorch frontend: register `aten.bucketize.Tensor` in the FX op table and
+   `torchdynamo/op_support.py`, reusing the existing `aten::bucketize` → `Bucketize` translator.
+2. ExecuTorch OpenVINO backend (`backends/openvino/partitioner.py`): add
+   `torch.ops.aten.bucketize.Tensor` to `ops_to_not_decompose`, so `to_edge_transform_and_lower`
+   preserves it for the delegate instead of failing Core-ATen verification.
+
+ET-only alternative if OpenVINO cannot change: a bucketize → compare + `sum` decomposition pass in
+the ExecuTorch OpenVINO backend (benefits every model, not only ours).
+
+**Fallback (library, until the above ships).** Decompose it in `_export_executorch_pte`:
 
 ```python
-to_edge_transform_and_lower(
-    aten_dialect,
-    partitioner=[partitioner],
-    compile_config=EdgeCompileConfig(_core_aten_ops_exception_list=[torch.ops.aten.bucketize.Tensor]),
-)
+def _bucketize_decomp(x, boundaries, *, out_int32=False, right=False):
+    cmp = x.unsqueeze(-1) >= boundaries if right else x.unsqueeze(-1) > boundaries
+    return cmp.sum(-1, dtype=torch.int32 if out_int32 else torch.int64)
+
+table = torch.export.default_decompositions()
+table[torch.ops.aten.bucketize.Tensor] = _bucketize_decomp
+aten_dialect = aten_dialect.run_decompositions(table)
 ```
 
-Only useful if the OpenVINO partitioner takes the op; otherwise the runtime has no kernel for it.
+Exact for 1-D sorted boundaries. Next possible blocker: the boolean `index_put`
+`position_ids[mask] = pos_ids[mask]` in the same function (all-true mask for smolvla, so it can be
+replaced by `arange` if the partitioner rejects it).
 
 ### physicalai molmoact2 — `CRASH rc=-9`
 
-SIGKILL after 823 s with no Python traceback: almost certainly the kernel OOM killer. Weights alone
+**Cause.** SIGKILL after 823 s with no Python traceback: almost certainly the kernel OOM killer. Weights alone
 are ~22 GB in fp32 (5.4B params); ExecuTorch lowering holds several copies of the model
 (exported program, edge program, delegate blob, serialized `.pte`), which can exceed 93 GB RAM.
 rldx1 (6.9B), xr0 (4.7B) and pi05 (4.1B) may hit the same limit once their other issues are fixed.
 
-Options: add swap (keeps fp32 results) or export in bf16 (halves memory, but tests bf16 support).
+**Fix.** First measure peak RSS per stage (`torch.export`, `to_edge_transform_and_lower` /
+OpenVINO compile, `to_executorch` + serialization). If the peak is in the ExecuTorch stages (likely:
+edge program, delegate blob and `.pte` buffer each hold the weights), fix it in ExecuTorch /
+the OpenVINO backend: free the edge program after lowering, stream serialization, or keep delegate
+weights external instead of duplicating them in the blob. Library fallback: add swap (keeps fp32
+results) or export in bf16 (halves memory, but tests bf16 support).
 The script now reports this case as `OOM? (SIGKILL)`.
 
 ## Suggested next steps
 
-1. `to_executorch` overrides for xr0 and rldx1 mirroring their `to_openvino`.
-2. Language-token inputs in the LeRobot wrapper (pi0, smolvla; xvla with its extra steps).
-3. Mark LeRobot diffusion (DDPM), groot, pi05 and pi0_fast as not ExecuTorch-exportable via the wrapper.
-4. More swap (or bf16) for the large VLAs; raise `--timeout` above 1800 s for them.
-5. Run the `xpu` column (OpenVINO `GPU` device) once CPU results are settled.
+1. ExecuTorch / OpenVINO: `aten.bucketize.Tensor` support (FX op table + partitioner
+   `ops_to_not_decompose`) → unblocks smolvla in both sources; library decomposition as fallback.
+2. ExecuTorch: measure molmoact2 peak RSS per stage; reduce lowering memory if it is ET-side.
+3. Library: `to_executorch` overrides for xr0 and rldx1 mirroring their `to_openvino`.
+4. Library (+ upstream LeRobot PR): static-shape `forward_vlm` for xvla.
+5. Library: dedicated groot export module (shared Qwen3-VL export patches with XR0).
+6. Library / upstream: DDPM `previous_timestep` or mark LeRobot diffusion not exportable; mark
+   pi05 and pi0_fast not exportable via the wrapper.
+7. Drop the pi0 `cache_position` shim after lerobot >= 0.7.0.
+8. Run the `xpu` column (OpenVINO `GPU` device) once CPU results are settled.
