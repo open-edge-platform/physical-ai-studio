@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 import torch
 
-from .functions import build_lora_config, inject_lora, is_lora_injected, merged_lora_scope
+from .functions import build_lora_config, drop_adapters_missing_from, inject_lora, is_lora_injected, merged_lora_scope
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -122,6 +122,31 @@ class PeftPolicyMixin:
                 "to full fine-tuning of every parameter instead of LoRA."
             )
             raise RuntimeError(msg)
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """Load checkpoints saved with fewer LoRA targets than the current defaults.
+
+        Model construction injects adapters from the current default targets, so a
+        checkpoint saved under older, narrower defaults stores some targeted layers as
+        plain layers. Those layers are unwrapped so strict loading still succeeds.
+
+        Args:
+            checkpoint: Checkpoint dictionary being loaded.
+        """
+        super_hook = getattr(super(), "on_load_checkpoint", None)
+        if callable(super_hook):
+            super_hook(checkpoint)
+
+        self_ = cast("_PeftPolicyHost", self)
+        if self_.model is None or not is_lora_injected(self_.model) or "state_dict" not in checkpoint:
+            return
+        dropped = drop_adapters_missing_from(cast("nn.Module", self), checkpoint["state_dict"])
+        if dropped:
+            logger.warning(
+                "Checkpoint has no LoRA adapters for %d targeted layers (saved with older default "
+                "targets); loading those layers without adapters.",
+                len(dropped),
+            )
 
     def export(
         self,

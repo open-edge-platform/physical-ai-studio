@@ -189,6 +189,34 @@ def merge_lora_(module: nn.Module) -> None:
             setattr(parent, child_name, child.get_base_layer())
 
 
+def drop_adapters_missing_from(module: nn.Module, state_dict: dict[str, torch.Tensor]) -> list[str]:
+    """Unwrap tuner layers that ``state_dict`` stores as plain, adapter-free layers.
+
+    Lets checkpoints saved with a narrower target set (e.g. an older default) load
+    strictly after the defaults widen: such layers have ``<name>.weight`` instead of
+    ``<name>.base_layer.weight`` in the checkpoint.
+
+    Args:
+        module: The module whose state dict keys ``state_dict`` uses, mutated in place.
+        state_dict: The state dict about to be loaded into ``module``.
+
+    Returns:
+        Names of the unwrapped layers.
+    """
+    dropped = []
+    for parent_name, parent in list(module.named_modules()):
+        for child_name, child in list(parent.named_children()):
+            name = f"{parent_name}.{child_name}" if parent_name else child_name
+            if (
+                isinstance(child, BaseTunerLayer)
+                and f"{name}.weight" in state_dict
+                and f"{name}.base_layer.weight" not in state_dict
+            ):
+                setattr(parent, child_name, child.get_base_layer())
+                dropped.append(name)
+    return dropped
+
+
 @contextmanager
 def merged_lora_scope(module: nn.Module) -> Generator[bool, None, None]:
     """Temporarily fold LoRA adapters into ``module``'s base layers, then restore them.

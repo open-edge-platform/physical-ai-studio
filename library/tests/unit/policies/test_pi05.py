@@ -8,6 +8,8 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 import torch
 from physicalai.config import Config
@@ -18,6 +20,9 @@ from physicalai.policies.pi05.pretrained_utils import (
     parse_config_features,
     resolve_feature_shape,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ============================================================================ #
@@ -1934,6 +1939,53 @@ class TestPi05LoRAConfig:
         assert unadapted == []
         assert isinstance(paligemma.multi_modal_projector.linear, BaseTunerLayer)
         assert not any(p.requires_grad for n, p in paligemma.vision_tower.named_parameters() if "lora_" not in n)
+
+    def test_checkpoint_saved_with_narrower_default_targets_still_loads(self, tmp_path: Path) -> None:
+        """Test a checkpoint saved before the vision tower joined the default targets loads strictly."""
+        import lightning
+
+        from physicalai.policies.mixins.peft import is_lora_injected
+
+        attn_and_mlp = r"(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)"
+        legacy_targets = (
+            rf"(.*\.gemma_expert\..*\.{attn_and_mlp}|"
+            rf".*\.paligemma\.model\.language_model\..*\.{attn_and_mlp}|"
+            r"(action_in_proj|action_out_proj|time_mlp_in|time_mlp_out))"
+        )
+        kwargs = {
+            "dataset_stats": self._stats(),
+            "paligemma_variant": "gemma_300m",
+            "action_expert_variant": "gemma_300m",
+            "lora_enabled": True,
+            "lora_rank": 4,
+            "lora_alpha": 8,
+        }
+        legacy = Pi05(**kwargs, lora_target_modules=legacy_targets)
+        with torch.no_grad():
+            for name, param in legacy.named_parameters():
+                if "lora_B" in name:
+                    param.fill_(0.5)
+        hparams = dict(legacy.hparams)
+        hparams["lora_target_modules"] = None  # what pre-change default-target checkpoints stored
+        ckpt_path = tmp_path / "legacy.ckpt"
+        torch.save(
+            {
+                "state_dict": legacy.state_dict(),
+                "hyper_parameters": hparams,
+                "pytorch-lightning_version": lightning.__version__,
+            },
+            ckpt_path,
+        )
+
+        loaded = Pi05.load_from_checkpoint(str(ckpt_path), weights_only=False)
+
+        paligemma = loaded.model.paligemma_with_expert.paligemma.model
+        assert not is_lora_injected(paligemma.vision_tower)
+        assert not is_lora_injected(paligemma.multi_modal_projector)
+        assert is_lora_injected(paligemma.language_model)
+        legacy_state = legacy.state_dict()
+        for key, value in loaded.state_dict().items():
+            torch.testing.assert_close(value, legacy_state[key])
 
     def test_lora_adapters_default_to_float32_under_bfloat16_base(self) -> None:
         """Test LoRA adapter parameters are fp32 even when the base model is bf16."""

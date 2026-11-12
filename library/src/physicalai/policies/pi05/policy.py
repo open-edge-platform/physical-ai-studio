@@ -564,11 +564,12 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
 
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Migrate vision-tower keys from checkpoints saved before Transformers 5.15."""
-        super().on_load_checkpoint(checkpoint)
         checkpoint["state_dict"] = {
             key.replace(".vision_tower.vision_model.", ".vision_tower."): value
             for key, value in checkpoint["state_dict"].items()
         }
+        # After the migration: PeftPolicyMixin matches layers against the migrated keys.
+        super().on_load_checkpoint(checkpoint)
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy or fine-tuning path).
