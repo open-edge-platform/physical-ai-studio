@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-
 import { $api } from '../../../api/client';
 import { SchemaDeviceInfo } from '../../../api/openapi-spec';
 
@@ -27,10 +25,4 @@ export const useTrainingDevices = () => {
     return {
         devices: data?.devices ?? [],
     };
-};
-
-export const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
-    const { devices } = useTrainingDevices();
-
-    return useMemo(() => pickBestDevice(devices), [devices]);
 };
