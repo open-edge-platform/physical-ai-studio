@@ -1,5 +1,9 @@
+import socket
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
+from loguru import logger
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,7 +74,32 @@ class RobotService:
         return robot
 
     async def create_robot(self, project_id: UUID, robot: Robot) -> Robot:
-        return await self._repo(project_id).save(robot)
+        return await self._repo(project_id).save(self._with_own_simulation(robot))
+
+    def _with_own_simulation(self, robot: Robot) -> Robot:
+        """Give a new simulated robot left on its plugin's defaults a simulation of its own.
+
+        A simulated robot attaches to the simulation running under its owner ``name`` and finds it
+        at ``http_url``. On the plugin's defaults, every robot of a type shares both, so a new robot
+        would attach to the simulation of another robot, another Studio or a terminal. Each of the
+        two that still has its default gets one of its own: the name the robot's id, the address a
+        port free now (starting the simulation moves on to another one if it is taken by then).
+        Values the user set stay.
+        """
+        if getattr(self.catalog_registry.get_definition(robot.type), "simulation", None) is None:
+            return robot
+        payload = robot.payload
+        update: dict[str, str] = {}
+        name = _default_of(payload, "name")
+        if name is not None and payload.name == name:
+            update["name"] = f"{name}-{robot.id.hex[:8]}"
+        http_url = _default_of(payload, "http_url")
+        if http_url is not None and payload.http_url == http_url:
+            update["http_url"] = _with_free_port(http_url)
+        if not update:
+            return robot
+        logger.info("Robot {!r} gets its own simulation: {}", robot.name, update)
+        return robot.model_copy(update={"payload": payload.model_copy(update=update)})
 
     async def update_robot(self, project_id: UUID, robot: Robot, *, commit: bool = True) -> Robot:
         """Update *robot*; with ``commit=False`` the caller commits it, with more, and gets *robot* back."""
@@ -108,3 +137,25 @@ class RobotService:
                     ),
                 ) from e
             raise
+
+
+def _default_of(payload: BaseModel, field: str) -> str | None:
+    """Return the default of a payload's string *field*, or ``None`` when it has no such field or default."""
+    info = type(payload).model_fields.get(field)
+    default = None if info is None else info.get_default(call_default_factory=True)
+    return default if isinstance(default, str) else None
+
+
+def _with_free_port(http_url: str) -> str:
+    """Return *http_url* on a port of its host that is free now; *http_url* when it has no such host."""
+    url = urlsplit(http_url)
+    if url.hostname is None:
+        return http_url
+    try:
+        with socket.socket(socket.AF_INET6 if ":" in url.hostname else socket.AF_INET) as probe:
+            probe.bind((url.hostname, 0))
+            port = probe.getsockname()[1]
+    except OSError:
+        return http_url
+    host = f"[{url.hostname}]" if ":" in url.hostname else url.hostname
+    return urlunsplit(url._replace(netloc=f"{host}:{port}"))
