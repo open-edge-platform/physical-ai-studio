@@ -536,7 +536,7 @@ describe('TrainingTargetsPage', () => {
         expect(deployLink.getAttribute('href')).toContain(
             encodeURIComponent(
                 'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/' +
-                    'aws-cf-templates/aws-batch-trainer/v1/aws-batch-trainer.yaml'
+                    'aws-cf-templates/aws-batch-trainer/v2/aws-batch-trainer.yaml'
             )
         );
         expect(deployLink.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');

@@ -12,7 +12,7 @@ import classes from '../training-targets-table/remote-trainer-form/remote-traine
 
 const AWS_BATCH_TEMPLATE_URL =
     'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/' +
-    'aws-cf-templates/aws-batch-trainer/v1/aws-batch-trainer.yaml';
+    'aws-cf-templates/aws-batch-trainer/v2/aws-batch-trainer.yaml';
 const AWS_STACK_URL =
     'https://console.aws.amazon.com/cloudformation/home' +
     `#/stacks/create/review?templateURL=${encodeURIComponent(AWS_BATCH_TEMPLATE_URL)}` +
