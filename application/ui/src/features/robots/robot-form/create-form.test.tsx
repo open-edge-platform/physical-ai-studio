@@ -8,7 +8,11 @@ import { render } from '../../../test-utils/render';
 import { CreateRobotForm } from './create-form';
 import { RobotFormProvider } from './provider';
 
-const definition = (type: string, calibration: { instructions: string; zero_tolerance_deg: number } | null) => ({
+const definition = (
+    type: string,
+    calibration: { instructions: string; zero_tolerance_deg: number } | null,
+    simulated = false
+) => ({
     type,
     display_name: type,
     role: 'follower' as const,
@@ -16,6 +20,7 @@ const definition = (type: string, calibration: { instructions: string; zero_tole
     package_map: {},
     joint_map: {},
     zero_calibration: calibration,
+    simulation: simulated ? { scenes: [], default_scene: 'pick', max_seed: null, labels: [] } : null,
 });
 
 const renderCreateForm = (robotType: string) => {
@@ -24,6 +29,7 @@ const renderCreateForm = (robotType: string) => {
             HttpResponse.json([
                 definition('ReBot_B601_RS_Follower', { instructions: 'Fold the arm.', zero_tolerance_deg: 5 }),
                 definition('Plain_Follower', null),
+                definition('MuJoCo_Follower', null, true),
             ])
         ),
         http.get('/api/robots/catalog/{robot_type}/schema', () =>
@@ -50,5 +56,12 @@ describe('CreateRobotForm', () => {
         renderCreateForm('Plain_Follower');
 
         expect(await screen.findByRole('button', { name: 'Add robot' })).toBeInTheDocument();
+        expect(screen.queryByText(/simulation of its own/)).not.toBeInTheDocument();
+    });
+
+    it('says that a simulated robot gets a simulation of its own', async () => {
+        renderCreateForm('MuJoCo_Follower');
+
+        expect(await screen.findByText(/simulation of its own/)).toBeInTheDocument();
     });
 });

@@ -82,9 +82,10 @@ class RobotService:
         A simulated robot attaches to the simulation running under its owner ``name`` and finds it
         at ``http_url``. On the plugin's defaults, every robot of a type shares both, so a new robot
         would attach to the simulation of another robot, another Studio or a terminal. Each of the
-        two that still has its default gets one of its own: the name the robot's id, the address a
-        port free now (starting the simulation moves on to another one if it is taken by then).
-        Values the user set stay.
+        two that still has its default gets one of its own: the name the robot's whole id (ids made
+        close in time can share a prefix), the address a port free now (starting the simulation
+        moves on to another one if it is taken by then). The other one stays as it is, and so does
+        every value after creation: to attach to a simulation on its defaults, edit the robot.
         """
         if getattr(self.catalog_registry.get_definition(robot.type), "simulation", None) is None:
             return robot
@@ -92,7 +93,7 @@ class RobotService:
         update: dict[str, str] = {}
         name = _default_of(payload, "name")
         if name is not None and payload.name == name:
-            update["name"] = f"{name}-{robot.id.hex[:8]}"
+            update["name"] = f"{name}-{robot.id.hex}"
         http_url = _default_of(payload, "http_url")
         if http_url is not None and payload.http_url == http_url:
             update["http_url"] = _with_free_port(http_url)
