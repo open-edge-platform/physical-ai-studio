@@ -296,7 +296,8 @@ class VLAJEPAModel(PeftModelMixin, Model):
             bound = bound.repeat(repeats, 1)
         with torch.autocast(device_type=actions.device.type, enabled=False):
             action_loss = reduce_losses(self.action_model.compute_loss(actions, context), bound)
-        loss = action_loss + self.world_model_loss_weight * world_loss
+        # Adding a constant zero world loss makes inductor drop the loss's grad_fn.
+        loss = action_loss if self.video_predictor is None else action_loss + self.world_model_loss_weight * world_loss
         return loss, {
             "loss": loss.detach(),
             "action_flow_loss": action_loss.detach(),
