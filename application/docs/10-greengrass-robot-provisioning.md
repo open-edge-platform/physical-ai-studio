@@ -1,21 +1,20 @@
 # Robot Fleet Provisioning with AWS IoT Greengrass
 
-Robots run the [AWS IoT Greengrass V2](https://docs.aws.amazon.com/greengrass/v2/developerguide/what-is-iot-greengrass.html) nucleus to receive software deployments and exchange their device certificate for temporary AWS credentials. Provisioning is split into a one-time account setup and a per-robot step run from an administrator machine.
+Robots run the [AWS IoT Greengrass V2](https://docs.aws.amazon.com/greengrass/v2/developerguide/what-is-iot-greengrass.html) nucleus from the `aws-iot-greengrass` snap to receive software deployments and exchange their device certificate for temporary AWS credentials. Provisioning is split into a one-time account setup and a per-robot step run from an administrator machine.
 
 ```mermaid
 flowchart LR
   subgraph Account["One-time: aws-batch-trainer.yaml"]
     Role[Studio IAM role] --> Alias[IoT role alias]
     Alias --> Policy[Shared IoT policy]
-    Endpoints[IoT endpoints]
   end
   subgraph PerRobot["Per robot: provision-robot.sh"]
     Thing[Thing + thing group] --> Cert[Certificate ACTIVE]
     Cert --> Bind[Attach policy and thing]
-    Bind --> Bundle[Bundle in /greengrass/v2]
+    Bind --> Bundle[Bundle]
   end
   Account --> PerRobot
-  Bundle --> Nucleus[Greengrass nucleus on robot]
+  Bundle -->|SSH| Snap[aws-iot-greengrass snap on robot]
 ```
 
 At runtime, the robot connects to the IoT data endpoint over MQTT with its certificate and calls the credentials endpoint with the role alias to obtain short-lived credentials for the Studio role.
@@ -25,13 +24,13 @@ At runtime, the robot connects to the IoT data endpoint over MQTT with its certi
 On the **administrator machine**:
 
 - AWS CLI v2 authenticated with permission to manage CloudFormation, IAM, IoT, and Lambda;
-- `curl`, and `ssh`/`scp` if delivering bundles over SSH.
+- `curl`, and `ssh`/`scp` for delivering bundles to robots.
 
 On each **robot**:
 
-- Linux with `systemd` and a Java runtime (Java 11 or later);
+- Ubuntu (or another Linux distribution) with `snapd`;
 - outbound HTTPS (443) and MQTT over TLS (8883) to AWS IoT endpoints;
-- an SSH user with `sudo` if bundles are delivered over SSH.
+- an SSH user with `sudo`.
 
 ## Deploy the shared stack
 
@@ -74,14 +73,14 @@ Networking and Batch support resources use generated names.
 - **Role alias**: bridges the IoT credential provider to the Studio role and caps session duration. To restrict the whole fleet in an emergency, point the alias at a more restricted role.
 - **Robot IoT policy**: allows `iot:Connect` only with a client ID starting with the robot's thing name, MQTT publish/subscribe/receive, `greengrass:*`, and `iot:AssumeRoleWithCertificate` on the role alias only.
 
-The stack has two outputs:
+The stack has one output, `StackIdentifier` (`<account-id>-<region>-<stack-uuid>`); every name and ARN above derives from it, and the robot scripts take it as `--stack-identifier`:
 
-| Output             | Used as                                                                    |
-| ------------------ | -------------------------------------------------------------------------- |
-| `ConfigurationUri` | S3 configuration URI for the Studio AWS Batch training target.             |
-| `StackIdentifier`  | `<account-id>-<region>-<stack-uuid>`; every name and ARN above derives from it. |
+```bash
+aws cloudformation describe-stacks --stack-name physical-ai-studio-batch-trainer --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='StackIdentifier'].OutputValue" --output text
+```
 
-The account IoT endpoints are not stack resources; read them with `aws iot describe-endpoint --endpoint-type iot:Data-ATS` and `--endpoint-type iot:CredentialProvider`. The provisioning script does this automatically.
+The account IoT endpoints are not stack resources; the provisioning script reads them with `aws iot describe-endpoint`.
 
 To change robot permissions, edit the `StudioRole` policies in the template and update the stack. Changes apply to the fleet when robots next refresh credentials.
 
@@ -89,83 +88,47 @@ To change robot permissions, edit the `StudioRole` policies in the template and 
 
 Robots receive Studio role credentials directly from the credentials endpoint; components that depend on `aws.greengrass.TokenExchangeService` get them through the container credentials endpoint with no extra configuration. Every provisioned robot therefore has the Studio role's permissions, including read and write access to the `jobs/` and `validation/` prefixes of the jobs bucket and AWS Batch job submission.
 
-## Prepare the robot
-
-Find the nucleus version you will install; the provisioning script writes it into `config.yaml`, and it must match. On the robot:
-
-```bash
-curl -s https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip -o greengrass-nucleus.zip
-unzip greengrass-nucleus.zip -d GreengrassInstaller
-java -jar ./GreengrassInstaller/lib/Greengrass.jar --version
-```
-
-Create the default component user and group:
-
-```bash
-sudo useradd --system --create-home ggc_user
-sudo groupadd --system ggc_group
-```
-
 ## Provision a robot
 
-Run [`provision-robot.sh`](../cloudformation/provision-robot.sh) on the administrator machine:
+Run [`provision-robot.sh`](../cloudformation/provision-robot.sh) on the administrator machine. With `--ssh`, it also installs Greengrass on the robot (see [Install Greengrass on the robot](#install-greengrass-on-the-robot)):
 
 ```bash
 application/cloudformation/provision-robot.sh \
   --thing-name robot-01 \
-  --thing-group warehouse-robots \
   --stack-identifier 123456789012-us-east-1-6ba57d60 \
-  --nucleus-version 2.15.0 \
-  --ssh admin@robot-01.local
+  --thing-group warehouse-robots \
+  --ssh <user>@robot-01.local
 ```
 
-Without `--stack-identifier`, the script reads the `StackIdentifier` output from `--stack` in the AWS CLI configured region. It derives the region, role alias (`pai-studio-<stack-uuid>`), and IoT policy (`pai-robot-<stack-uuid>`) from the identifier, checks that both exist and that the current AWS credentials belong to the identifier's account, and reads the IoT endpoints from the IoT API.
+The script derives the region, role alias (`pai-studio-<stack-uuid>`), and IoT policy (`pai-robot-<stack-uuid>`) from the stack identifier, checks that both exist and that the current AWS credentials belong to the identifier's account, and reads the IoT endpoints from the IoT API.
 
-| Option               | Default                            | Description                                                      |
-| -------------------- | ---------------------------------- | ---------------------------------------------------------------- |
-| `--thing-name`       | required                           | IoT thing name; also the MQTT client ID prefix.                  |
-| `--thing-group`      | none                               | Thing group to join; created if missing.                         |
-| `--stack-identifier` | none                               | `StackIdentifier` stack output; skips the CloudFormation lookup. |
-| `--stack`            | `physical-ai-studio-batch-trainer` | Stack to read `StackIdentifier` from, in the AWS CLI configured region. |
-| `--csr`              | none                               | Sign a CSR instead of generating a key pair (see below).         |
-| `--nucleus-version`  | `2.15.0`                           | Nucleus version installed on the robot.                          |
-| `--output-dir`       | `./robot-bundles/<thing-name>`     | Local bundle directory.                                          |
-| `--greengrass-root`  | `/greengrass/v2`                   | Greengrass root on the robot, written into `config.yaml`. Use `/var/snap/aws-iot-greengrass/common/greengrass/v2` for the snap. |
-| `--ssh`              | none                               | `user@host` to install the bundle into the Greengrass root.      |
+| Option               | Default                        | Description                                                         |
+| -------------------- | ------------------------------ | ------------------------------------------------------------------- |
+| `--thing-name`       | required                       | IoT thing name; also the MQTT client ID prefix.                     |
+| `--stack-identifier` | required                       | `StackIdentifier` output of the shared stack.                       |
+| `--thing-group`      | none                           | Thing group to join; created if missing.                            |
+| `--output-dir`       | `./robot-bundles/<thing-name>` | Local bundle directory.                                             |
+| `--ssh`              | none                           | `user@host` of the robot; delivers the bundle and installs Greengrass. |
 
 The script:
 
 1. Creates the thing, or reuses an existing one, and adds it to the thing group.
-2. Creates an `ACTIVE` certificate and downloads `AmazonRootCA1.pem`.
+2. Creates an `ACTIVE` certificate and key pair and downloads `AmazonRootCA1.pem`.
 3. Attaches the shared IoT policy and the thing to the certificate.
-4. Renders `config.yaml` and, with `--ssh`, installs the bundle into `/greengrass/v2` (private key mode `600`, other files `644`).
+4. Writes the bundle and, with `--ssh`, delivers it to the robot.
 
 It prints the thing ARN, certificate ID, and the command to deactivate the certificate. Every run creates a new certificate; the script refuses to overwrite an existing bundle directory.
 
-| Bundle file         | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `device.pem.crt`    | Robot client certificate.                                  |
-| `private.pem.key`   | Robot private key (omitted with `--csr`).                  |
-| `AmazonRootCA1.pem` | AWS root CA for verifying IoT endpoints.                   |
-| `config.yaml`       | Nucleus configuration with thing name, region, and endpoints. |
+| Bundle file                  | Purpose                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `device.pem.crt`             | Robot client certificate.                                               |
+| `private.pem.key`            | Robot private key.                                                      |
+| `AmazonRootCA1.pem`          | AWS root CA for verifying IoT endpoints.                                |
+| `config.yaml`                | Nucleus configuration with thing name, region, endpoints, and the snap's Greengrass root. |
+| `install-greengrass-snap.sh` | Installer run on the robot.                                             |
 
 > [!WARNING]
-> Without `--csr`, a copy of the private key remains in the local bundle directory. Delete it after confirming delivery, or store it in a secrets manager if it must be kept.
-
-Without `--ssh`, copy the bundle files to `/greengrass/v2/` on the robot yourself, with the same permissions.
-
-### Keep the private key on the robot
-
-To generate the key on the robot so it never leaves the device, create the key and a CSR on the robot:
-
-```bash
-sudo install -d -m 755 /greengrass/v2
-sudo openssl ecparam -name prime256v1 -genkey -noout -out /greengrass/v2/private.pem.key
-sudo chmod 600 /greengrass/v2/private.pem.key
-sudo openssl req -new -key /greengrass/v2/private.pem.key -subj "/CN=robot-01" -out robot-01.csr
-```
-
-Copy `robot-01.csr` to the administrator machine and pass `--csr robot-01.csr` to the script. The bundle then contains only the certificate, root CA, and configuration. Keys held in a TPM or HSM require the Greengrass PKCS#11 provider and a `privateKeyPath` pointing at the PKCS#11 URI; adjust `config.yaml` accordingly.
+> A copy of the private key remains in the local bundle directory, which is git-ignored. Delete it after Greengrass is running, or store it in a secrets manager if it must be kept.
 
 ## Verify the robot credentials
 
@@ -179,91 +142,39 @@ curl --cert device.pem.crt --key private.pem.key --cacert AmazonRootCA1.pem \
 
 A JSON response with `accessKeyId`, `secretAccessKey`, `sessionToken`, and `expiration` confirms the chain. The response contains live credentials; do not log or share it. If the certificate is inactive or revoked, the TLS handshake fails and `curl` returns no HTTP status.
 
-## Start Greengrass on the robot
+## Install Greengrass on the robot
 
-### With the Greengrass installer
-
-Install the nucleus as a system service using the delivered configuration:
-
-```bash
-sudo -E java -Droot="/greengrass/v2" -Dlog.store=FILE \
-  -jar ./GreengrassInstaller/lib/Greengrass.jar \
-  --init-config /greengrass/v2/config.yaml \
-  --component-default-user ggc_user:ggc_group \
-  --setup-system-service true
-```
-
-On the robot, logs are in `/greengrass/v2/logs/greengrass.log`.
-
-### With the snap
-
-On Ubuntu, or where you prefer a snap over a host Java runtime, use the `aws-iot-greengrass` snap from the Snap Store. It bundles Java and the Greengrass V2 nucleus ([source](https://github.com/aws-greengrass/aws-greengrass-snap)), and runs Greengrass as the `aws-iot-greengrass.greengrass-daemon` service. Because the snap is strictly confined, its Greengrass root is `/var/snap/aws-iot-greengrass/common/greengrass/v2` instead of `/greengrass/v2`. The Java runtime, `ggc_user`, and `ggc_group` steps in [Prepare the robot](#prepare-the-robot) are not needed.
+Robots run Greengrass from the `aws-iot-greengrass` snap in the Snap Store. It bundles Java and the Greengrass V2 nucleus ([source](https://github.com/aws-greengrass/aws-greengrass-snap)) and runs Greengrass as the `aws-iot-greengrass.greengrass-daemon` service. Because the snap is strictly confined, its Greengrass root is `/var/snap/aws-iot-greengrass/common/greengrass/v2`.
 
 > [!NOTE]
 > Do not run `aws-iot-greengrass.configure` or `aws-iot-greengrass.bootstrap`. They create their own thing, certificate, and IoT policy and use the `GreengrassV2TokenExchangeRoleAlias` role alias, bypassing the stack's role alias and robot IoT policy.
 
-1. On the robot, install the snap and check that it provides Greengrass V2: the version is `2.x`, the `greengrass-daemon` service is listed, and the nucleus archive is present:
+`provision-robot.sh --ssh` runs [`deliver-robot-bundle.sh`](../cloudformation/deliver-robot-bundle.sh), which copies the bundle to a temporary directory on the robot over SSH, runs [`install-greengrass-snap.sh`](../cloudformation/install-greengrass-snap.sh) with `sudo`, and removes the temporary copy even if installation fails. The SSH user needs `sudo`; you may be prompted for its password.
 
-   ```bash
-   sudo snap install aws-iot-greengrass
-   snap list aws-iot-greengrass
-   snap info aws-iot-greengrass | grep -A3 '^services'
-   ls /snap/aws-iot-greengrass/current/opt/greengrass/greengrass-nucleus.zip
-   ```
+To deliver an existing bundle later, or to retry after fixing the robot, run the delivery script on its own from the administrator machine:
 
-2. Connect the interfaces that are not connected automatically. List them with `snap connections aws-iot-greengrass`, then connect each plug with an empty slot, for example:
+```bash
+application/cloudformation/deliver-robot-bundle.sh \
+  --bundle application/cloudformation/robot-bundles/robot-01 \
+  --ssh <user>@robot-01.local
+```
 
-   ```bash
-   for plug in system-observe mount-observe hardware-observe process-control network-bind; do
-     sudo snap connect aws-iot-greengrass:$plug
-   done
-   ```
+Without SSH access, copy the bundle directory to the robot and run `sudo ./install-greengrass-snap.sh <bundle-dir>` there.
 
-3. On the administrator machine, provision the robot for the snap's root. Set `--nucleus-version` to the snap's version from `snap list`:
+The installer:
 
-   ```bash
-   application/cloudformation/provision-robot.sh \
-     --thing-name robot-01 \
-     --stack-identifier 123456789012-us-east-1-6ba57d60 \
-     --greengrass-root /var/snap/aws-iot-greengrass/common/greengrass/v2 \
-     --nucleus-version <snap-version>
-   ```
+1. Installs the `aws-iot-greengrass` snap if missing and checks that it provides Greengrass V2.
+2. Connects the snap's disconnected interfaces; those without a provider on the robot, such as Docker, are skipped.
+3. Installs the bundle into the snap's Greengrass root (private key mode `600`, other files `644`) and sets the nucleus version in `config.yaml` to the snap's version.
+4. Installs the nucleus from the snap into that root inside the snap's confinement, using the snap's Java runtime, without starting it.
+5. Restarts `aws-iot-greengrass.greengrass-daemon`, which starts Greengrass from that root.
 
-4. Copy the bundle to the robot and install it into the snap's root. With `--ssh <user>@<robot>` the script does this for you; otherwise copy the files to `/tmp/gg-bundle/` on the robot and run:
+It refuses to run if Greengrass is already installed in the snap's root; run `sudo snap remove --purge aws-iot-greengrass` on the robot to start over. Follow the logs on the robot:
 
-   ```bash
-   GG=/var/snap/aws-iot-greengrass/common/greengrass/v2
-   sudo install -d -m 755 "$GG"
-   sudo install -m 644 /tmp/gg-bundle/{device.pem.crt,AmazonRootCA1.pem,config.yaml} "$GG"/
-   sudo install -m 600 /tmp/gg-bundle/private.pem.key "$GG"/
-   rm -rf /tmp/gg-bundle
-   ```
-
-5. Open a shell inside the snap's confinement and install the nucleus from the snap into its root, without starting it:
-
-   ```bash
-   sudo snap run --shell aws-iot-greengrass.configure
-   ```
-
-   Then, in that shell:
-
-   ```bash
-   cd "$SNAP_COMMON/greengrass/v2"
-   python3 -m zipfile -e "$SNAP/opt/greengrass/greengrass-nucleus.zip" .
-   "$JAVA_HOME/bin/java" -Droot="$PWD" -Dlog.store=FILE \
-     -Djavax.net.ssl.trustStore="$SNAP/etc/ssl/certs/java/cacerts" -Djavax.net.ssl.trustStoreType=JKS \
-     -jar lib/Greengrass.jar --init-config config.yaml \
-     --component-default-user root:root --setup-system-service false --start false
-   exit
-   ```
-
-6. Restart the snap service, which starts Greengrass from that root, and follow its logs:
-
-   ```bash
-   sudo snap restart aws-iot-greengrass.greengrass-daemon
-   sudo snap logs -f aws-iot-greengrass.greengrass-daemon
-   sudo tail -f /var/snap/aws-iot-greengrass/common/greengrass/v2/logs/greengrass.log
-   ```
+```bash
+sudo snap logs -f aws-iot-greengrass.greengrass-daemon
+sudo tail -f /var/snap/aws-iot-greengrass/common/greengrass/v2/logs/greengrass.log
+```
 
 The service waits about 30 seconds after start before launching the nucleus. Components run as `root` inside the snap's confinement, limited by the snap's plugs.
 
@@ -298,7 +209,7 @@ aws iot update-certificate --certificate-id <certificate-id> --new-status INACTI
 
 Use `REVOKED` instead of `INACTIVE` for a compromised key; revoked certificates cannot be reactivated. Existing temporary credentials remain valid until they expire, up to `RobotCredentialDurationSeconds`.
 
-To remove a robot completely, run [`deprovision-robot.sh`](../cloudformation/deprovision-robot.sh) on the administrator machine. It accepts the same `--stack` or `--stack-identifier` options as the provisioning script and asks you to type the thing name to confirm (skip with `--yes`):
+To remove a robot completely, run [`deprovision-robot.sh`](../cloudformation/deprovision-robot.sh) on the administrator machine. It takes the same `--stack-identifier` as the provisioning script and asks you to type the thing name to confirm (skip with `--yes`):
 
 ```bash
 application/cloudformation/deprovision-robot.sh \
@@ -306,9 +217,9 @@ application/cloudformation/deprovision-robot.sh \
   --stack-identifier 123456789012-us-east-1-6ba57d60
 ```
 
-For each certificate attached to the thing, the script detaches it, then deactivates it, detaches all IoT policies, and deletes it. A certificate still used by another thing is only detached from this robot. It then deletes the Greengrass core device record, if any, and the thing, which also removes it from its thing groups. On the robot, remove `/greengrass/v2` and the Greengrass system service, and delete any local bundle copy on the administrator machine.
+For each certificate attached to the thing, the script detaches it, then deactivates it, detaches all IoT policies, and deletes it. A certificate still used by another thing is only detached from this robot. It then deletes the Greengrass core device record, if any, and the thing, which also removes it from its thing groups. On the robot, run `sudo snap remove --purge aws-iot-greengrass`, and delete any local bundle copy on the administrator machine.
 
-To rotate a robot's certificate, run the script again with a new `--output-dir`, deliver the bundle, restart Greengrass (`sudo systemctl restart greengrass`), then deactivate the old certificate.
+To rotate a robot's certificate, provision it again with a new `--output-dir` and without `--ssh`, run `sudo snap remove --purge aws-iot-greengrass` on the robot, deliver the new bundle with `deliver-robot-bundle.sh`, then deactivate the old certificate.
 
 ## Remove the shared stack
 

@@ -4,28 +4,24 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --thing-name NAME [options]
+Usage: $(basename "$0") --thing-name NAME --stack-identifier ID [options]
 
 Options:
   --thing-name NAME        IoT thing name of the robot (required)
-  --stack NAME             aws-batch-trainer.yaml stack name to read StackIdentifier from,
-                           in the AWS CLI configured region (default: physical-ai-studio-batch-trainer)
-  --stack-identifier ID    StackIdentifier output (<account-id>-<region>-<stack-uuid>);
-                           skips the CloudFormation lookup
+  --stack-identifier ID    StackIdentifier output of aws-batch-trainer.yaml
+                           (<account-id>-<region>-<stack-uuid>; required)
   --yes                    Do not ask for confirmation
   -h, --help               Show this help
 EOF
 }
 
 THING_NAME=""
-STACK_NAME="physical-ai-studio-batch-trainer"
 STACK_IDENTIFIER=""
 ASSUME_YES=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --thing-name) THING_NAME="$2"; shift 2 ;;
-    --stack) STACK_NAME="$2"; shift 2 ;;
     --stack-identifier) STACK_IDENTIFIER="$2"; shift 2 ;;
     --yes) ASSUME_YES=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -33,15 +29,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! "$THING_NAME" =~ ^[a-zA-Z0-9:_-]{1,128}$ ]]; then
+if [[ ! "$THING_NAME" =~ ^[a-zA-Z0-9:_-]{1,128}$ || -z "$STACK_IDENTIFIER" ]]; then
   usage >&2
   exit 1
-fi
-
-if [[ -z "$STACK_IDENTIFIER" ]]; then
-  echo "Reading StackIdentifier from stack $STACK_NAME..."
-  STACK_IDENTIFIER="$(aws cloudformation describe-stacks --output text \
-    --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='StackIdentifier'].OutputValue | [0]")"
 fi
 
 if [[ ! "$STACK_IDENTIFIER" =~ ^([0-9]{12})-([a-z]{2}(-[a-z]+)+-[0-9]+)-([0-9a-f]{8})$ ]]; then
@@ -110,5 +100,5 @@ done
 cat <<EOF
 
 Deprovisioned $THING_NAME. Existing temporary credentials on the robot stay valid until they expire.
-On the robot, remove /greengrass/v2 and the Greengrass service; delete any local bundle copy.
+On the robot, run 'sudo snap remove --purge aws-iot-greengrass'; delete any local bundle copy.
 EOF

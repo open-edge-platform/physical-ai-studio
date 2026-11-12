@@ -1,58 +1,45 @@
 #!/usr/bin/env bash
-# Provisions a single robot as an AWS IoT Greengrass V2 core device.
+# Provisions a single robot as an AWS IoT Greengrass V2 core device running the aws-iot-greengrass snap.
 # Requires the aws-batch-trainer.yaml stack to be deployed first.
 set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --thing-name NAME [options]
+Usage: $(basename "$0") --thing-name NAME --stack-identifier ID [options]
 
 Options:
   --thing-name NAME        IoT thing name for the robot (required, e.g. robot-01)
+  --stack-identifier ID    StackIdentifier output of aws-batch-trainer.yaml
+                           (<account-id>-<region>-<stack-uuid>; required)
   --thing-group NAME       Thing group to add the robot to (created if missing)
-  --stack NAME             aws-batch-trainer.yaml stack name to read StackIdentifier from,
-                           in the AWS CLI configured region (default: physical-ai-studio-batch-trainer)
-  --stack-identifier ID    StackIdentifier output (<account-id>-<region>-<stack-uuid>);
-                           skips the CloudFormation lookup
-  --csr FILE               Sign this CSR instead of generating a key pair; the
-                           private key stays on the robot
-  --nucleus-version VER    Greengrass nucleus version installed on the robot (default: 2.15.0)
   --output-dir DIR         Local bundle directory (default: ./robot-bundles/<thing-name>)
-  --greengrass-root DIR    Greengrass root on the robot (default: /greengrass/v2; for the snap:
-                           /var/snap/aws-iot-greengrass/common/greengrass/v2)
-  --ssh TARGET             Copy the bundle to TARGET (user@host) under the Greengrass root
+  --ssh TARGET             Deliver the bundle to TARGET (user@host) and install Greengrass there
   -h, --help               Show this help
 EOF
 }
 
 THING_NAME=""
 THING_GROUP=""
-STACK_NAME="physical-ai-studio-batch-trainer"
 STACK_IDENTIFIER=""
-CSR_FILE=""
-NUCLEUS_VERSION="2.15.0"
 OUTPUT_DIR=""
 SSH_TARGET=""
-GG_ROOT="/greengrass/v2"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+GG_ROOT="/var/snap/aws-iot-greengrass/common/greengrass/v2"
 ROOT_CA_URL="https://www.amazontrust.com/repository/AmazonRootCA1.pem"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --thing-name) THING_NAME="$2"; shift 2 ;;
-    --thing-group) THING_GROUP="$2"; shift 2 ;;
-    --stack) STACK_NAME="$2"; shift 2 ;;
     --stack-identifier) STACK_IDENTIFIER="$2"; shift 2 ;;
-    --csr) CSR_FILE="$2"; shift 2 ;;
-    --nucleus-version) NUCLEUS_VERSION="$2"; shift 2 ;;
+    --thing-group) THING_GROUP="$2"; shift 2 ;;
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
-    --greengrass-root) GG_ROOT="$2"; shift 2 ;;
     --ssh) SSH_TARGET="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
 
-if [[ -z "$THING_NAME" ]]; then
+if [[ -z "$THING_NAME" || -z "$STACK_IDENTIFIER" ]]; then
   usage >&2
   exit 1
 fi
@@ -60,24 +47,11 @@ if [[ ! "$THING_NAME" =~ ^[a-zA-Z0-9:_-]{1,128}$ ]]; then
   echo "Invalid thing name: $THING_NAME" >&2
   exit 1
 fi
-if [[ -n "$CSR_FILE" && ! -f "$CSR_FILE" ]]; then
-  echo "CSR file not found: $CSR_FILE" >&2
-  exit 1
-fi
-if [[ ! "$GG_ROOT" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
-  echo "Invalid Greengrass root: $GG_ROOT" >&2
-  exit 1
-fi
+[[ -f "$SCRIPT_DIR/install-greengrass-snap.sh" ]] || { echo "Missing $SCRIPT_DIR/install-greengrass-snap.sh" >&2; exit 1; }
 
 for cmd in aws curl; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
-
-if [[ -z "$STACK_IDENTIFIER" ]]; then
-  echo "Reading StackIdentifier from stack $STACK_NAME..."
-  STACK_IDENTIFIER="$(aws cloudformation describe-stacks --output text \
-    --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='StackIdentifier'].OutputValue | [0]")"
-fi
 
 if [[ ! "$STACK_IDENTIFIER" =~ ^([0-9]{12})-([a-z]{2}(-[a-z]+)+-[0-9]+)-([0-9a-f]{8})$ ]]; then
   echo "Invalid StackIdentifier: $STACK_IDENTIFIER" >&2
@@ -128,18 +102,10 @@ if [[ -n "$THING_GROUP" ]]; then
 fi
 
 # 2. Certificate
-if [[ -n "$CSR_FILE" ]]; then
-  read -r CERT_ARN CERT_ID < <("${AWS[@]}" iot create-certificate-from-csr \
-    --certificate-signing-request "file://$CSR_FILE" --set-as-active \
-    --query "[certificateArn, certificateId]")
-  "${AWS[@]}" iot describe-certificate --certificate-id "$CERT_ID" \
-    --query certificateDescription.certificatePem > "$OUTPUT_DIR/device.pem.crt"
-else
-  read -r CERT_ARN CERT_ID < <("${AWS[@]}" iot create-keys-and-certificate --set-as-active \
-    --certificate-pem-outfile "$OUTPUT_DIR/device.pem.crt" \
-    --private-key-outfile "$OUTPUT_DIR/private.pem.key" \
-    --query "[certificateArn, certificateId]")
-fi
+read -r CERT_ARN CERT_ID < <("${AWS[@]}" iot create-keys-and-certificate --set-as-active \
+  --certificate-pem-outfile "$OUTPUT_DIR/device.pem.crt" \
+  --private-key-outfile "$OUTPUT_DIR/private.pem.key" \
+  --query "[certificateArn, certificateId]")
 if [[ -z "${CERT_ID:-}" ]]; then
   echo "Certificate creation failed." >&2
   exit 1
@@ -154,6 +120,7 @@ curl --fail --silent --show-error --proto '=https' -o "$OUTPUT_DIR/AmazonRootCA1
 echo "Attached policy $IOT_POLICY and thing $THING_NAME to certificate."
 
 # 4. Render nucleus config and deliver bundle
+# install-greengrass-snap.sh replaces the version with the snap's nucleus version.
 cat > "$OUTPUT_DIR/config.yaml" <<EOF
 ---
 system:
@@ -165,33 +132,18 @@ system:
 services:
   aws.greengrass.Nucleus:
     componentType: "NUCLEUS"
-    version: "$NUCLEUS_VERSION"
+    version: "snap"
     configuration:
       awsRegion: "$REGION"
       iotRoleAlias: "$ROLE_ALIAS"
       iotDataEndpoint: "$DATA_ENDPOINT"
       iotCredEndpoint: "$CRED_ENDPOINT"
 EOF
-
-BUNDLE_FILES=(device.pem.crt AmazonRootCA1.pem config.yaml)
-if [[ -z "$CSR_FILE" ]]; then
-  BUNDLE_FILES+=(private.pem.key)
-fi
+install -m 755 "$SCRIPT_DIR/install-greengrass-snap.sh" "$OUTPUT_DIR/"
+BUNDLE_FILES=(device.pem.crt private.pem.key AmazonRootCA1.pem config.yaml install-greengrass-snap.sh)
 
 if [[ -n "$SSH_TARGET" ]]; then
-  REMOTE_TMP="$(ssh "$SSH_TARGET" 'mktemp -d')"
-  scp "${BUNDLE_FILES[@]/#/$OUTPUT_DIR/}" "$SSH_TARGET:$REMOTE_TMP/"
-  # shellcheck disable=SC2029
-  ssh -t "$SSH_TARGET" "set -e
-    sudo install -d -m 755 '$GG_ROOT'
-    for f in device.pem.crt AmazonRootCA1.pem config.yaml; do
-      sudo install -m 644 '$REMOTE_TMP'/\$f '$GG_ROOT'/\$f
-    done
-    if [ -f '$REMOTE_TMP/private.pem.key' ]; then
-      sudo install -m 600 '$REMOTE_TMP/private.pem.key' '$GG_ROOT/private.pem.key'
-    fi
-    rm -rf '$REMOTE_TMP'"
-  echo "Delivered bundle to $SSH_TARGET:$GG_ROOT."
+  "$SCRIPT_DIR/deliver-robot-bundle.sh" --bundle "$OUTPUT_DIR" --ssh "$SSH_TARGET"
 fi
 
 cat <<EOF
