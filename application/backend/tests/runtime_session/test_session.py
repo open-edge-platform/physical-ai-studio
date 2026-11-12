@@ -6,7 +6,9 @@ import time
 import pytest
 
 from exceptions import DeviceInUseError, RuntimeSessionCommandError
+from runtime_session.session import Resolvers
 from runtime_session.store import ACTION, STATE
+from schemas.runtime_session import EnvironmentDraft
 
 from .fixtures import FOLLOWER_ID, LEADER_ID, make_environment, next_status, subscribe_events, subscribe_statuses
 
@@ -191,6 +193,99 @@ async def test_reloading_a_failed_environment_retries_in_place(new_session, fake
     await session.reload_environment()
     assert session.store is store
     assert session.leader is not None and session.leader.is_connected()
+    await session.stop()
+
+
+def _simulated(environment, http_url: str):
+    """*environment* with its follower simulated, its simulation serving at *http_url*."""
+    data = environment.model_dump(mode="json")
+    data["robots"][0]["robot"] |= {"type": "MuJoCo_SO101_Follower", "payload": {"http_url": http_url}}
+    data["cameras"][0]["fingerprint"] = {"path": f"{http_url}/cameras/overview/mjpeg"}
+    return type(environment).model_validate(data)
+
+
+async def _session_on(new_session, served: dict[str, str], environment):
+    """A session whose environment draft resolves to *environment* at the address in *served*."""
+
+    async def resolve(_draft):
+        return _simulated(environment, served["url"])
+
+    session = await new_session(Resolvers(environment=resolve, dataset=_unresolved, model=_unresolved))
+    draft = EnvironmentDraft(
+        id=environment.id,
+        name=environment.name,
+        robots=[{"robot_id": FOLLOWER_ID, "tele_operator": {"type": "none"}}],
+    )
+    await session._load_draft(draft, unload_incompatible=False)
+    return session
+
+
+async def _unresolved(_what):
+    raise AssertionError("not looked up")
+
+
+def _camera_path(session) -> str:
+    return next(iter(session._environment.value.environment.description.cameras.values())).fingerprint["path"]
+
+
+async def test_reloading_looks_the_environment_up_again(new_session, fake_cameras) -> None:
+    served = {"url": "http://127.0.0.1:8080"}
+    session = await _session_on(new_session, served, make_environment(leader=False))
+    store = session.store
+    assert _camera_path(session) == "http://127.0.0.1:8080/cameras/overview/mjpeg"
+
+    # The simulation started again elsewhere; a reload connects to where it serves now.
+    served["url"] = "http://127.0.0.1:50123"
+    await session.reload_environment()
+
+    assert _camera_path(session) == "http://127.0.0.1:50123/cameras/overview/mjpeg"
+    assert session.store is store
+    await session.stop()
+
+
+async def test_a_reload_refuses_an_environment_that_changed_its_spec(new_session, fake_cameras) -> None:
+    environment = make_environment(leader=False)
+    served = {"url": "http://127.0.0.1:8080"}
+    session = await _session_on(new_session, served, environment)
+
+    async def two_cameras(_draft):
+        return _simulated(make_environment(leader=False, cameras=2), served["url"])
+
+    session._resolve = Resolvers(environment=two_cameras, dataset=_unresolved, model=_unresolved)
+    with pytest.raises(RuntimeSessionCommandError) as refused:
+        await session.reload_environment()
+    assert refused.value.error_code == "environment_changed"
+    assert session.environment is not None
+    await session.stop()
+
+
+async def test_the_session_follows_its_simulation_to_a_new_address(new_session, fake_cameras) -> None:
+    served = {"url": "http://127.0.0.1:8080"}
+    session = await _session_on(new_session, served, make_environment(leader=False))
+
+    # Another robot's simulation, or this one on the same address: nothing to do.
+    await session.follow_simulation(LEADER_ID, "http://127.0.0.1:50123")
+    await session.follow_simulation(FOLLOWER_ID, "http://127.0.0.1:8080")
+    assert _camera_path(session) == "http://127.0.0.1:8080/cameras/overview/mjpeg"
+
+    served["url"] = "http://127.0.0.1:50123"
+    await session.follow_simulation(FOLLOWER_ID, "http://127.0.0.1:50123")
+    assert _camera_path(session) == "http://127.0.0.1:50123/cameras/overview/mjpeg"
+    assert session._environment.value.environment.description.simulation_url == "http://127.0.0.1:50123"
+    await session.stop()
+
+
+async def test_following_a_simulation_that_cannot_be_reached_leaves_the_environment_loaded(
+    new_session, fake_cameras
+) -> None:
+    served = {"url": "http://127.0.0.1:8080"}
+    session = await _session_on(new_session, served, make_environment(leader=False))
+    served["url"] = "http://127.0.0.1:50123"
+    fake_cameras.return_value.connect.side_effect = RuntimeError("no stream")
+
+    await session.follow_simulation(FOLLOWER_ID, "http://127.0.0.1:50123")  # does not raise
+
+    assert session.environment is not None
     await session.stop()
 
 

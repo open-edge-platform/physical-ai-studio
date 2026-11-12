@@ -100,14 +100,14 @@ async def new_session(registry, camera_claims, robot_factory, monkeypatch, tmp_p
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     async with AsyncExitStack() as stack:
 
-        async def create() -> RuntimeSession:
+        async def create(resolve: Resolvers | None = None) -> RuntimeSession:
             session = RuntimeSession(
                 project_id=uuid4(),
                 project_name="Alpha",
                 registry=registry,
                 camera_claims=camera_claims,
                 robot_factory=robot_factory,
-                resolve=Resolvers(environment=_unresolvable, dataset=_unresolvable, model=_unresolvable),
+                resolve=resolve or Resolvers(environment=_unresolvable, dataset=_unresolvable, model=_unresolvable),
             )
             return await stack.enter_async_context(session)
 

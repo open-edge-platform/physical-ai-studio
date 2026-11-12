@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
@@ -20,13 +22,14 @@ from api.dependencies import (
     get_runtime_session_registry,
     get_simulation_manager,
 )
-from api.runtime_ws import observation_message
+from api.runtime_ws import _follow_simulations, observation_message
 from main import app
 from schemas.runtime_session import ObservationFrame, ObservationMessage
+from schemas.simulation import Simulation, SimulationStatus
 from tests.runtime_session.fixtures import FOLLOWER_ID, LEADER_ID, make_environment
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
 PROJECT_ID = uuid4()
 ENVIRONMENT = make_environment()
@@ -46,8 +49,11 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
     robots = SimpleNamespace(get_robot_by_id=AsyncMock(side_effect=lambda _project, robot_id: rows[robot_id]))
     cameras = SimpleNamespace(get_camera_by_id=AsyncMock(return_value=ENVIRONMENT.cameras[0]))
     projects = SimpleNamespace(get_project_by_id=AsyncMock(return_value=SimpleNamespace(name="Alpha")))
-    # No robot here is simulated, so the leader stays as it is.
-    simulations = SimpleNamespace(point_leader_at_follower=AsyncMock(side_effect=lambda _project, *robots: robots))
+    # No robot here is simulated, so the leader stays as it is, and no simulation starts.
+    simulations = SimpleNamespace(
+        point_leader_at_follower=AsyncMock(side_effect=lambda _project, *robots: robots),
+        subscribe=lambda: _states(),
+    )
     app.dependency_overrides.update(
         {
             get_project_service: lambda: projects,
@@ -63,6 +69,33 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@asynccontextmanager
+async def _states(*states: Simulation) -> AsyncIterator[asyncio.Queue[Simulation]]:
+    """``SimulationManager.subscribe``, delivering *states*."""
+    queue: asyncio.Queue[Simulation] = asyncio.Queue()
+    for state in states:
+        queue.put_nowait(state)
+    yield queue
+
+
+async def test_a_session_follows_the_simulation_of_its_project_s_robots() -> None:
+    robot_id, other_project = uuid4(), uuid4()
+    session = SimpleNamespace(project_id=PROJECT_ID, follow_simulation=AsyncMock())
+    running = {"status": SimulationStatus.RUNNING, "robot_id": robot_id, "http_url": "http://127.0.0.1:50123"}
+    simulations = SimpleNamespace(
+        subscribe=lambda: _states(
+            Simulation(status=SimulationStatus.STARTING, project_id=PROJECT_ID, robot_id=robot_id),
+            Simulation(**running, project_id=other_project),
+            Simulation(**running, project_id=PROJECT_ID),
+        )
+    )
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(_follow_simulations(session, simulations), 0.2)
+
+    session.follow_simulation.assert_awaited_once_with(robot_id, "http://127.0.0.1:50123")
 
 
 def _url() -> str:
