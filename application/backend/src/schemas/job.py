@@ -196,6 +196,13 @@ class TrainJobPayloadBase(BaseModel):
             "formats the policy does not support are ignored."
         ),
     )
+    enable_world_model: bool | None = Field(
+        default=None,
+        description=(
+            "VLA-JEPA: enable JEPA-assisted fine-tuning. Null uses full training for a new model "
+            "or preserves the checkpoint mode when continuing training."
+        ),
+    )
     augment_images: bool = Field(
         default=False,
         description="Apply the default image augmentation pipeline to training images",
@@ -251,6 +258,14 @@ class TrainJobPayloadBase(BaseModel):
             "max_epochs teacher run. Ignored when snapflow_enabled is false."
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_world_model(self) -> "TrainJobPayloadBase":
+        """Reject JEPA options for policies without a world model."""
+        if self.enable_world_model is not None and self.policy.lower() != "vla_jepa":
+            msg = "enable_world_model is only supported by VLA-JEPA."
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_lora(self) -> "TrainJobPayloadBase":

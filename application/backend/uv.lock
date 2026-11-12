@@ -2797,7 +2797,7 @@ dependencies = [
     { name = "physicalai", extra = ["capture", "transport"] },
     { name = "physicalai-so101-plugin" },
     { name = "physicalai-studio-plugin" },
-    { name = "physicalai-train", extra = ["molmoact2", "pi05", "rldx1", "smolvla", "xr0"] },
+    { name = "physicalai-train", extra = ["molmoact2", "pi05", "rldx1", "smolvla", "vla-jepa", "xr0"] },
     { name = "physicalai-trossen-plugin", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -2890,7 +2890,7 @@ requires-dist = [
     { name = "physicalai-studio-plugin", specifier = "~=0.5.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
-    { name = "physicalai-train", extras = ["molmoact2", "pi05", "rldx1", "smolvla", "xr0"], editable = "../../library" },
+    { name = "physicalai-train", extras = ["molmoact2", "pi05", "rldx1", "smolvla", "vla-jepa", "xr0"], editable = "../../library" },
     { name = "physicalai-trossen-plugin", marker = "sys_platform == 'darwin' or sys_platform == 'linux'", specifier = "~=0.2.0" },
     { name = "psutil", specifier = "~=7.2" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
@@ -2999,6 +2999,11 @@ smolvla = [
     { name = "safetensors" },
     { name = "transformers" },
 ]
+vla-jepa = [
+    { name = "diffusers" },
+    { name = "safetensors" },
+    { name = "transformers" },
+]
 xr0 = [
     { name = "pillow" },
     { name = "safetensors" },
@@ -3011,6 +3016,7 @@ requires-dist = [
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'rldx1'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'tests'", specifier = ">=0.40.0" },
+    { name = "diffusers", marker = "extra == 'vla-jepa'", specifier = ">=0.38.0" },
     { name = "executorch", marker = "extra == 'executorch'", specifier = ">=1.1.0" },
     { name = "executorch", marker = "extra == 'executorch-openvino'", specifier = ">=1.1.0" },
     { name = "gym-pusht", specifier = ">=0.1.5,<=0.1.8" },
@@ -3043,6 +3049,7 @@ requires-dist = [
     { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["vla-jepa"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["xr0"], marker = "extra == 'policies'" },
     { name = "pillow" },
     { name = "pillow", marker = "extra == 'cosmos3'", specifier = ">=10.0.0,<13.0.0" },
@@ -3059,6 +3066,7 @@ requires-dist = [
     { name = "safetensors", marker = "extra == 'pi05'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'rldx1'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'vla-jepa'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'xr0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "scipy", marker = "extra == 'rldx1'", specifier = ">=1.11.0,<2.0.0" },
     { name = "sentencepiece", marker = "extra == 'pi05'", specifier = "<=0.2.1" },
@@ -3076,10 +3084,11 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'pi05'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'vla-jepa'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'xr0'", specifier = ">=5.15.0,<=5.15.1" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "vla-jepa", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [

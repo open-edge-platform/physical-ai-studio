@@ -75,13 +75,14 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 
 ## Implemented Policies
 
-| Policy      | Description                             | Source                     |
-| ----------- | --------------------------------------- | -------------------------- |
-| **ACT**     | Action Chunking Transformer             | Native implementation      |
-| **Pi0.5**   | Physical Intelligence flow-matching VLA | Native implementation      |
-| **RLDX-1**  | RLWRLD multi-embodiment VLA             | Native implementation      |
-| **SmolVLA** | Small Vision-Language-Action            | Native + LeRobot           |
-| **Cosmos3** | World Action Model policy               | [cosmos3.md](./cosmos3.md) |
+| Policy       | Description                             | Source                       |
+| ------------ | --------------------------------------- | ---------------------------- |
+| **ACT**      | Action Chunking Transformer             | Native implementation        |
+| **Pi0.5**    | Physical Intelligence flow-matching VLA | Native implementation        |
+| **RLDX-1**   | RLWRLD multi-embodiment VLA             | Native implementation        |
+| **SmolVLA**  | Small Vision-Language-Action            | Native + LeRobot             |
+| **Cosmos3**  | World Action Model policy               | [cosmos3.md](./cosmos3.md)   |
+| **VLA-JEPA** | Pretrained Qwen3-VL + flow-matching DiT | [vla-jepa.md](./vla-jepa.md) |
 
 LeRobot wrappers are documented separately in [`lerobot.md`](./lerobot.md).
 

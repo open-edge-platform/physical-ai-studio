@@ -76,11 +76,12 @@ PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
     "pi05": "lerobot/pi05_base",
     "rldx1": "RLWRLD/RLDX-1-PT",
     "smolvla": "lerobot/smolvla_base",
+    "vla_jepa": "lerobot/VLA-JEPA-Pretrain",
     "xr0": "XiaomiRobotics/Xiaomi-Robotics-0-Pretrain",
 }
 """Hub checkpoints used to initialize policies that only fine-tune from pretrained weights."""
 
-PEFT_POLICIES = frozenset({"pi05", "molmoact2"})
+PEFT_POLICIES = frozenset({"pi05", "molmoact2", "vla_jepa"})
 """Policies whose ``Config`` mixes in ``physicalai.policies.mixins.peft.PeftConfigMixin`` and
 support LoRA/DoRA fine-tuning."""
 
@@ -127,6 +128,13 @@ class TrainingJobSpec(BaseModel):
     val_split: float = Field(default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes held out for validation.")
     precision: str = Field(default="bf16-mixed", description="Lightning precision, e.g. '32-true' or 'bf16-mixed'.")
     compile_model: bool = Field(default=False, description="Whether to torch.compile the policy forward pass.")
+    enable_world_model: bool | None = Field(
+        default=None,
+        description=(
+            "VLA-JEPA: enable joint JEPA/action fine-tuning. None uses full training for new runs "
+            "or the checkpoint's saved mode on resume."
+        ),
+    )
     augment_images: bool = Field(
         default=False,
         description="Whether to augment training images with the default pipeline.",
@@ -178,6 +186,16 @@ class TrainingJobSpec(BaseModel):
         description="Use DoRA (Weight-Decomposed LoRA) instead of plain LoRA. Ignored unless lora_enabled.",
     )
     run_options: RunOptions = Field(default_factory=RunOptions)
+
+    @model_validator(mode="after")
+    def validate_world_model(self) -> TrainingJobSpec:
+        """Reject JEPA options on policies that cannot honor them."""
+        if self.enable_world_model is not None and (
+            self.policy.lower() != "vla_jepa" or self.policy_source != "physicalai"
+        ):
+            msg = "enable_world_model is only supported by the native VLA-JEPA policy."
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_lora(self) -> TrainingJobSpec:
@@ -256,6 +274,8 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
         pretrained = PRETRAINED_BASE_CHECKPOINTS.get(spec.policy.lower())
         if pretrained is not None:
             kwargs["pretrained_name_or_path"] = pretrained
+    if spec.policy.lower() == "vla_jepa" and spec.policy_source == "physicalai":
+        kwargs["enable_world_model"] = spec.enable_world_model
     kwargs.update(_camera_layout_kwargs(spec))
     if spec.lora_enabled:
         kwargs.update(
@@ -473,7 +493,10 @@ def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Pol
         from physicalai.policies import get_physicalai_policy_class
 
         policy_class = get_physicalai_policy_class(spec.policy)
-        policy = policy_class.load_from_checkpoint(str(checkpoint))
+        kwargs: dict[str, Any] = (
+            {"enable_world_model": spec.enable_world_model} if spec.enable_world_model is not None else {}
+        )
+        policy = policy_class.load_from_checkpoint(str(checkpoint), **kwargs)
 
     if spec.compile_model:
         import torch

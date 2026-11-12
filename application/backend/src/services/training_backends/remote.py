@@ -363,6 +363,8 @@ class RemoteTrainingBackend:
         hf_token = resolve_hf_token()
 
         excluded = {"run_options"}
+        if spec.enable_world_model is None:
+            excluded.add("enable_world_model")
         if spec.snapflow_start_epoch is None:
             excluded.add("snapflow_start_epoch")
         body: dict[str, Any] = {
