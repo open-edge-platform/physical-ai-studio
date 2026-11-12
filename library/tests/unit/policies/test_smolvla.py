@@ -559,6 +559,27 @@ class TestAttentionModes:
         config = SmolVLAConfig()
         assert config.prefix_length == -1
 
+    def test_eager_attention_fully_masked_rows_stay_finite(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Padding rows have no visible keys; bf16/f16 backends turn the float32-min fill into -inf (NaN softmax)."""
+        from physicalai.policies.smolvla.model import _SmolVLMWithExpertModel
+
+        torch.manual_seed(0)
+        batch, seq, heads, head_dim = 1, 4, 2, 8
+        q, k, v = (torch.randn(batch, seq, heads, head_dim) for _ in range(3))
+        valid = torch.tensor([[True, True, True, False]])
+        mask = valid[:, None, :] & valid[:, :, None]  # last row fully masked
+        expected = torch.nn.functional.scaled_dot_product_attention(
+            q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), attn_mask=valid[:, None, None, :]
+        ).transpose(1, 2).reshape(batch, seq, heads * head_dim)
+
+        # Emulate the low-precision overflow of the masking constant.
+        monkeypatch.setattr(torch, "finfo", lambda _dtype: SimpleNamespace(min=float("-inf")))
+        stub = SimpleNamespace(num_attention_heads=heads, num_key_value_heads=heads)
+        out = _SmolVLMWithExpertModel.eager_attention_forward(stub, mask, batch, head_dim, q, k, v)
+
+        assert torch.isfinite(out).all()
+        torch.testing.assert_close(out[:, :3], expected[:, :3])
+
 
 class TestMixedPrecisionDtypeCasting:
     """`to_bfloat16_for_selected_params` casts most weights to bfloat16 while a batch's
