@@ -50,8 +50,14 @@ snap connections "$SNAP_NAME" | awk -v s="$SNAP_NAME:" 'NR>1 && index($2, s)==1 
   done
 
 install -d -m 755 "$GG_ROOT"
-install -m 644 "$BUNDLE_DIR/device.pem.crt" "$BUNDLE_DIR/AmazonRootCA1.pem" "$GG_ROOT/"
-install -m 600 "$BUNDLE_DIR/private.pem.key" "$GG_ROOT/"
+# World-readable so non-root processes on the robot can request AWS credentials as the robot.
+install -m 644 "$BUNDLE_DIR/device.pem.crt" "$BUNDLE_DIR/private.pem.key" "$BUNDLE_DIR/AmazonRootCA1.pem" "$GG_ROOT/"
+cat >&2 <<EOF
+WARNING: $GG_ROOT/private.pem.key is world-readable (644).
+  Every local user and process on this robot can obtain AWS credentials as this robot,
+  with the Studio role's permissions, until its certificate is deactivated.
+  To restrict access: sudo chmod 600 $GG_ROOT/private.pem.key
+EOF
 sed -E "s/^(    version: ).*/\1\"$SNAP_VERSION\"/" "$BUNDLE_DIR/config.yaml" > "$GG_ROOT/config.yaml"
 chmod 644 "$GG_ROOT/config.yaml"
 echo "Installed bundle into $GG_ROOT (nucleus version $SNAP_VERSION)."

@@ -165,7 +165,7 @@ The installer:
 
 1. Installs the `aws-iot-greengrass` snap if missing and checks that it provides Greengrass V2. Creates `/etc/ssl/certs/java` if missing, because the snap bind-mounts its Java trust store there and snapd cannot create that mount point itself.
 2. Connects the snap's disconnected interfaces, except those that grant root-equivalent access to the robot (see below); interfaces without a provider on the robot are skipped.
-3. Installs the bundle into the snap's Greengrass root (private key mode `600`, other files `644`) and sets the nucleus version in `config.yaml` to the snap's version.
+3. Installs the bundle into the snap's Greengrass root and sets the nucleus version in `config.yaml` to the snap's version.
 4. Installs the nucleus from the snap into that root inside the snap's confinement, using the snap's Java runtime, without starting it.
 5. Restarts `aws-iot-greengrass.greengrass-daemon`, which starts Greengrass from that root.
 
