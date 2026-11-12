@@ -235,3 +235,66 @@ def test_enablements_can_declare_their_own_environments(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate environment names"):
         _Duplicate.environments()
+
+
+def _policy_env(tmp_path: Path, name: str, accelerators: tuple[str, ...] = ("cpu", "cu128", "xpu")) -> WorkerEnv:
+    return WorkerEnv(
+        framework="fake",
+        name=name,
+        project=tmp_path / name,
+        worker=tmp_path / "w.py",
+        distribution="d",
+        package="p",
+        accelerators=accelerators,
+    )
+
+
+def test_policies_select_their_own_environment_and_others_use_the_engines(tmp_path: Path) -> None:
+    shared = _policy_env(tmp_path, "pi")
+
+    class _PerPolicy(_FakeEngine):
+        env = _policy_env(tmp_path, "default")
+        policy_envs: ClassVar[Mapping[str, WorkerEnv]] = {"pi0": shared, "pi05": shared, "smol": _policy_env(tmp_path, "smol")}
+
+    assert _PerPolicy.environment_for_policy("pi05") is shared
+    assert _PerPolicy.environment_for_policy("smol").name == "smol"
+    assert _PerPolicy.environment_for_policy("act").name == "default"
+    assert _PerPolicy.environment_for_policy(None).name == "default"
+    assert [env.name for env in _PerPolicy.environments()] == ["default", "pi", "smol"]
+
+
+def test_policy_environment_equal_to_the_engines_is_listed_once(tmp_path: Path) -> None:
+    default = _policy_env(tmp_path, "default")
+
+    class _MappedToDefault(_FakeEngine):
+        env = default
+        policy_envs: ClassVar[Mapping[str, WorkerEnv]] = {"tiny": default}
+
+    assert _MappedToDefault.environments() == (default,)
+
+
+def test_different_policy_environments_with_one_name_are_rejected(tmp_path: Path) -> None:
+    class _Clash(_FakeEngine):
+        env = _policy_env(tmp_path, "default")
+        policy_envs: ClassVar[Mapping[str, WorkerEnv]] = {"a": _policy_env(tmp_path, "shared"), "b": _policy_env(tmp_path / "other", "shared")}
+
+    with pytest.raises(ValueError, match="duplicate environment names"):
+        _Clash.environments()
+
+
+def test_policy_without_any_environment_is_reported(tmp_path: Path) -> None:
+    class _OnlyPolicyEnv(_FakeEngine):
+        env = None
+        policy_envs: ClassVar[Mapping[str, WorkerEnv]] = {"smol": _policy_env(tmp_path, "smol")}
+
+    assert _OnlyPolicyEnv.environment_for_policy("smol").name == "smol"
+    with pytest.raises(ValueError, match="does not use a managed worker environment"):
+        _OnlyPolicyEnv.environment_for_policy("tiny")
+
+
+def test_capabilities_report_the_policys_own_environment_accelerators(tmp_path: Path) -> None:
+    class _PerPolicy(_FakeEngine):
+        env = _policy_env(tmp_path, "default", accelerators=("cpu",))
+        policy_envs: ClassVar[Mapping[str, WorkerEnv]] = {"tiny": _policy_env(tmp_path, "tiny", accelerators=("cu128",))}
+
+    assert _PerPolicy.capabilities("tiny").training_accelerators == ("cpu", "cu128", "xpu")

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tomllib
 
+import pytest
 from packaging.requirements import Requirement
 
 from physicalai.engine._environment import locked_version, supported_versions
@@ -60,6 +61,28 @@ def test_worker_project_has_only_locked_framework_dependencies() -> None:
     assert "https://download.pytorch.org/whl/cpu" in lock_text
     assert "https://download.pytorch.org/whl/cu128" in lock_text
     assert "https://download.pytorch.org/whl/xpu" in lock_text
+
+
+@pytest.mark.parametrize(
+    ("family", "marker_package"),
+    [("smolvla", "num2words"), ("pi", "scipy"), ("molmoact2", "peft")],
+)
+def test_each_policy_family_has_its_own_locked_worker_project(family: str, marker_package: str) -> None:
+    env = LeRobotEngine.environment_for_policy({"smolvla": "smolvla", "pi": "pi05", "molmoact2": "molmoact2"}[family])
+    project = resources.files("physicalai_lerobot_policy_plugin") / "envs" / family
+    pyproject = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
+    lock_text = (project / "uv.lock").read_text(encoding="utf-8")
+    lock_packages = {package["name"] for package in tomllib.loads(lock_text)["package"]}
+
+    assert env.name == family
+    assert locked_version(env) in supported_versions(env)
+    assert pyproject["project"]["dependencies"] == [f"lerobot[training,{family}]>=0.6.1,<0.7"]
+    assert {"cpu", "cu128", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
+    assert marker_package in lock_packages
+    assert "physicalai" not in lock_packages
+    assert "physicalai-train" not in lock_packages
+    for index in ("cpu", "cu128", "xpu"):
+        assert f"https://download.pytorch.org/whl/{index}" in lock_text
 
 
 def test_runtime_registration_import_does_not_load_the_training_engine() -> None:

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Executes the framework's installed native script with shell=False.
@@ -13,6 +14,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from importlib import import_module, metadata, resources
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from packaging.version import Version
@@ -39,18 +41,53 @@ _SETTING_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*")
 _MAX_SETTING_DEPTH = 10
 _PLUGIN_DISTRIBUTION = "physicalai-lerobot-policy-plugin"
 _PLUGIN_ROOT = resources.files(__package__)
+_HUB_REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*")
+
+logger = logging.getLogger(__name__)
 
 
-class LeRobotEngine(TrainingEngine):
-    """Run LeRobot's own trainer in its version-locked worker environment."""
+def _worker_env(name: str = "default") -> WorkerEnv:
+    """Declare a LeRobot worker environment from a bundled, locked project.
 
-    framework: ClassVar[str] = "lerobot"
-    env: ClassVar[WorkerEnv] = WorkerEnv(
-        framework=framework,
-        project=_PLUGIN_ROOT / "env",
+    ``default`` uses ``env/``; a policy family uses ``envs/<name>/``, whose project installs
+    only that family's LeRobot extra so its dependencies never meet another family's.
+
+    Returns:
+        The worker environment declaration.
+    """
+    project = _PLUGIN_ROOT / "env" if name == "default" else _PLUGIN_ROOT / "envs" / name
+    return WorkerEnv(
+        framework="lerobot",
+        project=project,
         worker=_PLUGIN_ROOT / "_worker.py",
         distribution=_PLUGIN_DISTRIBUTION,
         package="lerobot",
+        name=name,
+    )
+
+
+_SMOLVLA_ENV = _worker_env("smolvla")
+_PI_ENV = _worker_env("pi")
+_MOLMOACT2_ENV = _worker_env("molmoact2")
+
+
+class LeRobotEngine(TrainingEngine):
+    """Run LeRobot's own trainer in its version-locked worker environment.
+
+    Policy families with their own dependencies (``smolvla``, the ``pi`` family and
+    ``molmoact2``) train in their own environment; every other policy uses ``env``.
+    """
+
+    framework: ClassVar[str] = "lerobot"
+    env: ClassVar[WorkerEnv] = _worker_env()
+    policy_envs: ClassVar[Mapping[str, WorkerEnv]] = MappingProxyType(
+        {
+            "smolvla": _SMOLVLA_ENV,
+            "pi0": _PI_ENV,
+            "pi05": _PI_ENV,
+            "pi0_fast": _PI_ENV,
+            "molmoact2": _MOLMOACT2_ENV,
+        },
     )
     stock_export_formats: ClassVar[tuple[str, ...]] = ("native",)
 
@@ -78,10 +115,12 @@ class LeRobotEngine(TrainingEngine):
             msg = "LeRobotEngine.train() requires a native TrainPipelineConfig with save_pretrained()."
             raise TypeError(msg)
 
-        expected_version = _host_lerobot_version(self.env)
         policy = getattr(config, "policy", None)
+        policy_type = getattr(policy, "type", None)
+        env = self.environment_for_policy(policy_type if isinstance(policy_type, str) else None)
+        expected_version = _host_lerobot_version(env)
         configured_device = getattr(policy, "device", None)
-        device, worker_accelerator = _resolve_worker_device(configured_device, allowed=self.env.accelerators)
+        device, worker_accelerator = _resolve_worker_device(configured_device, allowed=env.accelerators)
         with tempfile.TemporaryDirectory(prefix="physicalai-lerobot-config-") as temporary:
             config_dir = Path(temporary)
             save_pretrained(config_dir)
@@ -90,7 +129,7 @@ class LeRobotEngine(TrainingEngine):
                 msg = "LeRobot TrainPipelineConfig.save_pretrained() did not write train_config.json."
                 raise FileNotFoundError(msg)
             return run_worker(
-                self.env,
+                env,
                 [f"--config_path={config_path}"],
                 device=device,
                 hooks=hooks,
@@ -118,9 +157,10 @@ class LeRobotEngine(TrainingEngine):
         if cls.env is None:
             msg = "LeRobotEngine requires a worker environment."
             raise RuntimeError(msg)
+        env = cls.environment_for_policy(_policy_type_from_cli(argv))
         requested_device = _device_from_cli(argv)
-        _, accelerator = _resolve_worker_device(requested_device, allowed=cls.env.accelerators)
-        python = interpreter_for(cls.env, accelerator=accelerator, interpreter=interpreter)
+        _, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
+        python = interpreter_for(env, accelerator=accelerator, interpreter=interpreter)
         script_name = "lerobot-train.exe" if os.name == "nt" else "lerobot-train"
         executable = scripts_dir(python) / script_name
         return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.
@@ -151,9 +191,12 @@ class LeRobotEngine(TrainingEngine):
         if cls.env is None:
             msg = "LeRobotEngine requires a worker environment."
             raise RuntimeError(msg)
+        env = cls.environment_for_policy(_settings_policy_type(settings))
         settings_device = _settings_device(settings)
-        requested_device = settings_device if device.strip().lower() == "auto" and settings_device is not None else device
-        resolved_device, accelerator = _resolve_worker_device(requested_device, allowed=cls.env.accelerators)
+        requested_device = (
+            settings_device if device.strip().lower() == "auto" and settings_device is not None else device
+        )
+        resolved_device, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
         flattened: dict[str, object] = {}
         _flatten_settings(settings, "", flattened)
         flattened.update(
@@ -166,7 +209,7 @@ class LeRobotEngine(TrainingEngine):
         )
         flags = [f"--{name}={_native_value(value)}" for name, value in flattened.items()]
         return run_worker(
-            cls.env,
+            env,
             flags,
             device=resolved_device,
             hooks=hooks,
@@ -310,38 +353,121 @@ def _settings_device(settings: Mapping[str, Any]) -> str | None:
     return device if isinstance(device, str) and device.strip() else None
 
 
-def _device_from_cli(arguments: Sequence[str]) -> str | None:
-    configured_device: str | None = None
-    config_path: str | None = None
-    policy_path: str | None = None
+_CLI_OPTIONS = ("--policy.device", "--policy.type", "--policy.path", "--config_path")
+
+
+def _cli_options(arguments: Sequence[str]) -> dict[str, str]:
+    """Collect the native options the engine reads, in ``--name=value`` or ``--name value`` form.
+
+    Returns:
+        The last value given for each option in :data:`_CLI_OPTIONS`.
+    """
+    found: dict[str, str] = {}
     index = 0
     while index < len(arguments):
         argument = arguments[index]
-        options = (("--policy.device", "device"), ("--config_path", "config"), ("--policy.path", "policy"))
-        for option, destination in options:
+        for option in _CLI_OPTIONS:
             if argument.startswith(f"{option}="):
-                value = argument.partition("=")[2]
-                if destination == "device":
-                    configured_device = value
-                elif destination == "config":
-                    config_path = value
-                else:
-                    policy_path = value
+                found[option] = argument.partition("=")[2]
                 break
             if argument == option and index + 1 < len(arguments):
                 index += 1
-                value = arguments[index]
-                if destination == "device":
-                    configured_device = value
-                elif destination == "config":
-                    config_path = value
-                else:
-                    policy_path = value
+                found[option] = arguments[index]
                 break
         index += 1
+    return found
+
+
+def _device_from_cli(arguments: Sequence[str]) -> str | None:
+    options = _cli_options(arguments)
+    configured_device = options.get("--policy.device")
     if configured_device is not None:
         return configured_device
-    return _device_from_config(policy_path, policy_config=True) or _device_from_config(config_path)
+    return _device_from_config(options.get("--policy.path"), policy_config=True) or _device_from_config(
+        options.get("--config_path"),
+    )
+
+
+def _policy_type_from_cli(arguments: Sequence[str]) -> str | None:
+    """Find the native policy type a ``lerobot-train`` command line will train.
+
+    Precedence follows LeRobot: an explicit ``--policy.type``, then the type stored with a
+    ``--policy.path`` checkpoint (local or on the Hugging Face Hub), then ``--config_path``.
+
+    Returns:
+        The policy type, or ``None`` when the command line does not determine it.
+    """
+    options = _cli_options(arguments)
+    policy_type = options.get("--policy.type")
+    if policy_type:
+        return policy_type
+    policy_path = options.get("--policy.path")
+    if policy_path:
+        return _policy_type_from_config(policy_path, policy_config=True) or _hub_policy_type(policy_path)
+    return _policy_type_from_config(options.get("--config_path"))
+
+
+def _settings_policy_type(settings: Mapping[str, Any]) -> str | None:
+    policy = settings.get("policy")
+    if not isinstance(policy, Mapping):
+        return None
+    policy_type = policy.get("type")
+    if isinstance(policy_type, str) and policy_type.strip():
+        return policy_type.strip()
+    path = policy.get("path")
+    if isinstance(path, str) and path.strip():
+        return _policy_type_from_config(path, policy_config=True) or _hub_policy_type(path)
+    return None
+
+
+def _policy_type_from_config(config_path: str | None, *, policy_config: bool = False) -> str | None:
+    """Read the policy type from a local policy ``config.json`` or a training config.
+
+    Returns:
+        The policy type, or ``None`` when *config_path* is not a readable local config.
+    """
+    if config_path is None:
+        return None
+    path = Path(config_path).expanduser()
+    if path.is_dir():
+        names = ("config.json", "train_config.json") if policy_config else ("train_config.json", "config.json")
+        candidates = tuple(path / name for name in names)
+    elif path.is_file():
+        candidates = (path,)
+    else:
+        return None
+    for candidate in candidates:
+        data = _load_native_config(candidate)
+        if not isinstance(data, Mapping):
+            continue
+        policy = data.get("policy")
+        policy_type = policy.get("type") if isinstance(policy, Mapping) else data.get("type")
+        if isinstance(policy_type, str) and policy_type.strip():
+            return policy_type.strip()
+    return None
+
+
+def _hub_policy_type(repo_id: str) -> str | None:
+    """Read the policy type from a Hugging Face Hub checkpoint's ``config.json``.
+
+    Returns:
+        The policy type, or ``None`` when *repo_id* is not a Hub id or its config cannot be read.
+        The engine then falls back to its default environment.
+    """
+    if _HUB_REPO_RE.fullmatch(repo_id) is None:
+        return None
+    try:
+        from huggingface_hub import hf_hub_download  # ruff: ignore[import-outside-top-level]
+
+        config_file = hf_hub_download(repo_id, "config.json")  # nosec B615  # Reads metadata only; the worker loads the model.
+    except Exception as exc:  # ruff: ignore[blind-except]  # Any download failure only means the default environment.
+        logger.warning(
+            "Could not read the policy type of %s (%s); using the default LeRobot environment.",
+            repo_id,
+            exc,
+        )
+        return None
+    return _policy_type_from_config(config_file, policy_config=True)
 
 
 def _device_from_config(config_path: str | None, *, policy_config: bool = False) -> str | None:

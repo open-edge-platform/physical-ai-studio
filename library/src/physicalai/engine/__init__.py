@@ -14,6 +14,7 @@ LeRobot, PyTorch, or Runtime inference adapters.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar, Literal, overload
 
 from . import _registry
@@ -62,10 +63,15 @@ class Engine(ABC):
     Engines that also train subclass :class:`TrainingEngine`. Capabilities that
     need different framework code, such as a patched export path, are declared
     as :class:`Enablement` entries, each optionally with its own environment.
+
+    Policies whose dependencies differ from the engine's default environment map
+    to their own locked environment in ``policy_envs``. Several policies may share
+    one environment; every other policy uses ``env``.
     """
 
     framework: ClassVar[str]
     env: ClassVar[WorkerEnv | None] = None
+    policy_envs: ClassVar[Mapping[str, WorkerEnv]] = MappingProxyType({})
     enablements: ClassVar[tuple[Enablement, ...]] = ()
     stock_export_formats: ClassVar[tuple[str, ...]] = ()
 
@@ -86,7 +92,10 @@ class Engine(ABC):
 
     @classmethod
     def environments(cls) -> tuple[WorkerEnv, ...]:
-        """Return the engine's own environment followed by enablement environments.
+        """Return the engine's own, per-policy, and enablement environments.
+
+        A policy environment shared by several policies, or equal to the engine's own,
+        is listed once.
 
         Returns:
             Declared worker environments.
@@ -95,12 +104,32 @@ class Engine(ABC):
             ValueError: If two environments share a name.
         """
         declared = [cls.env] if cls.env is not None else []
+        for env in cls.policy_envs.values():
+            if env not in declared:
+                declared.append(env)
         declared.extend(enablement.env for enablement in cls.enablements if enablement.env is not None)
         names = [env.name for env in declared]
         if len(names) != len(set(names)):
             msg = f"Engine {cls.framework!r} declares duplicate environment names: {names}."
             raise ValueError(msg)
         return tuple(declared)
+
+    @classmethod
+    def environment_for_policy(cls, policy: str | None) -> WorkerEnv:
+        """Return the worker environment that trains *policy*.
+
+        Like :meth:`environment`, this raises ``ValueError`` when neither the policy nor the
+        engine declares an environment.
+
+        Args:
+            policy: Native policy type, or ``None`` when it is not known.
+
+        Returns:
+            The policy's own environment when declared, otherwise the engine's.
+        """
+        if policy is not None and policy in cls.policy_envs:
+            return cls.policy_envs[policy]
+        return cls.environment()
 
     @classmethod
     def environment(cls, name: str | None = None) -> WorkerEnv:
@@ -141,8 +170,9 @@ class Engine(ABC):
         accelerators: set[str] = set()
         if trains:
             accelerators.update(getattr(cls, "training_accelerators", ()))
-            if cls.env is not None:
-                accelerators.update(cls.env.accelerators)
+            policy_env = cls.policy_envs.get(policy, cls.env)
+            if policy_env is not None:
+                accelerators.update(policy_env.accelerators)
         export_formats = set(cls.stock_export_formats)
         active_enablements: list[str] = []
         for enablement in cls.enablements:

@@ -1,0 +1,53 @@
+[project]
+name = "physicalai-lerobot-worker-smolvla"
+version = "0.0.0"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "lerobot[training,smolvla]>=0.6.1,<0.7",
+]
+
+[project.optional-dependencies]
+cpu = ["torch", "torchvision"]
+cu128 = ["torch", "torchvision"]
+xpu = ["torch", "torchvision"]
+
+[tool.uv]
+package = false
+index-strategy = "unsafe-best-match"
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cu128" }],
+    [{ extra = "cpu" }, { extra = "xpu" }],
+    [{ extra = "cu128" }, { extra = "xpu" }],
+]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = false
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+triton-xpu = { index = "pytorch-xpu" }
