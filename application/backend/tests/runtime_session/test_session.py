@@ -371,6 +371,40 @@ async def test_reloads_run_one_at_a_time_so_the_latest_address_wins(new_session,
     await session.stop()
 
 
+async def test_a_failed_follow_says_so_before_a_reload_that_recovers(new_session, fake_cameras) -> None:
+    class FailingOnce(Simulations):
+        async def resolve(self, draft):
+            error, self.error = self.error, None  # only the first lookup, the follow's, fails
+            environment = await super().resolve(draft)
+            if error is not None:
+                raise error
+            return environment
+
+    simulations = FailingOnce()
+    session = await _session_on(new_session, simulations)
+    statuses = subscribe_statuses(session)
+    simulations.url, simulations.gate = SIM_B, asyncio.Event()
+    simulations.error = SimulationNotRunningError("Start it", robot_name="Follower")
+    following = asyncio.create_task(session.follow_simulation(FOLLOWER_ID, SIM_B, run="2"))
+    await asyncio.wait_for(simulations.looking_up.wait(), 1)
+    reloading = asyncio.create_task(session.reload_environment())  # the user reloads meanwhile
+    await asyncio.sleep(0.05)
+    gate = simulations.gate
+    simulations.gate = None
+    gate.set()
+    await asyncio.wait_for(following, 10)
+    await asyncio.wait_for(reloading, 10)
+
+    environment_states = []
+    while (status := statuses.poll()) is not None:
+        if status.component == "environment":
+            environment_states.append(status.state)
+    assert environment_states[-1] == "running"
+    assert environment_states.index("failed") < environment_states.index("running")
+    assert _streamed_from(fake_cameras) == f"{SIM_B}/cameras/cam0/mjpeg"
+    await session.stop()
+
+
 async def test_a_restart_reported_while_loading_is_followed_once_loaded(new_session, fake_cameras) -> None:
     simulations = Simulations()
     session = await new_session(Resolvers(environment=simulations.resolve, dataset=_unresolved, model=_unresolved))

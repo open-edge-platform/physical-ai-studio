@@ -539,22 +539,31 @@ class RuntimeSession:
         """
         await self._reload(expected=None)
 
-    async def _reload(self, *, expected: int | None) -> bool:
+    async def _reload(self, *, expected: int | None, lookup_failed: Callable[[Exception], None] | None = None) -> bool:
         """Reload the environment; with *expected*, only the one of that generation, else nothing.
 
         The draft is looked up under the lock, unlike a load's: reloads run one at a time, each
         connecting to where the devices are when it runs, so an older one cannot undo a newer one.
+        With *lookup_failed*, a failed lookup is handed to it, still under the lock, instead of
+        raised: what it reports then comes before whatever the next reload reports.
 
         Returns:
-            Whether it reloaded: ``False`` when *expected* is no longer loaded, or the session closed.
+            Whether it reloaded: ``False`` when *expected* is no longer loaded, the session closed,
+            or the lookup failed and went to *lookup_failed*.
         """
         async with self._lock:
             if expected is not None and (self.closed.is_set() or self._generation != expected):
                 return False
             loaded = self._environment.require("Load an environment first.")
             if self._draft is not None:
-                current = await self._resolve.environment(self._draft)
-                self._describe_again(loaded, await describe_environment(current, self._robot_factory))
+                try:
+                    current = await self._resolve.environment(self._draft)
+                    self._describe_again(loaded, await describe_environment(current, self._robot_factory))
+                except Exception as error:
+                    if lookup_failed is None:
+                        raise
+                    lookup_failed(error)
+                    return False
             # The control borrows the leader, and the episode records the devices being replaced.
             await self._control.unload()
             await self._stop_recording()
@@ -616,17 +625,18 @@ class RuntimeSession:
             self._followed = (generation, run, target)
         name = description.robot_names.get(description.follower.robot_id)
         logger.info("Session {}: the simulation of {!r} moved to {}; reloading the environment", self.id, name, target)
-        try:
-            await self._reload(expected=generation)
-        except Exception as error:
-            failure = _command_error(error)
-            if failure.error_code == "device_connection_failed":
-                return  # the environment reported it, failed
-            message = f"The simulation of {name!r} started again at {target}: {failure.message}"
+
+        def lookup_failed(error: Exception) -> None:
+            message = f"The simulation of {name!r} started again at {target}: {_command_error(error).message}"
             logger.warning("Session {} could not follow: {}", self.id, message)
-            async with self._lock:
-                if not self.closed.is_set() and self._generation == generation:
-                    publish_status(self.bus, ENVIRONMENT, "failed", message)
+            if not self.closed.is_set():  # a stop waits for this lookup; the closing session reports nothing
+                publish_status(self.bus, ENVIRONMENT, "failed", message)
+
+        try:
+            await self._reload(expected=generation, lookup_failed=lookup_failed)
+        except Exception as error:
+            # The devices did not reconnect: the environment reported that itself, failed.
+            logger.warning("Session {} could not follow: {}", self.id, _command_error(error).message)
 
     async def unload_environment(self) -> None:
         """Stop the control and disconnect the environment. A no-op when none is loaded.
