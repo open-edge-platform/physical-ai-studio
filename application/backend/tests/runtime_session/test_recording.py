@@ -13,8 +13,9 @@ import pytest
 
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
 from internal_datasets.utils import get_internal_read_dataset
+from runtime_session import dataset as session_dataset
 from runtime_session.bus import BusRequestError, NoResponderError, command_key, publish_status
-from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec
+from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec, editing, sessions_recording_into
 from runtime_session.session import RuntimeSession
 from runtime_session.store import FeatureSpecMismatchError, ImageSpec
 from schemas.dataset import Dataset
@@ -372,6 +373,46 @@ async def test_loading_another_dataset_finishes_the_first(new_session, fake_came
     await session.load_dataset(second)
     assert session.state().dataset.dataset_id == second.id
     assert recording_log(Path(first.path) / "recording.jsonl")[-1]["event"] == "teardown"
+
+
+async def test_a_dataset_is_open_from_starting_its_worker_until_it_has_copied_back(
+    new_session, fake_cameras, fake_worker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset = _dataset()
+    seen: dict[str, list[str]] = {}
+    until_serving, report_stopped = session_dataset.until_serving, session_dataset.Recording._report_stopped
+
+    async def starting(*args, **kwargs):
+        seen["starting"] = sessions_recording_into(dataset.id)
+        return await until_serving(*args, **kwargs)
+
+    def stopped(self, bus) -> None:  # after the worker has stopped and copied back
+        seen["stopped"] = sessions_recording_into(dataset.id)
+        report_stopped(self, bus)
+
+    monkeypatch.setattr(session_dataset, "until_serving", starting)
+    monkeypatch.setattr(session_dataset.Recording, "_report_stopped", stopped)
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    await session.unload_dataset()
+
+    assert seen == {"starting": [session.id], "stopped": [session.id]}
+    assert sessions_recording_into(dataset.id) == []
+    await session.stop()
+
+
+async def test_a_dataset_being_edited_is_not_opened_for_recording(new_session, fake_cameras, fake_worker) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+
+    with editing(dataset.id), pytest.raises(RuntimeSessionCommandError, match="is being edited"):
+        await session.load_dataset(dataset)
+
+    assert session.state().dataset is None
+    assert sessions_recording_into(dataset.id) == []
+    await session.stop()
 
 
 async def test_a_failed_environment_keeps_its_dataset_loaded_but_not_recording(
