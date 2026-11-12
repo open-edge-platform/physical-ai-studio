@@ -232,15 +232,18 @@ aws iot update-certificate --certificate-id <certificate-id> --new-status INACTI
 
 Use `REVOKED` instead of `INACTIVE` for a compromised key; revoked certificates cannot be reactivated. Existing temporary credentials remain valid until they expire, up to `RobotCredentialDurationSeconds`.
 
-To remove a robot completely, run [`deprovision-robot.sh`](../cloudformation/deprovision-robot.sh) on the administrator machine. It takes the same `--stack-identifier` as the provisioning script and asks you to type the thing name to confirm (skip with `--yes`):
+To remove a robot completely, run [`deprovision-robot.sh`](../cloudformation/deprovision-robot.sh) on the administrator machine. It takes the same `--stack-identifier` and `--ssh` options as the provisioning script and asks you to type the thing name to confirm (skip with `--yes`):
 
 ```bash
 application/cloudformation/deprovision-robot.sh \
   --thing-name robot-01 \
-  --stack-identifier 123456789012-us-east-1-6ba57d60
+  --stack-identifier 123456789012-us-east-1-6ba57d60 \
+  --ssh <user>@robot-01.local
 ```
 
-For each certificate attached to the thing, the script detaches it, then deactivates it, detaches all IoT policies, and deletes it. A certificate still used by another thing is only detached from this robot. It then deletes the Greengrass core device record, if any, and the thing, which also removes it from its thing groups. On the robot, run `sudo snap remove --purge aws-iot-greengrass`, and delete any local bundle copy on the administrator machine.
+With `--ssh`, the script first removes Greengrass from the robot: it checks that the robot's Greengrass `config.yaml` belongs to the same thing (and stops without changes otherwise), runs `sudo snap remove --purge aws-iot-greengrass`, and removes `/etc/ssl/certs/java` if it is empty. Without `--ssh`, run `sudo snap remove --purge aws-iot-greengrass` on the robot yourself.
+
+In AWS, for each certificate attached to the thing, the script detaches it, then deactivates it, detaches all IoT policies, and deletes it. A certificate still used by another thing is only detached from this robot. It then deletes the Greengrass core device record, if any, and the thing, which also removes it from its thing groups. Delete any local bundle copy on the administrator machine.
 
 To rotate a robot's certificate, provision it again with a new `--output-dir` and without `--ssh`, run `sudo snap remove --purge aws-iot-greengrass` on the robot, deliver the new bundle with `deliver-robot-bundle.sh`, then deactivate the old certificate.
 
