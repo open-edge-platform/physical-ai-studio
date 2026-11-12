@@ -163,13 +163,20 @@ Without SSH access, copy the bundle directory to the robot and run `sudo ./insta
 
 The installer:
 
-1. Installs the `aws-iot-greengrass` snap if missing and checks that it provides Greengrass V2.
-2. Connects the snap's disconnected interfaces; those without a provider on the robot, such as Docker, are skipped.
+1. Installs the `aws-iot-greengrass` snap if missing and checks that it provides Greengrass V2. Creates `/etc/ssl/certs/java` if missing, because the snap bind-mounts its Java trust store there and snapd cannot create that mount point itself.
+2. Connects the snap's disconnected interfaces, except those that grant root-equivalent access to the robot (see below); interfaces without a provider on the robot are skipped.
 3. Installs the bundle into the snap's Greengrass root (private key mode `600`, other files `644`) and sets the nucleus version in `config.yaml` to the snap's version.
 4. Installs the nucleus from the snap into that root inside the snap's confinement, using the snap's Java runtime, without starting it.
 5. Restarts `aws-iot-greengrass.greengrass-daemon`, which starts Greengrass from that root.
 
-It refuses to run if Greengrass is already installed in the snap's root; run `sudo snap remove --purge aws-iot-greengrass` on the robot to start over. Follow the logs on the robot:
+It refuses to run if Greengrass is already installed in the snap's root; run `sudo snap remove --purge aws-iot-greengrass` on the robot to start over. If the snap fails with `cannot update snap namespace: cannot write to /etc/ssl/certs/java`, create the directory and reset the snap's mount namespace, then run the installer again:
+
+```bash
+sudo mkdir -p /etc/ssl/certs/java
+sudo /usr/lib/snapd/snap-discard-ns aws-iot-greengrass
+```
+
+Follow the logs on the robot:
 
 ```bash
 sudo snap logs -f aws-iot-greengrass.greengrass-daemon
@@ -177,6 +184,22 @@ sudo tail -f /var/snap/aws-iot-greengrass/common/greengrass/v2/logs/greengrass.l
 ```
 
 The service waits about 30 seconds after start before launching the nucleus. Components run as `root` inside the snap's confinement, limited by the snap's plugs.
+
+#### Snap interfaces
+
+Snap interfaces grant the confined snap access to resources outside its sandbox. Check what is connected with `snap connections aws-iot-greengrass`.
+
+| Plug | Grants | Installer |
+| --- | --- | --- |
+| `network`, `network-bind` | Outbound connections and listening ports | Connected (usually automatic) |
+| `home` | Users' home directories | Connected (usually automatic) |
+| `system-observe`, `mount-observe`, `hardware-observe` | Read-only process, mount, and hardware information | Connected |
+| `camera` | Camera devices | Connected |
+| `snapd-control` | Installing and removing snaps | Not connected |
+| `docker`, `docker-executables` | Docker daemon and CLI from the `docker` snap | Not connected |
+| `process-control` | Signalling and reprioritizing any process | Not connected |
+
+The last three rows grant root-equivalent control of the robot to every component deployed to it. Connect one only if a component needs it, for example `sudo snap connect aws-iot-greengrass:docker docker:docker-daemon` for Docker-based components, then restart the service with `sudo snap restart aws-iot-greengrass.greengrass-daemon`.
 
 ### Verify the core device
 

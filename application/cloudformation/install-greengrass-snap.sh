@@ -22,6 +22,11 @@ fi
 if ! snap list "$SNAP_NAME" >/dev/null 2>&1; then
   snap install "$SNAP_NAME"
 fi
+# The snap bind-mounts its Java trust store here; snapd cannot create the mount point under /etc/ssl.
+if [[ ! -d /etc/ssl/certs/java ]]; then
+  install -d -m 755 /etc/ssl/certs/java
+  /usr/lib/snapd/snap-discard-ns "$SNAP_NAME" || true
+fi
 SNAP_VERSION="$(snap list "$SNAP_NAME" | awk 'NR==2 {print $2}')"
 if [[ ! "$SNAP_VERSION" =~ ^2\.[0-9.]+$ || ! -f "/snap/$SNAP_NAME/current/opt/greengrass/greengrass-nucleus.zip" ]]; then
   echo "Snap $SNAP_NAME $SNAP_VERSION does not provide Greengrass V2." >&2
@@ -32,9 +37,15 @@ if [[ -e "$GG_ROOT/alts/current" ]]; then
   exit 1
 fi
 
-# Interfaces whose providers are absent (e.g. docker) stay disconnected.
+# Root-equivalent interfaces are left for an administrator to connect explicitly;
+# others whose providers are absent stay disconnected.
+SKIPPED_PLUGS=" snapd-control docker docker-executables process-control "
 snap connections "$SNAP_NAME" | awk -v s="$SNAP_NAME:" 'NR>1 && index($2, s)==1 && $3=="-" {print $2}' |
   while read -r plug; do
+    if [[ "$SKIPPED_PLUGS" == *" ${plug#"$SNAP_NAME":} "* ]]; then
+      echo "Not connecting $plug (grants root-equivalent access)."
+      continue
+    fi
     snap connect "$plug" 2>/dev/null && echo "Connected $plug." || echo "Could not connect $plug; skipped."
   done
 
