@@ -216,37 +216,68 @@ def _to_lerobot_batch(inputs: Mapping[str, object], device: str) -> dict[str, ob
                 if not isinstance(camera_name, str):
                     msg = "LeRobot camera names must be strings."
                     raise TypeError(msg)
-                batch[f"observation.images.{camera_name}"] = _to_device_tensor(image, device, image=True)
+                name = f"observation.images.{camera_name}"
+                batch[name] = _to_device_tensor(image, device, image_key=name)
         elif key.startswith("images."):
-            camera_name = key.removeprefix("images.")
-            batch[f"observation.images.{camera_name}"] = _to_device_tensor(value, device, image=True)
+            name = f"observation.images.{key.removeprefix('images.')}"
+            batch[name] = _to_device_tensor(value, device, image_key=name)
         elif key == "state":
             batch["observation.state"] = _to_device_tensor(value, device)
         elif key == "image":
-            batch["observation.image"] = _to_device_tensor(value, device, image=True)
+            batch["observation.image"] = _to_device_tensor(value, device, image_key="observation.image")
         elif key == "task":
             batch[key] = _task_batch(value)
         elif key.startswith("observation."):
-            image = key.startswith("observation.image")
-            batch[key] = _to_device_tensor(value, device, image=image)
+            image_key = key if key.startswith("observation.image") else None
+            batch[key] = _to_device_tensor(value, device, image_key=image_key)
     return batch
 
 
-def _to_device_tensor(value: object, device: str, *, image: bool = False) -> torch.Tensor:
-    """Convert an observation value to a batched tensor on its target device.
+def _to_device_tensor(value: object, device: str, *, image_key: str | None = None) -> torch.Tensor:
+    """Convert an observation value to a float32 tensor on its target device.
+
+    Mirrors LeRobot's own environment preprocessing (``lerobot.envs.utils.preprocess_observation``):
+    uint8 camera frames become float32 in ``[0, 1]`` and numeric state becomes float32. LeRobot's
+    saved processors expect exactly that, and its normalizer casts its statistics to the input
+    dtype, so raw uint8 or float64 inputs would otherwise give wrong actions or dtype errors.
 
     Args:
         value: Native NumPy or PyTorch observation value.
         device: Device string passed to PyTorch.
-        image: Whether to normalize image channel layout before LeRobot preprocessing.
+        image_key: LeRobot key of a camera frame, or ``None`` for non-image values.
 
     Returns:
         Tensor on *device*, before LeRobot's saved batch processor runs.
     """
     tensor = value.to(device) if isinstance(value, torch.Tensor) else torch.as_tensor(value, device=device)
-    if image:
-        tensor = _image_layout(tensor)
-    return tensor
+    if image_key is None:
+        return tensor.to(torch.float32) if _is_numeric(tensor) else tensor
+    return _image_scale(_image_layout(tensor), image_key)
+
+
+def _is_numeric(tensor: torch.Tensor) -> bool:
+    return tensor.dtype != torch.bool and not tensor.is_complex()
+
+
+def _image_scale(image: torch.Tensor, key: str) -> torch.Tensor:
+    """Convert a camera frame to LeRobot's float32 ``[0, 1]`` range.
+
+    Args:
+        image: Camera frame as uint8 (0-255) or floating point (already ``[0, 1]``).
+        key: LeRobot observation key, used in the error message.
+
+    Returns:
+        Float32 image tensor.
+
+    Raises:
+        TypeError: If the frame uses an integer dtype other than uint8, which has no defined scale.
+    """
+    if image.dtype == torch.uint8:
+        return image.to(torch.float32).div_(255)
+    if image.is_floating_point():
+        return image.to(torch.float32)
+    msg = f"LeRobot camera frames must be uint8 or floating point in [0, 1], got {image.dtype} for {key!r}."
+    raise TypeError(msg)
 
 
 def _image_layout(image: torch.Tensor) -> torch.Tensor:
