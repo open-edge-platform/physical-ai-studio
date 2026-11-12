@@ -1937,6 +1937,30 @@ class TestPi05LoRAConfig:
         assert 0 < trainable < total
         assert trainable / total < 0.01, "LoRA should train well under 1% of parameters"
 
+    def test_default_lora_targets_cover_vision_tower_and_projector(self) -> None:
+        """Test default LoRA targets adapt every SigLIP linear and the vision projector."""
+        from peft.tuners.tuners_utils import BaseTunerLayer
+
+        policy = Pi05(
+            dataset_stats=self._stats(),
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+            lora_enabled=True,
+            lora_rank=4,
+            lora_alpha=8,
+        )
+        paligemma = policy.model.paligemma_with_expert.paligemma.model
+        modules = dict(paligemma.vision_tower.named_modules())
+        adapted = [n for n, m in modules.items() if isinstance(m, BaseTunerLayer)]
+        # LoRA wraps each Linear, so the only bare Linears left are the wrappers' own internals.
+        unadapted = [
+            n for n, m in modules.items() if isinstance(m, torch.nn.Linear) and "base_layer" not in n and "lora_" not in n
+        ]
+        assert adapted
+        assert unadapted == []
+        assert isinstance(paligemma.multi_modal_projector.linear, BaseTunerLayer)
+        assert not any(p.requires_grad for n, p in paligemma.vision_tower.named_parameters() if "lora_" not in n)
+
     def test_lora_adapters_default_to_float32_under_bfloat16_base(self) -> None:
         """Test LoRA adapter parameters are fp32 even when the base model is bf16."""
         policy = Pi05(
