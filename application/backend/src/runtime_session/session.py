@@ -157,6 +157,12 @@ class RuntimeSession:
         """Reads the store's frames, so it is unloaded before the store is replaced; a model control borrows it."""
         self._draft: EnvironmentDraft | None = None
         """What the loaded environment was loaded from, to look it up again on a reload; ``None`` for rows."""
+        self._generation = 0
+        """Counts the loads and unloads of environments, so work for one never touches the next."""
+        self._simulations: dict[UUID, str] = {}
+        """Where each robot's simulation was last reported running (``follow_simulation``)."""
+        self._followed: tuple[int, str] | None = None
+        """The generation and address the session last moved its environment to, once per address."""
         self._store: Store | None = None
         """Joints and frames, for the environment's devices and the dataset. Outlives a reloaded
         environment while the spec stays the same, so the dataset recording from it stays loaded."""
@@ -239,9 +245,10 @@ class RuntimeSession:
         bus.listen(dataset_rpc.EVENTS, RecordingStatus, self._on_recording)
 
     async def _load_draft(self, draft: EnvironmentDraft, *, unload_incompatible: bool) -> None:
-        await self.load_environment(
-            await self._resolve.environment(draft), unload_incompatible=unload_incompatible, draft=draft
-        )
+        environment = await self._resolve.environment(draft)
+        await self.load_environment(environment, unload_incompatible=unload_incompatible, draft=draft)
+        # The simulation may have started elsewhere while the draft was being looked up.
+        await self._follow()
 
     async def _load_dataset_by_id(self, dataset_id: UUID, fps: int | None) -> None:
         await self.load_dataset(await self._resolve.dataset(dataset_id), fps)
@@ -357,6 +364,7 @@ class RuntimeSession:
                 if self._observer is not None:
                     self._observer.set_store(self._store)
             self._draft = draft
+            self._generation += 1
             try:
                 await self._environment.load(self._loaded_environment(environment, description))
                 logger.info("Session {} loaded environment {!r}", self.id, environment.name)
@@ -527,14 +535,30 @@ class RuntimeSession:
         Raises:
             RuntimeSessionCommandError: No environment is loaded, or a device failed to connect;
                 the environment stays loaded then, failed, to try again. Or the environment no
-                longer has the robots and spec it was loaded with: load it again instead.
+                longer has the robots and spec it was loaded with, or another one was loaded
+                meanwhile: load it again instead.
         """
-        draft = self._draft
+        await self._reload(expected=None)
+
+    async def _reload(self, *, expected: int | None) -> bool:
+        """Reload the environment; with *expected*, only the one of that generation, else nothing.
+
+        Returns:
+            Whether it reloaded: ``False`` when *expected* is no longer loaded.
+        """
+        generation, draft = self._generation, self._draft
         # Outside the lock, like a load: looking it up asks the simulations where they serve.
         current = await self._resolve.environment(draft) if draft is not None else None
         async with self._lock:
+            if expected is not None and (self.closed.is_set() or self._generation != expected):
+                return False
             loaded = self._environment.require("Load an environment first.")
-            if current is not None and draft is self._draft:
+            if current is not None:
+                if self._generation != generation:
+                    raise RuntimeSessionCommandError(
+                        "Another environment was loaded while this one was reloading.",
+                        error_code="environment_changed",
+                    )
                 self._describe_again(loaded, await describe_environment(current, self._robot_factory))
             # The control borrows the leader, and the episode records the devices being replaced.
             await self._control.unload()
@@ -545,6 +569,7 @@ class RuntimeSession:
                 raise RuntimeSessionCommandError(error.message, error_code=error.error_code) from error
             finally:
                 self._emit(StateMessage(data=self.state()))
+        return True
 
     def _describe_again(self, loaded: LoadedEnvironment, description: EnvironmentDescription) -> None:
         """Have the loaded environment connect as *description* says from its next reload; hold the lock.
@@ -563,28 +588,56 @@ class RuntimeSession:
         self._environment.value = replace(loaded, state=description.session_environment())
 
     async def follow_simulation(self, robot_id: UUID, http_url: str) -> None:
-        """The simulation of *robot_id* runs at *http_url*: reload the environment if it drives that robot elsewhere.
+        """The simulation of *robot_id* runs at *http_url*: follow it there if the environment drives that robot.
 
         A simulation that starts again may serve on another address, where the loaded
-        environment's cameras and leader do not look. A reload that fails leaves the environment
-        failed, saying why, as any reload does.
+        environment's cameras and leader do not look; the environment is reloaded on the new one.
+        It runs to the end even if the caller is cancelled: a reload left halfway would outlive the
+        session's teardown.
         """
-        loaded = self._environment.value
-        if loaded is None:
-            return
-        description = loaded.environment.description
-        if description.follower.robot_id != robot_id or description.simulation_url in {None, http_url}:
-            return
-        logger.info(
-            "Session {}: the simulation of {!r} moved to {}; reloading the environment",
-            self.id,
-            description.robot_names.get(robot_id),
-            http_url,
-        )
+        self._simulations[robot_id] = http_url
+        with anyio.CancelScope(shield=True):
+            await self._follow()
+
+    async def _follow(self) -> None:
+        """Reload the environment once where its follower's simulation was last reported, if elsewhere.
+
+        A failure is reported as the environment's: before the devices reload (the simulation
+        stopped again, serves other cameras now), nothing else would say so.
+        """
+        async with self._lock:  # a load in progress finishes first
+            loaded = self._environment.value
+            if self.closed.is_set() or loaded is None:
+                return
+            description = loaded.environment.description
+            target = self._simulations.get(description.follower.robot_id)
+            generation = self._generation
+            if (
+                description.simulation_url is None
+                or target is None
+                or target == description.simulation_url
+                or self._followed == (generation, target)
+            ):
+                return
+            self._followed = (generation, target)
+        name = description.robot_names.get(description.follower.robot_id)
+        logger.info("Session {}: the simulation of {!r} moved to {}; reloading the environment", self.id, name, target)
         try:
-            await self.reload_environment()
-        except Exception as error:  # the environment reports its own failure
-            logger.warning("Session {} could not follow the simulation to {}: {}", self.id, http_url, error)
+            await self._reload(expected=generation)
+        except Exception as error:
+            failure = _command_error(error)
+            if failure.error_code == "device_connection_failed":
+                return  # the environment reported it, failed
+            message = (
+                f"The simulation of {name!r} started again at {target}, "
+                f"and the environment could not follow it: {failure.message}"
+            )
+            logger.warning("Session {}: {}", self.id, message)
+            if self._generation == generation:
+                publish_status(self.bus, ENVIRONMENT, "failed", message)
+            self._emit(
+                ErrorMessage(component=ENVIRONMENT, message=message, error_code=failure.error_code, session_alive=True)
+            )
 
     async def unload_environment(self) -> None:
         """Stop the control and disconnect the environment. A no-op when none is loaded.
@@ -597,6 +650,7 @@ class RuntimeSession:
             await self._control.unload()
             await self._environment.unload()
             self._draft = None
+            self._generation += 1
             logger.info("Session {} unloaded environment {!r}", self.id, environment.name)
         self._emit(StateMessage(data=self.state()))
 
