@@ -67,7 +67,7 @@ def test_engine_prepare_uses_the_registered_engines_locked_environment(
         package="lerobot",
     )
 
-    _FakeEngine = type("FakeEngine", (), {"env": env, "framework": "lerobot"})
+    _FakeEngine = type("FakeEngine", (Engine,), {"env": env, "framework": "lerobot"})
 
     calls: list[tuple[object, str, bool]] = []
     monkeypatch.setattr(Engine, "get", classmethod(lambda cls, name: _FakeEngine))
@@ -153,3 +153,37 @@ def test_engine_prepare_selects_an_enablement_environment(monkeypatch: pytest.Mo
     assert calls == [patched]
     with pytest.raises(ValueError, match="no enablement environment 'missing'"):
         engine_cli.run(parser, parser.parse_args(["prepare", "demo", "--enablement", "missing"]))
+
+
+def test_engine_prepare_selects_a_policy_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    base = WorkerEnv(framework="demo", project=tmp_path, worker=tmp_path / "w.py", distribution="d", package="p")
+    smol = WorkerEnv(
+        framework="demo",
+        name="smol",
+        project=tmp_path / "smol",
+        worker=tmp_path / "w.py",
+        distribution="d",
+        package="p",
+    )
+
+    class _Demo(Engine):
+        framework = "demo"
+        env = base
+        policy_envs = {"smolvla": smol}  # noqa: RUF012
+
+    calls: list[WorkerEnv] = []
+
+    def prepare(env: WorkerEnv, accelerator: str, *, offline: bool) -> Path:
+        del accelerator, offline
+        calls.append(env)
+        return tmp_path
+
+    monkeypatch.setattr(Engine, "get", classmethod(lambda cls, name: _Demo))
+    monkeypatch.setattr(engine_cli, "prepare", prepare)
+    parser = engine_cli.build_parser()
+
+    assert engine_cli.run(parser, parser.parse_args(["prepare", "demo", "--policy", "smolvla"])) == 0
+    assert engine_cli.run(parser, parser.parse_args(["prepare", "demo", "--policy", "act"])) == 0
+    assert calls == [smol, base]
+    with pytest.raises(ValueError, match="either --enablement or --policy"):
+        engine_cli.run(parser, parser.parse_args(["prepare", "demo", "--policy", "smolvla", "--enablement", "x"]))

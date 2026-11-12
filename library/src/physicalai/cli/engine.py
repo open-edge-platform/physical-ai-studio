@@ -26,6 +26,10 @@ def build_parser() -> ArgumentParser:
     parser.add_argument("framework", nargs="?", help="Engine identifier required by 'prepare'.")
     parser.add_argument("--enablement", help="Prepare an enablement's environment instead of the engine's own.")
     parser.add_argument(
+        "--policy",
+        help="Prepare the environment that trains this policy type (falls back to the engine's own).",
+    )
+    parser.add_argument(
         "--accelerator",
         choices=("auto", "cpu", "cuda", "cu128", "xpu"),
         default="auto",
@@ -51,10 +55,14 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
             raise ValueError(msg)
         engine_class = Engine.get(cfg.framework)
         enablement = getattr(cfg, "enablement", None)
-        if enablement is None and engine_class.env is None:
-            msg = f"Engine {cfg.framework!r} does not use a managed worker environment."
+        policy = getattr(cfg, "policy", None)
+        if enablement is not None and policy is not None:
+            msg = "Choose either --enablement or --policy, not both."
             raise ValueError(msg)
-        env = engine_class.env if enablement is None else engine_class.environment(enablement)
+        if enablement is not None:
+            env = engine_class.environment(enablement)
+        else:
+            env = engine_class.environment_for_policy(policy)
         python = prepare(env, cfg.accelerator, offline=cfg.offline)
         print(f"Prepared {engine_class.framework} {getattr(env, 'name', 'default')} worker environment: {python}")  # noqa: T201
         return 0
@@ -81,10 +89,12 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
 def print_help(prog: str) -> None:
     """Print concise command help without preparing any engine environment."""
     print(  # noqa: T201
-        f"usage: {prog} <prepare|list|prune> [framework] [--enablement NAME] [--accelerator NAME] [--offline]\n\n"
+        f"usage: {prog} <prepare|list|prune> [framework] [--enablement NAME | --policy TYPE] [--accelerator NAME]"
+        " [--offline]\n\n"
         f"{HELP}\n\n"
         "Examples:\n"
         "  physicalai engine prepare lerobot --accelerator xpu\n"
+        "  physicalai engine prepare lerobot --policy smolvla --accelerator cuda\n"
         "  physicalai engine prepare gr00t --enablement robotics-ai-suite-openvino",
     )
 
