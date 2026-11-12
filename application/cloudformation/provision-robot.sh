@@ -18,7 +18,9 @@ Options:
                            private key stays on the robot
   --nucleus-version VER    Greengrass nucleus version installed on the robot (default: 2.15.0)
   --output-dir DIR         Local bundle directory (default: ./robot-bundles/<thing-name>)
-  --ssh TARGET             Copy the bundle to TARGET (user@host) under /greengrass/v2
+  --greengrass-root DIR    Greengrass root on the robot (default: /greengrass/v2; for the snap:
+                           /var/snap/aws-iot-greengrass/common/greengrass/v2)
+  --ssh TARGET             Copy the bundle to TARGET (user@host) under the Greengrass root
   -h, --help               Show this help
 EOF
 }
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --csr) CSR_FILE="$2"; shift 2 ;;
     --nucleus-version) NUCLEUS_VERSION="$2"; shift 2 ;;
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
+    --greengrass-root) GG_ROOT="$2"; shift 2 ;;
     --ssh) SSH_TARGET="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -59,6 +62,10 @@ if [[ ! "$THING_NAME" =~ ^[a-zA-Z0-9:_-]{1,128}$ ]]; then
 fi
 if [[ -n "$CSR_FILE" && ! -f "$CSR_FILE" ]]; then
   echo "CSR file not found: $CSR_FILE" >&2
+  exit 1
+fi
+if [[ ! "$GG_ROOT" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+  echo "Invalid Greengrass root: $GG_ROOT" >&2
   exit 1
 fi
 

@@ -127,10 +127,11 @@ Without `--stack-identifier`, the script reads the `StackIdentifier` output from
 | `--thing-group`      | none                               | Thing group to join; created if missing.                         |
 | `--stack-identifier` | none                               | `StackIdentifier` stack output; skips the CloudFormation lookup. |
 | `--stack`            | `physical-ai-studio-batch-trainer` | Stack to read `StackIdentifier` from, in the AWS CLI configured region. |
-| `--csr`             | none                            | Sign a CSR instead of generating a key pair (see below).        |
-| `--nucleus-version` | `2.15.0`                        | Nucleus version installed on the robot.                         |
-| `--output-dir`      | `./robot-bundles/<thing-name>`  | Local bundle directory.                                         |
-| `--ssh`             | none                            | `user@host` to install the bundle into `/greengrass/v2`.        |
+| `--csr`              | none                               | Sign a CSR instead of generating a key pair (see below).         |
+| `--nucleus-version`  | `2.15.0`                           | Nucleus version installed on the robot.                          |
+| `--output-dir`       | `./robot-bundles/<thing-name>`     | Local bundle directory.                                          |
+| `--greengrass-root`  | `/greengrass/v2`                   | Greengrass root on the robot, written into `config.yaml`. Use `/var/snap/aws-iot-greengrass/common/greengrass/v2` for the snap. |
+| `--ssh`              | none                               | `user@host` to install the bundle into the Greengrass root.      |
 
 The script:
 
@@ -180,6 +181,8 @@ A JSON response with `accessKeyId`, `secretAccessKey`, `sessionToken`, and `expi
 
 ## Start Greengrass on the robot
 
+### With the Greengrass installer
+
 Install the nucleus as a system service using the delivered configuration:
 
 ```bash
@@ -190,13 +193,87 @@ sudo -E java -Droot="/greengrass/v2" -Dlog.store=FILE \
   --setup-system-service true
 ```
 
+On the robot, logs are in `/greengrass/v2/logs/greengrass.log`.
+
+### With the snap
+
+On Ubuntu, or where you prefer a snap over a host Java runtime, use the `aws-iot-greengrass` snap from the Snap Store. It bundles Java and the Greengrass V2 nucleus ([source](https://github.com/aws-greengrass/aws-greengrass-snap)), and runs Greengrass as the `aws-iot-greengrass.greengrass-daemon` service. Because the snap is strictly confined, its Greengrass root is `/var/snap/aws-iot-greengrass/common/greengrass/v2` instead of `/greengrass/v2`. The Java runtime, `ggc_user`, and `ggc_group` steps in [Prepare the robot](#prepare-the-robot) are not needed.
+
+> [!NOTE]
+> Do not run `aws-iot-greengrass.configure` or `aws-iot-greengrass.bootstrap`. They create their own thing, certificate, and IoT policy and use the `GreengrassV2TokenExchangeRoleAlias` role alias, bypassing the stack's role alias and robot IoT policy.
+
+1. On the robot, install the snap and check that it provides Greengrass V2: the version is `2.x`, the `greengrass-daemon` service is listed, and the nucleus archive is present:
+
+   ```bash
+   sudo snap install aws-iot-greengrass
+   snap list aws-iot-greengrass
+   snap info aws-iot-greengrass | grep -A3 '^services'
+   ls /snap/aws-iot-greengrass/current/opt/greengrass/greengrass-nucleus.zip
+   ```
+
+2. Connect the interfaces that are not connected automatically. List them with `snap connections aws-iot-greengrass`, then connect each plug with an empty slot, for example:
+
+   ```bash
+   for plug in system-observe mount-observe hardware-observe process-control network-bind; do
+     sudo snap connect aws-iot-greengrass:$plug
+   done
+   ```
+
+3. On the administrator machine, provision the robot for the snap's root. Set `--nucleus-version` to the snap's version from `snap list`:
+
+   ```bash
+   application/cloudformation/provision-robot.sh \
+     --thing-name robot-01 \
+     --stack-identifier 123456789012-us-east-1-6ba57d60 \
+     --greengrass-root /var/snap/aws-iot-greengrass/common/greengrass/v2 \
+     --nucleus-version <snap-version>
+   ```
+
+4. Copy the bundle to the robot and install it into the snap's root. With `--ssh <user>@<robot>` the script does this for you; otherwise copy the files to `/tmp/gg-bundle/` on the robot and run:
+
+   ```bash
+   GG=/var/snap/aws-iot-greengrass/common/greengrass/v2
+   sudo install -d -m 755 "$GG"
+   sudo install -m 644 /tmp/gg-bundle/{device.pem.crt,AmazonRootCA1.pem,config.yaml} "$GG"/
+   sudo install -m 600 /tmp/gg-bundle/private.pem.key "$GG"/
+   rm -rf /tmp/gg-bundle
+   ```
+
+5. Open a shell inside the snap's confinement and install the nucleus from the snap into its root, without starting it:
+
+   ```bash
+   sudo snap run --shell aws-iot-greengrass.configure
+   ```
+
+   Then, in that shell:
+
+   ```bash
+   cd "$SNAP_COMMON/greengrass/v2"
+   python3 -m zipfile -e "$SNAP/opt/greengrass/greengrass-nucleus.zip" .
+   "$JAVA_HOME/bin/java" -Droot="$PWD" -Dlog.store=FILE \
+     -Djavax.net.ssl.trustStore="$SNAP/etc/ssl/certs/java/cacerts" -Djavax.net.ssl.trustStoreType=JKS \
+     -jar lib/Greengrass.jar --init-config config.yaml \
+     --component-default-user root:root --setup-system-service false --start false
+   exit
+   ```
+
+6. Restart the snap service, which starts Greengrass from that root, and follow its logs:
+
+   ```bash
+   sudo snap restart aws-iot-greengrass.greengrass-daemon
+   sudo snap logs -f aws-iot-greengrass.greengrass-daemon
+   sudo tail -f /var/snap/aws-iot-greengrass/common/greengrass/v2/logs/greengrass.log
+   ```
+
+The service waits about 30 seconds after start before launching the nucleus. Components run as `root` inside the snap's confinement, limited by the snap's plugs.
+
+### Verify the core device
+
 Verify from the administrator machine that the core device reports `HEALTHY`:
 
 ```bash
 aws greengrassv2 get-core-device --core-device-thing-name robot-01 --region us-east-1
 ```
-
-On the robot, logs are in `/greengrass/v2/logs/greengrass.log`.
 
 ## Deploy software to robots
 
