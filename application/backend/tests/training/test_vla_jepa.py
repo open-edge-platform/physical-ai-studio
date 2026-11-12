@@ -16,7 +16,7 @@ def test_vla_jepa_is_native_lazy_and_available() -> None:
         classes = available_policy_classes(missing_dependencies=lambda _name: [])
     catalog = policy_catalog(classes)
     assert catalog.available[0].id == "vla_jepa"
-    assert catalog.available[0].min_vram is None
+    assert catalog.available[0].min_vram == 32 * 1024**3
     assert catalog.backends == {"vla_jepa": ["torch", "openvino"]}
     with patch("physicalai.policies.vla_jepa.policy.resolve_pretrained") as resolve:
         policy = build_policy(TrainingJobSpec(policy="vla_jepa"))

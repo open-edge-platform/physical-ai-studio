@@ -281,7 +281,9 @@ same converted checkpoint. Action-only loading excludes their tensors and does
 not download their configuration or construct them. Both modes preserve the
 pretrained latent-action prompt and final decoder pre-normalization readout.
 
-Studio lists this policy with Torch and OpenVINO export and no minimum-VRAM claim. A
+Studio lists this policy with Torch and OpenVINO export and an estimated 32 GB of
+training VRAM. A full joint fine-tune with batch size 8, gradient checkpointing,
+bfloat16 weights and Kahan AdamW peaked at 26.7 GiB allocated on an H100. A
 successful synthetic or pretrained smoke test does not establish task success or
 a safe hardware deployment. The first fine-tuning run still needs evaluation on
 the intended robot and tasks.

@@ -56,7 +56,7 @@ _STUDIO_POLICIES = {
         id="vla_jepa",
         name="VLA-JEPA",
         description="Pretrained Qwen3-VL policy with flow-matching actions (Apache 2.0 license)",
-        min_vram=None,
+        min_vram=32 * 1024**3,
     ),
     "xr0": AvailablePolicy(
         id="xr0",
