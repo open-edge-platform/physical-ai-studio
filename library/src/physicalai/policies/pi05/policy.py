@@ -94,8 +94,8 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         optimizer_weight_decay: Weight decay coefficient. Default: 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for clipping. Default: 1.0.
         scheduler_warmup_steps: Number of linear warmup steps. Default: 1000.
-        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``,
-            the horizon follows the trainer's total step budget. Default: None.
+        scheduler_decay_steps: Cosine decay horizon in steps, capped at the trainer's
+            total step budget. ``None`` follows the budget. Default: 30000.
         scheduler_decay_lr: Final learning rate after cosine decay. Default: 2.5e-6.
         dataset_stats: Dataset stats for eager initialization. Default: None.
 
@@ -171,7 +171,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         optimizer_grad_clip_norm: float = 1.0,
         # Scheduler
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = None,
+        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -403,7 +403,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         optimizer_weight_decay: float = 0.01,
         optimizer_grad_clip_norm: float = 1.0,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = None,
+        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
@@ -733,10 +733,11 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
-        The cosine decay horizon defaults to the total training step budget
-        (``self.trainer.estimated_stepping_batches``, derived from ``max_steps``
-        or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
-        the end of training. Set ``scheduler_decay_steps`` to override it.
+        Follows openpi/LeRobot: the cosine decays over ``scheduler_decay_steps``
+        and then holds at ``scheduler_decay_lr``. When the total training step
+        budget (``self.trainer.estimated_stepping_batches``) is shorter, warmup and
+        decay are compressed to fit it. ``scheduler_decay_steps=None`` decays over
+        the whole budget.
 
         When LoRA/DoRA is enabled, ``optimizer_lr`` and ``scheduler_decay_lr`` are scaled
         by ``self.config.lora_lr_scale`` (see ``PeftConfigMixin``), since adapter training
@@ -770,15 +771,20 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             eps=self.config.optimizer_eps,
         )
 
+        total_steps = int(self.trainer.estimated_stepping_batches)
         num_decay_steps = self.config.scheduler_decay_steps
         if num_decay_steps is None:
-            num_decay_steps = int(self.trainer.estimated_stepping_batches)
+            num_decay_steps = total_steps
+        num_warmup_steps = self.config.scheduler_warmup_steps
+        if total_steps < num_decay_steps:
+            num_warmup_steps = int(num_warmup_steps * total_steps / num_decay_steps)
+            num_decay_steps = total_steps
 
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
             peak_lr=peak_lr,
             decay_lr=decay_lr,
-            num_warmup_steps=self.config.scheduler_warmup_steps,
+            num_warmup_steps=num_warmup_steps,
             num_decay_steps=num_decay_steps,
         )
 

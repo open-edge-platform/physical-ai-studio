@@ -67,7 +67,7 @@ class TestPi05Config:
         assert config.optimizer_weight_decay == 0.01
         assert config.optimizer_grad_clip_norm == 1.0
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps is None
+        assert config.scheduler_decay_steps == 30_000
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_flow_matching_config_values(self) -> None:
@@ -308,6 +308,33 @@ class TestPi05ConfigureOptimizersLoraLR:
         with caplog.at_level(logging.INFO):
             policy.configure_optimizers()
         assert "scaling optimizer_lr" not in caplog.text.lower()
+
+
+class TestPi05ConfigureOptimizersSchedule:
+    """Cosine decays over 30k steps and then holds, like openpi/LeRobot."""
+
+    @staticmethod
+    def _lr_at(total_steps: int, step: int, **kwargs: object) -> float:
+        from unittest.mock import MagicMock
+
+        policy = Pi05(optimizer_lr=2.5e-5, scheduler_decay_lr=2.5e-6, **kwargs)
+        policy.dummy_param = torch.nn.Parameter(torch.randn(3))
+        policy.trainer = MagicMock(estimated_stepping_batches=total_steps)
+        scheduler = policy.configure_optimizers()["lr_scheduler"]["scheduler"]
+        return scheduler.lr_lambdas[0](step) * scheduler.base_lrs[0]
+
+    def test_long_run_holds_decay_lr_after_30k(self) -> None:
+        assert self._lr_at(100_000, 30_000) == pytest.approx(2.5e-6)
+        assert self._lr_at(100_000, 60_000) == pytest.approx(2.5e-6)
+
+    def test_short_run_compresses_warmup_and_decay(self) -> None:
+        # 3k of 30k -> warmup 1000 scales to 100, decay ends at step 3000.
+        assert self._lr_at(3_000, 100) == pytest.approx(2.5e-5, rel=1e-2)
+        assert self._lr_at(3_000, 3_000) == pytest.approx(2.5e-6)
+
+    def test_none_follows_trainer_budget(self) -> None:
+        assert self._lr_at(100_000, 30_000, scheduler_decay_steps=None) > 1e-5
+        assert self._lr_at(100_000, 100_000, scheduler_decay_steps=None) == pytest.approx(2.5e-6)
 
 
 # ============================================================================ #

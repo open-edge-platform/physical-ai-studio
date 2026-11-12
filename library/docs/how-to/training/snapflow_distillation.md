@@ -68,6 +68,7 @@ model:
     # Phase 1 is plain flow matching — the callback turns SnapFlow on later.
     train_expert_only: false
     scheduler_warmup_steps: 100
+    scheduler_decay_steps: null # cosine horizon = whole run
 
 trainer:
   max_epochs: 14 # phase 1 (epochs 0-9) + phase 2 (epochs 10-13)
@@ -227,8 +228,8 @@ physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
 ### Caveat: the phase-2 LR horizon
 
 Rebuilding the optimizer also rebuilds the LR scheduler, so phase 2 gets a fresh
-warmup. The cosine decay horizon, however, is derived from
-`Trainer.estimated_stepping_batches`, which reports the _total_ run budget
+warmup. With `scheduler_decay_steps: null`, the cosine decay horizon is derived
+from `Trainer.estimated_stepping_batches`, which reports the _total_ run budget
 rather than the phase-2 remainder. Phase 2 therefore decays more slowly than a
 standalone phase-2 run would. If you need an exact phase-2 decay horizon, use
 Option 3 (Python API), which warm-starts phase 2 from the phase-1 weights only
@@ -352,8 +353,9 @@ total_steps     = max_epochs * steps_per_epoch
 warmup          = 0.05 * total_steps
 ```
 
-The cosine horizon always follows `Trainer.estimated_stepping_batches`, so the
-LR lands on `scheduler_decay_lr` exactly at the end of the run.
+Set `scheduler_decay_steps: null` so the cosine horizon follows
+`Trainer.estimated_stepping_batches` and the LR lands on `scheduler_decay_lr`
+exactly at the end of the run. Pi0.5 otherwise decays over a fixed 30k steps.
 
 Hold out a validation split (`data.init_args.val_split`) on small datasets.
 Without it there is no way to distinguish convergence from memorisation.

@@ -450,11 +450,12 @@ class SnapFlowPhaseCallback(Callback):
 
     Note:
         Reconfiguring the optimizer rebuilds the LR scheduler, so phase 2 starts
-        with a fresh warmup. The cosine decay horizon is derived from
-        ``Trainer.estimated_stepping_batches``, which reports the *total* run
-        budget rather than the phase-2 remainder, so the phase-2 LR decays more
-        slowly than a standalone phase-2 run would. Use two explicit
-        ``physicalai fit`` runs if you need an exact phase-2 decay horizon.
+        with a fresh warmup. With ``scheduler_decay_steps=None``, the cosine decay
+        horizon is derived from ``Trainer.estimated_stepping_batches``, which
+        reports the *total* run budget rather than the phase-2 remainder, so the
+        phase-2 LR decays more slowly than a standalone phase-2 run would. Use
+        two explicit ``physicalai fit`` runs if you need an exact phase-2 decay
+        horizon.
 
     Note:
         The ``save_last`` checkpoint keeps its stock ``last.ckpt`` name across
