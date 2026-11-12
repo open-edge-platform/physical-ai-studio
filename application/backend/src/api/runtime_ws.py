@@ -146,7 +146,8 @@ async def _follow_simulations(session: RuntimeSession, simulations: SimulationMa
                 and state.robot_id is not None
                 and state.http_url is not None
             ):
-                await session.follow_simulation(state.robot_id, state.http_url)
+                # A run is told apart by when it started: a new one may serve on an address used before.
+                await session.follow_simulation(state.robot_id, state.http_url, run=str(state.started_at))
 
 
 async def _forward_commands(websocket: WebSocket, bus: Bus) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import time
 from contextlib import asynccontextmanager
@@ -83,7 +84,13 @@ async def _states(*states: Simulation) -> AsyncIterator[asyncio.Queue[Simulation
 async def test_a_session_follows_the_simulation_of_its_project_s_robots() -> None:
     robot_id, other_project = uuid4(), uuid4()
     session = SimpleNamespace(project_id=PROJECT_ID, follow_simulation=AsyncMock())
-    running = {"status": SimulationStatus.RUNNING, "robot_id": robot_id, "http_url": "http://127.0.0.1:50123"}
+    started = datetime.datetime(2026, 11, 12, 13, 0, tzinfo=datetime.UTC)
+    running = {
+        "status": SimulationStatus.RUNNING,
+        "robot_id": robot_id,
+        "http_url": "http://127.0.0.1:50123",
+        "started_at": started,
+    }
     simulations = SimpleNamespace(
         subscribe=lambda: _states(
             Simulation(status=SimulationStatus.STARTING, project_id=PROJECT_ID, robot_id=robot_id),
@@ -95,7 +102,7 @@ async def test_a_session_follows_the_simulation_of_its_project_s_robots() -> Non
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(_follow_simulations(session, simulations), 0.2)
 
-    session.follow_simulation.assert_awaited_once_with(robot_id, "http://127.0.0.1:50123")
+    session.follow_simulation.assert_awaited_once_with(robot_id, "http://127.0.0.1:50123", run=str(started))
 
 
 def _url() -> str:

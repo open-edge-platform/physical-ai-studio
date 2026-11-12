@@ -249,6 +249,7 @@ class Simulations:
 async def _session_on(new_session, simulations: Simulations):
     session = await new_session(Resolvers(environment=simulations.resolve, dataset=_unresolved, model=_unresolved))
     await session._load_draft(DRAFT, unload_incompatible=False)
+    simulations.looking_up.clear()  # set again by the next lookup
     return session
 
 
@@ -294,65 +295,79 @@ async def test_the_session_follows_its_simulation_to_a_new_address(new_session, 
     statuses = subscribe_statuses(session)
 
     # Another robot's simulation, or this one on the same address: nothing to do.
-    await session.follow_simulation(LEADER_ID, SIM_B)
-    await session.follow_simulation(FOLLOWER_ID, SIM_A)
+    await session.follow_simulation(LEADER_ID, SIM_B, run="1")
+    await session.follow_simulation(FOLLOWER_ID, SIM_A, run="1")
     assert simulations.lookups == 1
 
     simulations.url = SIM_B
-    await session.follow_simulation(FOLLOWER_ID, SIM_B)
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")
 
     assert _streamed_from(fake_cameras) == f"{SIM_B}/cameras/cam0/mjpeg"
     assert (await asyncio.wait_for(statuses.next(), 1)).component == "environment"  # the UI sees it reload
-    await session.follow_simulation(FOLLOWER_ID, SIM_B)
-    assert simulations.lookups == 2  # once per address
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")
+    assert simulations.lookups == 2
     await session.stop()
 
 
 @pytest.mark.parametrize(
-    ("change", "error_code"),
+    ("change", "reason"),
     [
-        ({"error": SimulationNotRunningError("Start the simulation", robot_name="Follower")}, "simulation_not_running"),
-        ({"cameras": 2}, "environment_changed"),
+        ({"error": SimulationNotRunningError("Start the simulation", robot_name="Follower")}, "Start the simulation"),
+        ({"cameras": 2}, "changed since it was loaded"),
     ],
     ids=["stopped again", "other cameras"],
 )
 async def test_a_simulation_the_environment_cannot_follow_fails_it_and_says_why(
-    new_session, fake_cameras, change, error_code
+    new_session, fake_cameras, change, reason
 ) -> None:
     simulations = Simulations()
     session = await _session_on(new_session, simulations)
-    events, statuses = subscribe_events(session), subscribe_statuses(session)
+    statuses = subscribe_statuses(session)
     simulations.url = SIM_B
     for name, value in change.items():
         setattr(simulations, name, value)
 
-    await session.follow_simulation(FOLLOWER_ID, SIM_B)
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")
 
     failed = await next_status(statuses, "environment")
-    assert failed.state == "failed" and SIM_B in (failed.error or "")
-    error = await asyncio.wait_for(events.next(), 1)
-    while error.type != "error":
-        error = await asyncio.wait_for(events.next(), 1)
-    assert error.error_code == error_code and error.session_alive
+    assert failed.state == "failed"
+    assert SIM_B in (failed.error or "") and reason in (failed.error or "")
     assert session.environment is not None  # still loaded, to reload
     await session.stop()
 
 
-async def test_a_stale_follow_leaves_a_newly_loaded_environment_alone(new_session, fake_cameras) -> None:
+async def test_a_new_run_on_an_address_a_failed_follow_tried_is_followed(new_session, fake_cameras) -> None:
     simulations = Simulations()
     session = await _session_on(new_session, simulations)
-    simulations.url, simulations.gate = SIM_B, asyncio.Event()
-    following = asyncio.create_task(session.follow_simulation(FOLLOWER_ID, SIM_B))
+    simulations.url, simulations.error = SIM_B, SimulationNotRunningError("Start it", robot_name="Follower")
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")  # it stopped again while being looked up
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")
+    assert simulations.lookups == 2  # the load's and the one follow of run 2
+
+    simulations.error = None
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="3")
+
+    assert _streamed_from(fake_cameras) == f"{SIM_B}/cameras/cam0/mjpeg"
+    await session.stop()
+
+
+async def test_reloads_run_one_at_a_time_so_the_latest_address_wins(new_session, fake_cameras) -> None:
+    simulations = Simulations()
+    session = await _session_on(new_session, simulations)
+    simulations.gate = asyncio.Event()
+    reloading = asyncio.create_task(session.reload_environment())  # looks the simulation up at SIM_A
     await asyncio.wait_for(simulations.looking_up.wait(), 1)
 
-    # The user loads an environment (here, the same draft afresh) while the follow looks it up.
+    simulations.url = SIM_B  # then it moves, and the session is told while the reload still runs
+    following = asyncio.create_task(session.follow_simulation(FOLLOWER_ID, SIM_B, run="2"))
+    await asyncio.sleep(0.05)
+    assert simulations.lookups == 2  # the follow waits for the reload
     simulations.gate.set()
-    simulations.gate = None
-    await session.load_environment(_simulated(SIM_B), draft=DRAFT)
-    connects = fake_cameras.call_count
-    await asyncio.wait_for(following, 5)
+    await asyncio.wait_for(reloading, 10)
+    await asyncio.wait_for(following, 10)
 
-    assert fake_cameras.call_count == connects  # the old follow did not reload the new environment
+    assert simulations.lookups == 3
+    assert _streamed_from(fake_cameras) == f"{SIM_B}/cameras/cam0/mjpeg"
     await session.stop()
 
 
@@ -364,7 +379,7 @@ async def test_a_restart_reported_while_loading_is_followed_once_loaded(new_sess
     await asyncio.wait_for(simulations.looking_up.wait(), 1)  # resolved at SIM_A, not loaded yet
 
     simulations.url = SIM_B
-    await session.follow_simulation(FOLLOWER_ID, SIM_B)  # nothing loaded to follow yet
+    await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")  # nothing loaded to follow yet
     simulations.gate.set()
     simulations.gate = None
     await asyncio.wait_for(loading, 10)
@@ -398,7 +413,7 @@ async def test_a_follow_the_socket_leaves_while_reconnecting_finishes_before_tea
 
     # As the socket runs it: in a task group, cancelled when the socket closes, then the session stops.
     async with anyio.create_task_group() as tasks:
-        tasks.start_soon(session.follow_simulation, FOLLOWER_ID, SIM_B)
+        tasks.start_soon(session.follow_simulation, FOLLOWER_ID, SIM_B, "2")
         await asyncio.to_thread(reconnecting.wait, 5)
         releasing = asyncio.create_task(release_later())
         stopping = asyncio.create_task(session.stop())
@@ -412,20 +427,29 @@ async def test_a_follow_the_socket_leaves_while_reconnecting_finishes_before_tea
     assert registry.holder_of_robot(FOLLOWER_ID) is None
 
 
-async def test_a_follow_still_looking_up_when_the_session_stops_does_nothing(new_session, fake_cameras) -> None:
+@pytest.mark.parametrize("fails", [False, True], ids=["found", "not found"])
+async def test_a_follow_still_looking_up_when_the_session_stops_does_nothing_after(
+    new_session, fake_cameras, fails
+) -> None:
     simulations = Simulations()
     session = await _session_on(new_session, simulations)
+    statuses = subscribe_statuses(session)
     simulations.url, simulations.gate = SIM_B, asyncio.Event()
-    following = asyncio.create_task(session.follow_simulation(FOLLOWER_ID, SIM_B))
+    if fails:
+        simulations.error = SimulationNotRunningError("Start it", robot_name="Follower")
+    following = asyncio.create_task(session.follow_simulation(FOLLOWER_ID, SIM_B, run="2"))
     await asyncio.wait_for(simulations.looking_up.wait(), 1)
-    await session.stop()
-    connects = fake_cameras.call_count
-
+    stopping = asyncio.create_task(session.stop())  # waits for the follow's lookup
+    await asyncio.sleep(0.05)
     simulations.gate.set()
-    await asyncio.wait_for(following, 5)
+    await asyncio.wait_for(stopping, 10)
+    await asyncio.wait_for(following, 10)  # does not raise on the closed session
 
-    assert fake_cameras.call_count == connects
-    assert session.environment is None
+    assert session.finished.is_set() and session.environment is None
+    reported = []
+    while (status := statuses.poll()) is not None:
+        reported.append((status.component, status.state))
+    assert ("environment", "failed") not in reported
 
 
 async def test_stopping_tells_the_socket(new_session) -> None:
