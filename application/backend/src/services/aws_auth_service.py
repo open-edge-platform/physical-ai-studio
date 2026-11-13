@@ -67,7 +67,7 @@ def credential_error_reason(error: Exception) -> str | None:
     )
 
     if isinstance(error, IotCertificateError):
-        return error.reason
+        return error.reason if error.reason != "aws_unavailable" else None
     if isinstance(error, ProfileNotFound):
         return "aws_profile_not_found"
     if isinstance(error, (NoCredentialsError, PartialCredentialsError)):
