@@ -15,6 +15,16 @@ installed() {
   [[ $(dpkg-query -W -f='${Status}' "$1" 2>/dev/null) == *' ok installed' ]]
 }
 
+nvidia_driver_version() {
+  nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1
+}
+
+nvidia_driver_supported() {
+  local driver_version=${1:-}
+  [[ $driver_version =~ ^([0-9]+)(\.|$) ]] || return 1
+  (( 10#${BASH_REMATCH[1]} >= 580 ))
+}
+
 proxy_environment() {
   local value=${2//\\/\\\\}
   value=${value//\"/\\\"}
@@ -153,6 +163,18 @@ if [[ $mode == --install ]]; then
         }
         if ! nvidia-smi -L >/dev/null 2>&1; then
           echo 'REBOOT_REQUIRED: NVIDIA driver installed; reboot before continuing' >&2
+          exit 10
+        fi
+      fi
+      driver_version=$(nvidia_driver_version || true)
+      if ! nvidia_driver_supported "$driver_version"; then
+        "${privileged[@]}" apt-get install -y nvidia-driver-580 || {
+          echo "NVIDIA_DRIVER_INSTALL_FAILED: driver ${driver_version:-unknown} is below branch 580 required by CUDA 13; install NVIDIA driver 580 or newer" >&2
+          exit 1
+        }
+        driver_version=$(nvidia_driver_version || true)
+        if ! nvidia_driver_supported "$driver_version"; then
+          echo 'REBOOT_REQUIRED: NVIDIA driver 580 or newer installed; reboot the host to activate it, then retry setup' >&2
           exit 10
         fi
       fi
@@ -340,6 +362,11 @@ fi
 if (( nvidia )); then
   if ! command -v nvidia-smi >/dev/null || ! nvidia-smi -L >/dev/null 2>&1; then
     echo 'NVIDIA_DRIVER_UNAVAILABLE' >&2
+    exit 1
+  fi
+  driver_version=$(nvidia_driver_version || true)
+  if ! nvidia_driver_supported "$driver_version"; then
+    echo "NVIDIA_DRIVER_UNAVAILABLE: detected driver ${driver_version:-unknown}; CUDA 13 requires NVIDIA driver branch 580 or newer. Upgrade the host driver and reboot." >&2
     exit 1
   fi
   if ! command -v nvidia-ctk >/dev/null || ! command -v nvidia-container-runtime >/dev/null || \

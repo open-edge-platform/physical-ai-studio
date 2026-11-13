@@ -125,7 +125,7 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
         case 'ssh_install_host_key_failed':
             return 'The SSH host key could not be verified. Check known_hosts before retrying.';
         case 'nvidia_driver_unavailable':
-            return 'NVIDIA driver is installed but not working; reboot or diagnose the host.';
+            return 'CUDA 13 requires NVIDIA driver branch 580 or newer. Upgrade the host driver and reboot; if it is already 580+, diagnose the driver installation.';
         case 'nvidia_runtime_config_failed':
             return 'Could not configure the NVIDIA Docker runtime.';
         case 'docker_restart_failed':
