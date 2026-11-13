@@ -24,6 +24,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from lightning.pytorch.utilities import rank_zero_only
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from pydantic import SecretStr, ValidationError
 
@@ -326,6 +327,7 @@ def _run(
     reach_snapflow_phase: bool = False,
     write_distilled_checkpoint: bool = True,
     checkpoint_loader: MagicMock | None = None,
+    global_rank: int = 0,
 ) -> MagicMock:
     """Run a job with the datamodule and Lightning trainer mocked out.
 
@@ -341,6 +343,9 @@ def _run(
     activated at the boundary and the prefixed phase-2 checkpoint appears
     beside phase 1's. ``write_distilled_checkpoint`` suppresses the latter, for
     the case where distillation ran but the monitored metric never logged.
+
+    ``global_rank`` simulates one process of a DDP run: the trainer reports
+    that rank and Lightning's ``rank_zero_only`` gate is set to match.
 
     Returns:
         The patched ``Trainer`` class, so tests can assert how it was configured.
@@ -375,9 +380,12 @@ def _run(
         patch(f"{JOB}.build_policy", return_value=policy if policy is not None else MagicMock()),
         loader_patch,
         patch("physicalai.train.trainer.Trainer") as trainer_class,
+        patch.object(rank_zero_only, "rank", global_rank),
     ):
         trainer_class.return_value.fit.side_effect = fake_fit
         trainer_class.return_value.save_checkpoint.side_effect = fake_save_checkpoint
+        trainer_class.return_value.global_rank = global_rank
+        trainer_class.return_value.is_global_zero = global_rank == 0
         run_training_job(
             spec,
             dataset_root=tmp_path / "snapshot",
@@ -568,6 +576,41 @@ class TestRunTrainingJob:
 
         trainer_class.return_value.save_checkpoint.assert_not_called()
         assert not (tmp_path / "model").exists()
+
+    def test_rank_zero_publishes_only_after_every_rank_finalized_checkpoints(self, tmp_path: Path) -> None:
+        trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path)
+
+        trainer_class.return_value.strategy.barrier.assert_called_once_with("finalize_checkpoints")
+        assert (tmp_path / "model" / CHECKPOINT_NAME).is_file()
+
+    def test_a_non_zero_rank_neither_publishes_nor_exports(self, tmp_path: Path) -> None:
+        """Under DDP only rank 0 owns the output; the others stop once checkpoints are final."""
+        with patch(f"{JOB}._export_policy") as export_policy:
+            trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path, global_rank=1)
+
+        trainer_class.return_value.strategy.barrier.assert_called_once_with("finalize_checkpoints")
+        export_policy.assert_not_called()
+        assert not (tmp_path / "model").exists()
+        assert (tmp_path / "cache" / "job" / CHECKPOINT_NAME).is_file()
+
+    def test_a_non_zero_rank_joins_the_collective_fallback_save(self, tmp_path: Path) -> None:
+        """``save_checkpoint`` is a collective call: skipping it on any rank would hang rank 0."""
+        trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path, write_checkpoint=False, global_rank=1)
+
+        trainer_class.return_value.save_checkpoint.assert_called_once_with(tmp_path / "cache" / "job" / CHECKPOINT_NAME)
+
+    def test_a_non_zero_rank_reports_nothing(self, tmp_path: Path) -> None:
+        report = MagicMock()
+
+        trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path, report=report, global_rank=1)
+
+        report.assert_not_called()
+        progress_callback = next(
+            c for c in trainer_class.call_args.kwargs["callbacks"] if type(c).__name__ == "ProgressReportingCallback"
+        )
+        with patch.object(rank_zero_only, "rank", 1):
+            progress_callback._report(50, None, {})
+        report.assert_not_called()
 
     def test_training_start_is_reported(self, tmp_path: Path) -> None:
         report = MagicMock()

@@ -396,6 +396,11 @@ def run_training_job(
     export, and export conversion (OpenVINO in particular) can need several GB
     on top of that.
 
+    Under DDP (``spec.all_devices``) every rank calls this function. All ranks
+    train and finalize checkpoints together; only global rank 0 reports
+    progress, publishes ``output_dir``, and exports. The other ranks return
+    once checkpoints are final, leaving ``output_dir`` untouched.
+
     Args:
         spec: What to train.
         dataset_root: Local root of the LeRobot dataset to train on.
@@ -407,12 +412,17 @@ def run_training_job(
     """
     from lightning.pytorch.callbacks import ModelCheckpoint
     from lightning.pytorch.loggers import CSVLogger
+    from lightning.pytorch.utilities import rank_zero_only
     from physicalai.data import LeRobotDataModule
     from physicalai.train.callbacks import ProgressReportingCallback
     from physicalai.train.trainer import Trainer
     from physicalai.transforms import DefaultImageAugmentations
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
+
+    # Under DDP every rank runs this function; only global rank 0 may report,
+    # otherwise each rank's progress interleaves into the same job.
+    report = rank_zero_only(report)
 
     with _hf_token_env(spec.run_options.hf_token):
         accelerator = resolve_accelerator(spec.device_type)
@@ -461,7 +471,16 @@ def run_training_job(
             logger.info("Training canceled; skipping checkpoint and export")
             return
 
+        # Every rank finalizes: the fallback `trainer.save_checkpoint` is a
+        # collective call (rank 0 writes, all ranks meet at a barrier). The
+        # barrier below then keeps rank 0 from moving the cache away while
+        # another rank is still checking it for checkpoints.
         _finalize_checkpoints(trainer, cache_dir, snapflow_callback=snapflow_callback)
+        trainer.strategy.barrier("finalize_checkpoints")
+        if not trainer.is_global_zero:
+            logger.info("Rank %d finished training; rank 0 publishes and exports", trainer.global_rank)
+            return
+
         _publish(cache_dir, output_dir)
 
         _detach_trainer(policy, trainer)
