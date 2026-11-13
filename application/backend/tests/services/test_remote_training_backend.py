@@ -836,7 +836,9 @@ class TestHttpDatasetTransfer:
 
         body = await _submitted_body(settings, context)
 
-        expected = build_spec(context).model_dump(mode="json", exclude={"run_options", "snapflow_start_epoch"}) | {
+        expected = build_spec(context).model_dump(
+            mode="json", exclude={"run_options", "snapflow_start_epoch", "all_devices"}
+        ) | {
             "device_type": None,
             "device_index": None,
         }
@@ -876,6 +878,14 @@ class TestHttpDatasetTransfer:
         body = await _submitted_body(_settings(), _context(tmp_path))
 
         assert "snapflow_start_epoch" not in body["spec"]
+
+    @pytest.mark.anyio
+    async def test_submit_omits_the_single_device_default(self, tmp_path):
+        """Trainers forbid unknown spec fields, so a single-device run must stay
+        submittable against a trainer image that predates multi-device support."""
+        body = await _submitted_body(_settings(), _context(tmp_path))
+
+        assert "all_devices" not in body["spec"]
 
     @pytest.mark.anyio
     async def test_submit_sends_a_distillation_boundary_when_one_is_asked_for(self, tmp_path):

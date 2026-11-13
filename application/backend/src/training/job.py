@@ -159,6 +159,13 @@ class TrainingJobSpec(BaseModel):
         ge=0,
         description="Zero-based index of the accelerator to train on. None lets Lightning pick one.",
     )
+    all_devices: bool = Field(
+        default=False,
+        description=(
+            "Train with DDP across every visible CUDA device instead of one. Requires device_type='cuda' "
+            "and no device_index; batch_size then applies per device."
+        ),
+    )
     lora_enabled: bool = Field(
         default=False,
         description=(
@@ -198,6 +205,30 @@ class TrainingJobSpec(BaseModel):
                 f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
                 f"supported policies are {sorted(PEFT_POLICIES)}."
             )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def validate_all_devices(self) -> TrainingJobSpec:
+        """Reject a multi-device request the run cannot honour.
+
+        Returns:
+            The validated spec.
+
+        Raises:
+            ValueError: If ``all_devices`` is combined with a non-CUDA
+                accelerator, a single device index, or batch size search.
+        """
+        if not self.all_devices:
+            return self
+        if self.device_type != "cuda":
+            msg = f"all_devices requires device_type='cuda', got {self.device_type!r}."
+            raise ValueError(msg)
+        if self.device_index is not None:
+            msg = "all_devices trains on every device; it cannot be combined with device_index."
+            raise ValueError(msg)
+        if self.auto_scale_batch_size:
+            msg = "auto_scale_batch_size is not supported with all_devices: Lightning cannot tune distributed runs."
             raise ValueError(msg)
         return self
 
@@ -417,7 +448,7 @@ def run_training_job(
             callbacks=callbacks,
             accelerator=accelerator,
             strategy=resolve_strategy(spec.device_type),
-            devices=resolve_devices(spec.device_index),
+            devices=resolve_devices(spec.device_index, all_devices=spec.all_devices),
             max_epochs=spec.max_epochs,
             auto_scale_batch_size=spec.auto_scale_batch_size,
             precision=spec.precision,

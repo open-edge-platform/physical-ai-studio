@@ -55,6 +55,32 @@ class TestTrainingJobSpec:
         assert (spec.compile_model, spec.auto_scale_batch_size) == (False, False)
         assert spec.augment_images is False
         assert (spec.device_type, spec.device_index) == (None, None)
+        assert spec.all_devices is False
+
+    def test_all_devices_is_accepted_for_cuda(self) -> None:
+        spec = TrainingJobSpec(policy="act", device_type="cuda", all_devices=True)
+
+        assert TrainingJobSpec.model_validate_json(spec.model_dump_json()) == spec
+
+    @pytest.mark.parametrize(
+        "invalid",
+        [
+            {"device_type": None},
+            {"device_type": "xpu"},
+            {"device_type": "cpu"},
+            {"device_type": "cuda", "device_index": 1},
+            {"device_type": "cuda", "auto_scale_batch_size": True},
+        ],
+    )
+    def test_all_devices_rejects_combinations_it_cannot_honour(self, invalid: dict) -> None:
+        with pytest.raises(ValidationError):
+            TrainingJobSpec(policy="act", all_devices=True, **invalid)
+
+    def test_a_spec_without_all_devices_still_parses(self) -> None:
+        """Older Studios send no ``all_devices``; the trainer must keep accepting them."""
+        spec = TrainingJobSpec.model_validate_json('{"policy": "act", "device_type": "cuda", "device_index": 0}')
+
+        assert spec.all_devices is False
 
     def test_unknown_field_is_rejected(self) -> None:
         """A stray field over the wire is a version mismatch, not a value to drop."""
@@ -434,6 +460,12 @@ class TestRunTrainingJob:
 
         kwargs = trainer_class.call_args.kwargs
         assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("xpu", "xpu_single", 1)
+
+    def test_all_devices_trains_on_every_visible_cuda_device(self, tmp_path: Path) -> None:
+        trainer_class = _run(TrainingJobSpec(policy="act", device_type="cuda", all_devices=True), tmp_path)
+
+        kwargs = trainer_class.call_args.kwargs
+        assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("cuda", "auto", -1)
 
     def test_dataset_is_loaded_from_the_local_root(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(policy="act", batch_size=16, num_workers=2, val_split=0.25)

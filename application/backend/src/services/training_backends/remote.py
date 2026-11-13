@@ -365,6 +365,10 @@ class RemoteTrainingBackend:
         excluded = {"run_options"}
         if spec.snapflow_start_epoch is None:
             excluded.add("snapflow_start_epoch")
+        # Trainers forbid unknown spec fields: omit the default so a single-device
+        # run stays submittable to a trainer image that predates multi-device support.
+        if not spec.all_devices:
+            excluded.add("all_devices")
         body: dict[str, Any] = {
             "spec": spec.model_dump(mode="json", exclude=excluded),
             "dataset_transfer": "http",

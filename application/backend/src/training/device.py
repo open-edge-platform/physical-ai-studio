@@ -67,14 +67,17 @@ def resolve_strategy(device_type: str | None = None) -> str:
     return "xpu_single" if resolve_accelerator(device_type) == "xpu" else "auto"
 
 
-def resolve_devices(device_index: int | None = None) -> list[int] | int:
+def resolve_devices(device_index: int | None = None, *, all_devices: bool = False) -> list[int] | int:
     """Return the Lightning ``devices`` value for a training run.
 
     Args:
         device_index: Zero-based index of the accelerator to train on, or None
             to let Lightning pick one device.
+        all_devices: Train on every visible device. Takes precedence over
+            ``device_index``.
 
     Returns:
+        ``-1`` (every visible device) when ``all_devices`` is set,
         ``[device_index]`` when an index is given, otherwise ``1``.
 
     Example:
@@ -82,5 +85,9 @@ def resolve_devices(device_index: int | None = None) -> list[int] | int:
         [2]
         >>> resolve_devices()
         1
+        >>> resolve_devices(all_devices=True)
+        -1
     """
+    if all_devices:
+        return -1
     return [device_index] if device_index is not None else 1

@@ -170,6 +170,8 @@ async def test_submit_routes_by_policy_and_ingests_artifact(context, aws, monkey
     assert submitted["parameters"] == {"job_prefix": f"jobs/{context.job.id}"}
     assert submitted["containerOverrides"]["environment"] == [{"name": "HF_TOKEN", "value": "test-token"}]
     assert b"test-token" not in s3.put_object.call_args.kwargs["Body"]
+    # Batch images that predate multi-device training forbid the unknown field.
+    assert b"all_devices" not in s3.put_object.call_args.kwargs["Body"]
     assert (context.output_dir / "model.ckpt").read_text() == "trained"
     context.on_remote_job_id.assert_awaited_once()
 
