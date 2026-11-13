@@ -41,7 +41,9 @@ def test_cuda_13_requires_driver_branch_580_in_install_and_readiness() -> None:
 
 def test_nvidia_driver_supported_checks_the_major_branch() -> None:
     source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
-    function = "nvidia_driver_supported() {" + source.split("nvidia_driver_supported() {", 1)[1].split("\n}", 1)[0] + "\n}"
+    function = (
+        "nvidia_driver_supported() {" + source.split("nvidia_driver_supported() {", 1)[1].split("\n}", 1)[0] + "\n}"
+    )
     for version, expected in (
         ("570.172.08", False),
         ("579.99.99", False),

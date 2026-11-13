@@ -216,8 +216,6 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
-    # LeRobot 0.7 permits TorchCodec 0.11, which is tied to Torch 2.11.
-    "torchcodec>=0.12",
 ]
 
 
@@ -251,7 +249,11 @@ explicit = false
 [tool.uv.sources]
 # Runtime main with the noise preprocessor (openvinotoolkit/physicalai#455); move to the next release.
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "5939c2feac67ed34764c03eb12045ec07908fff5" }
-torchcodec = { index = "pypi" }
+torchcodec = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cu130" },
