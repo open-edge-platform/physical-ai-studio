@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import torch
 from lightning_utilities import module_available
@@ -16,7 +16,7 @@ from physicalai.data.observation import Feature, FeatureType, NormalizationParam
 from .converters import FormatConverter
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
     from pathlib import Path
     from typing import Any
 
@@ -380,6 +380,44 @@ class _LeRobotDatasetAdapter(Dataset):
             reader.delta_indices = indices
         else:
             self._lerobot_dataset.delta_indices = indices
+
+    def iter_action_state_batches(self, batch_size: int) -> Iterator[dict[str, torch.Tensor]]:  # noqa: PLR0914
+        """Yield shuffled ``{"action": (B, T, D), "state": (B, S)}`` batches read from parquet only.
+
+        Args:
+            batch_size: Number of samples per yielded batch.
+
+        Yields:
+            Batches with an ``action`` and, when the dataset has state, a ``state`` tensor.
+        """
+        action_cols = self._action_columns or ["action"]
+        hf_dataset = self._lerobot_dataset.hf_dataset
+        state_cols = [c for c in self._state_columns or ["observation.state"] if c in hf_dataset.column_names]
+        columns = [*action_cols, *state_cols, "index", "episode_index"]
+        data = cast("dict[str, torch.Tensor]", hf_dataset.select_columns(columns).with_format("torch")[:])
+        index, episode = data["index"], data["episode_index"]
+        num_rows = len(index)
+
+        def _cat(cols: list[str]) -> torch.Tensor:
+            return torch.cat([data[c].reshape(num_rows, -1) for c in cols], dim=-1)
+
+        action = _cat(action_cols)
+        state = _cat(state_cols) if state_cols else None
+        deltas = torch.tensor(self.delta_indices.get(action_cols[0], [0]))
+        # Episodes are loaded whole, so their absolute index range is [min, max + 1).
+        num_episodes = int(episode.max()) + 1
+        ep_start = torch.full((num_episodes,), int(index.max())).scatter_reduce(0, episode, index, "amin")
+        ep_last = torch.zeros(num_episodes, dtype=index.dtype).scatter_reduce(0, episode, index, "amax")
+        row_of = torch.zeros(int(index.max()) + 1, dtype=torch.long)
+        row_of[index] = torch.arange(num_rows)
+
+        for rows in torch.randperm(num_rows).split(batch_size):
+            ep = episode[rows, None]
+            query = (index[rows, None] + deltas).clamp(ep_start[ep], ep_last[ep])
+            batch = {"action": action[row_of[query]]}
+            if state is not None:
+                batch["state"] = state[rows]
+            yield batch
 
 
 __all__ = ["_LeRobotDatasetAdapter"]
