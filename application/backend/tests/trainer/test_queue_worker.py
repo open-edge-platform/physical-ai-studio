@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -16,8 +19,6 @@ from pydantic import SecretStr
 from trainer.schemas import TrainerJobStatus
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from trainer.schemas import SubmitJobRequest
 
 QUEUE = "trainer.queue_worker"
@@ -292,3 +293,209 @@ def test_run_job_cancellation_cleans_up_outputs(manager, sample_request: SubmitJ
     asyncio.run(manager._run_job(job_id))
 
     manager._runner.cleanup_job_outputs.assert_called_once_with(job_id)
+
+
+# ---------------------------------------------------------------------------
+# Multi-device (DDP) jobs
+# ---------------------------------------------------------------------------
+
+
+def _add_job(manager, sample_request: SubmitJobRequest, **spec_update) -> str:
+    spec = sample_request.spec.model_copy(update=spec_update)
+    job_id = manager.store.create(sample_request.model_copy(update={"spec": spec}))
+    manager.store.mark_dataset_ready(job_id)
+    return job_id
+
+
+def _cuda_devices(count: int) -> list:
+    from trainer.schemas import DeviceInfo
+
+    return [DeviceInfo(type="cuda", name=f"GPU {i}", index=i, busy=False) for i in range(count)]
+
+
+class TestAllDevicesReservation:
+    def test_waits_for_every_running_job_to_finish(self, manager, sample_request: SubmitJobRequest) -> None:
+        running = _add_job(manager, sample_request, device_type="cuda", device_index=1)
+        manager.store.update(running, status=TrainerJobStatus.RUNNING)
+        manager._active[running] = MagicMock()
+        manager._active_devices[running] = ("cuda", 1)
+        ddp = _add_job(manager, sample_request, device_type="cuda", all_devices=True)
+
+        assert manager._next_runnable() is None
+        assert manager.store.get(ddp).message == "Waiting for all GPUs to become available"
+
+        manager._active.clear()
+        manager._active_devices.clear()
+        assert manager._next_runnable() == (ddp, None)
+
+    def test_blocks_every_single_gpu_job_while_it_runs(self, manager, sample_request: SubmitJobRequest) -> None:
+        ddp = _add_job(manager, sample_request, device_type="cuda", all_devices=True)
+        manager.store.update(ddp, status=TrainerJobStatus.RUNNING)
+        manager._active[ddp] = MagicMock()
+        manager._active_devices[ddp] = None
+        single = _add_job(manager, sample_request, device_type="cuda", device_index=1)
+
+        assert manager._next_runnable() is None
+        assert manager.store.get(single).message == "Waiting for CUDA 1 to become available"
+
+    def test_waits_while_another_workload_uses_any_gpu(self, manager, sample_request: SubmitJobRequest) -> None:
+        ddp = _add_job(manager, sample_request, device_type="cuda", all_devices=True)
+        busy = _cuda_devices(2)
+        busy[1].busy = True
+
+        with patch(f"{QUEUE}.get_training_devices", return_value=busy):
+            assert manager._next_runnable() is None
+        assert manager.store.get(ddp).message == "Waiting for all GPUs to become available"
+
+    def test_run_job_sends_only_multi_device_jobs_to_torchrun(
+        self, manager, sample_request: SubmitJobRequest, tmp_path: Path
+    ) -> None:
+        ddp = _add_job(manager, sample_request, device_type="cuda", all_devices=True)
+        single = _add_job(manager, sample_request, device_type="cuda", device_index=0)
+        seen = []
+
+        async def fake_run_ddp(job_id, request, report, should_stop):
+            seen.append(job_id)
+            return tmp_path / "model.zip"
+
+        manager._run_ddp = fake_run_ddp
+        manager._runner.run = MagicMock(return_value=tmp_path / "model.zip")
+
+        asyncio.run(manager._run_job(ddp))
+        asyncio.run(manager._run_job(single))
+
+        assert seen == [ddp]
+        manager._runner.run.assert_called_once()
+        assert manager.store.get(ddp).status == TrainerJobStatus.COMPLETED
+
+
+# Plays rank 0 of a torchrun job: argv is [request_path, events_path, mode].
+_FAKE_RANK_ZERO = r"""
+import json, os, subprocess, sys, time
+request_path, events_path, mode = sys.argv[1:4]
+def emit(event):
+    with open(events_path, "a") as f:
+        f.write(json.dumps(event) + "\n")
+if mode == "complete":
+    request = json.load(open(request_path))
+    emit({"type": "progress", "progress": 40, "message": os.environ.get("HF_TOKEN"), "extra_info": request["spec"]})
+    emit({"type": "completed", "archive": "/tmp/job.zip"})
+elif mode == "fail":
+    emit({"type": "failed", "error": "CUDA out of memory"})
+    sys.exit(1)
+elif mode == "crash":
+    sys.exit(3)
+elif mode == "hang":
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    with open(os.path.join(os.path.dirname(os.path.dirname(events_path)), "child.pid"), "w") as f:
+        f.write(str(child.pid))
+    emit({"type": "progress", "progress": 5, "message": "started", "extra_info": None})
+    time.sleep(600)
+"""
+
+
+def _process_running(pid: int) -> bool:
+    """True if ``pid`` is alive; an exited-but-unreaped (zombie) process counts as stopped."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0]
+        except (FileNotFoundError, ProcessLookupError):
+            return False
+        if state == "Z":
+            return False
+        time.sleep(0.05)
+    return True
+
+
+class TestRunDdp:
+    @pytest.fixture
+    def ddp(self, manager, tmp_path: Path, monkeypatch):
+        from trainer import queue_worker
+
+        manager._ddp_dir = tmp_path / "ddp"
+        monkeypatch.setattr(queue_worker, "_DDP_POLL_S", 0.05)
+        monkeypatch.setattr(queue_worker, "_DDP_TERMINATE_GRACE_S", 2.0)
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        mode = {"value": "complete"}
+
+        def fake_command(_job_id, request_path, events_path, *, nproc):
+            mode["nproc"] = nproc
+            return [sys.executable, "-c", _FAKE_RANK_ZERO, str(request_path), str(events_path), mode["value"]]
+
+        with (
+            patch(f"{QUEUE}.ddp_entry.build_command", side_effect=fake_command),
+            patch(f"{QUEUE}.get_training_devices", return_value=_cuda_devices(2)),
+        ):
+            yield manager, mode
+
+    @staticmethod
+    def _request(sample_request: SubmitJobRequest, token: str | None = None) -> SubmitJobRequest:
+        spec = sample_request.spec.model_copy(update={"device_type": "cuda", "all_devices": True})
+        spec.run_options.hf_token = SecretStr(token) if token else None
+        return sample_request.model_copy(update={"spec": spec})
+
+    def test_completed_job_returns_its_archive_and_mirrors_progress(
+        self, ddp, sample_request: SubmitJobRequest, tmp_path: Path
+    ) -> None:
+        manager, mode = ddp
+        reported = []
+
+        archive = asyncio.run(
+            manager._run_ddp(
+                "job-1", self._request(sample_request, token="hf-secret"), lambda *a: reported.append(a), lambda: False
+            )
+        )
+
+        assert str(archive) == "/tmp/job.zip"
+        assert mode["nproc"] == 2
+        (progress, token_seen, spec_on_disk) = reported[0]
+        assert progress == 40
+        assert token_seen == "hf-secret"  # via the environment
+        assert "run_options" not in spec_on_disk  # never on disk
+        assert spec_on_disk["all_devices"] is True
+        assert not (tmp_path / "ddp" / "job-1").exists()
+        manager._runner.cleanup_uploaded_dataset.assert_called_once_with("job-1")
+
+    def test_rank_zeros_error_becomes_the_failure_message(self, ddp, sample_request: SubmitJobRequest) -> None:
+        manager, mode = ddp
+        mode["value"] = "fail"
+
+        with pytest.raises(RuntimeError, match="CUDA out of memory"):
+            asyncio.run(manager._run_ddp("job-1", self._request(sample_request), MagicMock(), lambda: False))
+
+    def test_an_exit_without_an_event_reports_the_exit_code(self, ddp, sample_request: SubmitJobRequest) -> None:
+        manager, mode = ddp
+        mode["value"] = "crash"
+
+        with pytest.raises(RuntimeError, match="exited with code 3"):
+            asyncio.run(manager._run_ddp("job-1", self._request(sample_request), MagicMock(), lambda: False))
+
+    def test_cancel_stops_the_whole_process_group(self, ddp, sample_request: SubmitJobRequest, tmp_path: Path) -> None:
+        """Dataloader workers and every rank must go, not just the torchrun parent."""
+        from trainer.runner import JobCanceledError
+
+        manager, mode = ddp
+        mode["value"] = "hang"
+        reported = []
+
+        with pytest.raises(JobCanceledError):
+            asyncio.run(
+                manager._run_ddp(
+                    "job-1", self._request(sample_request), lambda *a: reported.append(a), lambda: bool(reported)
+                )
+            )
+
+        assert reported[0][:2] == (5, "started")
+        assert not (tmp_path / "ddp" / "job-1").exists()
+        child_pid = int((tmp_path / "ddp" / "child.pid").read_text())
+        assert not _process_running(child_pid)
+
+    def test_no_cuda_device_fails_before_launching(self, ddp, sample_request: SubmitJobRequest) -> None:
+        manager, _mode = ddp
+
+        with (
+            patch(f"{QUEUE}.get_training_devices", return_value=[]),
+            pytest.raises(RuntimeError, match="needs CUDA devices"),
+        ):
+            asyncio.run(manager._run_ddp("job-1", self._request(sample_request), MagicMock(), lambda: False))

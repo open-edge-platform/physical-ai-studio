@@ -72,6 +72,39 @@ class EventLog:
         self._write({"type": "failed", "error": error})
 
 
+class EventReader:
+    """Incrementally read the events an :class:`EventLog` appended, from the launching process."""
+
+    def __init__(self, path: Path) -> None:
+        """Start reading ``path`` from its beginning; the file may not exist yet."""
+        self._path = path
+        self._offset = 0
+
+    def read_new(self) -> list[dict[str, Any]]:
+        """Return the events appended since the last call.
+
+        Only complete lines are consumed: a line still being written is left
+        for the next call. A line that is not valid JSON is logged and skipped.
+        """
+        try:
+            with self._path.open("rb") as events:
+                events.seek(self._offset)
+                chunk = events.read()
+        except FileNotFoundError:
+            return []
+        complete, _, _partial = chunk.rpartition(b"\n")
+        if not complete and not chunk.endswith(b"\n"):
+            return []
+        self._offset += len(complete) + 1
+        parsed = []
+        for line in complete.splitlines():
+            try:
+                parsed.append(json.loads(line))
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed DDP event line: {!r}", line[:200])
+        return parsed
+
+
 def build_command(job_id: str, request_path: Path, events_path: Path, *, nproc: int) -> list[str]:
     """Return the ``torchrun`` command line that runs one DDP job on ``nproc`` local devices.
 

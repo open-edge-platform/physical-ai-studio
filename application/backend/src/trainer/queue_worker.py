@@ -5,24 +5,58 @@
 
 A single asyncio loop polls the store for queued jobs and reserves each GPU for
 one job. Parallel training runs in separate processes so process-global state
-(including HF_TOKEN) cannot leak between jobs.
+(including HF_TOKEN) cannot leak between jobs. A multi-device job reserves every
+GPU and runs as its own ``torchrun`` process group (see :mod:`trainer.ddp_entry`).
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import multiprocessing as mp
+import os
+import shutil
+import signal
 from pathlib import Path
 from queue import Empty
 from typing import Any
 
 from loguru import logger
 
+from trainer import ddp_entry
 from trainer.devices import get_training_devices, gpu_busy
 from trainer.runner import JobCanceledError, TrainerRunner
 from trainer.schemas import SubmitJobRequest, TrainerJobStatus
 from trainer.settings import get_settings
 from trainer.store import JobStore
+
+_DDP_POLL_S = 0.5
+"""How often a running multi-device job's events file is polled."""
+
+_DDP_TERMINATE_GRACE_S = 30.0
+"""How long a canceled multi-device job gets to exit after SIGTERM before SIGKILL."""
+
+
+def _job_device(request: SubmitJobRequest | None) -> tuple[str, int] | None:
+    """Return the single GPU a job trains on, or None when it may use (or uses) every device."""
+    if request is None or request.spec.all_devices or request.spec.device_type not in {"cuda", "xpu"}:
+        return None
+    return request.spec.device_type, request.spec.device_index or 0
+
+
+async def _terminate_process_group(process: asyncio.subprocess.Process, grace_s: float) -> None:
+    """Stop a process started with ``start_new_session=True`` and everything it spawned."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.wait_for(process.wait(), grace_s)
+    except TimeoutError:
+        logger.warning("Multi-device job did not exit within {}s of SIGTERM; killing it", grace_s)
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()
 
 
 def _train_in_process(job_id: str, request: SubmitJobRequest, updates: Any, stop: Any) -> None:
@@ -51,6 +85,7 @@ class QueueManager:
         self.store = JobStore(settings.db_path)
         self._runner = TrainerRunner()
         self._max_concurrent_jobs = settings.max_concurrent_jobs
+        self._ddp_dir = settings.storage_dir / "ddp"
         self._cancel_requested: set[str] = set()
         self._active: dict[str, asyncio.Task] = {}
         self._active_devices: dict[str, tuple[str, int] | None] = {}
@@ -90,12 +125,10 @@ class QueueManager:
         next_job = None
         for job_id in self.store.queued():
             request = self.store.get_request(job_id)
-            # Legacy auto-selection may use any GPU: reserve the entire trainer.
-            device = (
-                (request.spec.device_type, request.spec.device_index or 0)
-                if request and request.spec.device_type in {"cuda", "xpu"}
-                else None
-            )
+            # Legacy auto-selection may use any GPU, and a multi-device job uses
+            # every GPU: both reserve the entire trainer.
+            device = _job_device(request)
+            all_devices = request is not None and request.spec.all_devices
             reserved = (device is None and bool(self._active)) or any(
                 active_device is None or active_device == device for active_device in self._active_devices.values()
             )
@@ -104,7 +137,9 @@ class QueueManager:
                 gpu_busy(*device) if device is not None else any(gpu.busy for gpu in get_training_devices())
             )
             message = (
-                f"Waiting for {device[0].upper()} {device[1]} to become available"
+                "Waiting for all GPUs to become available"
+                if busy and all_devices
+                else f"Waiting for {device[0].upper()} {device[1]} to become available"
                 if busy and device is not None
                 else "Waiting for a training slot to become available"
                 if busy and reserved
@@ -156,7 +191,9 @@ class QueueManager:
             def _should_stop() -> bool:
                 return job_id in self._cancel_requested or self._stopped.is_set()
 
-            if self._max_concurrent_jobs == 1:
+            if request.spec.all_devices:
+                archive_path = await self._run_ddp(job_id, request, _report, _should_stop)
+            elif self._max_concurrent_jobs == 1:
                 archive_path = await asyncio.to_thread(
                     self._runner.run, job_id, request, should_stop=_should_stop, report=_report
                 )
@@ -214,6 +251,69 @@ class QueueManager:
             await asyncio.to_thread(process.join)
             updates.close()
             updates.join_thread()
+
+    async def _run_ddp(self, job_id: str, request: SubmitJobRequest, report: Any, should_stop: Any) -> Path:
+        """Run a multi-device job as a ``torchrun`` process group and mirror its events.
+
+        See :mod:`trainer.ddp_entry` for why DDP cannot run in this process or
+        in an ``mp`` child. The request goes to the job's DDP directory without
+        its HF token, which travels in the child's environment instead.
+        Cancellation stops the whole process group.
+
+        Raises:
+            JobCanceledError: If cancellation was requested.
+            RuntimeError: If there is no CUDA device, or the job fails.
+        """
+        nproc = sum(1 for device in get_training_devices() if device.type == "cuda")
+        if nproc == 0:
+            msg = "Multi-device training needs CUDA devices, but the trainer reports none"
+            raise RuntimeError(msg)
+
+        job_dir = self._ddp_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        request_path, events_path = job_dir / "request.json", job_dir / "events.jsonl"
+        request_path.write_text(request.model_dump_json(exclude={"spec": {"run_options"}}), encoding="utf-8")
+        events_path.unlink(missing_ok=True)
+        env = dict(os.environ)
+        if request.spec.run_options.hf_token is not None:
+            env["HF_TOKEN"] = request.spec.run_options.hf_token.get_secret_value()
+
+        command = ddp_entry.build_command(job_id, request_path, events_path, nproc=nproc)
+        logger.info("Starting multi-device job on {} CUDA devices", nproc)
+        process = await asyncio.create_subprocess_exec(*command, env=env, start_new_session=True)
+        events = ddp_entry.EventReader(events_path)
+        archive: Path | None = None
+        error: str | None = None
+
+        def handle(new_events: list[dict[str, Any]]) -> None:
+            nonlocal archive, error
+            for event in new_events:
+                if event.get("type") == "progress":
+                    report(event.get("progress", 0), event.get("message"), event.get("extra_info"))
+                elif event.get("type") == "completed":
+                    archive = Path(event["archive"])
+                elif event.get("type") == "failed":
+                    error = event.get("error")
+
+        try:
+            while process.returncode is None:
+                if should_stop():
+                    await _terminate_process_group(process, _DDP_TERMINATE_GRACE_S)
+                    raise JobCanceledError("Training canceled")
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(process.wait(), _DDP_POLL_S)
+                handle(events.read_new())
+            handle(events.read_new())
+            if process.returncode == 0 and archive is not None:
+                return archive
+            msg = error or f"Multi-device training exited with code {process.returncode}"
+            raise RuntimeError(msg)
+        finally:
+            if process.returncode is None:
+                await _terminate_process_group(process, _DDP_TERMINATE_GRACE_S)
+            shutil.rmtree(job_dir, ignore_errors=True)
+            # Rank 0 normally removes it; a killed or failed rank 0 may not have.
+            self._runner.cleanup_uploaded_dataset(job_id)
 
     def _cleanup_if_not_completed(self, job_id: str) -> None:
         """Remove any leftover model/cache output for a job that didn't complete.

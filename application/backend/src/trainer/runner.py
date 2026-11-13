@@ -53,7 +53,7 @@ class TrainerRunner:
         try:
             self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
         finally:
-            self._cleanup_uploaded_dataset(job_id)
+            self.cleanup_uploaded_dataset(job_id)
 
         return archive_model(job_id, model_dir, report=report)
 
@@ -84,7 +84,7 @@ class TrainerRunner:
         return settings.datasets_dir / job_id, settings.models_dir / job_id, cache_dir
 
     @staticmethod
-    def _cleanup_uploaded_dataset(job_id: str) -> None:
+    def cleanup_uploaded_dataset(job_id: str) -> None:
         """Remove the uploaded dataset once the job no longer needs it."""
         dataset_dir = get_settings().datasets_dir / job_id
         if dataset_dir.exists():
