@@ -65,11 +65,11 @@ git -C "$CLONE_ROOT/robosuite" checkout --quiet "$ROBOSUITE_SHA"
 
 # --no-deps on robocasa: skip the shadowed lerobot==0.3.3 pin.
 uv pip install --no-cache -e "$CLONE_ROOT/robocasa" --no-deps
-uv pip install --no-cache -e "$CLONE_ROOT/robosuite"
 
 # robocasa's actual runtime deps (the ones its setup.py would have pulled
 # minus lerobot and tianshou — tianshou is never imported by robocasa).
 uv pip install --no-cache \
+    -e "$CLONE_ROOT/robosuite" \
     "numpy==2.2.5" "numba==0.61.2" "scipy==1.15.3" "mujoco==3.3.1" \
     pygame Pillow opencv-python pyyaml pynput tqdm termcolor \
     imageio h5py lxml hidapi "gymnasium>=0.29.1"
