@@ -8,6 +8,10 @@ if TYPE_CHECKING:
     from internal_datasets.mutations.recording_mutation import RecordingMutation
 
 
+class EpisodeNotFoundError(LookupError):
+    """The dataset has no episode with the given index."""
+
+
 class DatasetClient(ABC):
     type: str
     has_episodes: bool = False
@@ -62,6 +66,14 @@ class DatasetClient(ABC):
     @abstractmethod
     def delete_episodes(self, episode_indices: list[int], output_path: Path) -> "DatasetClient":
         """Copy over repo without given episode_indices to output_path."""
+
+    @abstractmethod
+    def set_episode_task(self, episode_index: int, task: str) -> None:
+        """Make ``task`` the only task of the episode, in place.
+
+        Raises:
+            EpisodeNotFoundError: The dataset has no such episode.
+        """
 
     @abstractmethod
     def add_frame(self, obs: dict, act: dict, task: str) -> None:

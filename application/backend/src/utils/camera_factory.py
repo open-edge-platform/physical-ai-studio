@@ -12,6 +12,8 @@ from loguru import logger
 from physicalai.capture import CameraType, ColorMode, SharedCamera
 from physicalai.config import Config
 
+from utils.v4l2_frame_interval import fix_zero_frame_intervals
+
 if TYPE_CHECKING:
     from schemas.project_camera import Camera
 
@@ -115,6 +117,10 @@ def build_shared_camera(
     if config.driver not in _DRIVER_TO_CLASS_PATH:
         msg = f"unsupported driver {config.driver!r}; expected one of {sorted(MIGRATED_DRIVERS)}"
         raise ValueError(msg)
+
+    if config.driver == "usb_camera":
+        # A replugged UVC camera may report a 1/0 frame interval, which fails the open.
+        fix_zero_frame_intervals()
 
     camera_config = build_camera_config(config)
     logger.debug(f"camera config for {config.name}: {camera_config}")

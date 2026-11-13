@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -18,6 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
+from packaging.requirements import Requirement
 from physicalai.config import Config
 from physicalai.inference import InferenceModel
 from tests.integration import simulation_e2e as controls
@@ -675,9 +677,16 @@ def test_lockfiles_resolve_the_configured_runtime_and_plugin_pin():
     for project in (ROOT / "library", BACKEND):
         config = tomllib.loads((project / "pyproject.toml").read_text())
         lock = tomllib.loads((project / "uv.lock").read_text())
-        expected = config["tool"]["uv"]["sources"]["physicalai"]["rev"]
+        requirements = [Requirement(dependency) for dependency in config["project"]["dependencies"]]
+        runtime = next(requirement for requirement in requirements if requirement.name == "physicalai")
         package = next(package for package in lock["package"] if package["name"] == "physicalai")
-        assert package["source"]["git"].endswith(f"#{expected}")
+        assert package["version"] in runtime.specifier
+        # Between runtime releases the runtime may be pinned to a full commit, never a branch or PR ref.
+        runtime_git = re.fullmatch(
+            r"https://github\.com/openvinotoolkit/physicalai\.git\?rev=([0-9a-f]{40})#\1",
+            package["source"].get("git", ""),
+        )
+        assert package["source"] == {"registry": "https://pypi.org/simple"} or runtime_git
         if project == BACKEND:
             plugin = next(package for package in lock["package"] if package["name"] == "physicalai-mujoco-plugin")
             sim_dependencies = config["project"]["optional-dependencies"]["sim-e2e"]

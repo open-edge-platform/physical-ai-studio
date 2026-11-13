@@ -1,0 +1,31 @@
+/* Dims the last frame so it reads as not live. */
+.frozenScrim {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+/* Solid, so it stays readable over any image. */
+.warning {
+    position: absolute;
+    top: var(--spectrum-global-dimension-size-100, 8px);
+    left: var(--spectrum-global-dimension-size-100, 8px);
+    right: var(--spectrum-global-dimension-size-100, 8px);
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-100, 8px);
+    padding: var(--spectrum-global-dimension-size-100, 8px) var(--spectrum-global-dimension-size-150, 12px);
+    border-radius: var(--spectrum-alias-border-radius-medium, 4px);
+    background-color: #f4a62a;
+    color: #1d1d1d;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.warningIcon {
+    flex-shrink: 0;
+    fill: currentColor;
+}

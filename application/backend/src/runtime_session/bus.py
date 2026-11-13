@@ -317,6 +317,11 @@ def _config(*, listen: Path | None = None, connect: Path | None = None) -> zenoh
     # The host routes, so workers that joined hear each other and not only the host.
     config.insert_json5("mode", '"router"' if listen else '"client"')
     config.insert_json5("scouting/multicast/enabled", "false")
+    # Every message goes through the socket. With zenoh shared memory on, a long-lived session process
+    # began dropping replies above its ~3 KB shared-memory threshold, such as a model's action chunk
+    # ("Nothing serves rpc/model/infer"). The bus carries commands and replies, mostly small; camera
+    # frames go through the store.
+    config.insert_json5("transport/shared_memory/enabled", "false")
     config.insert_json5("listen/endpoints", json.dumps([f"unixsock-stream/{listen}"] if listen else []))
     config.insert_json5("connect/endpoints", json.dumps([f"unixsock-stream/{connect}"] if connect else []))
     return config

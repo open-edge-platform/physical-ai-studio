@@ -236,7 +236,7 @@ jobs:
         with:
           image: "ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:main"
           # renovate: datasource=docker depName=python
-          base-image: "python:3.13-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81"
+          base-image: "python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc"
           artifact-name: "trivy-scan-diff-${{ matrix.image }}"
           ignore_unfixed: true
 

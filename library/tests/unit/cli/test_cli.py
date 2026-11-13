@@ -83,6 +83,44 @@ class TestHelp:
 class TestConfigParsing:
     """ST-3 and ST-4 config parsing parity."""
 
+    def test_benchmark_instantiates_history_gym(self) -> None:
+        """The CLI recursively constructs a history wrapper and its underlying gym."""
+        from physicalai.gyms import HistoryGym, PushTGym
+
+        parser = benchmark_module.register().parser
+        cfg = parser.parse_object(
+            {
+                "policy": "physicalai.policies.ACT",
+                "benchmark": {
+                    "class_path": "physicalai.benchmark.gyms.Benchmark",
+                    "init_args": {
+                        "num_episodes": 1,
+                        "max_steps": 2,
+                        "gyms": [
+                            {
+                                "class_path": "physicalai.gyms.HistoryGym",
+                                "init_args": {
+                                    "gym": {"class_path": "physicalai.gyms.PushTGym"},
+                                    "n_obs_steps": 2,
+                                    "stride": 2,
+                                    "keys": ["images.top"],
+                                },
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+        gym = parser.instantiate(Namespace(benchmark=cfg.benchmark)).benchmark.gyms[0]
+        try:
+            assert isinstance(gym, HistoryGym)
+            assert isinstance(gym.gym, PushTGym)
+            assert gym.stride == 2
+            observation, _ = gym.reset(seed=42)
+            assert observation.images["top"].shape[:2] == (1, 2)
+        finally:
+            gym.close()
+
     def test_fit_parser_accepts_existing_act_config(self) -> None:
         parser = fit_module.register().parser
         cfg = parser.parse_args([f"--config={_act_config_path()}"])
