@@ -22,6 +22,25 @@ _ARCHIVE_ERROR_DETAILS: dict[type[Exception], tuple[str, int]] = {
 }
 
 
+def _log_handled_exception(request: Request, http_status: int, summary: str, exception: Exception) -> None:
+    """Log an exception that is converted into an error response.
+
+    Client errors are logged as warnings; server errors include the traceback.
+    The underlying cause is logged with its traceback so failures from robot
+    plugins or serial ports stay diagnosable even though the client only sees
+    a sanitized message.
+    """
+    location = f"{request.method} {request.url.path}"
+    if http_status >= 500:
+        logger.opt(exception=exception).error(f"{location} -> {http_status} {summary}")
+        return
+    cause = exception.__cause__ or exception.__context__
+    if cause is not None:
+        logger.opt(exception=cause).warning(f"{location} -> {http_status} {summary} (cause: {cause!r})")
+    else:
+        logger.warning(f"{location} -> {http_status} {summary}")
+
+
 def handle_base_exception(request: Request, exception: Exception) -> Response:
     """
     Base exception handler
@@ -35,6 +54,8 @@ def handle_base_exception(request: Request, exception: Exception) -> Response:
         message = str(exception)
     else:
         raise exception
+
+    _log_handled_exception(request, int(http_status), f"{error_code}: {message}", exception)
 
     response_data = {"error_code": error_code, "message": message, "http_status": http_status}
     if isinstance(exception, BaseException):
@@ -75,7 +96,7 @@ async def handle_not_found(request: Request, _exception: Exception) -> JSONRespo
     )
 
 
-async def validation_exception_handler(_request: Request, exception: Exception) -> JSONResponse:
+async def validation_exception_handler(request: Request, exception: Exception) -> JSONResponse:
     """
     Converts a RequestValidationError to a better readable Bad request exception.
     """
@@ -94,6 +115,7 @@ async def validation_exception_handler(_request: Request, exception: Exception) 
         field_string = ".".join(str(segment) for segment in filtered_loc)
         reformatted_message[field_string].append(msg)
 
+    _log_handled_exception(request, http.HTTPStatus.BAD_REQUEST, f"bad_request: {dict(reformatted_message)}", exception)
     headers = {"Cache-Control": "no-cache"}  # always revalidate
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -108,7 +130,7 @@ async def validation_exception_handler(_request: Request, exception: Exception) 
     )
 
 
-async def pydantic_validation_exception_handler(_request: Request, exception: Exception) -> JSONResponse:
+async def pydantic_validation_exception_handler(request: Request, exception: Exception) -> JSONResponse:
     """
     Converts a pydantic ValidationError to a better readable Bad request exception.
     """
@@ -134,6 +156,7 @@ async def pydantic_validation_exception_handler(_request: Request, exception: Ex
         {"message": error["msg"], "type": error["type"], "location": format_location(error.get("loc", []))}
         for error in exception.errors()
     ]
+    _log_handled_exception(request, http.HTTPStatus.BAD_REQUEST, f"invalid_payload: {errors}", exception)
 
     headers = {"Cache-Control": "no-cache"}  # always revalidate
     return JSONResponse(
@@ -149,7 +172,7 @@ async def pydantic_validation_exception_handler(_request: Request, exception: Ex
     )
 
 
-async def connection_error_exception_handler(_request: Request, exception: Exception) -> JSONResponse:
+async def connection_error_exception_handler(request: Request, exception: Exception) -> JSONResponse:
     """Convert serial connection errors to a client-facing 4xx response."""
     if not isinstance(exception, ConnectionError):
         raise exception
@@ -177,6 +200,7 @@ async def connection_error_exception_handler(_request: Request, exception: Excep
         }
         status_code = status.HTTP_400_BAD_REQUEST
 
+    _log_handled_exception(request, status_code, f"{payload['error_code']}: {exception}", exception)
     headers = {"Cache-Control": "no-cache"}
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload), headers=headers)
 
