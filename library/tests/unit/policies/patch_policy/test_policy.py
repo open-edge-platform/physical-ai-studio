@@ -1,0 +1,422 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Readable construction and Lightning lifecycle checks without downloads."""
+
+from dataclasses import replace
+from types import SimpleNamespace
+
+import lightning
+import pytest
+import torch
+
+from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
+from physicalai.policies.patch_policy import policy as policy_module
+from physicalai.policies.patch_policy.policy import PatchPolicy
+
+
+class FeatureDataset(Dataset):
+    """Only dataset metadata is needed by setup; sample access must not occur."""
+
+    def __init__(self, config):
+        self.inputs = {feature.name: feature for feature in config.input_features}
+        self.outputs = {feature.name: feature for feature in config.output_features}
+        self._delta_indices = {}
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, index):
+        raise AssertionError("setup must not load samples")
+
+    raw_features = property(lambda self: {})
+    observation_features = property(lambda self: self.inputs)
+    action_features = property(lambda self: self.outputs)
+    fps = property(lambda self: 10)
+    tolerance_s = property(lambda self: 0.01)
+    delta_indices = property(
+        lambda self: self._delta_indices, lambda self, values: setattr(self, "_delta_indices", values)
+    )
+
+
+def test_unresolved_configuration_does_not_build_modules():
+    policy = PatchPolicy(encoder_pretrained=False)
+
+    policy.configure_model()
+
+    assert policy.model is None
+    assert policy._preprocessor is None
+    assert policy._postprocessor is None
+    with pytest.raises(RuntimeError, match="config is not initialized"):
+        _ = policy.config
+    with pytest.raises(RuntimeError, match="not initialized"):
+        policy.predict_action_chunk(Observation())
+    with pytest.raises(RuntimeError, match="Cannot configure optimizers"):
+        policy.configure_optimizers()
+
+
+def test_constructor_builds_when_features_are_provided(tiny_encoder, small_config):
+    policy = PatchPolicy(
+        input_features=small_config.input_features,
+        output_features=small_config.output_features,
+        encoder_pretrained=False,
+        action_head="diffusion",
+        n_obs_steps=2,
+        chunk_size=2,
+        hidden_dim=8,
+        num_layers=1,
+        num_heads=2,
+        num_inference_steps=2,
+    )
+
+    assert policy.model is not None
+    assert policy._preprocessor is not None
+    assert policy.config.action_dim == 2
+
+
+@pytest.mark.parametrize("use_random_noise", [True, False])
+def test_diffusion_noise_setting_reaches_heads_and_config(tiny_encoder, small_config, use_random_noise):
+    policy = PatchPolicy(
+        input_features=small_config.input_features,
+        output_features=small_config.output_features,
+        encoder_pretrained=False,
+        action_head="diffusion",
+        hidden_dim=8,
+        num_layers=1,
+        num_heads=2,
+        use_random_noise=use_random_noise,
+    )
+
+    assert policy.config.use_random_input_noise is use_random_noise
+    assert policy.hparams["use_random_noise"] is use_random_noise
+    assert policy.model.action_head.use_random_input_noise is use_random_noise
+    assert policy.model.ema_action_head.use_random_input_noise is use_random_noise
+    restored = PatchPolicy.from_config(policy.config)
+    assert restored.use_random_noise is use_random_noise
+    assert restored.model.action_head.use_random_input_noise is use_random_noise
+    assert restored.model.ema_action_head.use_random_input_noise is use_random_noise
+
+
+@pytest.mark.parametrize("use_random_noise", [True, False])
+def test_vqbet_noise_setting_reaches_head_and_config(tiny_encoder, small_config, use_random_noise):
+    config = replace(small_config, action_head="behavior_transformer", use_random_input_noise=use_random_noise)
+    policy = PatchPolicy.from_config(config)
+
+    assert policy.use_random_noise is use_random_noise
+    assert policy.hparams["use_random_noise"] is use_random_noise
+    assert policy.model.action_head.use_random_noise is use_random_noise
+    assert policy.config.use_random_input_noise is use_random_noise
+
+
+def test_dataset_setup_resolves_features_without_building_modules(tiny_encoder, small_config):
+    policy = PatchPolicy(encoder_pretrained=False, action_head="diffusion", hidden_dim=8, num_layers=1, num_heads=2)
+    policy.trainer = SimpleNamespace(datamodule=SimpleNamespace(train_dataset=FeatureDataset(small_config)))
+
+    policy.setup("fit")
+
+    assert policy.input_features == small_config.input_features
+    assert policy.output_features == small_config.output_features
+    assert policy.model is None
+    assert policy._preprocessor is None
+    policy.configure_model()
+    assert policy.model is not None
+
+
+def test_repeated_configuration_preserves_modules_config_and_queued_actions(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    original = (policy.model, policy.config, policy._preprocessor, policy._postprocessor)
+    parameters = tuple(policy.model.parameters())
+    queued_action = torch.ones(1, 2)
+    policy._action_queue.append(queued_action)
+
+    policy.configure_model()
+
+    assert all(
+        before is after
+        for before, after in zip(original, (policy.model, policy.config, policy._preprocessor, policy._postprocessor))
+    )
+    assert all(before is after for before, after in zip(parameters, policy.model.parameters()))
+    assert policy._action_queue[0] is queued_action
+
+
+def test_changed_statistics_refresh_processors_not_parameters(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    model = policy.model
+    preprocessor = policy._preprocessor
+    postprocessor = policy._postprocessor
+    statistics = NormalizationParameters(min=[0.0, 0.0], max=[4.0, 4.0])
+    policy.output_features = [replace(policy.output_features[0], normalization_data=statistics)]
+
+    policy.configure_model()
+
+    assert policy.model is model
+    assert policy._preprocessor is not preprocessor
+    assert policy._postprocessor is not postprocessor
+    assert policy.config.output_features[0].normalization_data == statistics
+    torch.testing.assert_close(policy._postprocessor(torch.ones(1, 2, 2)), torch.full((1, 1, 2), 4.0))
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA is unavailable"
+))])
+@pytest.mark.parametrize("refresh", ["statistics", "missing_processor"])
+def test_processor_refresh_preserves_device_and_mode_with_float32_stats(tiny_encoder, small_config, device, refresh):
+    policy = PatchPolicy.from_config(small_config).to(device=device, dtype=torch.float64).eval()
+    model = policy.model
+    if refresh == "statistics":
+        policy.output_features = [replace(
+            policy.output_features[0],
+            normalization_data=NormalizationParameters(min=[0.0, 0.0], max=[4.0, 4.0]),
+        )]
+    else:
+        policy._preprocessor = None
+
+    policy.configure_model()
+
+    assert policy.model is model
+    assert next(model.parameters()).dtype == torch.float64
+    for processor in (policy._preprocessor, policy._postprocessor):
+        assert not processor.training
+        for parameter in processor.parameters():
+            assert parameter.device == next(model.parameters()).device
+            assert parameter.dtype == torch.float32
+    actions = torch.ones(1, 2, 2, device=device, dtype=torch.float64)
+    assert policy._postprocessor(actions).device == actions.device
+
+
+@pytest.mark.parametrize("missing", ["_preprocessor", "_postprocessor"])
+def test_missing_processor_is_repaired_without_rebuilding(tiny_encoder, small_config, missing):
+    policy = PatchPolicy.from_config(small_config)
+    model = policy.model
+    config = policy.config
+    setattr(policy, missing, None)
+
+    policy.configure_model()
+
+    assert policy.model is model
+    assert policy.config is config
+    assert policy._preprocessor is not None
+    assert policy._postprocessor is not None
+
+
+def test_incompatible_features_fail_before_synchronized_state_changes(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    config = policy.config
+    model = policy.model
+    preprocessor = policy._preprocessor
+    policy.input_features = [Feature(name="other_camera", ftype=FeatureType.VISUAL, shape=(3, 4, 4))]
+
+    with pytest.raises(ValueError, match="does not match"):
+        policy.configure_model()
+
+    assert policy.config is config
+    assert policy.model is model
+    assert policy._preprocessor is preprocessor
+    assert policy.model.camera_names == ("front",)
+
+
+@pytest.mark.parametrize("change", ["architecture", "camera_order"])
+def test_incompatible_checkpoint_is_rejected_before_mutation(tiny_encoder, small_config, change):
+    second_camera = Feature(name="back", ftype=FeatureType.VISUAL, shape=(3, 4, 4))
+    config = replace(small_config, input_features=[*small_config.input_features, second_camera])
+    policy = PatchPolicy.from_config(config)
+    saved_config = policy.config
+    if change == "architecture":
+        incompatible = replace(saved_config, hidden_dim=16)
+    else:
+        incompatible = replace(saved_config, input_features=list(reversed(saved_config.input_features)))
+
+    with pytest.raises(ValueError, match="does not match"):
+        policy.on_load_checkpoint({"policy_config": incompatible.to_dict()})
+
+    assert policy.config is saved_config
+    assert policy.input_features is saved_config.input_features
+    assert policy.model.camera_names == ("front", "back")
+
+
+@pytest.mark.parametrize("n_action_steps", [None, 1])
+@pytest.mark.parametrize("sampling_overrides", [{}, {"use_random_noise": True, "num_inference_steps": 1}])
+def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon(
+    tiny_encoder, small_config, tmp_path, monkeypatch, n_action_steps, sampling_overrides
+):
+    config = replace(small_config, n_action_steps=2)
+    policy = PatchPolicy.from_config(config)
+    with torch.no_grad():
+        next(policy.model.action_head.parameters()).fill_(0.25)
+    checkpoint = {
+        "state_dict": policy.state_dict(),
+        "hyper_parameters": dict(policy.hparams),
+        "pytorch-lightning_version": lightning.__version__,
+    }
+    policy.on_save_checkpoint(checkpoint)
+    path = tmp_path / "policy.ckpt"
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch  # Trusted checkpoint created by this test.
+    torch.save(checkpoint, path)
+
+    def forbid_download(*args, **kwargs):
+        raise AssertionError("checkpoint restoration must not download encoder artifacts")
+
+    monkeypatch.setattr(policy_module, "resolve_encoder_artifacts", forbid_download)
+    overrides = {} if n_action_steps is None else {"n_action_steps": n_action_steps}
+    restored = PatchPolicy.load_from_checkpoint(path, **overrides, **sampling_overrides)
+    expected_steps = config.n_action_steps if n_action_steps is None else n_action_steps
+    expected_random = sampling_overrides.get("use_random_noise", config.use_random_input_noise)
+    expected_inference_steps = sampling_overrides.get("num_inference_steps", config.num_inference_steps)
+
+    assert restored.config == replace(
+        policy.config, n_action_steps=expected_steps, use_random_input_noise=expected_random,
+        num_inference_steps=expected_inference_steps,
+    )
+    assert restored.n_action_steps == expected_steps
+    assert restored._n_action_steps == expected_steps
+    assert restored._action_queue.maxlen == expected_steps
+    assert restored.hparams["n_action_steps"] == expected_steps
+    observation = Observation(images={"front": torch.zeros(1, 2, 3, 4, 4)})
+    restored.eval()
+    assert restored.predict_action_chunk(observation).shape == (1, expected_steps, 2)
+    queued = restored._action_queue
+    restored.configure_model()
+    assert restored._action_queue is queued
+    assert restored.use_random_noise is expected_random
+    assert restored.hparams["use_random_noise"] is expected_random
+    assert restored.model.ema_action_head.use_random_input_noise is expected_random
+    assert restored.model.action_head.num_inference_steps == expected_inference_steps
+    assert restored.model.ema_action_head.num_inference_steps == expected_inference_steps
+    assert not restored.encoder_pretrained
+    for name, expected in policy.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[name], expected)
+    # CLI warm-starts pass complete parsed constructor arguments, not just overrides.
+    from physicalai.cli._dispatch import _build_lightning_parser, _model_init_args
+
+    parser = _build_lightning_parser("fit")
+    cfg = parser.parse_object({
+        "model": {"class_path": "physicalai.policies.PatchPolicy", "init_args": dict(policy.hparams)},
+        "data": {"class_path": "physicalai.data.lerobot.LeRobotDataModule", "init_args": {"repo_id": "unused"}},
+    })
+    warm_started = PatchPolicy.load_from_checkpoint(path, **_model_init_args(cfg))
+    assert warm_started.config == policy.config
+    restored_from_config = PatchPolicy.load_from_checkpoint(path, hidden_dim=16)
+    assert restored_from_config.config == policy.config
+    assert restored_from_config.hidden_dim == policy.config.hidden_dim
+
+
+@pytest.mark.parametrize("overrides", [{"input_features": []}, {"output_features": []}])
+def test_checkpoint_rejects_feature_overrides_before_loading(overrides):
+    with pytest.raises(ValueError, match="cannot be overridden"):
+        PatchPolicy.load_from_checkpoint("unused.ckpt", **overrides)
+
+
+@pytest.mark.parametrize("override", [
+    {"encoder_name": "resnet18"}, {"action_head": "behavior_transformer"},
+    {"n_obs_steps": 3}, {"chunk_size": 3}, {"hidden_dim": 16},
+    {"num_layers": 2}, {"num_heads": 1},
+])
+def test_checkpoint_uses_saved_architecture_for_unbuilt_model(tiny_encoder, small_config, override):
+    settings = {
+        "encoder_pretrained": False, "action_head": small_config.action_head,
+        "n_obs_steps": small_config.n_obs_steps, "chunk_size": small_config.chunk_size,
+        "hidden_dim": small_config.hidden_dim, "num_layers": small_config.num_layers,
+        "num_heads": small_config.num_heads,
+        "num_inference_steps": small_config.num_inference_steps,
+        "use_random_noise": small_config.use_random_input_noise,
+    }
+    policy = PatchPolicy(**(settings | override))
+
+    policy.on_load_checkpoint({"policy_config": small_config.to_dict()})
+
+    assert policy.model is not None
+    assert policy.config.encoder_name == small_config.encoder_name
+    assert policy.config.action_head == small_config.action_head
+    assert policy.config.n_obs_steps == small_config.n_obs_steps
+    assert policy.config.chunk_size == small_config.chunk_size
+    assert policy.config.hidden_dim == small_config.hidden_dim
+    assert policy.config.num_layers == small_config.num_layers
+    assert policy.config.num_heads == small_config.num_heads
+
+
+def test_compatible_checkpoint_preserves_materialized_modules(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    original = (policy.model, policy.config, policy._preprocessor, policy._postprocessor)
+    queue = policy._action_queue
+    queue.append(torch.ones(1, 2))
+
+    policy.on_load_checkpoint({"policy_config": policy.config.to_dict()})
+
+    assert policy.model is original[0]
+    assert policy.config is original[1]
+    assert policy._preprocessor is original[2]
+    assert policy._postprocessor is original[3]
+    assert policy._action_queue is queue
+    assert len(queue) == 1
+
+
+def test_checkpoint_statistics_refresh_processors_without_rebuilding(tiny_encoder, small_config):
+    policy = PatchPolicy.from_config(small_config)
+    model = policy.model
+    original_preprocessor = policy._preprocessor
+    statistics = NormalizationParameters(min=[-2.0, -2.0], max=[4.0, 4.0])
+    config = replace(policy.config, output_features=[replace(
+        policy.output_features[0], normalization_data=statistics,
+    )])
+
+    policy.on_load_checkpoint({"policy_config": config.to_dict()})
+
+    assert policy.model is model
+    assert policy._preprocessor is not original_preprocessor
+    assert policy.config.output_features[0].normalization_data == statistics
+    torch.testing.assert_close(policy._postprocessor(torch.ones(1, 2, 2)), torch.full((1, 1, 2), 4.0))
+
+
+def test_training_and_prediction_use_processors(tiny_encoder, small_config, monkeypatch):
+    policy = PatchPolicy.from_config(small_config)
+    observation = Observation(images={"front": torch.zeros(1, 2, 3, 4, 4)}, action=torch.ones(1, 3, 2))
+    logged = {}
+    monkeypatch.setattr(policy, "log_dict", lambda metrics, **kwargs: logged.update(metrics))
+
+    loss = policy.training_step(observation, 0)
+    loss.backward()
+    policy.eval()
+    monkeypatch.setattr(policy.model.ema_action_head, "sample", lambda context: torch.zeros(1, 2, 2))
+    actions = policy.predict_action_chunk(observation)
+
+    assert torch.isfinite(loss)
+    assert "train/loss" in logged
+    torch.testing.assert_close(actions, torch.ones(1, 1, 2))
+    with pytest.raises(TypeError, match="Training requires tensor actions"):
+        policy._prepare_batch(Observation(images=observation.images), require_actions=True)
+
+
+@pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
+def test_optimizer_contains_only_trainable_parameters(tiny_encoder, small_config, action_head):
+    policy = PatchPolicy.from_config(replace(small_config, action_head=action_head))
+
+    optimizer = policy.configure_optimizers()
+
+    actual = [parameter for group in optimizer.param_groups for parameter in group["params"]]
+    expected = [parameter for parameter in policy.model.parameters() if parameter.requires_grad]
+    assert len(actual) == len({id(parameter) for parameter in actual})
+    assert {id(parameter) for parameter in actual} == {id(parameter) for parameter in expected}
+    if action_head == "behavior_transformer":
+        assert [group["weight_decay"] for group in optimizer.param_groups] == [1e-4, 0.0, 0.01, 1e-4]
+
+
+def test_encoder_weights_and_compilation_are_applied_once(tiny_encoder, small_config, monkeypatch):
+    monkeypatch.setattr(
+        policy_module, "resolve_encoder_artifacts", lambda *args, **kwargs: (None, {"weight": torch.tensor(3.0)})
+    )
+    policy = PatchPolicy(
+        small_config.input_features,
+        small_config.output_features,
+        action_head="diffusion",
+        hidden_dim=8,
+        num_layers=1,
+        num_heads=2,
+        compile_model=True,
+    )
+
+    policy.configure_model()
+
+    assert policy.model.encoder.weight_loads == 1
+    assert policy.model.encoder.compile_calls == 1
+    torch.testing.assert_close(policy.model.encoder.weight, torch.tensor(3.0))
+    assert policy._encoder_weights is None
