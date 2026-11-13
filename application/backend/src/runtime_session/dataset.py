@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
+from exceptions import RuntimeSessionCommandError
 from runtime_session.bus import Bus, publish_status, until_serving
 from runtime_session.store import FeatureSpec, ImageSpec
 from schemas.runtime_session import SessionDataset
@@ -26,6 +27,9 @@ from workers import dataset_worker as dataset_rpc
 from workers.dataset_worker import DatasetWorker, RecordingStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from uuid import UUID
+
     from runtime_session.store import Store
     from schemas.dataset import Dataset
 
@@ -34,6 +38,42 @@ COMPONENT = "dataset"
 
 _READY_S = 10.0
 """How long a started dataset worker has to answer on the bus."""
+
+_OPEN: dict[UUID, list[str]] = {}
+"""The sessions recording into each dataset, from before the worker opens it until it has copied back."""
+
+
+def sessions_recording_into(dataset_id: UUID) -> list[str]:
+    """Ids of the sessions with ``dataset_id`` open, including one still opening it or copying it back."""
+    return list(_OPEN.get(dataset_id, ()))
+
+
+_EDITING: set[UUID] = set()
+"""Datasets being edited in place; a recording does not open one meanwhile."""
+
+
+def is_being_edited(dataset_id: UUID) -> bool:
+    """Whether ``dataset_id`` is being edited in place right now."""
+    return dataset_id in _EDITING
+
+
+@contextmanager
+def editing(dataset_id: UUID) -> Iterator[None]:
+    """Keep recordings from opening ``dataset_id`` while it is edited in place."""
+    _EDITING.add(dataset_id)
+    try:
+        yield
+    finally:
+        _EDITING.discard(dataset_id)
+
+
+def _close(dataset_id: UUID, session_id: str) -> None:
+    sessions = _OPEN.get(dataset_id, [])
+    if session_id in sessions:
+        sessions.remove(session_id)
+    if not sessions:
+        _OPEN.pop(dataset_id, None)
+
 
 DEFAULT_RECORDING_FPS = 30
 """The rate a new dataset is recorded at; an existing one keeps its own."""
@@ -142,7 +182,14 @@ class Recording:
             FeatureSpecMismatchError: The dataset was recorded with joints or cameras the store lacks.
             WorkerStartupError: The dataset could not be opened for recording.
         """
+        if is_being_edited(self.dataset.id):
+            raise RuntimeSessionCommandError(
+                f"Dataset {self.dataset.name!r} is being edited. Try again in a moment.", error_code="dataset_busy"
+            )
         async with AsyncExitStack() as stack:
+            _OPEN.setdefault(self.dataset.id, []).append(self._session_id)
+            # Registered first, so it runs last: after the worker has stopped and copied back.
+            stack.callback(_close, self.dataset.id, self._session_id)
             bus = stack.enter_context(Bus.join(self._session_id))
             publish_status(bus, COMPONENT, "starting")
             # Runs after the worker has stopped, while the bus is still open.

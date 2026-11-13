@@ -19,6 +19,7 @@ from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Feature, Fe
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import ExportParameters, OpenVINOExportParameters, TorchExportParameters
 from physicalai.policies.base import Policy
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -89,7 +90,7 @@ def _build_optimizer(config: XR0Config, param_groups: list[dict[str, Any]]) -> t
                 bf16_stochastic_round=config.dtype == "bfloat16",
             )
 
-    return torch.optim.AdamW(
+    return build_adamw_auto_precision(
         param_groups,
         lr=config.optimizer_lr,
         betas=config.optimizer_betas,

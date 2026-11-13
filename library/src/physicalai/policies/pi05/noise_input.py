@@ -271,6 +271,20 @@ def _pi05_args(manifest: dict[str, Any]) -> dict[str, Any]:
     return spec.setdefault("init_args", {}) if spec.get("class_path") else spec
 
 
+def _drawn_noise_shape(manifest: dict[str, Any]) -> list[int] | None:
+    """Return the shape of the noise the runtime draws for an export, if it draws any.
+
+    Current exports list the generic ``noise`` preprocessor; converted ones set
+    ``noise_shape`` on the ``pi05`` preprocessor. Also raises ``ValueError`` if the
+    manifest has no single ``pi05`` preprocessor.
+    """
+    pi05_noise_shape = _pi05_args(manifest).get("noise_shape")
+    for spec in manifest.get("model", {}).get("preprocessors", []):
+        if spec.get("type") == "noise" or str(spec.get("class_path", "")).endswith(".NoisePreprocessor"):
+            return (spec.get("init_args") or spec).get("shape")
+    return pi05_noise_shape
+
+
 def _graph_name(manifest: dict[str, Any], where: Path) -> str:
     """Return the manifest's OpenVINO graph file name.
 
@@ -285,7 +299,7 @@ def _graph_name(manifest: dict[str, Any], where: Path) -> str:
 
 
 def read_noise_shape(export_dir: Path | str) -> list[int] | None:
-    """Return the ``noise_shape`` a pi05 export's manifest gives its preprocessor, if any.
+    """Return the shape of the noise the runtime draws for a pi05 export, if any.
 
     Also raises ``ValueError`` if the manifest has no single ``pi05`` preprocessor.
 
@@ -296,7 +310,7 @@ def read_noise_shape(export_dir: Path | str) -> list[int] | None:
     if not manifest_path.is_file():
         msg = f"no {MANIFEST_NAME} in {export_dir}"
         raise FileNotFoundError(msg)
-    return _pi05_args(json.loads(manifest_path.read_text())).get("noise_shape")
+    return _drawn_noise_shape(json.loads(manifest_path.read_text()))
 
 
 def _noise_input_shape(model: ov.Model) -> tuple[int, ...] | None:
@@ -443,8 +457,8 @@ def convert_openvino_export(
     model = ov.Core().read_model(graph_path)
     existing = _noise_input_shape(model)
     if existing is not None:
-        if pi05_args.get("noise_shape") is None:
-            msg = f"{graph_path} takes `{NOISE}` but the manifest's pi05 preprocessor has no `noise_shape`"
+        if _drawn_noise_shape(manifest) is None:
+            msg = f"{graph_path} takes `{NOISE}` but the manifest has no `noise` preprocessor or `noise_shape`"
             raise ValueError(msg)
         return ConversionResult(ConversionStatus.ALREADY_CONVERTED, export_dir, existing)
     if not _random_ops(model):

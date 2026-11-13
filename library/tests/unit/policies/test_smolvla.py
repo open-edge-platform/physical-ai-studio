@@ -9,6 +9,7 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import torch
@@ -1078,3 +1079,83 @@ class TestActionPaddingMask:
     def test_val_loss_without_mask_falls_back_to_plain_mean(self) -> None:
         """Batches without the key keep the previous behaviour."""
         assert self._compute_val_loss(torch.full((2, 3, 2), 4.0), None) == pytest.approx(4.0)
+
+
+class TestNoiseDefault:
+    def test_random_noise_is_on_by_default(self) -> None:
+        """The model uses this flag for the training noise too; zero training noise lets the
+        flow-matching target be read off ``x_t``, so the loss collapses and the policy learns nothing."""
+        assert SmolVLA().config.use_random_input_noise is True
+
+
+class TestNoiseInput:
+    """Exports take the start noise as an input; the runtime's ``noise`` preprocessor draws it per call.
+
+    OpenVINO's GPU plugin returns the same values from in-graph random ops on every call.
+    """
+
+    @staticmethod
+    def _stub(*, rtc: bool, random_noise: bool = True) -> Any:
+        from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
+
+        class _ModelStub:
+            def __init__(self) -> None:
+                self._model = torch.nn.Linear(1, 1)
+
+        stub = SimpleNamespace(
+            _dataset_stats={
+                "observation.state": {"name": "state", "shape": (10,), "type": "STATE"},
+                "observation.image": {"name": "image", "shape": (3, 512, 512), "type": "VISUAL"},
+                "action": {"name": "action", "shape": (7,), "type": "ACTION"},
+            },
+            model=_ModelStub(),
+            config=SmolVLAConfig(
+                chunk_size=20, n_action_steps=20, max_action_dim=32, use_random_input_noise=random_noise
+            ),
+            rtc_enabled=rtc,
+        )
+        stub.inputs_schema = SmolVLA.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        stub.outputs_schema = SmolVLA.outputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return stub
+
+    @pytest.mark.parametrize("rtc", [False, True])
+    def test_sample_input_has_noise(self, rtc: bool) -> None:
+        from physicalai.data.constants import NOISE
+        from physicalai.policies.smolvla import SmolVLA
+
+        sample = SmolVLA.sample_input.fget(self._stub(rtc=rtc))  # type: ignore[attr-defined]
+
+        assert sample[NOISE].shape == (1, 20, 32)
+        assert sample[NOISE].dtype == torch.float32
+
+    @pytest.mark.parametrize(("backend", "expected"), [("onnx", [[20, 32]]), ("openvino", [[20, 32]]), ("torch", [])])
+    def test_manifest_draws_the_noise_for_graph_exports(self, backend: str, expected: list) -> None:
+        """Graph exports get the noise from the runtime; eager torch samples it itself."""
+        from physicalai.policies.smolvla import SmolVLA
+
+        args = SmolVLA.extra_export_args.fget(self._stub(rtc=False))  # type: ignore[attr-defined]
+        noise = [spec.model_dump() for spec in args[backend].preprocessors_specs if spec.type == "noise"]
+
+        assert [spec["shape"] for spec in noise] == expected
+
+    def test_zero_start_noise_stays_in_the_graph(self) -> None:
+        """With ``use_random_input_noise=False`` eager inference starts from zeros; exports must too."""
+        from physicalai.data.constants import NOISE
+        from physicalai.policies.smolvla import SmolVLA
+
+        stub = self._stub(rtc=False, random_noise=False)
+        args = SmolVLA.extra_export_args.fget(stub)  # type: ignore[attr-defined]
+
+        assert NOISE not in {feature.name for feature in stub.inputs_schema}
+        assert not [spec for backend in args.values() for spec in backend.preprocessors_specs if spec.type == "noise"]
+
+    def test_openvino_inputs_keep_one_name(self) -> None:
+        """Tracing leaves aliases on the noise and RTC inputs; the runtime routes inputs by name."""
+        from physicalai.data.constants import NOISE, RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+        from physicalai.data.observation import PREV_CHUNK_LEFT_OVER
+        from physicalai.policies.smolvla import SmolVLA
+
+        args = SmolVLA.extra_export_args.fget(self._stub(rtc=True))  # type: ignore[attr-defined]
+        names = {NOISE, PREV_CHUNK_LEFT_OVER, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT, RTC_EXECUTION_HORIZON}
+
+        assert names <= set(args["openvino"].inputs)

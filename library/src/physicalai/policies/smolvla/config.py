@@ -76,7 +76,8 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
         min_period: Minimum period for sine-cosine positional encoding of timesteps. Defaults to 4e-3.
         max_period: Maximum period for sine-cosine positional encoding of timesteps. Defaults to 4.0.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
-            during inference. If False, zeros are used instead. Defaults to True.
+            during inference. If False, zeros are used instead, also for the training noise, which
+            breaks training. Defaults to True.
 
     See :class:`~physicalai.policies.mixins.SnapFlowConfigMixin` for the
     inherited ``snapflow_*`` attributes.
