@@ -11,7 +11,8 @@
 }
 
 .loadingOverlay,
-.errorOverlay {
+.errorOverlay,
+.messageOverlay {
     position: absolute;
     inset: 0;
     display: grid;
@@ -41,6 +42,23 @@
 .errorOverlay {
     color: var(--spectrum-semantic-negative-color-default, #e34850);
     text-align: center;
+}
+
+.messageOverlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--spectrum-global-color-gray-700, #b9b9b9);
+    text-align: center;
+}
+
+.messageDetail {
+    max-width: 48ch;
+    font-size: 11px;
+    opacity: 0.75;
+    overflow-wrap: anywhere;
 }
 
 @keyframes spin {

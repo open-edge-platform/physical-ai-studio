@@ -34,7 +34,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-11-04T11:58:16.355393545Z"
+exclude-newer = "2026-11-05T09:56:28.744837Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -50,7 +50,7 @@ physicalai-stararm-plugin = false
 physicalai-mujoco-plugin = false
 markupsafe = false
 openvino = false
-pyrealsense2 = { timestamp = "2026-11-10T11:58:16.355416059Z", span = "P1D" }
+pyrealsense2 = { timestamp = "2026-11-11T09:56:28.744905Z", span = "P1D" }
 physicalai = false
 physicalai-so101-plugin = false
 
@@ -2796,6 +2796,7 @@ dependencies = [
     { name = "omegaconf" },
     { name = "opencv-python" },
     { name = "physicalai", extra = ["capture", "transport"] },
+    { name = "physicalai-mujoco-plugin" },
     { name = "physicalai-so101-plugin" },
     { name = "physicalai-studio-plugin" },
     { name = "physicalai-train", extra = ["molmoact2", "pi05", "rldx1", "smolvla", "xr0"] },
@@ -2886,6 +2887,7 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81" },
+    { name = "physicalai-mujoco-plugin", specifier = "~=0.5.0" },
     { name = "physicalai-mujoco-plugin", marker = "extra == 'sim-e2e'", specifier = "==0.5.0" },
     { name = "physicalai-so101-plugin", specifier = "~=0.3.0" },
     { name = "physicalai-studio-plugin", specifier = "~=0.5.0" },

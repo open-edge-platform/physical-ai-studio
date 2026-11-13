@@ -18,6 +18,7 @@ from api.dependencies import (
     get_robot_client_factory,
     get_robot_service,
     get_runtime_session_registry,
+    get_simulation_manager,
 )
 from api.runtime_ws import observation_message
 from main import app
@@ -45,6 +46,8 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
     robots = SimpleNamespace(get_robot_by_id=AsyncMock(side_effect=lambda _project, robot_id: rows[robot_id]))
     cameras = SimpleNamespace(get_camera_by_id=AsyncMock(return_value=ENVIRONMENT.cameras[0]))
     projects = SimpleNamespace(get_project_by_id=AsyncMock(return_value=SimpleNamespace(name="Alpha")))
+    # No robot here is simulated, so the leader stays as it is.
+    simulations = SimpleNamespace(point_leader_at_follower=AsyncMock(side_effect=lambda _project, *robots: robots))
     app.dependency_overrides.update(
         {
             get_project_service: lambda: projects,
@@ -53,6 +56,7 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
             get_robot_client_factory: lambda: robot_factory,
             get_runtime_session_registry: lambda: registry,
             get_camera_claim_registry: lambda: camera_claims,
+            get_simulation_manager: lambda: simulations,
         }
     )
     try:
