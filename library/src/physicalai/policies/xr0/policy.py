@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from physicalai.data import Observation
+    from physicalai.export.backends import ExecuTorchDelegate
 
     from .preprocessor import XR0Postprocessor, XR0Preprocessor
 
@@ -131,6 +132,37 @@ class XR0ExportablePolicyMixin(ExportablePolicyMixin):
         super().to_openvino(
             output_path,
             input_sample,
+            **export_kwargs,
+        )
+
+    def to_executorch(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        *,
+        delegate: ExecuTorchDelegate | None = None,
+        delegate_config: dict[str, Any] | None = None,
+        **export_kwargs: dict,
+    ) -> Path:
+        """Bake the self-contained export graph, then run the base ExecuTorch export.
+
+        Args:
+            output_path: Directory or file path where the ``.pte`` model is saved.
+            input_sample: Optional sample input for tracing; falls back to
+                :meth:`_get_default_export_input_sample` when ``None``.
+            delegate: ExecuTorch delegate backend (see the base method).
+            delegate_config: Optional delegate-specific configuration.
+            **export_kwargs: Additional keyword arguments forwarded to ``torch.export.export``.
+
+        Returns:
+            Path to the exported ``.pte`` model file.
+        """
+        self._bake_ingraph_export()
+        return super().to_executorch(
+            output_path,
+            input_sample,
+            delegate=delegate,
+            delegate_config=delegate_config,
             **export_kwargs,
         )
 

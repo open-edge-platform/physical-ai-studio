@@ -19,6 +19,7 @@ best-effort escape hatch (no equivalence guarantee, see
 
 from __future__ import annotations
 
+from physicalai.export.backends import ExportBackend
 from physicalai.policies.lerobot.policy import NamedLeRobotPolicy
 
 __all__ = ["ACT", "PI0", "PI05", "XVLA", "Diffusion", "Groot", "PI0Fast", "SmolVLA"]
@@ -29,11 +30,29 @@ class ACT(NamedLeRobotPolicy):
 
     POLICY_NAME = "act"
 
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH, ExportBackend.EXECUTORCH]
+
 
 class Diffusion(NamedLeRobotPolicy):
     """LeRobot Diffusion Policy."""
 
     POLICY_NAME = "diffusion"
+
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH, ExportBackend.EXECUTORCH]
 
 
 class SmolVLA(NamedLeRobotPolicy):
