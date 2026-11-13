@@ -125,12 +125,14 @@ application/cloudformation/provision-robot.sh \
 
 The script creates an AWS IoT thing and active X.509 certificate, delivers the bundle to the robot/Studio host over SSH, installs the `aws-iot-greengrass` snap, and writes `/var/snap/aws-iot-greengrass/common/greengrass/v2/config.yaml` (override with `GREENGRASS_CONFIG_PATH` if stored at a custom path). When this configuration file is present on the Studio backend host, Studio exchanges the device certificate for temporary AWS credentials automatically.
 
+For Docker deployments, add a read-only bind mount of `/var/snap/aws-iot-greengrass/common/greengrass/v2` at the same path inside the Studio container, ensure the backend container user can read the configuration and certificate files, and recreate the container. `GREENGRASS_CONFIG_PATH` must point to a path inside the container; setting it alone does not expose host files.
+
 Without SSH access from the administrator machine, omit `--ssh` to write the bundle to `./robot-bundles/<thing-name>`, copy that directory to the Studio host, and run `sudo ./install-greengrass-snap.sh <bundle-dir>` there.
 
 > [!WARNING]
 > A copy of the private key (`private.pem.key`) remains in the local bundle directory on the administrator machine. Delete the local bundle directory once installation completes.
 
-To revoke a robot's AWS access immediately without removing its installation, deactivate its certificate using the certificate ID printed during provisioning:
+To prevent a robot from obtaining new temporary AWS credentials without removing its installation, deactivate its certificate using the certificate ID printed during provisioning. Credentials already issued remain valid until they expire (up to `RobotCredentialDurationSeconds`, which can be 12 hours); certificate deactivation alone does not immediately revoke existing role sessions:
 
 ```bash
 aws iot update-certificate --region <region> --certificate-id <certificate-id> --new-status INACTIVE
