@@ -58,7 +58,6 @@ pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
 [manifest]
 overrides = [
     { package = { name = "lerobot" }, dependencies = [{ name = "torchcodec", marker = "extra == 'dataset'", specifier = ">=0.11,<0.18" }] },
-    { package = { name = "physicalai" }, dependencies = [{ name = "transformers", specifier = ">=5.22.0,<5.23.0" }] },
     { name = "diffusers", specifier = ">=0.38.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "setuptools", specifier = ">=83.0.0" },

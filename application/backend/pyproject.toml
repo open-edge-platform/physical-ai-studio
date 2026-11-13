@@ -161,6 +161,7 @@ torchvision = [
     { index = "pytorch-cu130", extra = "cuda" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
+triton-xpu = { index = "pytorch-xpu" }
 
 [dependency-groups]
 dev = [
@@ -208,11 +209,6 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
-    # The physicalai runtime pins transformers<5.16, but lerobot main needs 5.22. The runtime only
-    # uses transformers for AutoTokenizer.from_pretrained, which is stable across 5.x.
-    { package = { name = "physicalai" }, dependencies = [
-        "transformers>=5.22.0,<5.23.0",
-    ] },
     # LeRobot declares torchcodec with per-platform markers; uv forks on those and then
     # can't keep the per-extra torchcodec sources apart. Collapse it to one requirement.
     { package = { name = "lerobot" }, dependencies = [
