@@ -159,6 +159,7 @@ async def test_iot_certificate_provider_exchanges_cert_for_session_without_role_
             "accessKeyId": "ASIAIOTKEY",
             "secretAccessKey": "iot-secret",
             "sessionToken": "iot-token",
+            "expiration": "2099-01-01T00:00:00Z",
         }
     }
     http_client = MagicMock()
@@ -168,7 +169,6 @@ async def test_iot_certificate_provider_exchanges_cert_for_session_without_role_
     with (
         patch("ssl.create_default_context", return_value=ssl_ctx) as create_ssl,
         patch("httpx.Client", return_value=http_client),
-        patch("boto3.Session") as boto_session,
     ):
         session = _make_session(connection)
 
@@ -181,13 +181,54 @@ async def test_iot_certificate_provider_exchanges_cert_for_session_without_role_
         "https://abc123def.credentials.iot.eu-central-1.amazonaws.com/role-aliases/pai-studio-f4a9b2c0/credentials",
         headers={"x-amzn-iot-thingname": "robot-01"},
     )
-    boto_session.assert_called_once_with(
-        aws_access_key_id="ASIAIOTKEY",
-        aws_secret_access_key="iot-secret",
-        aws_session_token="iot-token",
-        region_name="eu-central-1",
-    )
-    session.client.assert_not_called()
+    assert session.region_name == "eu-central-1"
+    creds = session.get_credentials()
+    assert creds is not None
+    assert creds.method == "iot-certificate"
+    frozen = creds.get_frozen_credentials()
+    assert (frozen.access_key, frozen.secret_key, frozen.token) == ("ASIAIOTKEY", "iot-secret", "iot-token")
+
+
+def test_iot_certificate_provider_refreshes_expired_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_greengrass_bundle(tmp_path)
+    monkeypatch.setenv("GREENGRASS_CONFIG_PATH", str(config_path))
+    provider = auth.IotCertificateCredentialProvider(config_path)
+
+    first_response = MagicMock(status_code=200)
+    first_response.json.return_value = {
+        "credentials": {
+            "accessKeyId": "ASIAFIRST",
+            "secretAccessKey": "secret-1",
+            "sessionToken": "token-1",
+            "expiration": "2000-01-01T00:00:00Z",
+        }
+    }
+    second_response = MagicMock(status_code=200)
+    second_response.json.return_value = {
+        "credentials": {
+            "accessKeyId": "ASIASECOND",
+            "secretAccessKey": "secret-2",
+            "sessionToken": "token-2",
+            "expiration": "2099-01-01T00:00:00Z",
+        }
+    }
+    http_client = MagicMock()
+    http_client.__enter__.return_value.get.side_effect = [first_response, second_response]
+
+    with (
+        patch("ssl.create_default_context", return_value=MagicMock()),
+        patch("httpx.Client", return_value=http_client),
+    ):
+        session = provider.create_session(
+            region="eu-central-1",
+            role_arn="arn:aws:iam::123456789012:role/pai-studio-f4a9b2c0",
+        )
+        frozen = session.get_credentials().get_frozen_credentials()
+
+    assert http_client.__enter__.return_value.get.call_count == 2
+    assert (frozen.access_key, frozen.secret_key, frozen.token) == ("ASIASECOND", "secret-2", "token-2")
 
 
 def test_iot_certificate_provider_diagnoses_rejected_certificate(

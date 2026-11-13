@@ -183,3 +183,35 @@ Select **AWS Provider** in the training dialog and choose a policy. Studio selec
 | MolmoAct2    | `g7e.8xlarge`  |
 
 Studio uploads the dataset snapshot to S3, submits the Batch job, streams logs and live metrics while it runs, and downloads the trained model when it finishes. Canceling a job in Studio terminates the AWS Batch job.
+
+## Known Limitations
+
+### Local file permissions on the robot private key
+
+`install-greengrass-snap.sh` sets permissions `0644` on `/var/snap/aws-iot-greengrass/common/greengrass/v2/private.pem.key` so non-root processes on the robot (such as the Studio backend) can use the certificate to request AWS credentials. Any local user or process on that host can read the file and obtain temporary `StudioRole` credentials while the certificate is active.
+
+On hosts shared by multiple users, restrict `/var/snap/aws-iot-greengrass/common/greengrass/v2/private.pem.key` to the user or group that runs Studio (for example, `0640` or `0600`).
+
+### Shared IoT topic scope across robots in the stack
+
+`RobotIoTPolicy` in `aws-batch-trainer.yaml` allows `iot:Publish`, `iot:Receive`, and `iot:Subscribe` on `topic/*` and `topicfilter/*` in the stack's AWS account and region rather than scoping them per robot.
+
+If you need per-robot topic isolation, deploy the stack in a dedicated AWS account or scope `RobotIoTPolicy` to per-robot topic prefixes.
+
+### Certificate cleanup after an interrupted `provision-robot.sh` run
+
+If `provision-robot.sh` fails after attaching the IoT policy (`aws iot attach-policy`) and before linking the certificate to the thing (`aws iot attach-thing-principal`), the newly created certificate remains active and attached to `pai-robot-<stack-uuid>` without being linked to the thing. `deprovision-robot.sh` only looks up certificates attached to the thing and will not remove it automatically.
+
+If provisioning fails after printing `Created ACTIVE certificate <cert-id>`, deactivate, detach, and delete that certificate manually (`aws iot update-certificate --new-status INACTIVE`, `aws iot detach-policy`, and `aws iot delete-certificate`).
+
+### Deprovisioning an offline robot with `--ssh`
+
+When `deprovision-robot.sh` is run with `--ssh <user>@<host>`, it removes the `aws-iot-greengrass` snap over SSH before revoking the robot's certificates in AWS. If the robot cannot be reached over SSH, the script exits before revoking the AWS certificate.
+
+If the robot is offline, run `deprovision-robot.sh` without `--ssh` to remove the AWS resources first, then uninstall the snap on the robot later.
+
+### Certificate deletion during `deprovision-robot.sh`
+
+`deprovision-robot.sh` checks `aws iot list-principal-things` right after detaching the certificate from the thing. If AWS IoT Core has not yet propagated the detachment, the check can still return the thing being removed and skip deleting the certificate.
+
+If the script outputs `Certificate <cert-id> is still used by other things; detached from <thing-name> only` for a certificate that belongs only to that robot, deactivate, detach, and delete the certificate manually.

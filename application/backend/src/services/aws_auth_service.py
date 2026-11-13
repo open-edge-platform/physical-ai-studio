@@ -301,17 +301,7 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
             detail="No IoT role alias is configured for robot certificate authentication.",
         )
 
-    def create_session(
-        self,
-        *,
-        region: str | None = None,
-        role_arn: str | None = None,
-    ) -> Any:
-        require_aws_feature_active()
-        import boto3
-
-        config = self._load_config()
-        role_alias = self._resolve_role_alias(config, role_arn)
+    def _fetch_iot_credentials(self, config: GreengrassDeviceConfig, role_alias: str) -> dict[str, str]:
         try:
             ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(config.root_ca_path))
             ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -368,6 +358,9 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
             access_key = creds["accessKeyId"]
             secret_key = creds["secretAccessKey"]
             session_token = creds["sessionToken"]
+            expiration = creds["expiration"]
+            if not all(isinstance(v, str) and v for v in (access_key, secret_key, session_token, expiration)):
+                raise TypeError("Credential fields must be non-empty strings")
         except (ValueError, KeyError, TypeError) as exc:
             raise IotCertificateError(
                 reason="aws_unavailable",
@@ -375,10 +368,36 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
                 detail="AWS IoT credential endpoint returned an unexpected payload.",
             ) from exc
 
+        return {
+            "access_key": access_key,
+            "secret_key": secret_key,
+            "token": session_token,
+            "expiry_time": expiration,
+        }
+
+    def create_session(
+        self,
+        *,
+        region: str | None = None,
+        role_arn: str | None = None,
+    ) -> Any:
+        require_aws_feature_active()
+        import boto3
+        from botocore.credentials import RefreshableCredentials
+        from botocore.session import get_session
+
+        config = self._load_config()
+        role_alias = self._resolve_role_alias(config, role_arn)
+        initial_metadata = self._fetch_iot_credentials(config, role_alias)
+        refreshable = RefreshableCredentials.create_from_metadata(
+            metadata=initial_metadata,
+            refresh_using=lambda: self._fetch_iot_credentials(self._load_config(), role_alias),
+            method="iot-certificate",
+        )
+        botocore_session = get_session()
+        botocore_session._credentials = refreshable
         return boto3.Session(
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            aws_session_token=session_token,
+            botocore_session=botocore_session,
             region_name=region or config.aws_region or "us-east-1",
         )
 
