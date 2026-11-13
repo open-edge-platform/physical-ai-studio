@@ -34,7 +34,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-11-03T10:06:32.714319Z"
+exclude-newer = "2026-11-04T11:58:16.355393545Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -50,7 +50,7 @@ physicalai-stararm-plugin = false
 physicalai-mujoco-plugin = false
 markupsafe = false
 openvino = false
-pyrealsense2 = { timestamp = "2026-11-09T10:06:32.714331Z", span = "P1D" }
+pyrealsense2 = { timestamp = "2026-11-10T11:58:16.355416059Z", span = "P1D" }
 physicalai = false
 physicalai-so101-plugin = false
 
@@ -2798,8 +2798,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.4.1.dev5+g8381d43"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81#8381d439c2660d357b4b9d633f28ea7e7ed42c81" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2817,10 +2817,6 @@ dependencies = [
     { name = "safetensors" },
     { name = "transformers" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/2c/3238c65c0020b232fde38e9dae257c9ed43c82f6f20a863f856bfc7cdf51/physicalai-0.4.0.tar.gz", hash = "sha256:d8a40b08357f5e07de6890c7c9fc0521791e90bca2096c3c667c34af7e8aa177", size = 6725476, upload-time = "2026-11-06T15:00:54.772Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/bc/6a383c77fdae872d5b5b565f270d70ed0b9975fb5cfdce895759a7a37bb4/physicalai-0.4.0-py3-none-any.whl", hash = "sha256:b063147eca5bdb1bd2057d09d477abc9ab551e8e7e3bc7739640b5cc5cb17cba", size = 376246, upload-time = "2026-11-06T15:00:53.049Z" },
 ]
 
 [package.optional-dependencies]
@@ -2994,7 +2990,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["capture", "transport"], specifier = "~=0.4.0" },
+    { name = "physicalai", extras = ["capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81" },
     { name = "physicalai-mujoco-plugin", marker = "extra == 'sim-e2e'", specifier = "==0.5.0" },
     { name = "physicalai-so101-plugin", specifier = "~=0.3.0" },
     { name = "physicalai-studio-plugin", specifier = "~=0.5.0" },
@@ -3142,7 +3138,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'cosmos3'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", specifier = "~=0.4.0" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=8381d439c2660d357b4b9d633f28ea7e7ed42c81" },
     { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },

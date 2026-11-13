@@ -19,7 +19,7 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
-from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+from physicalai.data.constants import NOISE, RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
@@ -30,6 +30,7 @@ from physicalai.export.backends import (
 )
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -678,7 +679,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         params = [p for p in self.parameters() if p.requires_grad]
 
         # Create optimizer (use config values)
-        optimizer = torch.optim.AdamW(
+        optimizer = build_adamw_auto_precision(
             params,
             lr=self.config.optimizer_lr,
             weight_decay=self.config.optimizer_weight_decay,
@@ -811,6 +812,17 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 dtype=InferenceFeatureDtype.STRING,
             ),
         )
+        # The start noise is a graph input: OpenVINO's GPU plugin repeats in-graph random values.
+        # Without random noise the graph keeps its zero start, like eager inference.
+        if self.config.use_random_input_noise:
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.COMMON,
+                    shape=(self.config.chunk_size, self.config.max_action_dim),
+                    name=NOISE,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            )
 
         if self.rtc_enabled:
             action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
@@ -888,6 +900,11 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             raise ValueError(msg)
 
         normalize_stats: dict[str, Any] = {STATE: self._dataset_stats[f"observation.{STATE}"]}
+        noise_specs = (
+            [ComponentSpec(type="noise", shape=[self.config.chunk_size, self.config.max_action_dim])]
+            if self.config.use_random_input_noise
+            else []
+        )
         if self.rtc_enabled:
             normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
 
@@ -904,6 +921,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 stats=normalize_stats,
                 mode="mean_std",
             ),
+            *noise_specs,
         ]
         postproc_specs = [
             ComponentSpec(
@@ -939,6 +957,8 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             export_tokenizer=False,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
+            # Tracing leaves aliases on these inputs; the runtime routes them by name.
+            inputs=[NOISE, PREV_CHUNK_LEFT_OVER, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT, RTC_EXECUTION_HORIZON],
             outputs=output_names,
             compress_to_fp16=False,
             export_tokenizer=True,
@@ -953,6 +973,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
+            # Eager torch samples the noise itself; Observation has no noise field.
             preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=torch_postproc_specs,
         )
