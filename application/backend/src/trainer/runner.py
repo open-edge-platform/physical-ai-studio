@@ -41,14 +41,14 @@ class TrainerRunner:
     """Run a single training job end to end."""
 
     def run(self, job_id: str, request: SubmitJobRequest, *, should_stop: StopFn, report: ProgressFn) -> Path:
-        """Execute training and return the path to the model archive."""
-        settings = get_settings()
-        snapshot_dir = settings.datasets_dir / job_id
-        report(0, "Dataset ready", None)
+        """Execute training and return the path to the model archive.
 
-        model_dir = settings.models_dir / job_id
-        cache_dir = settings.storage_dir / "cache" / job_id
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        In a multi-device (DDP) job this is global rank 0's path: it owns the
+        uploaded dataset and the model output. Every other rank calls
+        :meth:`train_worker_rank` instead.
+        """
+        snapshot_dir, model_dir, cache_dir = self._job_paths(job_id)
+        report(0, "Dataset ready", None)
 
         try:
             self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
@@ -56,6 +56,32 @@ class TrainerRunner:
             self._cleanup_uploaded_dataset(job_id)
 
         return archive_model(job_id, model_dir, report=report)
+
+    def train_worker_rank(self, job_id: str, request: SubmitJobRequest) -> None:
+        """Take part in a multi-device job as a rank other than 0.
+
+        Trains alongside rank 0 on the same paths, but reports nothing, leaves
+        the uploaded dataset in place (rank 0 may still be reading it), and
+        never archives: ``run_training_job`` only publishes ``model_dir`` on
+        rank 0, so there is nothing here to archive.
+        """
+        snapshot_dir, model_dir, cache_dir = self._job_paths(job_id)
+        self._train(
+            request,
+            snapshot_dir,
+            model_dir,
+            cache_dir,
+            should_stop=lambda: False,
+            report=lambda _progress, _message, _extra: None,
+        )
+
+    @staticmethod
+    def _job_paths(job_id: str) -> tuple[Path, Path, Path]:
+        """Return a job's dataset, model, and checkpoint cache directories, creating the cache."""
+        settings = get_settings()
+        cache_dir = settings.storage_dir / "cache" / job_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return settings.datasets_dir / job_id, settings.models_dir / job_id, cache_dir
 
     @staticmethod
     def _cleanup_uploaded_dataset(job_id: str) -> None:

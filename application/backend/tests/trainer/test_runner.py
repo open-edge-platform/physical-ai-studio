@@ -117,3 +117,28 @@ def test_cleanup_job_outputs_removes_the_model_and_cache(storage) -> None:
 
     assert not model_dir.exists()
     assert not cache_dir.exists()
+
+
+def test_a_worker_rank_trains_on_the_jobs_paths(storage, sample_request: SubmitJobRequest) -> None:
+    """Non-zero DDP ranks train with rank 0, on the same dataset and cache."""
+    with patch("training.run_training_job") as mock_run:
+        TrainerRunner().train_worker_rank(_JOB_ID, sample_request)
+
+    kwargs = mock_run.call_args.kwargs
+    assert mock_run.call_args.args[0] == sample_request.spec
+    assert kwargs["dataset_root"] == storage.datasets_dir / _JOB_ID
+    assert kwargs["output_dir"] == storage.models_dir / _JOB_ID
+    assert kwargs["cache_dir"] == storage.storage_dir / "cache" / _JOB_ID
+    assert kwargs["should_stop"]() is False
+
+
+def test_a_worker_rank_leaves_the_dataset_and_archives_nothing(storage, sample_request: SubmitJobRequest) -> None:
+    """Rank 0 may still be reading the dataset, and only rank 0 has a model to archive."""
+    dataset_dir = storage.datasets_dir / _JOB_ID
+    dataset_dir.mkdir(parents=True)
+
+    with patch("training.run_training_job"):
+        TrainerRunner().train_worker_rank(_JOB_ID, sample_request)
+
+    assert dataset_dir.is_dir()
+    assert not storage.archives_dir.exists()
