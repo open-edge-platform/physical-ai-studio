@@ -58,7 +58,7 @@ def test_template_configuration_matches_resource_schema(region: str) -> None:
         }
     ]
     assert parsed.studio_role_arn == "arn:aws:iam::123456789012:role/studio"
-    assert set(template["Outputs"]) == {"ConfigurationUri", "StackIdentifier"}
+    assert set(template["Outputs"]) == {"StackIdentifier"}
 
 
 @pytest.mark.parametrize(
