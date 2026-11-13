@@ -64,7 +64,11 @@ class _FakeResponse:
         chunks: list[bytes] | None = None,
         lines: list[str] | None = None,
         headers: dict | None = None,
+        status_code: int = 200,
+        text: str = "",
     ) -> None:
+        self.status_code = status_code
+        self.text = text
         self._json = json_data
         self._chunks = chunks or []
         self._lines = lines or []
@@ -931,6 +935,46 @@ class TestHttpDatasetTransfer:
             with pytest.raises(RemoteTrainingError, match="no longer available"):
                 await backend.submit_job(context)
         assert len(controller.posted_bodies) == 1
+
+    @pytest.mark.anyio
+    async def test_all_devices_is_sent_and_needs_only_a_cuda_device_on_the_trainer(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            backend._device = TrainingDevice(type="cuda", all_devices=True)
+            backend.get_training_devices = AsyncMock(return_value=[DeviceInfo(type="cuda", name="GPU 3", index=3)])
+            await backend.submit_job(context)
+            spec = controller.posted_bodies[-1]["spec"]
+            assert (spec["device_type"], spec["device_index"], spec["all_devices"]) == ("cuda", None, True)
+            backend.get_training_devices.return_value = [DeviceInfo(type="xpu", name="Arc", index=0)]
+            with pytest.raises(RemoteTrainingError, match="no longer reports any cuda device"):
+                await backend.submit_job(context)
+        assert len(controller.posted_bodies) == 1
+
+    @pytest.mark.anyio
+    async def test_an_old_trainer_rejecting_all_devices_gets_a_clear_error(self, tmp_path):
+        """Trainer images that predate multi-device training answer 422 'extra fields not permitted'."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        rejected = _FakeResponse(
+            status_code=422, text='{"detail":[{"loc":["body","spec","all_devices"],"msg":"Extra inputs"}]}'
+        )
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch.object(_FakeClient, "post", AsyncMock(return_value=rejected)),
+        ):
+            backend = _backend(settings)
+            backend._device = TrainingDevice(type="cuda", all_devices=True)
+            backend.get_training_devices = AsyncMock(return_value=[DeviceInfo(type="cuda", name="GPU 0", index=0)])
+            with pytest.raises(RemoteTrainingError, match="update its trainer image"):
+                await backend.submit_job(context)
 
     @pytest.mark.anyio
     async def test_http_persists_remote_job_id_after_upload(self, tmp_path):

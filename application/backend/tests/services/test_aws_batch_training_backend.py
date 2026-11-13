@@ -13,7 +13,8 @@ import yaml
 from botocore.exceptions import ClientError, SSOTokenLoadError
 from pydantic import SecretStr
 
-from schemas.job import RemoteTrainJobPayload, TrainJobPayloadAdapter
+from exceptions import InvalidResourceError
+from schemas.job import RemoteTrainJobPayload, TrainingDevice, TrainJobPayloadAdapter
 from schemas.remote_trainer import AwsBatchConnection, RemoteTrainer
 from services.aws_batch import POLICY_INSTANCE_TYPES, aws_batch_connection_from_url, aws_batch_trainer_url
 from services.remote_trainer_service import RemoteTrainerService
@@ -110,6 +111,10 @@ async def test_batch_catalog_and_preparation_do_not_use_http(connection, monkeyp
     restored = TrainJobPayloadAdapter.validate_json(prepared.model_dump_json())
     backend = await get_training_backend(restored)
     assert isinstance(backend, AwsBatchTrainingBackend)
+
+    all_gpus = payload.model_copy(update={"device": TrainingDevice(type="cuda", all_devices=True)})
+    with pytest.raises(InvalidResourceError):
+        await RemoteTrainingTargetHandler(service).prepare(all_gpus)
     assert backend._connection == connection
     http.assert_not_called()
 

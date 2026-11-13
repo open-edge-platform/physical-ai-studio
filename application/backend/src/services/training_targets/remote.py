@@ -39,6 +39,9 @@ class RemoteTrainingTargetHandler:
             raise RemoteResumeUnsupportedError
         remote_trainer = await self.remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
         is_batch = isinstance(remote_trainer.connection, AwsBatchConnection)
+        # Batch drops the device below; reject rather than silently train on one GPU.
+        if is_batch and payload.device is not None and payload.device.all_devices:
+            raise InvalidResourceError("device", "Training on all GPUs is not available on AWS Batch trainers")
         if isinstance(remote_trainer.connection, AwsBatchConnection):
             try:
                 await asyncio.to_thread(_make_session, remote_trainer.connection)
@@ -72,4 +75,8 @@ class RemoteTrainingTargetHandler:
         trainer_key = f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
         if payload.remote_trainer_url and payload.remote_trainer_url.startswith("aws-batch://"):
             return f"batch:{payload.remote_trainer_id}:{payload.policy}"
-        return f"{trainer_key}:{payload.device.type}:{payload.device.index}" if payload.device else trainer_key
+        # The bare trainer key conflicts with every device key on that trainer (see
+        # `TrainingJobHandler.resource_is_busy`), so an all-device job takes the whole trainer.
+        if payload.device is None or payload.device.all_devices:
+            return trainer_key
+        return f"{trainer_key}:{payload.device.type}:{payload.device.index}"

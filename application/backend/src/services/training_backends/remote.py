@@ -102,7 +102,9 @@ class RemoteTrainingBackend:
         # Label every log line by trainer and selected GPU so parallel jobs on
         # the same remote server remain distinguishable in the shared log.
         label = trainer_name or self._base_url
-        if device is not None:
+        if device is not None and device.all_devices:
+            label += f" · all {device.type.upper()} devices"
+        elif device is not None:
             label += f" · {device.type.upper()}{f' {device.index}' if device.index is not None else ''}"
 
         def _prefix_with_trainer(record: Record, label: str = label) -> None:
@@ -349,11 +351,19 @@ class RemoteTrainingBackend:
         # An explicitly supplied device takes precedence; otherwise the trainer
         # selects its own hardware.
         device_update = (
-            {"device_type": str(self._device.type), "device_index": self._device.index}
+            {
+                "device_type": str(self._device.type),
+                "device_index": self._device.index,
+                "all_devices": self._device.all_devices,
+            }
             if self._device is not None
-            else {"device_type": None, "device_index": None}
+            else {"device_type": None, "device_index": None, "all_devices": False}
         )
-        if self._device is not None:
+        if self._device is not None and self._device.all_devices:
+            devices = await self.get_training_devices()
+            if not any(device.type == self._device.type for device in devices):
+                raise RemoteTrainingError(f"The trainer no longer reports any {self._device.type} device")
+        elif self._device is not None:
             devices = await self.get_training_devices()
             if not any(device.type == self._device.type and device.index == self._device.index for device in devices):
                 raise RemoteTrainingError(
@@ -376,6 +386,11 @@ class RemoteTrainingBackend:
         }
         async with await self._client() as client:
             response = await client.post(f"{self._base_url}/jobs", json=body)
+            # A trainer image older than multi-device support forbids the unknown spec field.
+            if spec.all_devices and response.status_code == 422 and "all_devices" in response.text:
+                raise RemoteTrainingError(
+                    "This remote trainer does not support training on all GPUs yet; update its trainer image"
+                )
             response.raise_for_status()
             data = response.json()
 
