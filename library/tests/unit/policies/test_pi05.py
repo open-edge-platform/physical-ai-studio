@@ -1188,21 +1188,21 @@ class TestPi05ExtraExportArgs:
         assert NOISE not in {feature.name for feature in Pi05.inputs_schema.fget(stub)}  # type: ignore[attr-defined]
 
     def test_preprocessor_order_normalize_before_pi05(self) -> None:
-        """Normalize must run before the pi05 image transform for both onnx and openvino."""
+        """Normalize must run before the pi05 image transform; tokenizer runs last."""
         policy = Pi05()
         # Inject mock stats directly to avoid building the heavy model.
         policy._dataset_stats = self._mock_stats()
 
         args = policy.extra_export_args
 
-        for backend in ("onnx", "openvino"):
+        tokenizers = {"onnx": "hf_tokenizer", "openvino": "ov_tokenizer", "executorch": "hf_tokenizer"}
+        for backend, tokenizer in tokenizers.items():
             specs = args[backend].preprocessors_specs
             types = [s.type for s in specs]
-            assert types[0] == "normalize", f"{backend}: expected normalize first, got {types}"
-            assert types[1] == "pi05", f"{backend}: expected pi05 second, got {types}"
-            assert types.index("normalize") < types.index("pi05"), (
-                f"{backend}: normalize must precede pi05, got {types}"
-            )
+            assert types == ["normalize", "pi05", tokenizer], f"{backend}: unexpected order {types}"
+            assert [s.type for s in args[backend].postprocessors_specs][0] == "denormalize"
+
+        assert args["executorch"].delegate == "portable"
 
 
 # ============================================================================ #
