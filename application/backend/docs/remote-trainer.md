@@ -266,13 +266,13 @@ will fail on restart, and queued jobs can then proceed.
 
 #### CUDA
 
-The Docker host needs an NVIDIA driver and NVIDIA Container Toolkit. Verify the
-host can grant GPU access with a disposable CUDA container before starting the
-trainer.
+The Docker host needs NVIDIA driver branch 595 or newer and NVIDIA Container
+Toolkit. Verify the driver version and GPU access before starting the trainer.
 
 ```bash
+nvidia-smi --query-gpu=driver_version --format=csv,noheader
 docker run --rm --gpus all \
-  nvidia/cuda:12.8.0-base-ubuntu24.04 \
+  nvidia/cuda:13.2.0-base-ubuntu24.04 \
   nvidia-smi
 ```
 

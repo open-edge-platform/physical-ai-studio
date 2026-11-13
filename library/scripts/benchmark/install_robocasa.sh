@@ -24,7 +24,7 @@
 #   source .venv-robocasa/bin/activate
 #   # Pick exactly one torch backend extra. --extra all is wrong here
 #   # because it pulls [libero] -> robosuite==1.4.0.
-#   uv sync --active --extra cu128       # or --extra cpu / --extra xpu
+#   uv sync --active --extra cu132       # or --extra cpu / --extra xpu
 #   bash library/scripts/benchmark/install_robocasa.sh
 
 set -euo pipefail
@@ -44,7 +44,7 @@ if python -c "import libero" 2>/dev/null; then
     echo "libero's pinned robosuite==1.4.0. Use a separate venv for robocasa." >&2
     echo "  uv venv .venv-robocasa" >&2
     echo "  source .venv-robocasa/bin/activate" >&2
-    echo "  uv sync --active --extra cu128  # or --extra cpu / --extra xpu" >&2
+    echo "  uv sync --active --extra cu132  # or --extra cpu / --extra xpu" >&2
     echo "  bash library/scripts/benchmark/install_robocasa.sh" >&2
     exit 1
 fi
@@ -65,11 +65,11 @@ git -C "$CLONE_ROOT/robosuite" checkout --quiet "$ROBOSUITE_SHA"
 
 # --no-deps on robocasa: skip the shadowed lerobot==0.3.3 pin.
 uv pip install --no-cache -e "$CLONE_ROOT/robocasa" --no-deps
-uv pip install --no-cache -e "$CLONE_ROOT/robosuite"
 
 # robocasa's actual runtime deps (the ones its setup.py would have pulled
 # minus lerobot and tianshou — tianshou is never imported by robocasa).
 uv pip install --no-cache \
+    -e "$CLONE_ROOT/robosuite" \
     "numpy==2.2.5" "numba==0.61.2" "scipy==1.15.3" "mujoco==3.3.1" \
     pygame Pillow opencv-python pyyaml pynput tqdm termcolor \
     imageio h5py lxml hidapi "gymnasium>=0.29.1"
