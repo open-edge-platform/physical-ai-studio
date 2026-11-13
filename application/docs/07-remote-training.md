@@ -89,72 +89,92 @@ The EC2 instance keeps running after training finishes. Delete its CloudFormatio
 
 ## AWS Batch provider
 
-The **AWS Provider** training target submits one-off training jobs to AWS Batch. Studio uses the selected named AWS profile on its backend host to assume the configured Studio role.
+The **AWS Provider** training target runs one-off training jobs on AWS Batch.
 
 For cloud-based remote training, the Hugging Face token may be exposed in logs depending on your cloud provider settings. We recommend using short-lived tokens scoped to the access required for training.
 
 The supplied stack scales compute to zero when idle. Keep it deployed for future training jobs; storage charges still apply.
 
-The same stack also creates the shared AWS IoT Greengrass entities used to provision robots; see [Greengrass Robot Provisioning](./10-greengrass-robot-provisioning.md). These resources have no running cost. Because the Studio IAM role has an explicit name, creating or updating the stack requires acknowledging that it creates IAM resources with custom names (`CAPABILITY_NAMED_IAM` on the AWS CLI). Resources such as the jobs bucket (`pai-jobs-<stack-uuid>`), Studio role (`pai-studio-<stack-uuid>`), job queues, and job definitions are named with the first 8 characters of the UUID CloudFormation generates for the stack (the last segment of the stack ID); the `<account-id>-<region>-<stack-uuid>` identifier is published as the `StackIdentifier` output.
+### Deploy the stack
 
-1. Open **Settings**, then **Training Targets**, and select **AWS Provider**.
-2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in one of the supported regions (**US East (N. Virginia)** `us-east-1`, **US West (Oregon)** `us-west-2`, or **Europe (Frankfurt)** `eu-central-1`), or use an existing deployment. Select the IAM acknowledgement checkboxes, wait for stack creation to complete, and copy `ConfigurationUri` from its **Outputs** tab.
-3. Enter a **Name** for the training target and paste `ConfigurationUri` into **S3 configuration file URI**, then select **Next**. Use the configuration file URI, not just the bucket URL.
-4. In **Connect to AWS remote training stack**, select an **AWS profile** that is configured and authenticated on the Studio backend host. The information button explains credential setup.
-5. Select **Connect**. Studio reads and validates the configuration using the selected profile, then saves the target. If it fails, an error toast explains recovery and the form preserves your inputs. **Back** returns to the URI without discarding your profile selection.
+1. In Studio, open **Settings**, then **Training Targets**, and select **AWS Provider**.
+2. Select **Deploy AWS Batch stack** to open the CloudFormation template in the AWS Console, or use an existing deployment. Switch the AWS Console to a region supported by the template.
+3. Select the IAM acknowledgement checkbox and create the stack.
+4. Wait until the stack status is `CREATE_COMPLETE`, then copy `StackIdentifier` (`<account-id>-<region>-<stack-uuid>`) from the stack's **Outputs** tab.
 
-Editing a target uses the same two steps, prefilled with the saved URI and profile, without the deployment instructions. Select **Save changes** on the second step to validate and save it.
+### Provision robot identity
 
-The AWS Batch template publishes `studio-config.json` in its jobs bucket. Studio reads and validates this document with the backend's existing AWS credentials before saving the training target. That identity needs `s3:GetObject` permission on the configuration object and permission to assume the role specified in the document. The role must trust that identity. Cross-account access also requires the bucket policy to allow the identity to read the configuration object.
+A robot identity gives the robot its own machine identity so Studio can authenticate with external services such as AWS.
 
-### Authenticate the Studio backend
+> [!NOTE]
+> Using host AWS credentials (`~/.aws` profiles) is intended for development only and is not recommended in production. To use a host profile during development, skip to [Register the training target](#register-the-training-target).
 
-The **AWS profile** dropdown lists profiles configured on the backend host. Select a profile explicitly; there is no ambient credential-chain option. A profile named `default` can be selected like any other profile. SSO, assume-role profiles, and configured credential helpers are supported. Studio saves the profile name with the target and pins it in submitted jobs for restart recovery; it does not copy credentials into the database or job payload. The training region comes from the configuration document. Open the dropdown again to refresh profiles after external setup.
+Before provisioning, ensure:
 
-On a fresh machine, install the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) if your authentication method uses it, then create the profile on the **backend host**. For organization-managed IAM Identity Center access, your administrator supplies the SSO start URL and SSO region:
+- the administrator machine has AWS CLI v2 authenticated for the stack's account, `curl`, and `ssh`/`scp`;
+- the Studio host has `snapd`, `sudo` access, and outbound HTTPS (443) connectivity to AWS IoT endpoints.
+
+From the administrator machine, run [`provision-robot.sh`](../cloudformation/provision-robot.sh) with the `StackIdentifier` output from the stack:
 
 ```bash
-aws configure sso --profile studio
-aws sso login --profile studio
+application/cloudformation/provision-robot.sh \
+  --thing-name robot-01 \
+  --stack-identifier 123456789012-us-east-1-6ba57d60 \
+  --ssh <user>@<studio-host>
+```
+
+The script creates an AWS IoT thing and active X.509 certificate, delivers the bundle to the robot/Studio host over SSH, installs the `aws-iot-greengrass` snap, and writes `/var/snap/aws-iot-greengrass/common/greengrass/v2/config.yaml` (override with `GREENGRASS_CONFIG_PATH` if stored at a custom path). When this configuration file is present on the Studio backend host, Studio exchanges the device certificate for temporary AWS credentials automatically.
+
+Without SSH access from the administrator machine, omit `--ssh` to write the bundle to `./robot-bundles/<thing-name>`, copy that directory to the Studio host, and run `sudo ./install-greengrass-snap.sh <bundle-dir>` there.
+
+> [!WARNING]
+> A copy of the private key (`private.pem.key`) remains in the local bundle directory on the administrator machine. Delete the local bundle directory once installation completes.
+
+To revoke a robot's AWS access immediately without removing its installation, deactivate its certificate using the certificate ID printed during provisioning:
+
+```bash
+aws iot update-certificate --region <region> --certificate-id <certificate-id> --new-status INACTIVE
+```
+
+To remove a robot identity and uninstall the Greengrass snap completely, run [`deprovision-robot.sh`](../cloudformation/deprovision-robot.sh) from the administrator machine. Deprovision all robots before deleting the CloudFormation stack so no certificates remain attached to the stack's IoT policy:
+
+```bash
+application/cloudformation/deprovision-robot.sh \
+  --thing-name robot-01 \
+  --stack-identifier 123456789012-us-east-1-6ba57d60 \
+  --ssh <user>@<studio-host>
+```
+
+### Register the training target
+
+Return to the **Deploy and configure AWS stack** dialog in Studio (**Settings > Training Targets > AWS Provider**):
+
+1. Enter a **Name** for the training target.
+2. Paste `StackIdentifier` into **AWS stack ID**.
+3. Connect to the stack:
+   - **With a provisioned robot identity**: Select **Connect**. Studio exchanges the device certificate for temporary credentials, verifies the stack's AWS Batch job queues, and saves the target.
+   - **With a host AWS profile (development only)**: Select **Next**, choose an **AWS profile** that is configured and authenticated on the Studio backend host, and select **Connect**. If validation fails, an error toast explains recovery and the form preserves your inputs. **Back** returns to the stack ID step without discarding your profile selection.
+
+Editing a target uses the same dialog prefilled with the saved stack ID (and profile, when used), without the deployment link. Select **Save changes** to validate and save it.
+
+### Host AWS profiles (development only)
+
+> [!WARNING]
+> Authenticating with a named AWS profile on the Studio backend host is for development only and is not recommended in production. For production deployments, [provision a robot identity](#provision-robot-identity) instead.
+
+When no robot certificate is configured on the host, Studio lists named profiles from `~/.aws` on the backend host. Configure and authenticate a profile with permission to assume the stack's Studio role (for example, using `aws login` or `aws configure --profile studio`), then verify it:
+
+```bash
 aws sts get-caller-identity --profile studio
 ```
 
-For IAM access keys, use `aws configure --profile studio` instead. Other credential helpers should be configured according to your organization's instructions. Select `studio` in Studio's profile dropdown; subsequent starts do not require `AWS_PROFILE` or region exports. Renew authentication using the profile's usual method when its session expires.
+In Docker deployments, mount `~/.aws` so it is readable by the backend container user.
 
-Submitting the form verifies that the selected profile can read the S3 configuration; it does not verify permissions for every training resource. In Docker deployments, make `~/.aws` configuration, credentials, and session caches accessible to the backend container user, and persist them across container recreation. Studio reads profiles through the AWS SDK and does not require the AWS CLI to be installed in the container.
-
-If a saved target's session expires, **Health & capability** shows **Credentials expired**. Renew the profile using its configured authentication method on the backend host (for example, `aws sso login --profile studio`), then select **Check status** in Studio.
-
-Studio also reports authentication issues when launching training and while tracking jobs, logs, metrics, or model downloads. The error toast names the affected profile and offers **Copy command** for SSO renewal. Copying dismisses the toast. Job actions and target health provide **Authentication instructions** to show it again.
-
-An already-submitted AWS job is not marked failed just because Studio's credentials expire. Studio retains its job ID and last progress, shows **Awaiting AWS authentication**, and retries automatically after renewal. AWS training may continue while Studio cannot observe it. Model downloads and live metrics resume after credentials are renewed. If stopping requires authentication, **Stop pending — authentication required** means AWS termination has not yet been confirmed; the cancellation request survives a Studio restart. Network and permission failures are reported separately from authentication issues.
-
-### Configuration document
-
-Terraform and other provisioning tools can publish the same JSON document to an S3 object:
-
-```json
-{
-  "schema_version": 1,
-  "region": "eu-west-1",
-  "studio_role_arn": "arn:aws:iam::123456789012:role/studio",
-  "bucket": "my-training-jobs",
-  "targets": {
-    "g4dn.xlarge": {
-      "queue": "my-training-queue",
-      "job_definition": "my-training-definition:1"
-    }
-  }
-}
-```
-
-`bucket` identifies the bucket for datasets, progress, and model artifacts. Each `targets` entry associates an instance type with its Batch queue and job definition. The provisioned compute environment and job definition must match that entry. At least one target is required; documents are limited to 64 KiB and schema version 1.
-
-Studio stores the resolved resource configuration with the training target. After provisioning changes, open **Edit** and select **Save changes** to reload the S3 document. Existing AWS Batch registrations without a configuration URI require one when edited. An upgrade rejects databases containing multiple AWS providers; remove the extra registrations before upgrading.
+Select the profile in Studio when connecting the target (reopen the dropdown to refresh after setup). If the profile's session expires later, renew it on the backend host and select **Check status** in Studio; running jobs continue on AWS and resume reporting in Studio once credentials are renewed.
 
 ### Train with AWS Batch
 
-Select **AWS Provider** in the training dialog and choose a policy. Studio selects its instance type, queue, and job definition automatically:
+Select **AWS Provider** in the training dialog and choose a policy. Studio selects the instance type, queue, and job definition automatically:
 
 | Policy       | Instance type  |
 | ------------ | -------------- |
@@ -162,10 +182,4 @@ Select **AWS Provider** in the training dialog and choose a policy. Studio selec
 | Pi0.5        | `g6e.2xlarge`  |
 | MolmoAct2    | `g7e.8xlarge`  |
 
-Only policies with a provisioned target appear. AWS Batch targets use the declared capabilities of the CUDA trainer image; they do not expose an HTTP policy-discovery endpoint or require a GPU selection.
-
-Studio uploads the dataset snapshot and training specification to S3, submits a Batch job, monitors Batch state and S3 progress, and downloads the completed model. Canceling training terminates the Batch job. Restarting Studio reattaches to submitted jobs using their persisted Batch job IDs and resource configuration.
-
-Container stdout and stderr are collected in CloudWatch Logs and relayed into Studio's job logs. Live metric snapshots are published to S3 and streamed through Studio's metrics endpoint. Existing deployments need a CloudFormation stack update to grant the Studio role `logs:GetLogEvents` on the trainer log group, and a rebuilt trainer image to publish live metrics. A job remains running while AWS Batch reports it running, unless the trainer explicitly reports failure; a traceback alone does not imply that the container exited.
-
-Studio refreshes the Batch lifecycle message every five seconds, including elapsed time, scheduling reasons, and the age of the latest trainer report. Batch-level training updates without a message display **Training model** rather than retaining an earlier **Dataset ready** message. During startup, ECS task diagnostics distinguish image pulling from container setup when AWS reports those timestamps; update existing stacks to grant the Studio role `ecs:DescribeTasks` for this detail. Without that permission, Studio still reports the Batch state. AWS does not expose an image download percentage.
+Studio uploads the dataset snapshot to S3, submits the Batch job, streams logs and live metrics while it runs, and downloads the trained model when it finishes. Canceling a job in Studio terminates the AWS Batch job.
