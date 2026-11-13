@@ -71,6 +71,13 @@ EXPORTS_DIRNAME = "exports"
 _DATASET_REPO_ID = "snapshot"
 """Placeholder repo id: datasets are always loaded from a local root here."""
 
+DDP_VAL_SPLIT_SEED = 0
+"""Train/val episode split seed for multi-device runs.
+
+Each DDP rank builds its own datamodule. Left unseeded, every rank draws a
+different validation set, so episodes one rank holds out are trained on by
+another. A shared seed makes all ranks agree. Single-device runs stay unseeded."""
+
 PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
     "molmoact2": "allenai/MolmoAct2",
     "pi05": "lerobot/pi05_base",
@@ -435,6 +442,7 @@ def run_training_job(
             train_batch_size=spec.batch_size,
             num_workers=spec.num_workers,
             val_split=spec.val_split,
+            val_split_seed=DDP_VAL_SPLIT_SEED if spec.all_devices else None,
             # Applied to the train split only; the datamodule leaves validation
             # images untouched so eval loss stays comparable across runs.
             image_transforms=DefaultImageAugmentations() if spec.augment_images else None,

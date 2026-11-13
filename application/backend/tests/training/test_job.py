@@ -32,6 +32,7 @@ from api.policies import _available_policy_classes
 from training import RunOptions, TrainingJobSpec
 from training.job import (
     CHECKPOINT_NAME,
+    DDP_VAL_SPLIT_SEED,
     EXPORTS_DIRNAME,
     PEFT_POLICIES,
     PRETRAINED_BASE_CHECKPOINTS,
@@ -498,6 +499,31 @@ class TestRunTrainingJob:
         kwargs = datamodule.call_args.kwargs
         assert kwargs["root"] == str(tmp_path / "snapshot")
         assert (kwargs["train_batch_size"], kwargs["num_workers"], kwargs["val_split"]) == (16, 2, 0.25)
+        assert kwargs["val_split_seed"] is None
+
+    def test_every_rank_of_a_multi_device_run_draws_the_same_val_split(self, tmp_path: Path) -> None:
+        """Unseeded, each DDP rank would hold out different episodes and train on the others' val set."""
+        spec = TrainingJobSpec(policy="act", device_type="cuda", all_devices=True)
+
+        with (
+            patch("physicalai.data.LeRobotDataModule") as datamodule,
+            patch(f"{JOB}.build_policy"),
+            patch(f"{JOB}._load_policy_from_checkpoint", return_value=MagicMock()),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
+        ):
+            trainer_class.return_value.fit.side_effect = lambda *a, **k: (
+                tmp_path / "cache" / "job" / CHECKPOINT_NAME
+            ).write_text("x")
+            run_training_job(
+                spec,
+                dataset_root=tmp_path / "snapshot",
+                output_dir=tmp_path / "model",
+                cache_dir=tmp_path / "cache" / "job",
+                report=MagicMock(),
+                should_stop=lambda: False,
+            )
+
+        assert datamodule.call_args.kwargs["val_split_seed"] == DDP_VAL_SPLIT_SEED
 
     @pytest.mark.parametrize("augment_images", [True, False])
     def test_image_augmentation_is_opt_in(self, tmp_path: Path, augment_images: bool) -> None:
