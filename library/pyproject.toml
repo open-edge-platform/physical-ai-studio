@@ -140,7 +140,7 @@ xr0 = [
 # Its native module links libtorch, so each release only runs on one torch release
 # (1.2 <-> 2.11 ... 1.5 <-> 2.14), and 1.5.x omits torch from its metadata, so the
 # matching torch pin is declared here explicitly.
-executorch = ["executorch>=1.5.0,<1.6", "torch>=2.14,<2.15"]
+executorch = ["executorch>=1.5.0,<1.6", "torch>=2.14,<2.16"]
 
 # ExecuTorch with OpenVINO delegate (requires nncf for export)
 executorch-openvino = ["physicalai-train[executorch]", "physicalai-train[nncf]"]
