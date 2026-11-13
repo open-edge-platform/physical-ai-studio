@@ -56,7 +56,7 @@ cpu = [
     "torchao>=0.18.0,<0.19",
     "torchcodec>=0.12",
 ]
-cu130 = [
+cu132 = [
     "torch",
     "torchvision",
     "torchao>=0.18.0,<0.19",
@@ -137,10 +137,8 @@ xr0 = [
 ]
 
 # ExecuTorch runtime for edge/mobile deployment.
-# Its native module links libtorch, so each release only runs on one torch release
-# (1.2 <-> 2.11 ... 1.5 <-> 2.14), and 1.5.x omits torch from its metadata, so the
-# matching torch pin is declared here explicitly.
-executorch = ["executorch>=1.5.0,<1.6", "torch>=2.14,<2.16"]
+# ExecuTorch 1.6 requires Torch 2.15.
+executorch = ["executorch>=1.6.0,<1.7", "torch>=2.15,<2.16"]
 
 # ExecuTorch with OpenVINO delegate (requires nncf for export)
 executorch-openvino = ["physicalai-train[executorch]", "physicalai-train[nncf]"]
@@ -158,7 +156,7 @@ policies = [
 
 # All optional dependencies except hardware (torch) variant.
 # Pair with a hardware extra: uv sync --extra cpu --extra all
-# or: uv sync --extra cu130 --extra all  /  uv sync --extra xpu --extra all
+# or: uv sync --extra cu132 --extra all  /  uv sync --extra xpu --extra all
 all = [
     "physicalai-train[tests]",
     "physicalai-train[libero]",
@@ -205,7 +203,7 @@ exclude-newer = "7 days"
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
 # FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
 # Allow the explicitly selected Physical AI release before the default cutoff.
-exclude-newer-package = { physicalai = false, pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false }
+exclude-newer-package = { physicalai = false, pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false, executorch = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -220,7 +218,7 @@ override-dependencies = [
 
 
 conflicts = [
-    [{ extra = "cpu" }, { extra = "cu130" }, { extra = "xpu" }],
+    [{ extra = "cpu" }, { extra = "cu132" }, { extra = "xpu" }],
     [{ extra = "executorch" }, { extra = "xpu" }],
     [{ extra = "executorch-openvino" }, { extra = "xpu" }],
 ]
@@ -236,8 +234,8 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [[tool.uv.index]]
@@ -251,24 +249,24 @@ explicit = false
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "5939c2feac67ed34764c03eb12045ec07908fff5" }
 torchcodec = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchao = [
     { index = "pytorch-cpu", extra = "cpu" },
-    # The cu130 index only publishes linux x86_64 torchao wheels.
-    { index = "pytorch-cu130", extra = "cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
-    { index = "pypi", extra = "cu130", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
+    # The cu132 index only publishes linux x86_64 torchao wheels.
+    { index = "pytorch-cu132", extra = "cu132", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pypi", extra = "cu132", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 

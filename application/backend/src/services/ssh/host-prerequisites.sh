@@ -22,7 +22,7 @@ nvidia_driver_version() {
 nvidia_driver_supported() {
   local driver_version=${1:-}
   [[ $driver_version =~ ^([0-9]+)(\.|$) ]] || return 1
-  (( 10#${BASH_REMATCH[1]} >= 580 ))
+  (( 10#${BASH_REMATCH[1]} >= 595 ))
 }
 
 proxy_environment() {
@@ -154,12 +154,12 @@ if [[ $mode == --install ]]; then
     fi
     if (( nvidia )); then
       if ! nvidia-smi -L >/dev/null 2>&1; then
-        if installed nvidia-driver-580; then
+        if installed nvidia-driver-595; then
           echo 'NVIDIA_DRIVER_UNAVAILABLE: driver is installed; reboot or diagnose the host' >&2
           exit 1
         fi
-        "${privileged[@]}" apt-get install -y nvidia-driver-580 || {
-          echo 'NVIDIA_DRIVER_INSTALL_FAILED: Ubuntu NVIDIA driver branch 580 unavailable' >&2; exit 1;
+        "${privileged[@]}" apt-get install -y nvidia-driver-595 || {
+          echo 'NVIDIA_DRIVER_INSTALL_FAILED: Ubuntu NVIDIA driver branch 595 unavailable' >&2; exit 1;
         }
         if ! nvidia-smi -L >/dev/null 2>&1; then
           echo 'REBOOT_REQUIRED: NVIDIA driver installed; reboot before continuing' >&2
@@ -168,13 +168,13 @@ if [[ $mode == --install ]]; then
       fi
       driver_version=$(nvidia_driver_version || true)
       if ! nvidia_driver_supported "$driver_version"; then
-        "${privileged[@]}" apt-get install -y nvidia-driver-580 || {
-          echo "NVIDIA_DRIVER_INSTALL_FAILED: driver ${driver_version:-unknown} is below branch 580 required by CUDA 13; install NVIDIA driver 580 or newer" >&2
+        "${privileged[@]}" apt-get install -y nvidia-driver-595 || {
+          echo "NVIDIA_DRIVER_INSTALL_FAILED: driver ${driver_version:-unknown} is below branch 595 required by CUDA 13.2; install NVIDIA driver 595 or newer" >&2
           exit 1
         }
         driver_version=$(nvidia_driver_version || true)
         if ! nvidia_driver_supported "$driver_version"; then
-          echo 'REBOOT_REQUIRED: NVIDIA driver 580 or newer installed; reboot the host to activate it, then retry setup' >&2
+          echo 'REBOOT_REQUIRED: NVIDIA driver 595 or newer installed; reboot the host to activate it, then retry setup' >&2
           exit 10
         fi
       fi
@@ -366,7 +366,7 @@ if (( nvidia )); then
   fi
   driver_version=$(nvidia_driver_version || true)
   if ! nvidia_driver_supported "$driver_version"; then
-    echo "NVIDIA_DRIVER_UNAVAILABLE: detected driver ${driver_version:-unknown}; CUDA 13 requires NVIDIA driver branch 580 or newer. Upgrade the host driver and reboot." >&2
+    echo "NVIDIA_DRIVER_UNAVAILABLE: detected driver ${driver_version:-unknown}; CUDA 13.2 requires NVIDIA driver branch 595 or newer. Upgrade the host driver and reboot." >&2
     exit 1
   fi
   if ! command -v nvidia-ctk >/dev/null || ! command -v nvidia-container-runtime >/dev/null || \

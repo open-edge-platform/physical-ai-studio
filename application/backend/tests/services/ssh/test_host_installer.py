@@ -28,15 +28,15 @@ def test_buildx_is_installed_without_replacing_docker_and_required_for_readiness
     assert source.index("BUILDX_UNAVAILABLE") < source.index("READY:nvidia")
 
 
-def test_cuda_13_requires_driver_branch_580_in_install_and_readiness() -> None:
+def test_cuda_13_2_requires_driver_branch_595_in_install_and_readiness() -> None:
     source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
     install = source.split("if (( nvidia )); then", 1)[1].split("installed_toolkit=0", 1)[0]
     readiness = source.rsplit("if (( nvidia )); then", 1)[1].split("echo 'READY:nvidia'", 1)[0]
     assert 'nvidia_driver_supported "$driver_version"' in install
     assert 'nvidia_driver_supported "$driver_version"' in readiness
-    assert "apt-get install -y nvidia-driver-580" in install
-    assert "REBOOT_REQUIRED: NVIDIA driver 580 or newer installed" in install
-    assert "CUDA 13 requires NVIDIA driver branch 580 or newer" in readiness
+    assert "apt-get install -y nvidia-driver-595" in install
+    assert "REBOOT_REQUIRED: NVIDIA driver 595 or newer installed" in install
+    assert "CUDA 13.2 requires NVIDIA driver branch 595 or newer" in readiness
 
 
 def test_nvidia_driver_supported_checks_the_major_branch() -> None:
@@ -46,9 +46,11 @@ def test_nvidia_driver_supported_checks_the_major_branch() -> None:
     )
     for version, expected in (
         ("570.172.08", False),
-        ("579.99.99", False),
-        ("580.0.0", True),
-        ("590.44.02", True),
+        ("580.65.06", False),
+        ("594.99.99", False),
+        ("595.0.0", True),
+        ("595.99.02", True),
+        ("600.0.0", True),
         ("unknown", False),
     ):
         result = subprocess.run(

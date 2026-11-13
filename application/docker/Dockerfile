@@ -528,7 +528,7 @@ CMD ["./run.sh"]
 # ===========================================================================
 FROM runtime-base AS runtime-cuda
 
-# NVIDIA CUDA 13 runtime libraries (match the cu130 PyTorch wheels).
+# NVIDIA CUDA 13 runtime libraries (match the cu132 PyTorch wheels).
 # Versions track the nvidia-* wheels pinned in application/backend/uv.lock.
 # Requires NVIDIA Container Toolkit on the host for GPU passthrough.
 #
@@ -545,9 +545,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && dpkg -i /tmp/cuda-keyring.deb \
     && rm -f /tmp/cuda-keyring.deb \
     && apt-get update -o APT::Key::GPGVCommand=/usr/bin/gpgv && apt-get install -y --no-install-recommends \
-        cuda-cudart-13-0=13.0.96-1 \
-        libcublas-13-0=13.1.1.3-1 \
-        libcudnn9-cuda-13=9.24.0.43-1 \
+        cuda-cudart-13-2=13.2.86-1 \
+        libcublas-13-2=13.4.1.3-1 \
+        libcudnn9-cuda-13=9.26.0.51-1 \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
 

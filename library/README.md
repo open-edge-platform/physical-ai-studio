@@ -91,7 +91,7 @@ source .venv/bin/activate
 
 # Choose one matching your hardware:
 uv sync --extra cpu --extra all     # CPU
-# uv sync --extra cu130 --extra all # NVIDIA GPU (CUDA)
+# uv sync --extra cu132 --extra all # NVIDIA GPU (CUDA)
 # uv sync --extra xpu --extra all   # Intel GPU (XPU)
 ```
 

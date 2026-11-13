@@ -108,7 +108,7 @@ def _check_robocasa_available() -> None:
             "is NOT a pyproject extra. Install into a dedicated venv:\n"
             "  uv venv .venv-robocasa\n"
             "  source .venv-robocasa/bin/activate\n"
-            "  uv sync --extra cu130\n"
+            "  uv sync --extra cu132\n"
             "  bash library/scripts/benchmark/install_robocasa.sh\n"
             "Then download kitchen assets:\n"
             "  yes y | python -m robocasa.scripts.download_kitchen_assets "

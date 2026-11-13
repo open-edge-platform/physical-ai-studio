@@ -24,7 +24,7 @@ Use on NVIDIA GPU systems:
 
 ```bash
 uvx \
-  --index https://download.pytorch.org/whl/cu130 \
+  --index https://download.pytorch.org/whl/cu132 \
   --index-strategy unsafe-best-match \
   --from "physicalai-studio[cuda]" \
   physicalai-studio serve

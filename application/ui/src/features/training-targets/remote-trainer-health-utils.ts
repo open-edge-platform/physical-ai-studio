@@ -81,7 +81,7 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
         case 'sudo_required':
             return 'Host installation requires non-interactive sudo for the SSH user.';
         case 'nvidia_driver_install_failed':
-            return 'NVIDIA driver branch 580 could not be installed. Check Ubuntu apt sources.';
+            return 'NVIDIA driver branch 595 could not be installed. Check Ubuntu apt sources.';
         case 'nvidia_toolkit_install_failed':
             return 'NVIDIA Container Toolkit installation failed. Check the pinned package repository.';
         case 'nvidia_toolkit_repo_failed':
@@ -126,8 +126,8 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
             return 'The SSH host key could not be verified. Check known_hosts before retrying.';
         case 'nvidia_driver_unavailable':
             return (
-                'CUDA 13 requires NVIDIA driver branch 580 or newer. Upgrade the host driver and reboot; ' +
-                'if it is already 580+, diagnose the driver installation.'
+                'CUDA 13.2 requires NVIDIA driver branch 595 or newer. Upgrade the host driver and reboot; ' +
+                'if it is already 595+, diagnose the driver installation.'
             );
         case 'nvidia_runtime_config_failed':
             return 'Could not configure the NVIDIA Docker runtime.';

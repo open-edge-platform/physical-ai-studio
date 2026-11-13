@@ -82,7 +82,7 @@ describe('remote-trainer-health-utils starting status', () => {
         ).toBe('Studio-managed training requires a working CUDA or XPU driver on the SSH host.');
         expect(
             healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'nvidia_driver_unavailable' })
-        ).toContain('CUDA 13 requires NVIDIA driver branch 580 or newer');
+        ).toContain('CUDA 13.2 requires NVIDIA driver branch 595 or newer');
     });
 
     it('explains when the running managed container cannot access an accelerator', () => {
