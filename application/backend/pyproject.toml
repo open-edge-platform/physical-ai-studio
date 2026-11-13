@@ -66,7 +66,7 @@ path = "scripts/hatch_build.py"
 # torch build (see library conflicts), so it ships only with cpu/cuda.
 # torch/torchvision caps follow lerobot (torch<2.16, torchvision<0.30): torchvision
 # 0.26-0.29.1 hard-pin torch 2.11-2.14, while 0.29.2 accepts torch>=2.14 (incl. 2.15).
-# TorchCodec 0.12+ supports the current Torch range, including the Torch 2.14 lock.
+# TorchCodec 0.12+ supports the current Torch range, including the Torch 2.15 lock.
 cpu = [
     "torch>=2.11,<2.16",
     "torchvision>=0.26,<0.30",

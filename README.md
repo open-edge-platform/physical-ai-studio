@@ -157,11 +157,11 @@ See the [library installation guide](./library/docs/getting-started/installation
 <summary>Copy the Python install command</summary>
 
 ```bash
-# Choose one hardware extra:
-pip install 'physicalai-train[cpu]'    # CPU
-# pip install 'physicalai-train[cu128]' # NVIDIA GPU
-# pip install 'physicalai-train[xpu]'   # Intel GPU
+pip install physicalai-train
 ```
+
+For hardware-specific PyTorch packages, use the source installation instructions
+in the [library installation guide](./library/docs/getting-started/installation.md).
 
 </details>
 
