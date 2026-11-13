@@ -57,7 +57,7 @@ pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
 
 [manifest]
 overrides = [
-    { package = { name = "lerobot" }, dependencies = [{ name = "torchcodec", marker = "extra == 'dataset'", specifier = ">=0.11,<0.18" }] },
+    { package = { name = "lerobot" }, dependencies = [{ name = "torchcodec", marker = "extra == 'dataset'", specifier = ">=0.12,<0.18" }] },
     { name = "diffusers", specifier = ">=0.38.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "setuptools", specifier = ">=83.0.0" },
@@ -3071,9 +3071,9 @@ requires-dist = [
     { name = "torchao", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'xpu'", specifier = ">=0.18.0,<0.19", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
     { name = "torchao", marker = "(platform_machine != 'x86_64' and extra == 'cuda') or (sys_platform != 'linux' and extra == 'cuda')", specifier = ">=0.18.0,<0.19", index = "https://pypi.org/simple", conflict = { package = "physicalai-studio", extra = "cuda" } },
     { name = "torchao", marker = "extra == 'cpu'", specifier = ">=0.18.0,<0.19", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
-    { name = "torchcodec", marker = "extra == 'cpu'", specifier = ">=0.11", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
-    { name = "torchcodec", marker = "extra == 'cuda'", specifier = ">=0.11", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "physicalai-studio", extra = "cuda" } },
-    { name = "torchcodec", marker = "extra == 'xpu'", specifier = ">=0.11", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
+    { name = "torchcodec", marker = "extra == 'cpu'", specifier = ">=0.12", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
+    { name = "torchcodec", marker = "extra == 'cuda'", specifier = ">=0.12", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "physicalai-studio", extra = "cuda" } },
+    { name = "torchcodec", marker = "extra == 'xpu'", specifier = ">=0.12", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
     { name = "torchvision", marker = "extra == 'cpu'", specifier = ">=0.26,<0.30", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cuda'", specifier = ">=0.26,<0.30", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "physicalai-studio", extra = "cuda" } },
     { name = "torchvision", marker = "extra == 'xpu'", specifier = ">=0.26,<0.30", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
@@ -3239,6 +3239,9 @@ requires-dist = [
     { name = "torchao", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'xpu'", specifier = ">=0.18.0,<0.19", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "torchao", marker = "(platform_machine != 'x86_64' and extra == 'cu130') or (sys_platform != 'linux' and extra == 'cu130')", specifier = ">=0.18.0,<0.19", index = "https://pypi.org/simple", conflict = { package = "physicalai-train", extra = "cu130" } },
     { name = "torchao", marker = "extra == 'cpu'", specifier = ">=0.18.0,<0.19", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
+    { name = "torchcodec", marker = "extra == 'cpu'", specifier = ">=0.12", index = "https://pypi.org/simple" },
+    { name = "torchcodec", marker = "extra == 'cu130'", specifier = ">=0.12", index = "https://pypi.org/simple" },
+    { name = "torchcodec", marker = "extra == 'xpu'", specifier = ">=0.12", index = "https://pypi.org/simple" },
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu130'", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "physicalai-train", extra = "cu130" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
