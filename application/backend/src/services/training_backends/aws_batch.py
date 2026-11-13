@@ -15,7 +15,7 @@ from physicalai.data.archive_safety import SafeZipArchive
 
 from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.remote_trainer import AwsBatchConnection
-from services.aws_auth_service import authentication_issue
+from services.aws_auth_service import get_credential_provider
 from services.aws_batch import POLICY_INSTANCE_TYPES, _make_session
 from services.dataset_download_service import DatasetDownloadService
 from services.staged_archive import cleanup_staged_archive
@@ -41,6 +41,7 @@ class AwsBatchTrainingBackend:
 
     def __init__(self, connection: AwsBatchConnection) -> None:
         self._connection = connection
+        self._auth_provider = get_credential_provider(connection)
         self._session: Any = None
         self._session_created = 0.0
         self._log_token: str | None = None
@@ -58,7 +59,7 @@ class AwsBatchTrainingBackend:
             try:
                 result = await asyncio.to_thread(operation)
             except Exception as error:
-                issue = authentication_issue(error, self._connection.profile_name)
+                issue = self._auth_provider.diagnose_error(error)
                 if issue is None:
                     raise
                 self._session = None
@@ -267,7 +268,7 @@ class AwsBatchTrainingBackend:
         try:
             response = self._client("ecs").describe_tasks(cluster=resource.rsplit("/", 1)[0], tasks=[task_arn])
         except (BotoCoreError, ClientError) as error:
-            if authentication_issue(error, self._connection.profile_name):
+            if self._auth_provider.diagnose_error(error):
                 raise
             if not self._task_warning_shown:
                 logger.warning("Cannot read AWS Batch startup diagnostics: {}", error)
@@ -332,7 +333,7 @@ class AwsBatchTrainingBackend:
                 **({"nextToken": self._log_token} if self._log_token else {}),
             )
         except (BotoCoreError, ClientError) as error:
-            if authentication_issue(error, self._connection.profile_name):
+            if self._auth_provider.diagnose_error(error):
                 raise
             if isinstance(error, ClientError) and error.response["Error"]["Code"] == "ResourceNotFoundException":
                 return

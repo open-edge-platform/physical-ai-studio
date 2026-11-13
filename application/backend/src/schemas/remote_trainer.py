@@ -1,6 +1,6 @@
 import re
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
@@ -14,6 +14,33 @@ from schemas.remote_server import SSH_HOST_ALIAS_PATTERN
 HealthStatus = Literal["healthy", "degraded", "unreachable", "starting"]
 AWS_REGION_PATTERN = r"[a-z]{2,}(-[a-z]+)+-\d"
 AWS_BATCH_ARN_PREFIX = rf"arn:aws(?:-[a-z]+)*:batch:{AWS_REGION_PATTERN}:[0-9]{{12}}:"
+AWS_STACK_ID_PATTERN = rf"^[0-9]{{12}}-{AWS_REGION_PATTERN}-[0-9a-f]{{8}}$"
+AWS_BATCH_INSTANCE_TIERS: dict[str, str] = {
+    "g4dn.2xlarge": "g4dn",
+    "g6e.2xlarge": "g6e",
+    "g7e.8xlarge": "g7e",
+}
+
+
+def derive_aws_batch_resources(stack_id: str) -> dict[str, Any]:
+    """Derive conventional AWS Batch resource names and ARNs from a composite stack ID."""
+    stripped = stack_id.strip()
+    if not re.fullmatch(AWS_STACK_ID_PATTERN, stripped):
+        raise ValueError("Invalid AWS stack ID")
+    account_id, rest = stripped.split("-", 1)
+    region, stack_uid = rest.rsplit("-", 1)
+    return {
+        "region": region,
+        "studio_role_arn": f"arn:aws:iam::{account_id}:role/pai-studio-{stack_uid}",
+        "bucket": f"pai-jobs-{stack_uid}",
+        "targets": {
+            instance_type: {
+                "queue": f"arn:aws:batch:{region}:{account_id}:job-queue/pai-{tier}-{stack_uid}",
+                "job_definition": f"arn:aws:batch:{region}:{account_id}:job-definition/pai-{tier}-{stack_uid}",
+            }
+            for instance_type, tier in AWS_BATCH_INSTANCE_TIERS.items()
+        },
+    }
 
 
 class RemoteTrainerConnectionMode(StrEnum):
@@ -108,14 +135,14 @@ class AwsBatchTarget(BaseModel):
 
 
 class AwsBatchProviderConfiguration(AwsCredentialSelection):
-    """Connection details used to load a provisioned AWS Batch configuration."""
+    """Connection details used to resolve a provisioned AWS Batch stack."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    configuration_uri: str = Field(
-        max_length=4096,
-        pattern=r"^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[^?#]+$",
-        title="S3 configuration file URI",
+    stack_id: str = Field(
+        max_length=64,
+        pattern=AWS_STACK_ID_PATTERN,
+        title="AWS stack ID",
     )
 
 
@@ -195,8 +222,19 @@ class AwsBatchConnection(_AwsBatchResources):
 
     connection_mode: Literal[RemoteTrainerConnectionMode.AWS_BATCH] = RemoteTrainerConnectionMode.AWS_BATCH
     schema_version: Literal[1] = 1
-    configuration_uri: str | None = None
-    profile_name: AwsProfileName = "default"
+    stack_id: str | None = Field(default=None, max_length=64, pattern=AWS_STACK_ID_PATTERN)
+    profile_name: AwsProfileName | None = "default"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_from_stack_id(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        stack_id = value.get("stack_id")
+        if isinstance(stack_id, str) and re.fullmatch(AWS_STACK_ID_PATTERN, stack_id.strip()):
+            derived = derive_aws_batch_resources(stack_id)
+            return {**derived, **value, "stack_id": stack_id.strip()}
+        return value
 
 
 TrainerConnection = Annotated[

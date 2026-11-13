@@ -29,5 +29,6 @@ async def check_aws_credentials(selection: AwsCredentialSelection) -> AwsIdentit
         return await asyncio.wait_for(asyncio.to_thread(aws_auth_service.check_credentials, selection), timeout=20)
     except (BotoCoreError, ClientError, TimeoutError) as error:
         return JSONResponse(
-            status_code=400, content=aws_auth_service.operational_aws_error(error, selection.profile_name).model_dump()
+            status_code=400,
+            content=aws_auth_service.get_credential_provider(selection).to_operational_error(error).model_dump(),
         )
