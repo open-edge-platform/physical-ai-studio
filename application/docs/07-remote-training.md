@@ -186,7 +186,7 @@ Select **AWS Provider** in the training dialog and choose a policy. Studio selec
 
 Studio uploads the dataset snapshot to S3, submits the Batch job, streams logs and live metrics while it runs, and downloads the trained model when it finishes. Canceling a job in Studio terminates the AWS Batch job.
 
-## Known Limitations
+## Security Model and Known Limitations
 
 ### Local file permissions on the robot private key
 
