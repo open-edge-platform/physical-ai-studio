@@ -130,7 +130,7 @@ Without SSH access from the administrator machine, omit `--ssh` to write the bun
 > [!WARNING]
 > A copy of the private key (`private.pem.key`) remains in the local bundle directory on the administrator machine. Delete the local bundle directory once installation completes.
 
-To revoke a robot's AWS access immediately without removing its installation, deactivate its certificate using the certificate ID printed during provisioning:
+To prevent a robot from obtaining new temporary AWS credentials without removing its installation, deactivate its certificate using the certificate ID printed during provisioning. Credentials already issued remain valid until they expire (up to `RobotCredentialDurationSeconds`, which can be 12 hours); certificate deactivation alone does not immediately revoke existing role sessions:
 
 ```bash
 aws iot update-certificate --region <region> --certificate-id <certificate-id> --new-status INACTIVE
