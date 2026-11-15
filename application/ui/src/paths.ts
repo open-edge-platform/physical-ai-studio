@@ -14,6 +14,7 @@ const models = project.path('/models');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
 const environment = environments.path(':environment_id');
+const so101Architecture = project.path('/so101-architecture');
 
 export const paths = {
     root,
@@ -32,6 +33,7 @@ export const paths = {
     },
     project: {
         index: project,
+        so101Architecture,
         datasets: {
             index: datasets,
             show: dataset,

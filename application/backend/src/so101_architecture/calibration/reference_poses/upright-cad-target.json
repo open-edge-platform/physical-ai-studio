@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "kind": "CAD_target_not_hardware_measurement",
+  "name": "upright-upper-arm-level-forearm",
+  "model_sha256": "962cb1e5971926e926cd654b67d7100b45de6e30af931a755ce1072017e57c3d",
+  "joint_order": [
+    "Revolute_1",
+    "Revolute_2",
+    "Revolute_3",
+    "Revolute_2_5",
+    "Revolute_4"
+  ],
+  "q_cad_degrees": [
+    0.0,
+    93.1,
+    -89.5,
+    1.5,
+    90.0
+  ],
+  "q_cad_rad": [
+    0.0,
+    1.6249015336067207,
+    -1.562069680534925,
+    0.026179938779914945,
+    1.5707963267948966
+  ],
+  "wrist_frame_pose": [
+    [
+      -0.9927926693564415,
+      -0.09578035715371741,
+      0.07203359532619419,
+      -0.01719730053320054
+    ],
+    [
+      0.0716997007915267,
+      0.0069276162831992,
+      0.997402206253344,
+      -0.284198349373994
+    ],
+    [
+      -0.0960305606487701,
+      0.9953783860000875,
+      -1.0263712447419654e-05,
+      0.20742539412590924
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "matching_method": "manual visual match; uncertainty not quantified",
+  "notes": [
+    "Match the base/clamp orientation as well as the arm links.",
+    "Upper arm is approximately upright and forearm approximately level.",
+    "Colored moving jaw identifies wrist-roll orientation; avoid a 180-degree reversal.",
+    "Gripper opening is not one of the five calibrated arm coordinates."
+  ]
+}

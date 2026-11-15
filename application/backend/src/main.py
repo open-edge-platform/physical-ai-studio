@@ -5,10 +5,6 @@ import os
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import Response
-from starlette.middleware.base import RequestResponseEndpoint
-
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
 from api.dataset_import import router as imports_router
@@ -32,12 +28,16 @@ from api.robots import router as project_robots_router
 from api.runtime_sessions import router as runtime_sessions_router
 from api.runtime_ws import router as runtime_ws_router
 from api.settings import router as settings_router
+from api.so101_architecture import router as so101_architecture_router
 from api.system import system_router
 from api.webui import SPAStaticFiles
 from core.lifecycle import lifespan
 from exception_handlers import register_application_exception_handlers
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from middleware.upload_size_guard import upload_size_guard_middleware
 from settings import get_settings
+from starlette.middleware.base import RequestResponseEndpoint
 from utils.multiprocessing import ensure_spawn_start_method
 
 settings = get_settings()
@@ -72,6 +72,7 @@ app.include_router(job_router)
 app.include_router(imports_router)
 app.include_router(logs_router)
 app.include_router(system_router)
+app.include_router(so101_architecture_router)
 
 register_application_exception_handlers(app)
 
@@ -82,7 +83,9 @@ async def _upload_size_guard(request: Request, call_next: RequestResponseEndpoin
 
 
 @app.get("/api/health")
-async def health_check(response: Response, health_service: HealthServiceDep) -> dict[str, str | bool]:
+async def health_check(
+    response: Response, health_service: HealthServiceDep
+) -> dict[str, str | bool]:
     """Health check endpoint."""
     response.headers["Cache-Control"] = "no-store"
     health_service.refresh_plugin_restart_required()

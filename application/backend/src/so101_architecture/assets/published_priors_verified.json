@@ -1,0 +1,999 @@
+{
+  "schema": 1,
+  "status": "Published SO101 CAD inertials registered to calibrated local geometry; not weighed on this arm",
+  "links": {
+    "Body5_1": {
+      "mass_kg": 0.147,
+      "com_m": [
+        -0.00028523270204005744,
+        -0.003906008036314898,
+        0.004403570199816131
+      ],
+      "diagonal_inertia_kg_m2": [
+        0.00013612140353781138,
+        0.00011449151590275309,
+        0.00013055408055943497
+      ],
+      "box_size_m": [
+        0.11048000000000001,
+        0.09532000000000002,
+        0.07543000000000001
+      ],
+      "measured": false,
+      "source": "Robot Studio SO101 CAD a758567c3978dfeefe282ede0500085a48fe8f78: base_link; rigid surface registration",
+      "collision_center_m": [
+        -0.00037000000000000227,
+        -0.006669999999999999,
+        0.005925
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.00013612140353781138,
+          -2.954222319572366e-07,
+          1.7451789722945015e-08
+        ],
+        [
+          -2.954222319572359e-07,
+          0.00011449151590275309,
+          -4.662382036236112e-06
+        ],
+        [
+          1.7451789722945256e-08,
+          -4.662382036236113e-06,
+          0.00013055408055943497
+        ]
+      ],
+      "absorbed_into": "Body5_1",
+      "source_link": "base_link",
+      "source_mass_kg": 0.147
+    },
+    "drive_hub_5": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019100000000000002,
+        0.019070000000000004,
+        0.0045000000000000005
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        4.99999999999997e-05,
+        1.5000000000000256e-05,
+        -0.0022500000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body5_1"
+    },
+    "driven_hub_5": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019280000000000002,
+        0.019180000000000003,
+        0.00336
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        9.999999999999593e-06,
+        4.0000000000000105e-05,
+        0.00015000000000000007
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body5_1"
+    },
+    "Body1_2": {
+      "mass_kg": 0.100006,
+      "com_m": [
+        -0.030759784750140472,
+        0.000195264599840795,
+        -0.02545536040941636
+      ],
+      "diagonal_inertia_kg_m2": [
+        8.375991201802086e-05,
+        8.103938798197914e-05,
+        2.39783e-05
+      ],
+      "box_size_m": [
+        0.060360000000000004,
+        0.05727,
+        0.11162000000000002
+      ],
+      "measured": false,
+      "source": "Robot Studio SO101 CAD a758567c3978dfeefe282ede0500085a48fe8f78: shoulder_link; rigid surface registration",
+      "collision_center_m": [
+        -0.02093,
+        -0.00023500000000000083,
+        -0.008450000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          8.375991201802086e-05,
+          5.681412752172762e-08,
+          -1.1623267685163369e-06
+        ],
+        [
+          5.6814127521727786e-08,
+          8.103938798197914e-05,
+          1.626752075743877e-07
+        ],
+        [
+          -1.1623267685163369e-06,
+          1.626752075743877e-07,
+          2.39783e-05
+        ]
+      ],
+      "absorbed_into": "Body1_2",
+      "source_link": "shoulder_link",
+      "source_mass_kg": 0.100006
+    },
+    "drive_hub_4": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019100000000000002,
+        0.019070000000000004,
+        0.0045000000000000005
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        4.99999999999997e-05,
+        1.5000000000000256e-05,
+        -0.0022500000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body1_2"
+    },
+    "driven_hub_4": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.01928,
+        0.019180000000000003,
+        0.00336
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        2.0000000000000052e-05,
+        4.0000000000000105e-05,
+        0.00015000000000000007
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body1_2"
+    },
+    "Group 1": {
+      "mass_kg": 0.103,
+      "com_m": [
+        -0.08985600708346883,
+        -0.008286212454626114,
+        0.019946938350503676
+      ],
+      "diagonal_inertia_kg_m2": [
+        4.075803846257298e-05,
+        0.00014736016153742704,
+        0.000142487
+      ],
+      "box_size_m": [
+        0.14157,
+        0.05326,
+        0.06608
+      ],
+      "measured": false,
+      "source": "Robot Studio SO101 CAD a758567c3978dfeefe282ede0500085a48fe8f78: upper_arm_link; rigid surface registration",
+      "collision_center_m": [
+        -0.059335000000000006,
+        -0.011430000000000001,
+        0.020720000000000002
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          4.075803846257298e-05,
+          -1.966801555326357e-05,
+          -4.02919869450403e-08
+        ],
+        [
+          -1.966801555326357e-05,
+          0.00014736016153742704,
+          9.016326613887842e-09
+        ],
+        [
+          -4.02919869450403e-08,
+          9.016326613887842e-09,
+          0.000142487
+        ]
+      ],
+      "absorbed_into": "Group 1",
+      "source_link": "upper_arm_link",
+      "source_mass_kg": 0.103
+    },
+    "drive_hub_2": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019100000000000002,
+        0.019070000000000004,
+        0.0045000000000000005
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        4.99999999999997e-05,
+        1.5000000000000256e-05,
+        -0.0022500000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Group 1"
+    },
+    "driven_hub_2": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.01923,
+        0.0193,
+        0.00336
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        -4.49999999999999e-05,
+        -9.999999999999593e-06,
+        0.00015000000000000007
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Group 1"
+    },
+    "Body1_3": {
+      "mass_kg": 0.104,
+      "com_m": [
+        -0.0980770583189545,
+        0.003026074098233216,
+        0.01832986463605818
+      ],
+      "diagonal_inertia_kg_m2": [
+        2.8711544522545828e-05,
+        0.0001598762554774542,
+        0.00014529
+      ],
+      "box_size_m": [
+        0.15345,
+        0.040900000000000006,
+        0.06805
+      ],
+      "measured": false,
+      "source": "Robot Studio SO101 CAD a758567c3978dfeefe282ede0500085a48fe8f78: lower_arm_link; rigid surface registration",
+      "collision_center_m": [
+        -0.068285,
+        0.00145,
+        0.018375000000000002
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          2.8711544522545828e-05,
+          7.1204556560121896e-06,
+          1.2641956889914628e-06
+        ],
+        [
+          7.1204556560121896e-06,
+          0.0001598762554774542,
+          -4.621288552818694e-08
+        ],
+        [
+          1.2641956889914628e-06,
+          -4.621288552818694e-08,
+          0.00014529
+        ]
+      ],
+      "absorbed_into": "Body1_3",
+      "source_link": "lower_arm_link",
+      "source_mass_kg": 0.104
+    },
+    "drive_hub_6": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019100000000000002,
+        0.019070000000000004,
+        0.0045000000000000005
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        4.99999999999997e-05,
+        1.5000000000000256e-05,
+        -0.0022500000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body1_3"
+    },
+    "Group 1_2": {
+      "mass_kg": 0.079,
+      "com_m": [
+        -0.038611766546747646,
+        0.0004542268142712356,
+        -0.005933253785692073
+      ],
+      "diagonal_inertia_kg_m2": [
+        2.539161921742046e-05,
+        3.682568078257952e-05,
+        2.0999999999999992e-05
+      ],
+      "box_size_m": [
+        0.07536000000000001,
+        0.035840000000000004,
+        0.06341000000000001
+      ],
+      "measured": false,
+      "source": "Robot Studio SO101 CAD a758567c3978dfeefe282ede0500085a48fe8f78: wrist_link; rigid surface registration",
+      "collision_center_m": [
+        -0.028050000000000005,
+        0.002769999999999999,
+        -0.011405
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          2.539161921742046e-05,
+          8.602739672336223e-08,
+          3.6415295891712496e-06
+        ],
+        [
+          8.602739672336218e-08,
+          3.682568078257952e-05,
+          1.972011749719952e-08
+        ],
+        [
+          3.6415295891712496e-06,
+          1.972011749719952e-08,
+          2.0999999999999992e-05
+        ]
+      ],
+      "absorbed_into": "Group 1_2",
+      "source_link": "wrist_link",
+      "source_mass_kg": 0.079
+    },
+    "drive_hub_1": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019100000000000002,
+        0.019070000000000004,
+        0.0045000000000000005
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        4.99999999999997e-05,
+        1.5000000000000256e-05,
+        -0.0022500000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Group 1_2"
+    },
+    "driven_hub_1": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.01933,
+        0.01921,
+        0.00336
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        5.000000000000664e-06,
+        -4.49999999999999e-05,
+        0.00015000000000000007
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Group 1_2"
+    },
+    "Body3": {
+      "mass_kg": 0.09899999999999999,
+      "com_m": [
+        0.0024463209080881213,
+        0.0001413501723724257,
+        -0.02873661246879175
+      ],
+      "diagonal_inertia_kg_m2": [
+        4.2535183736727796e-05,
+        6.063798110059306e-05,
+        3.9976399587318113e-05
+      ],
+      "box_size_m": [
+        0.06551000000000001,
+        0.05093,
+        0.10283000000000002
+      ],
+      "measured": false,
+      "source": "Robot Studio SO101 CAD a758567c3978dfeefe282ede0500085a48fe8f78: gripper_link; rigid surface registration",
+      "collision_center_m": [
+        -0.0024449999999999993,
+        -0.002534999999999999,
+        -0.054685000000000004
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          4.2535183736727796e-05,
+          -6.768394223653598e-08,
+          -5.735474975878573e-07
+        ],
+        [
+          -6.76839422365359e-08,
+          6.063798110059306e-05,
+          -1.5252945924062157e-07
+        ],
+        [
+          -5.735474975878573e-07,
+          -1.5252945924062157e-07,
+          3.9976399587318113e-05
+        ]
+      ],
+      "absorbed_into": "Body3",
+      "source_link": "gripper_link",
+      "source_mass_kg": 0.09899999999999999
+    },
+    "drive_hub_3": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019100000000000002,
+        0.019070000000000004,
+        0.0045000000000000005
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        4.99999999999997e-05,
+        1.5000000000000256e-05,
+        -0.0022500000000000003
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body3"
+    },
+    "driven_hub_3": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.019190000000000002,
+        0.019270000000000002,
+        0.00336
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        -3.500000000000031e-05,
+        2.499999999999985e-05,
+        0.00015000000000000007
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body3"
+    },
+    "Body5_2": {
+      "mass_kg": 0.0,
+      "com_m": [
+        0,
+        0,
+        0
+      ],
+      "diagonal_inertia_kg_m2": [
+        0,
+        0,
+        0
+      ],
+      "box_size_m": [
+        0.07712000000000001,
+        0.031380000000000005,
+        0.042850000000000006
+      ],
+      "measured": false,
+      "source": "Mass consolidated into rigid owner from published CAD",
+      "collision_center_m": [
+        0.039380000000000005,
+        -0.014240000000000001,
+        -0.018355
+      ],
+      "inertia_matrix_kg_m2": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "absorbed_into": "Body3"
+    }
+  },
+  "physics": {
+    "gravity": [
+      0,
+      0,
+      -9.80665
+    ],
+    "timestep": 0.001,
+    "floor_z_m": -0.1,
+    "sliding_friction": 0.7,
+    "contact_measured": false,
+    "self_collision_validated": false,
+    "joint_damping": 0.6,
+    "joint_frictionloss": 0.052,
+    "joint_armature": 0.028,
+    "motor_torque_limit_nm": 2.94,
+    "joint_dynamics_source": "MuJoCo Menagerie sts3215 defaults, not individually measured",
+    "joint_dynamics_source_url": "https://github.com/google-deepmind/mujoco_menagerie/blob/370c43965323c0944b433b202aac5058b5f907a9/robotstudio_so101/so101.xml"
+  },
+  "source_commit": "a758567c3978dfeefe282ede0500085a48fe8f78",
+  "registrations": {
+    "Body5_1": {
+      "source_link": "base_link",
+      "R_source_to_local": [
+        [
+          -0.039706250038655536,
+          0.9990235749374841,
+          -0.01937293026355963
+        ],
+        [
+          -0.9990287208236039,
+          -0.03932081046205103,
+          0.01988690106970132
+        ],
+        [
+          0.01910572368209281,
+          0.020143748006177152,
+          0.9996145260743501
+        ]
+      ],
+      "t_source_to_local_m": [
+        0.0009600630283047584,
+        0.009130625545810414,
+        -0.02932886598977181
+      ],
+      "trimmed_surface_rms_m": 0.0028151600114204225,
+      "incoming_axis_error_deg": 0,
+      "incoming_axis_line_distance_m": 0.0,
+      "outgoing_axis_line_distance_m": 0.001578209591028223,
+      "outgoing_axis_error_deg": 1.5910330407255706
+    },
+    "Body1_2": {
+      "source_link": "shoulder_link",
+      "R_source_to_local": [
+        [
+          0.9999762641727039,
+          0.006889926792254562,
+          0.0
+        ],
+        [
+          -0.006889926792254562,
+          0.9999762641727039,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "t_source_to_local_m": [
+        0.0,
+        0.0,
+        -0.0001840604094163607
+      ],
+      "trimmed_surface_rms_m": 0.0023589849491984587,
+      "incoming_axis_error_deg": 0.0,
+      "incoming_axis_line_distance_m": 0.0,
+      "method": "exact incoming-axis constrained surface registration",
+      "outgoing_axis_line_distance_m": 0.0002459633080994994,
+      "outgoing_axis_error_deg": 0.39497730888058413
+    },
+    "Group 1": {
+      "source_link": "upper_arm_link",
+      "R_source_to_local": [
+        [
+          0.9999994289023743,
+          0.001068735198982743,
+          0.0
+        ],
+        [
+          -0.001068735198982743,
+          0.9999994289023743,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "t_source_to_local_m": [
+        0.0,
+        0.0,
+        0.001538038350503676
+      ],
+      "trimmed_surface_rms_m": 0.0021391766798193705,
+      "incoming_axis_error_deg": 0.0,
+      "incoming_axis_line_distance_m": 0.0,
+      "method": "exact incoming-axis constrained surface registration",
+      "outgoing_axis_line_distance_m": 7.640899124005596e-05,
+      "outgoing_axis_error_deg": 1.2074182697257333e-06
+    },
+    "Body1_3": {
+      "source_link": "lower_arm_link",
+      "R_source_to_local": [
+        [
+          0.9999975366505454,
+          -0.002219615471508208,
+          0.0
+        ],
+        [
+          0.002219615471508208,
+          0.9999975366505454,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "t_source_to_local_m": [
+        0.0,
+        0.0,
+        4.6764636058180214e-05
+      ],
+      "trimmed_surface_rms_m": 0.0022586263293866387,
+      "incoming_axis_error_deg": 0.0,
+      "incoming_axis_line_distance_m": 0.0,
+      "method": "exact incoming-axis constrained surface registration",
+      "outgoing_axis_line_distance_m": 0.0002996556744312641,
+      "outgoing_axis_error_deg": 8.537736462515939e-07
+    },
+    "Group 1_2": {
+      "source_link": "wrist_link",
+      "R_source_to_local": [
+        [
+          -0.009087801165158171,
+          0.9999587050823561,
+          0.0
+        ],
+        [
+          -0.9999587050823561,
+          -0.009087801165158171,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.9999999999999999
+        ]
+      ],
+      "t_source_to_local_m": [
+        0.0,
+        0.0,
+        -0.03404885378569207
+      ],
+      "trimmed_surface_rms_m": 0.002478738524986126,
+      "incoming_axis_error_deg": 0.0,
+      "incoming_axis_line_distance_m": 0.0,
+      "method": "exact incoming-axis constrained surface registration",
+      "outgoing_axis_line_distance_m": 0.000331638639649765,
+      "outgoing_axis_error_deg": 0.056533183816939815
+    },
+    "Body3": {
+      "source_link": "gripper_link",
+      "R_source_to_local": [
+        [
+          0.9999773791667367,
+          0.006726154534674425,
+          0.0
+        ],
+        [
+          -0.006726154534674425,
+          0.9999773791667367,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.9999999999999999
+        ]
+      ],
+      "t_source_to_local_m": [
+        0.0,
+        0.0,
+        -0.000126888725126963
+      ],
+      "trimmed_surface_rms_m": 0.002357236246948238,
+      "incoming_axis_error_deg": 0.0,
+      "incoming_axis_line_distance_m": 0.0,
+      "method": "exact incoming-axis constrained surface registration"
+    }
+  },
+  "source_urdf_sha256": "3a65d2d35e68a8d2f0c2cc176d19b884506543c93ba72980145b80abe276022c",
+  "source_url": "https://raw.githubusercontent.com/TheRobotStudio/SO-ARM100/a758567c3978dfeefe282ede0500085a48fe8f78/Simulation/SO101/so101_new_calib.urdf",
+  "gripper_pose_assumption": "source jaw fixed at zero"
+}
