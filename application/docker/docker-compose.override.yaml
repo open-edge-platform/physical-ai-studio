@@ -1,0 +1,14 @@
+# Local change: listen on localhost only (no auth in the web UI) and mount
+# the SO-101 Model-Based Pick-and-Place Architecture Workbench into Physical AI Studio.
+# Use an SSH tunnel: ssh -L 7860:localhost:7860 intel
+services:
+  physical-ai-studio-xpu:
+    ports: !override
+      - "127.0.0.1:${PORT:-7860}:${PORT:-7860}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../backend/src/main.py:/app/application/backend/src/main.py:ro
+      - ../backend/src/api/webui.py:/app/application/backend/src/api/webui.py:ro
+      - ../backend/src/api/so101_architecture.py:/app/application/backend/src/api/so101_architecture.py:ro
+      - ../backend/src/so101_architecture:/app/application/backend/src/so101_architecture:ro

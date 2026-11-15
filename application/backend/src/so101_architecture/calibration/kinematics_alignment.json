@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "coordinate_reference": "Encoder radians: q=(Present_Position-range_midpoint)*2*pi/4096. Installed LeRobot 0.7 DEGREES uses 360/4095; convert degrees with (pi/180)*(4095/4096). Present_Position already includes the hardware homing offset.",
+  "mapping": "q_cad = cad_at_zero_rad + cad_sign * q_encoder_rad",
+  "arms": {
+    "follower": {
+      "confirmed": true,
+      "cad_at_zero_rad": {
+        "shoulder_pan": -0.3083301383650139,
+        "shoulder_lift": 1.5827170619398654,
+        "elbow_flex": -1.7047298938082895,
+        "wrist_flex": 0.047655669810314105,
+        "wrist_roll": -0.2277961470010177
+      },
+      "cad_sign": {
+        "shoulder_pan": 1,
+        "shoulder_lift": 1,
+        "elbow_flex": 1,
+        "wrist_flex": 1,
+        "wrist_roll": 1
+      },
+      "calibration_sha256": "6fcce19349b7bea19b3d42c8d7fa80bbea938472c3a7a8f91e67f663f32d671a",
+      "gripper_open_raw_sign": 1,
+      "gripper_direction_evidence": "calibration/measurements/manual-direction-session/follower-gripper-result.json",
+      "reference_method": "human-confirmed visual match to a specified CAD pose",
+      "reference_uncertainty": "not quantified; this is not a metrology calibration",
+      "reference_captured_utc": "2026-11-14T00:41:43.624943+00:00",
+      "reference_model_sha256": "962cb1e5971926e926cd654b67d7100b45de6e30af931a755ce1072017e57c3d",
+      "reference_evidence": "calibration/measurements/manual-direction-session/follower-upright-reference-01.json"
+    },
+    "leader": {
+      "confirmed": true,
+      "cad_at_zero_rad": {
+        "shoulder_pan": -0.29912625363769996,
+        "shoulder_lift": 1.5666102636670667,
+        "elbow_flex": -1.6502735758383493,
+        "wrist_flex": 0.013908092476830003,
+        "wrist_roll": -3.0825343932561964
+      },
+      "cad_sign": {
+        "shoulder_pan": 1,
+        "shoulder_lift": 1,
+        "elbow_flex": 1,
+        "wrist_flex": 1,
+        "wrist_roll": 1
+      },
+      "calibration_sha256": "a56c52b11006fff6f6345d91db4a0a7bac73c727d83b3565c2e0a764f69c074e",
+      "gripper_open_raw_sign": 1,
+      "gripper_direction_evidence": "calibration/measurements/manual-direction-session/leader-gripper-result.json",
+      "direction_quality_note": "Elbow sign confirmed by user despite shoulder co-movement; other directions passed isolation checks.",
+      "reference_method": "human-confirmed visual match to a specified CAD pose",
+      "reference_uncertainty": "not quantified; this is not a metrology calibration",
+      "reference_captured_utc": "2026-11-14T00:38:09.599206+00:00",
+      "reference_model_sha256": "962cb1e5971926e926cd654b67d7100b45de6e30af931a755ce1072017e57c3d",
+      "reference_evidence": "calibration/measurements/manual-direction-session/leader-upright-reference-01.json"
+    }
+  }
+}

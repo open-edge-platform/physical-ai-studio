@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "arm": "follower",
+  "source": "User-supplied telemetry and arm_measurement_state.jpeg, 2026-11-13",
+  "image_stored_in_repository": false,
+  "units": {
+    "value": "LeRobot calibrated degrees; gripper is 0-100 opening",
+    "raw": "Present_Position ticks after hardware homing, 0-4095",
+    "raw_degrees": "raw * 360/4096"
+  },
+  "motors": {
+    "shoulder_pan": {"id": 1, "value": 18.11, "raw": 1975, "raw_degrees": 173.58},
+    "shoulder_lift": {"id": 2, "value": 92.44, "raw": 3420, "raw_degrees": 300.59},
+    "elbow_flex": {"id": 3, "value": -84.92, "raw": 925, "raw_degrees": 81.30},
+    "wrist_flex": {"id": 4, "value": 3.69, "raw": 1815, "raw_degrees": 159.52},
+    "wrist_roll": {"id": 5, "value": 102.02, "raw": 3208, "raw_degrees": 281.95},
+    "gripper": {"id": 6, "value": 0.67, "raw": 1339, "raw_degrees": 117.69}
+  },
+  "user_pose_observations": {
+    "gripper_closed_without_interpenetration": true,
+    "gripper_closed_raw": 1339,
+    "wrist_roll_cad_degrees": -90,
+    "display_wrist_roll_correction_degrees": 180,
+    "display_correction_source": "User reports the displayed end-effector is 180 degrees opposite the measurement. Apply +180 degrees to the candidate wrist-roll display; this does not establish encoder direction or confirmed mounting calibration.",
+    "wrist_roll_cad_reference_confirmed_by_user": true,
+    "wrist_roll_angle_is_approximate": true,
+    "camera_parallel_to_ground": true
+  },
+  "unknown": [
+    "CAD joint angles for shoulder pan, shoulder lift, elbow flex and wrist flex",
+    "CAD-axis sign of increasing encoder ticks for all five arm joints",
+    "Camera mounting transform and TCP transform"
+  ],
+  "alignment_confirmed": false
+}

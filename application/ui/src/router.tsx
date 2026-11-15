@@ -38,6 +38,7 @@ import { SO101Setup } from './routes/robots/so101-setup';
 import { StarArmSetup } from './routes/robots/stararm-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 import { Settings } from './routes/settings';
+import { SO101Architecture } from './routes/so101-architecture';
 
 export { paths } from './paths';
 
@@ -123,6 +124,10 @@ export const router = createBrowserRouter([
                                 })
                             );
                         },
+                    },
+                    {
+                        path: paths.project.so101Architecture.pattern,
+                        element: <SO101Architecture />,
                     },
                     {
                         path: paths.project.datasets.index.pattern,

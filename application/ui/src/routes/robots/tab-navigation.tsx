@@ -32,6 +32,15 @@ const Header = ({ project_id }: { project_id: string }) => {
                             Environments
                         </Flex>
                     </Item>
+                    <Item
+                        textValue='SO-101 Manipulation Studio'
+                        key={'so101-architecture'}
+                        href={paths.project.so101Architecture({ project_id })}
+                    >
+                        <Flex alignItems='center' gap='size-100'>
+                            SO-101 Manipulation Studio
+                        </Flex>
+                    </Item>
                 </TabList>
             </Flex>
         </View>
@@ -47,7 +56,13 @@ export const TabNavigation = () => {
         <Tabs
             aria-label='Header navigation'
             selectedKey={
-                pathname.includes('cameras') ? 'cameras' : pathname.includes('environments') ? 'environments' : 'robots'
+                pathname.includes('so101-architecture')
+                    ? 'so101-architecture'
+                    : pathname.includes('cameras')
+                      ? 'cameras'
+                      : pathname.includes('environments')
+                        ? 'environments'
+                        : 'robots'
             }
             width='100%'
             gridArea='header'

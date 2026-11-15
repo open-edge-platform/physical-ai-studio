@@ -37,6 +37,15 @@ const Header = ({ project_id }: { project_id: string }) => {
                                 Models
                             </Flex>
                         </Item>,
+                        <Item
+                            textValue='SO-101 Architecture'
+                            key={'so101-architecture'}
+                            href={paths.project.so101Architecture({ project_id })}
+                        >
+                            <Flex alignItems='center' gap='size-100'>
+                                SO-101 Architecture
+                            </Flex>
+                        </Item>,
                     ]}
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
