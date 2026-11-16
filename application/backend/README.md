@@ -220,6 +220,7 @@ In interactive terminals, users are prompted for confirmation when a migration i
 
 ## See Also
 
+- **[Rerun Visualization](docs/rerun-visualization.md)** - Runtime visualization settings and deployment
 - **[Application Overview](../README.md)** - Full application architecture
 - **[UI](../ui/README.md)** - React frontend
 - **[Library](../../library/README.md)** - Python SDK for training
