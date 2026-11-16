@@ -95,8 +95,9 @@ def camera_claims() -> CameraClaimRegistry:
 
 
 @pytest.fixture
-async def new_session(registry, camera_claims, robot_factory):
+async def new_session(registry, camera_claims, robot_factory, monkeypatch, tmp_path):
     """Open sessions as their socket does, with ``async with``; whatever a test leaves open closes at the end."""
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     async with AsyncExitStack() as stack:
 
         async def create() -> RuntimeSession:

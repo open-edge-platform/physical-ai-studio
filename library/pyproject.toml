@@ -31,7 +31,7 @@ dependencies = [
     "pillow",
     "lightning>=2.6.6",
     "lightning-utilities",
-    "lerobot[dataset]==0.6.0",
+    "lerobot[dataset]==0.7",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5,<=0.1.8",
     "pymunk>=6.6.0,<7.0.0",
@@ -50,18 +50,23 @@ dependencies = [
 
 [project.optional-dependencies]
 # PyTorch dependency groups
-cpu = ["torch", "torchvision"]
-# The PyPI wheels for torchao 0.18+ are built against CUDA 13 and
-# fail to dlopen next to a cu128 torch.
-cu128 = [
+cpu = [
     "torch",
     "torchvision",
-    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torchao>=0.18.0,<0.19",
+    "torchcodec>=0.12",
+]
+cu132 = [
+    "torch",
+    "torchvision",
+    "torchao>=0.18.0,<0.19",
+    "torchcodec>=0.12",
 ]
 xpu = [
     "torch",
     "torchvision",
-    "torchao>=0.17.0,<0.18.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torchao>=0.18.0,<0.19; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torchcodec>=0.12",
 ]
 # Testing dependencies
 tests = [
@@ -81,7 +86,7 @@ diffusion = ["diffusers>=0.38.0"]
 # Physical Intelligence Pi0.5 foundation model
 # Requires the PaliGemma backbone + Gemma action expert.
 pi05 = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "sentencepiece<=0.2.1",
@@ -89,7 +94,7 @@ pi05 = [
 
 # SmolVLA foundation model
 smolvla = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "num2words>=0.5.14,<0.6.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
@@ -97,14 +102,14 @@ smolvla = [
 # MolmoAct2
 # Supports LoRA fine-tuning for efficient adaptation
 molmoact2 = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
 
 # RLWRLD RLDX-1
 rldx1 = [
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "scipy>=1.11.0,<2.0.0",
@@ -115,7 +120,7 @@ rldx1 = [
 # NVIDIA Cosmos 3 foundation policy
 cosmos3 = [
     "diffusers>=0.40.0",
-    "transformers>=5.15.1,<5.16.0",
+    "transformers>=5.22.0,<5.23.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
@@ -126,16 +131,17 @@ nncf = ["nncf>=3.0.0"]
 # Xiaomi-Robotics-0 (XR0) foundation model
 # Requires a Qwen3-VL backbone (transformers>=5.5.0 ships the qwen3_vl models)
 xr0 = [
-    "transformers>=5.15.0,<=5.15.1",
+    "transformers>=5.22.0,<5.23.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
 ]
 
-# ExecuTorch runtime for edge/mobile deployment
-executorch = ["executorch>=1.1.0"]
+# ExecuTorch runtime for edge/mobile deployment.
+# ExecuTorch 1.6 requires Torch 2.15.
+executorch = ["executorch>=1.6.0,<1.7", "torch>=2.15,<2.16"]
 
 # ExecuTorch with OpenVINO delegate (requires nncf for export)
-executorch-openvino = ["executorch>=1.1.0", "physicalai-train[nncf]"]
+executorch-openvino = ["physicalai-train[executorch]", "physicalai-train[nncf]"]
 
 # All policy dependencies (foundation models and diffusion action heads)
 policies = [
@@ -150,7 +156,7 @@ policies = [
 
 # All optional dependencies except hardware (torch) variant.
 # Pair with a hardware extra: uv sync --extra cpu --extra all
-# or: uv sync --extra cu128 --extra all  /  uv sync --extra xpu --extra all
+# or: uv sync --extra cu132 --extra all  /  uv sync --extra xpu --extra all
 all = [
     "physicalai-train[tests]",
     "physicalai-train[libero]",
@@ -197,14 +203,14 @@ exclude-newer = "7 days"
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
 # FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
 # Allow the explicitly selected Physical AI release before the default cutoff.
-exclude-newer-package = { physicalai = false, pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false }
+exclude-newer-package = { physicalai = false, pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false, executorch = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
     # Safe to override because executorch
     # production code does not import pytest at runtime.
     "pytest>=9.0.3",
-    # LeRobot 0.6.0 keeps diffusers in optional extras; keep an explicit floor for CVE-2026-44827 fix
+    # LeRobot 0.7.0 keeps diffusers in optional extras; keep an explicit floor for CVE-2026-44827 fix
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
@@ -212,7 +218,7 @@ override-dependencies = [
 
 
 conflicts = [
-    [{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }],
+    [{ extra = "cpu" }, { extra = "cu132" }, { extra = "xpu" }],
     [{ extra = "executorch" }, { extra = "xpu" }],
     [{ extra = "executorch-openvino" }, { extra = "xpu" }],
 ]
@@ -228,8 +234,8 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [[tool.uv.index]]
@@ -240,19 +246,27 @@ explicit = false
 # PyTorch sources configuration
 [tool.uv.sources]
 # Runtime main with the noise preprocessor (openvinotoolkit/physicalai#455); move to the next release.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8381d439c2660d357b4b9d633f28ea7e7ed42c81" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "5939c2feac67ed34764c03eb12045ec07908fff5" }
+torchcodec = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu132", extra = "cu132" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchao = [
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cpu", extra = "cpu" },
+    # The cu132 index only publishes linux x86_64 torchao wheels.
+    { index = "pytorch-cu132", extra = "cu132", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pypi", extra = "cu132", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 

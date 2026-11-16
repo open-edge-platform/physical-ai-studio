@@ -97,7 +97,7 @@ The correct variant is selected automatically via Docker Compose profiles
 |---------|-------------------------------|--------------------------------------------|
 | `cpu`   | `physical-ai-studio-cpu`      | None                                       |
 | `xpu`   | `physical-ai-studio-xpu`      | Intel GPU runtime (Level Zero, OpenCL, VA) |
-| `cuda`  | `physical-ai-studio-cuda`     | CUDA 12.8 runtime (cudart, cuBLAS, cuDNN)  |
+| `cuda`  | `physical-ai-studio-cuda`     | CUDA 13.2 runtime (cudart, cuBLAS, cuDNN)  |
 
 ## Hardware Access
 
