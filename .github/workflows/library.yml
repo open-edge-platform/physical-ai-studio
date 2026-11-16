@@ -11,6 +11,8 @@ permissions: {} # No permissions by default on workflow level
 
 env:
   UV_EXCLUDE_NEWER: "7 days"
+  # egl-probe (libero extra) only ships a 2021 sdist whose CMakeLists.txt CMake 4 refuses to build.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 concurrency:
   group: library-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

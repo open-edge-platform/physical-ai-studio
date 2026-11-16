@@ -19,6 +19,7 @@ from torch import nn
 
 from physicalai.data.constants import (
     IMAGE_MASKS,
+    NOISE,
     RTC_EXECUTION_HORIZON,
     RTC_INFERENCE_DELAY,
     RTC_MAX_GUIDANCE_WEIGHT,
@@ -341,6 +342,7 @@ class SmolVLAModel(RTCModelMixin, Model):
             lang_tokens,
             lang_masks,
             state,
+            noise=batch.get(NOISE),
             **rtc_kwargs,
         )
 
