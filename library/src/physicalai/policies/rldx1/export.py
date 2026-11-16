@@ -33,6 +33,7 @@ from physicalai.policies.rldx1.utils.export import (
     build_rldx1_token_composer_params,
     cast_sample_fp32,
     export_image_resolution_after_preprocessor_from_stats,
+    f16_safe_action_head,
     fp32_weights_for_export,
     trim_export_sample,
 )
@@ -224,7 +225,8 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
         if self.model is not None:
             backbone = getattr(self.model, "backbone", None) or getattr(self.model, "gs_backbone", None)
             if backbone is not None:
-                qwen_config = backbone.qwen_config
+                # Graph-safe backbone exposes ``qwen_config``; the trained backbone (torch export) does not.
+                qwen_config = getattr(backbone, "qwen_config", None) or backbone.qwen_model.model.config
                 rope_specs = [
                     ComponentSpec(
                         type="rldx1_rope",
@@ -363,8 +365,21 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
         image_grid_thw: torch.Tensor,
         embodiment_id: torch.Tensor,
         num_views: torch.Tensor,
+        untie_first_step: bool = False,
     ) -> Generator[None, None, None]:
         """Temporarily swap self.model for its graph-safe export view.
+
+        The action head's residual stream is rescaled to fit f16 (see
+        ``f16_safe_residual_stream``) while the view is active.
+
+        Args:
+            input_ids: Export sample token ids.
+            image_grid_thw: Export sample image grid tensor.
+            embodiment_id: Embodiment id baked into the graph.
+            num_views: Camera-view count.
+            untie_first_step: Give the first denoising step its own VL MLP
+                weights to avoid an OpenVINO GPU f16 bug (see
+                ``untie_first_denoising_step``).
 
         Yields:
             None: Control within a context where ``self.model`` is graph-safe.
@@ -385,9 +400,11 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
             num_views=num_views,
             embodiment_id=embodiment_id,
         )
+        msat = original.action_model.model
         try:
-            self.model = graph_safe  # type: ignore[assignment]
-            yield
+            with f16_safe_action_head(graph_safe, msat, untie_first_step=untie_first_step):
+                self.model = graph_safe  # type: ignore[assignment]
+                yield
         finally:
             if hasattr(graph_safe, "restore"):
                 graph_safe.restore()
@@ -434,6 +451,9 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 image_grid_thw=input_sample["image_grid_thw"],
                 embodiment_id=input_sample["embodiment_id"],
                 num_views=input_sample["num_views"],
+                # TODO(#1428): drop once the OpenVINO GPU f16 shared-weight vl_mlp.w3 bug is fixed.  # noqa: FIX002
+                # https://github.com/open-edge-platform/physical-ai-studio/issues/1428
+                untie_first_step=True,
             ),
         ):
             traced_sample = cast_sample_fp32(input_sample)
