@@ -474,7 +474,11 @@ class TestRunTrainingJob:
         trainer_class = _run(TrainingJobSpec(policy="act", device_type="cuda", all_devices=True), tmp_path)
 
         kwargs = trainer_class.call_args.kwargs
-        assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("cuda", "auto", -1)
+        assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == (
+            "cuda",
+            "ddp_find_unused_parameters_true",
+            -1,
+        )
 
     def test_dataset_is_loaded_from_the_local_root(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(policy="act", batch_size=16, num_workers=2, val_split=0.25)

@@ -48,14 +48,26 @@ def resolve_accelerator(device_type: str | None = None) -> str:
     return "cpu"
 
 
-def resolve_strategy(device_type: str | None = None) -> str:
+MULTI_DEVICE_STRATEGY = "ddp_find_unused_parameters_true"
+"""Lightning strategy for a run on every device (``all_devices``).
+
+DDP with unused-parameter detection: policies such as SmolVLA and Pi0.5 freeze
+parts of the model, so not every parameter receives a gradient each step, and
+plain DDP fails on the first step. Named explicitly because the library only
+infers it from an explicit device count, and an all-device run asks for
+``devices=-1``.
+"""
+
+
+def resolve_strategy(device_type: str | None = None, *, all_devices: bool = False) -> str:
     """Return the Lightning strategy string for a training run.
 
-    XPU needs its own single-device strategy; everything else is covered by
-    ``"auto"``.
+    XPU needs its own single-device strategy, a run on every device needs
+    :data:`MULTI_DEVICE_STRATEGY`, and everything else is covered by ``"auto"``.
 
     Args:
         device_type: Explicit accelerator, or None to auto-detect.
+        all_devices: Whether the run trains on every visible device.
 
     Returns:
         The strategy name to pass to the trainer.
@@ -63,7 +75,11 @@ def resolve_strategy(device_type: str | None = None) -> str:
     Example:
         >>> resolve_strategy("cpu")
         'auto'
+        >>> resolve_strategy("cuda", all_devices=True)
+        'ddp_find_unused_parameters_true'
     """
+    if all_devices:
+        return MULTI_DEVICE_STRATEGY
     return "xpu_single" if resolve_accelerator(device_type) == "xpu" else "auto"
 
 
