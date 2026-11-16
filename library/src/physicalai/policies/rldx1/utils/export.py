@@ -325,25 +325,26 @@ def f16_safe_residual_stream(msat: MSAT, scale: float = F16_SAFE_RESIDUAL_SCALE)
         return output * inv
 
     original_eps = [norm.eps for norm in norms]
-    handles = [msat.register_forward_pre_hook(scale_stream_input, with_kwargs=True)]
-    handles.extend(module.register_forward_hook(scale_output) for module in passthrough)
-    with torch.no_grad():
-        for linear in linears:
-            linear.weight.mul_(inv)
-            if linear.bias is not None:
-                linear.bias.mul_(inv)
-    for norm, eps in zip(norms, original_eps, strict=True):
-        norm.eps = eps * inv * inv
+    handles: list[torch.utils.hooks.RemovableHandle] = []
+    scaled: list[torch.Tensor] = []
     try:
+        handles.append(msat.register_forward_pre_hook(scale_stream_input, with_kwargs=True))
+        handles.extend(module.register_forward_hook(scale_output) for module in passthrough)
+        with torch.no_grad():
+            for linear in linears:
+                for tensor in (linear.weight, linear.bias):
+                    if tensor is not None:
+                        tensor.mul_(inv)
+                        scaled.append(tensor)
+        for norm, eps in zip(norms, original_eps, strict=True):
+            norm.eps = eps * inv * inv
         yield
     finally:
         for handle in handles:
             handle.remove()
         with torch.no_grad():
-            for linear in linears:
-                linear.weight.mul_(scale)
-                if linear.bias is not None:
-                    linear.bias.mul_(scale)
+            for tensor in scaled:
+                tensor.mul_(scale)
         for norm, eps in zip(norms, original_eps, strict=True):
             norm.eps = eps
 
@@ -398,21 +399,23 @@ def untie_first_denoising_step(root: nn.Module, msat: MSAT) -> Generator[None, N
         None: Control while the first step uses its own weights.
     """
     wrapped: list[tuple[SwiGLUFFN, nn.Linear, _FirstCallOwnWeight]] = []
-    for block in cast("list[DoubleStreamBlock]", list(msat.double_blocks)):
-        mlp = cast("SwiGLUFFN", block.vl_mlp)
-        wrapper = _FirstCallOwnWeight(mlp.w3)
-        wrapped.append((mlp, mlp.w3, wrapper))
-        mlp.w3 = wrapper  # type: ignore[assignment]
 
     def reset_calls(_module: nn.Module, _args: tuple[Any, ...]) -> None:
         for _, _, wrapper in wrapped:
             wrapper.calls = 0
 
-    handle = root.register_forward_pre_hook(reset_calls)
+    handle = None
     try:
+        for block in cast("list[DoubleStreamBlock]", list(msat.double_blocks)):
+            mlp = cast("SwiGLUFFN", block.vl_mlp)
+            wrapper = _FirstCallOwnWeight(mlp.w3)
+            wrapped.append((mlp, mlp.w3, wrapper))
+            mlp.w3 = wrapper  # type: ignore[assignment]
+        handle = root.register_forward_pre_hook(reset_calls)
         yield
     finally:
-        handle.remove()
+        if handle is not None:
+            handle.remove()
         for owner, linear, _ in wrapped:
             owner.w3 = linear
 
