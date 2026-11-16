@@ -216,6 +216,35 @@ describe('TrainingRow', () => {
         }
     );
 
+    it('labels a job that trains on all GPUs of its trainer', async () => {
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    remote_trainer_id: remoteTrainer.id,
+                    status: 'healthy',
+                    checked_at: '2026-07-16T12:00:00Z',
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                    ],
+                })
+            )
+        );
+        renderTrainingRow({
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: remoteTrainer.name,
+                device: { type: 'cuda', index: null, all_devices: true },
+            },
+        });
+
+        const trainerCell = screen.getByTestId('trainer-cell');
+        await waitFor(() => expect(trainerCell).toHaveTextContent('All 2 CUDA GPUs'));
+        expect(trainerCell).not.toHaveTextContent('CUDA null');
+    });
+
     it.each([undefined, 1])(
         'shows remote trainer and selected GPU when multiple GPUs exist (index %s)',
         async (index) => {
@@ -238,7 +267,7 @@ describe('TrainingRow', () => {
                     training_target: 'remote',
                     remote_trainer_id: remoteTrainer.id,
                     remote_trainer_name: remoteTrainer.name,
-                    ...(index === undefined ? {} : { device: { type: 'cuda', index } }),
+                    ...(index === undefined ? {} : { device: { type: 'cuda', index, all_devices: false } }),
                 },
             });
 
@@ -284,7 +313,7 @@ describe('TrainingRow', () => {
                 ...localJob.payload,
                 training_target: 'remote',
                 remote_trainer_id: remoteTrainer.id,
-                device: { type: 'cuda', index: 1 },
+                device: { type: 'cuda', index: 1, all_devices: false },
             },
         });
 

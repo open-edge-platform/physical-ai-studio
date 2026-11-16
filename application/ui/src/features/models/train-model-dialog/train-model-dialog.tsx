@@ -57,6 +57,9 @@ const DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3;
 /** Strip the `trainer:` prefix off a training-target option id. */
 const targetRawId = (id: string): string => id.split(':', 2)[1] ?? id;
 
+/** GPU picker key for training one job on every CUDA GPU of a remote trainer. */
+export const ALL_GPUS_KEY = 'cuda:all';
+
 export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
@@ -71,7 +74,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 job.status === 'running' &&
                 job.payload.training_target === 'remote' &&
                 job.payload.remote_trainer_id === trainerId
-                    ? [`${job.payload.device?.type ?? devices[0]?.type}:${job.payload.device?.index ?? 0}`]
+                    ? job.payload.device?.all_devices
+                        ? devices.map(gpuKey)
+                        : [`${job.payload.device?.type ?? devices[0]?.type}:${job.payload.device?.index ?? 0}`]
                     : []
             ),
         ]);
@@ -176,17 +181,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // always runs the full max_epochs before distillation extends the run), so it
     // needs no clamp against max_epochs.
     const isSnapflowRequested = isSnapflowSupported && snapflowEnabled && maxEpochs >= MIN_EPOCHS_FOR_SNAPFLOW;
-    const trainingSteps = useMemo(
-        () =>
-            selectedDatasetEpisodes === undefined
-                ? undefined
-                : getEstimatedTrainingSteps(
-                      selectedDatasetEpisodes.map(({ length }) => length),
-                      batchSize,
-                      maxEpochs + (isSnapflowRequested ? snapflowDistillEpochs : 0)
-                  ),
-        [selectedDatasetEpisodes, batchSize, maxEpochs, isSnapflowRequested, snapflowDistillEpochs]
-    );
     const {
         health: remoteTrainerHealth,
         isChecking: isCheckingRemoteTrainer,
@@ -224,15 +218,44 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         ) === true;
     const remoteDevices = isBatchTarget ? [] : (remoteTrainerHealth?.devices ?? []);
     const busyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget?.id ?? ''), remoteDevices);
-    const selectedRemoteDevice =
-        selectedGpuKey === null
-            ? (remoteDevices.find((device) => !busyGpuKeys.has(gpuKey(device))) ?? remoteDevices[0] ?? null)
-            : (remoteDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
+    // Training on every GPU is opt-in and only offered by trainers with several CUDA GPUs.
+    const remoteCudaDevices = remoteDevices.filter((device) => device.type === 'cuda');
+    const allGpusCount =
+        isRemoteTarget && !isBatchTarget && remoteCudaDevices.length > 1 ? remoteCudaDevices.length : 0;
+    const isAllGpus = isRemoteTarget && !isBatchTarget && selectedGpuKey === ALL_GPUS_KEY;
+    const trainingDeviceCount = isAllGpus ? remoteCudaDevices.length : 1;
+    // With every GPU selected, the first one stands in for "the device" wherever a
+    // single one is described (precision, memory hints): they train in lockstep.
+    const selectedRemoteDevice = isAllGpus
+        ? (remoteCudaDevices[0] ?? null)
+        : selectedGpuKey === null
+          ? (remoteDevices.find((device) => !busyGpuKeys.has(gpuKey(device))) ?? remoteDevices[0] ?? null)
+          : (remoteDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
     const selectedGpuUnavailable =
-        isRemoteTarget && !isBatchTarget && selectedGpuKey !== null && selectedRemoteDevice === null;
-    const selectedGpuBusy = selectedRemoteDevice !== null && busyGpuKeys.has(gpuKey(selectedRemoteDevice));
+        isRemoteTarget &&
+        !isBatchTarget &&
+        selectedGpuKey !== null &&
+        (isAllGpus ? allGpusCount === 0 : selectedRemoteDevice === null);
+    const selectedGpuBusy = isAllGpus
+        ? remoteCudaDevices.some((device) => busyGpuKeys.has(gpuKey(device)))
+        : selectedRemoteDevice !== null && busyGpuKeys.has(gpuKey(selectedRemoteDevice));
+    // Batch size applies per GPU, so each step covers `trainingDeviceCount` batches.
+    const trainingSteps = useMemo(
+        () =>
+            selectedDatasetEpisodes === undefined
+                ? undefined
+                : getEstimatedTrainingSteps(
+                      selectedDatasetEpisodes.map(({ length }) => length),
+                      batchSize * trainingDeviceCount,
+                      maxEpochs + (isSnapflowRequested ? snapflowDistillEpochs : 0)
+                  ),
+        [selectedDatasetEpisodes, batchSize, trainingDeviceCount, maxEpochs, isSnapflowRequested, snapflowDistillEpochs]
+    );
     // Default to the first free GPU, or the first GPU when all are occupied.
     const activeDevice = isRemoteTarget ? selectedRemoteDevice : bestDevice;
+    // Auto batch size is CUDA-only, and Lightning cannot tune the batch size of a distributed run.
+    const isAutoScaleBatchDisabled = activeDevice?.type !== 'cuda' || isAllGpus;
+    const effectiveAutoScaleBatchSize = autoScaleBatchSize && !isAutoScaleBatchDisabled;
 
     useEffect(() => {
         if (activeDevice?.type === 'cuda') {
@@ -306,9 +329,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const summaryDevice =
         activeDevice === null || activeDevice === undefined
             ? trainingTargetLabel
-            : `${trainingTargetLabel} — ${activeDevice.name}${
-                  activeDevice.memory ? `, ${formatBytes(activeDevice.memory)}` : ''
-              }`;
+            : isAllGpus
+              ? `${trainingTargetLabel} — all ${trainingDeviceCount} GPUs (${activeDevice.name}${
+                    activeDevice.memory ? `, ${formatBytes(activeDevice.memory)} each` : ''
+                })`
+              : `${trainingTargetLabel} — ${activeDevice.name}${
+                    activeDevice.memory ? `, ${formatBytes(activeDevice.memory)}` : ''
+                }`;
     const selectedDatasetName =
         datasets.find((dataset) => dataset.id === selectedDataset?.toString())?.name ?? 'No dataset';
 
@@ -361,12 +388,21 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 }
                 const latestDevices = isBatchTarget ? [] : (latestHealth.devices ?? []);
                 const latestBusyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget.id), latestDevices);
-                submissionDevice =
-                    selectedGpuKey === null
-                        ? (latestDevices.find((device) => !latestBusyGpuKeys.has(gpuKey(device))) ??
-                          latestDevices[0] ??
-                          null)
-                        : (latestDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
+                if (isAllGpus) {
+                    const latestCudaDevices = latestDevices.filter((device) => device.type === 'cuda');
+                    if (latestCudaDevices.length < 2) {
+                        setSubmitError('This trainer no longer has several CUDA GPUs. Choose a single GPU instead.');
+                        return;
+                    }
+                    submissionDevice = latestCudaDevices[0];
+                } else {
+                    submissionDevice =
+                        selectedGpuKey === null
+                            ? (latestDevices.find((device) => !latestBusyGpuKeys.has(gpuKey(device))) ??
+                              latestDevices[0] ??
+                              null)
+                            : (latestDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
+                }
                 if (selectedGpuKey !== null && submissionDevice === null) {
                     setSubmitError('The selected GPU is no longer available on this trainer. Choose another GPU.');
                     return;
@@ -381,7 +417,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 max_epochs: maxEpochs,
                 batch_size: batchSize,
                 num_workers: numWorkers === 'auto' ? ('auto' as const) : Number(numWorkers),
-                auto_scale_batch_size: autoScaleBatchSize,
+                auto_scale_batch_size: effectiveAutoScaleBatchSize,
                 precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
                 compile_model: compileModel,
                 // Empty without a mapping step (no fixed camera order, or retraining),
@@ -413,9 +449,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                       ...commonPayload,
                       training_target: 'remote',
                       remote_trainer_id: targetRawId(selectedTarget.id),
-                      ...(submissionDevice
-                          ? { device: { type: submissionDevice.type, index: submissionDevice.index } }
-                          : {}),
+                      ...(isAllGpus
+                          ? { device: { type: 'cuda' as const, index: null, all_devices: true } }
+                          : submissionDevice
+                            ? {
+                                  device: {
+                                      type: submissionDevice.type,
+                                      index: submissionDevice.index,
+                                      all_devices: false,
+                                  },
+                              }
+                            : {}),
                   }
                 : { ...commonPayload, training_target: 'local' };
 
@@ -443,6 +487,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         remoteHealth={remoteTrainerHealth ?? null}
                         localDevice={bestDevice}
                         remoteDevice={selectedRemoteDevice}
+                        remoteDeviceCount={trainingDeviceCount}
                         isRemoteDeviceBusy={selectedGpuBusy}
                         isCheckingRemote={isCheckingRemoteTrainer}
                     />
@@ -480,6 +525,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 }}
                                 remoteDevices={isRemoteTarget ? remoteDevices : []}
                                 busyGpuKeys={busyGpuKeys}
+                                allGpusCount={allGpusCount}
                                 selectedGpuKey={selectedGpuKey}
                                 onSelectedGpuKeyChange={setSelectedGpuKey}
                                 selectedGpuUnavailable={selectedGpuUnavailable}
@@ -507,7 +553,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onBatchSizeChange={setBatchSize}
                                 numWorkers={numWorkers}
                                 onNumWorkersChange={setNumWorkers}
-                                autoScaleBatchSize={autoScaleBatchSize}
+                                autoScaleBatchSize={effectiveAutoScaleBatchSize}
                                 onAutoScaleBatchSizeChange={setAutoScaleBatchSize}
                                 precision={precision}
                                 onPrecisionChange={setPrecision}
@@ -515,8 +561,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onCompileModelChange={setCompileModel}
                                 augmentImages={augmentImages}
                                 onAugmentImagesChange={setAugmentImages}
-                                isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
+                                isAutoScaleBatchDisabled={isAutoScaleBatchDisabled}
                                 deviceType={activeDevice?.type}
+                                deviceCount={trainingDeviceCount}
                                 isLoraSupported={isLoraSupported}
                                 loraEnabled={loraEnabled}
                                 onLoraEnabledChange={setLoraEnabled}
