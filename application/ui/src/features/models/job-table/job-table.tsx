@@ -138,6 +138,12 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
                 </Flex>
+                {/* The badge already says "failed"; the message says why, so users needn't open the logs. */}
+                {job.status === 'failed' && job.message && (
+                    <Text UNSAFE_className={classes.rowInfo} data-testid='failure-reason'>
+                        {job.message.replace(/^Training failed:\s*/, '')}
+                    </Text>
+                )}
                 {job.start_time && job.end_time && (
                     <Text UNSAFE_className={classes.rowInfo}>
                         Elapsed: {durationBetween(job.start_time, job.end_time)}

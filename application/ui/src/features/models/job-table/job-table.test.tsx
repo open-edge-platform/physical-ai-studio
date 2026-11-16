@@ -216,6 +216,25 @@ describe('TrainingRow', () => {
         }
     );
 
+    it('shows why a job failed, without repeating that it failed', () => {
+        renderTrainingRow({
+            status: 'failed',
+            message:
+                'Training failed: This remote trainer does not support training on all GPUs yet; ' +
+                'update its trainer image',
+        });
+
+        expect(screen.getByTestId('failure-reason')).toHaveTextContent(
+            /^This remote trainer does not support training on all GPUs yet; update its trainer image$/
+        );
+    });
+
+    it('shows no failure reason for a job that did not fail', () => {
+        renderTrainingRow({ status: 'completed', message: 'Training finished' });
+
+        expect(screen.queryByTestId('failure-reason')).not.toBeInTheDocument();
+    });
+
     it('labels a job that trains on all GPUs of its trainer', async () => {
         server.use(
             http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
