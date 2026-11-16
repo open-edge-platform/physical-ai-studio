@@ -11,7 +11,7 @@ mixin implementation.
 
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
@@ -33,10 +33,9 @@ from physicalai.policies.rldx1.utils.export import (
     build_rldx1_token_composer_params,
     cast_sample_fp32,
     export_image_resolution_after_preprocessor_from_stats,
-    f16_safe_residual_stream,
+    f16_safe_action_head,
     fp32_weights_for_export,
     trim_export_sample,
-    untie_first_denoising_step,
 )
 from physicalai.policies.rldx1.utils.stats import get_dataset_stats_entry, resolve_feature_shape
 
@@ -403,10 +402,7 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
         )
         msat = original.action_model.model
         try:
-            with ExitStack() as stack:
-                stack.enter_context(f16_safe_residual_stream(msat))
-                if untie_first_step:
-                    stack.enter_context(untie_first_denoising_step(graph_safe, msat))
+            with f16_safe_action_head(graph_safe, msat, untie_first_step=untie_first_step):
                 self.model = graph_safe  # type: ignore[assignment]
                 yield
         finally:

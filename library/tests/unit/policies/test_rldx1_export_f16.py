@@ -12,7 +12,11 @@ from transformers import BatchFeature
 
 from physicalai.policies.rldx1.constants import ACTION_PRED, BACKBONE_FEATURES
 from physicalai.policies.rldx1.model import RLDXActionModel
-from physicalai.policies.rldx1.utils.export import f16_safe_residual_stream, untie_first_denoising_step
+from physicalai.policies.rldx1.utils.export import (
+    f16_safe_action_head,
+    f16_safe_residual_stream,
+    untie_first_denoising_step,
+)
 
 # Denoising steps per forward in the tiny head; two forwards are run.
 _NUM_STEPS = 3
@@ -30,13 +34,7 @@ class _Head(nn.Module):
         return out[ACTION_PRED]
 
 
-@pytest.fixture
-def head() -> _Head:
-    """Tiny RLDX-1 action head with random weights.
-
-    Returns:
-        The head in eval mode.
-    """
+def _make_head(**kwargs: object) -> _Head:
     torch.manual_seed(0)
     action_model = RLDXActionModel(
         hidden_size=32,
@@ -69,8 +67,19 @@ def head() -> _Head:
         tune_diffusion_model=True,
         tune_vlln=True,
         backbone_trainable_params_fp32=False,
+        **kwargs,
     )
     return _Head(action_model).eval()
+
+
+@pytest.fixture
+def head() -> _Head:
+    """Tiny RLDX-1 action head with random weights.
+
+    Returns:
+        The head in eval mode.
+    """
+    return _make_head()
 
 
 def _run(head: _Head) -> torch.Tensor:
@@ -121,3 +130,31 @@ def test_untie_first_denoising_step_is_exact_and_restores(head: _Head) -> None:
     torch.testing.assert_close(untied_again, reference)
     assert len(used) == 2 * (_NUM_STEPS - 1)
     assert all(type(block.vl_mlp.w3) is nn.Linear for block in msat.double_blocks)
+
+
+def test_f16_safe_action_head_keeps_lora_output() -> None:
+    """LoRA adapters on rescaled and untied layers are merged, so actions don't change."""
+    pytest.importorskip("peft")
+    from peft.tuners.tuners_utils import BaseTunerLayer  # noqa: PLC0415
+
+    head = _make_head(
+        action_model_use_lora=True,
+        action_model_lora_rank=4,
+        action_model_lora_alpha=8,
+        action_model_lora_target_modules=["sa_proj", "linear2", "w3"],
+    )
+    msat = head.action_model.model
+    with torch.no_grad():
+        for name, param in msat.named_parameters():
+            if "lora_B" in name:
+                param.normal_(std=0.1)
+    state_before = {k: v.clone() for k, v in msat.state_dict().items()}
+    reference = _run(head)
+
+    with f16_safe_action_head(head, msat, untie_first_step=True):
+        patched = _run(head)
+
+    torch.testing.assert_close(patched, reference, rtol=1e-5, atol=1e-5)
+    assert isinstance(msat.double_blocks[0].sa_proj, BaseTunerLayer)
+    assert isinstance(msat.double_blocks[0].vl_mlp.w3, BaseTunerLayer)
+    assert all(torch.equal(v, msat.state_dict()[k]) for k, v in state_before.items())

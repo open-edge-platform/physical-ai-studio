@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import torch
@@ -15,6 +15,7 @@ from torch import nn
 
 from physicalai.data import FeatureType
 from physicalai.data.observation import STATE
+from physicalai.policies.mixins import merged_lora_scope
 from physicalai.policies.rldx1.components.norms import RMSNorm
 from physicalai.policies.rldx1.constants import (
     ATTENTION_MASK,
@@ -414,6 +415,29 @@ def untie_first_denoising_step(root: nn.Module, msat: MSAT) -> Generator[None, N
         handle.remove()
         for owner, linear, _ in wrapped:
             owner.w3 = linear
+
+
+@contextmanager
+def f16_safe_action_head(root: nn.Module, msat: MSAT, *, untie_first_step: bool) -> Generator[None, None, None]:
+    """Apply the f16 export workarounds to the action head, merging LoRA adapters first.
+
+    Both workarounds patch base ``nn.Linear`` weights, so LoRA adapters are folded
+    in beforehand; otherwise the adapter branch would skip the rescale and untie.
+
+    Args:
+        root: Module traced for export (see ``untie_first_denoising_step``).
+        msat: The action head to patch.
+        untie_first_step: Also apply ``untie_first_denoising_step``.
+
+    Yields:
+        None: Control while the workarounds are active.
+    """
+    with ExitStack() as stack:
+        stack.enter_context(merged_lora_scope(msat))
+        stack.enter_context(f16_safe_residual_stream(msat))
+        if untie_first_step:
+            stack.enter_context(untie_first_denoising_step(root, msat))
+        yield
 
 
 def build_padded_sample(  # noqa: PLR0914
