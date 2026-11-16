@@ -383,7 +383,7 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
     ) -> Any:
         require_aws_feature_active()
         import boto3
-        from botocore.credentials import RefreshableCredentials
+        from botocore.credentials import CredentialProvider, CredentialResolver, RefreshableCredentials
         from botocore.session import get_session
 
         config = self._load_config()
@@ -394,8 +394,15 @@ class IotCertificateCredentialProvider(AwsCredentialProvider):
             refresh_using=lambda: self._fetch_iot_credentials(self._load_config(), role_alias),
             method="iot-certificate",
         )
+
+        class _StaticRefreshableProvider(CredentialProvider):
+            METHOD = "iot-certificate"
+
+            def load(self) -> RefreshableCredentials:
+                return refreshable
+
         botocore_session = get_session()
-        botocore_session._credentials = refreshable
+        botocore_session.register_component("credential_provider", CredentialResolver([_StaticRefreshableProvider()]))
         return boto3.Session(
             botocore_session=botocore_session,
             region_name=region or config.aws_region or "us-east-1",
