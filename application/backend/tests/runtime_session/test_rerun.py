@@ -136,13 +136,12 @@ async def test_default_starts_headless_and_connect_mode_never_spawns() -> None:
         spawn.assert_not_called()
 
 
-def test_real_headless_server_is_shared_and_reaped_after_the_last_session() -> None:
+def test_real_headless_server_is_shared_and_stopped_after_the_last_session() -> None:
     with socket.socket() as available:
         available.bind(("127.0.0.1", 0))
         port = available.getsockname()[1]
     with background_server(port):
-        process = _BACKGROUND_SERVERS[port].process
-        assert process.poll() is None
+        recording = _BACKGROUND_SERVERS[port].recording
         assert _listening(port)
         response = httpx.options(
             f"http://127.0.0.1:{port}/rerun.sdk_comms.v1.MessageProxyService/ReadMessages",
@@ -155,16 +154,18 @@ def test_real_headless_server_is_shared_and_reaped_after_the_last_session() -> N
         assert response.status_code == 200
         assert response.headers["access-control-allow-origin"] == "https://app.rerun.io"
         with background_server(port):
-            assert _BACKGROUND_SERVERS[port].process is process
+            assert _BACKGROUND_SERVERS[port].recording is recording
             assert _BACKGROUND_SERVERS[port].users == 2
-        assert process.poll() is None
-    assert process.poll() is not None
+        assert _listening(port)
     assert port not in _BACKGROUND_SERVERS
+    deadline = time.monotonic() + 5
+    while _listening(port) and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert not _listening(port)
 
 
 def test_an_existing_server_is_borrowed_not_started_or_stopped() -> None:
-    with patch("runtime_session.rerun._listening", return_value=True), patch("subprocess.Popen") as start:
+    with patch("runtime_session.rerun._listening", return_value=True), patch("rerun.GrpcServerSink") as start:
         with background_server(12345):
             assert 12345 not in _BACKGROUND_SERVERS
         start.assert_not_called()
@@ -339,22 +340,24 @@ async def test_slow_sync_inference_aligns_predictions_to_the_actual_control_step
 @pytest.mark.parametrize("mode", ["connect", "native"])
 async def test_connect_and_native_runs_lease_a_studio_owned_server(mode: str) -> None:
     settings = RerunSettings(mode="connect") if mode == "connect" else RerunSettings(open_viewer=True)
-    process = MagicMock()
     with (
         patch("runtime_session.rerun._background_server", background_server),
         patch("runtime_session.rerun._listening", side_effect=[False, True]),
-        patch("subprocess.Popen", return_value=process) as spawn,
+        patch("rerun.GrpcServerSink") as sink,
+        patch("rerun.RecordingStream.set_sinks"),
     ):
         with ExitStack() as headless:
             headless.enter_context(background_server(9876))
-            async with RerunObserver("lease", settings=settings):
-                assert _BACKGROUND_SERVERS[9876].users == 2
-                headless.close()
-                assert _BACKGROUND_SERVERS[9876].users == 1
-                process.terminate.assert_not_called()
-        process.terminate.assert_called_once_with()
+            server_recording = _BACKGROUND_SERVERS[9876].recording
+            with patch.object(server_recording, "disconnect") as stop:
+                async with RerunObserver("lease", settings=settings):
+                    assert _BACKGROUND_SERVERS[9876].users == 2
+                    headless.close()
+                    assert _BACKGROUND_SERVERS[9876].users == 1
+                    stop.assert_not_called()
+                stop.assert_called_once_with()
         assert 9876 not in _BACKGROUND_SERVERS
-        spawn.assert_called_once()
+        sink.assert_called_once()
 
 
 @pytest.mark.parametrize("address", ["127.0.0.1:9876", "localhost:9876", "remote:9876"])
@@ -362,7 +365,7 @@ async def test_connect_mode_never_starts_or_owns_an_external_server(address: str
     with (
         patch("runtime_session.rerun._background_server", background_server),
         patch("runtime_session.rerun._listening", return_value=False),
-        patch("subprocess.Popen") as spawn,
+        patch("rerun.GrpcServerSink") as spawn,
     ):
         async with RerunObserver("external", settings=RerunSettings(mode="connect", connect_addr=address)):
             assert 9876 not in _BACKGROUND_SERVERS
@@ -373,12 +376,41 @@ def test_background_server_uses_the_deployment_bind_host(monkeypatch) -> None:
     monkeypatch.setenv("RERUN_BIND_HOST", "0.0.0.0")
     with (
         patch("runtime_session.rerun._listening", side_effect=[False, True]),
-        patch("subprocess.Popen") as spawn,
+        patch("rerun.GrpcServerSink") as sink,
+        patch("rerun.RecordingStream") as recording,
         background_server(12345),
     ):
-        argv = spawn.call_args.args[0]
-        assert argv[argv.index("--bind") + 1] == "0.0.0.0"
-        assert argv[argv.index("--port") + 1] == "12345"
+        sink.assert_called_once_with("0.0.0.0", 12345, server_memory_limit="256MiB")
+        recording.return_value.set_sinks.assert_called_once_with(sink.return_value)
+    recording.return_value.disconnect.assert_called_once_with()
+
+
+def test_background_server_defaults_to_loopback(monkeypatch) -> None:
+    monkeypatch.delenv("RERUN_BIND_HOST", raising=False)
+    with (
+        patch("runtime_session.rerun._listening", side_effect=[False, True]),
+        patch("rerun.GrpcServerSink") as sink,
+        patch("rerun.RecordingStream") as recording,
+        background_server(12345),
+    ):
+        sink.assert_called_once_with("127.0.0.1", 12345, server_memory_limit="256MiB")
+    recording.return_value.disconnect.assert_called_once_with()
+
+
+@pytest.mark.parametrize("failure", ["sink", "timeout"])
+def test_background_server_start_failure_disconnects_the_owner(failure: str) -> None:
+    with (
+        patch("runtime_session.rerun._listening", return_value=False),
+        patch("rerun.GrpcServerSink"),
+        patch("rerun.RecordingStream") as recording,
+        patch("runtime_session.rerun.time.monotonic", side_effect=[0, 11]),
+    ):
+        if failure == "sink":
+            recording.return_value.set_sinks.side_effect = RuntimeError("cannot create sink")
+        with pytest.raises(RuntimeError, match=r"cannot create sink|could not start"), background_server(12345):
+            pytest.fail("Server startup should fail")
+    recording.return_value.disconnect.assert_called_once_with()
+    assert 12345 not in _BACKGROUND_SERVERS
 
 
 def test_compose_publishes_rerun_only_on_host_loopback() -> None:

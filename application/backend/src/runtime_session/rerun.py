@@ -8,14 +8,11 @@ images are the latest store frames, not necessarily those used by an inference.
 from __future__ import annotations
 
 import socket
-import subprocess  # nosec B404
-import sys
 import threading
 import time
 from collections import deque
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, replace
-from importlib.resources import files  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode, urlsplit
 
@@ -40,7 +37,7 @@ _BACKGROUND_SERVERS: dict[int, _BackgroundServer] = {}
 
 @dataclass
 class _BackgroundServer:
-    process: subprocess.Popen[bytes]
+    recording: RecordingStream
     users: int = 0
 
 
@@ -52,48 +49,30 @@ def _listening(port: int) -> bool:
         return False
 
 
-def _stop_server(process: subprocess.Popen[bytes]) -> None:
-    process.terminate()
-    try:
-        process.wait(timeout=3)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
-
-
 @contextmanager
 def _background_server(port: int, *, spawn: bool = True) -> Iterator[None]:
     """Lease a Studio-owned server, optionally starting one; never own external servers."""
+    import rerun as rr
+
     with _SPAWN_LOCK:
         server = _BACKGROUND_SERVERS.get(port)
         if server is None and spawn and not _listening(port):
-            # Fixed packaged executable and flags; RerunSettings validates the port.
-            process = subprocess.Popen(  # noqa: S603  # nosec B603
-                [
-                    str(files("rerun_cli").joinpath("rerun.exe" if sys.platform == "win32" else "rerun")),
-                    "--serve-grpc",
-                    "--bind",
-                    get_settings().rerun_bind_host,
-                    "--port",
-                    str(port),
-                    "--server-memory-limit",
-                    "256MiB",
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            # A dedicated stream owns the server so individual runs can disconnect
+            # without shutting it down while other recordings still use it.
+            recording = rr.RecordingStream("physicalai-studio-server")
             try:
+                recording.set_sinks(
+                    rr.GrpcServerSink(get_settings().rerun_bind_host, port, server_memory_limit="256MiB")
+                )
                 deadline = time.monotonic() + 10
                 while not _listening(port):
-                    if process.poll() is not None or time.monotonic() >= deadline:
+                    if time.monotonic() >= deadline:
                         raise RuntimeError(f"Rerun background server could not start on port {port}")
                     time.sleep(0.05)
             except BaseException:
-                _stop_server(process)
+                recording.disconnect()
                 raise
-            server = _BackgroundServer(process)
+            server = _BackgroundServer(recording)
             _BACKGROUND_SERVERS[port] = server
         if server is not None:
             server.users += 1
@@ -104,7 +83,7 @@ def _background_server(port: int, *, spawn: bool = True) -> Iterator[None]:
             if server is not None:
                 server.users -= 1
                 if server.users == 0:
-                    _stop_server(server.process)
+                    server.recording.disconnect()
                     del _BACKGROUND_SERVERS[port]
 
 
