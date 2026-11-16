@@ -367,6 +367,10 @@ class Settings(BaseSettings):
         return Path(value).expanduser()
 
     aws_enabled: bool = Field(default=False, alias="AWS_ENABLED")
+    greengrass_config_path: Path = Field(
+        default=Path("/var/snap/aws-iot-greengrass/common/greengrass/v2/config.yaml"),
+        alias="GREENGRASS_CONFIG_PATH",
+    )
 
     # Server
     host: str = Field(default="127.0.0.1", alias="HOST")

@@ -45,9 +45,7 @@ def test_aws_access_rejected_before_reading_credentials(operation: str) -> None:
                 check_credentials(AwsCredentialSelection(profile_name="studio"))
             elif operation == "configuration":
                 resolve_aws_batch_configuration(
-                    AwsBatchProviderConfiguration(
-                        profile_name="studio", configuration_uri="s3://config-bucket/studio-config.json"
-                    )
+                    AwsBatchProviderConfiguration(profile_name="studio", stack_id="123456789012-eu-west-1-f4a9b2c0")
                 )
             else:
                 _make_session(

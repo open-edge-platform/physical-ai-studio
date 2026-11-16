@@ -1,9 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |-
-  Creates AWS Batch resources for Physical AI Studio training jobs.
+  Creates AWS Batch resources for Physical AI Studio training jobs and the shared
+  AWS IoT Greengrass V2 entities for the robot fleet.
   Supported regions: us-east-1 (N. Virginia), us-west-2 (Oregon), and eu-central-1 (Frankfurt).
   Switch the AWS Console to one of the supported regions before creating this stack.
   Compute environments scale to zero when no jobs are running.
+  Resource names end with the first 8 characters of the UUID CloudFormation generates
+  for this stack, for example pai-jobs-<stack-uuid>.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -12,9 +15,18 @@ Metadata:
           default: Job limits
         Parameters:
           - JobTimeoutSeconds
+      - Label:
+          default: Robot fleet (AWS IoT Greengrass)
+        Parameters:
+          - RobotArtifactBucketName
+          - RobotCredentialDurationSeconds
     ParameterLabels:
       JobTimeoutSeconds:
         default: Maximum job duration (seconds)
+      RobotArtifactBucketName:
+        default: Additional S3 bucket robots can read and write (optional)
+      RobotCredentialDurationSeconds:
+        default: Robot credential duration (seconds)
 
 Parameters:
   JobTimeoutSeconds:
@@ -25,6 +37,22 @@ Parameters:
     Description: >-
       AWS Batch terminates a job that runs longer than this (default 24 hours), so a hung
       run cannot accrue charges indefinitely.
+
+  RobotArtifactBucketName:
+    Type: String
+    Default: ""
+    Description: Leave empty to grant robots no additional S3 access.
+    AllowedPattern: "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+
+  RobotCredentialDurationSeconds:
+    Type: Number
+    Default: 3600
+    MinValue: 900
+    MaxValue: 43200
+    Description: Lifetime of credentials vended to robots through the IoT role alias.
+
+Conditions:
+  HasRobotArtifactBucket: !Not [!Equals [!Ref RobotArtifactBucketName, ""]]
 
 Mappings:
   RegionInstanceTypes:
@@ -164,6 +192,9 @@ Resources:
   JobsBucket:
     Type: AWS::S3::Bucket
     Properties:
+      BucketName: !Sub
+        - pai-jobs-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -215,6 +246,11 @@ Resources:
   StudioRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub
+        - pai-studio-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      # Must be at least the role alias credential duration.
+      MaxSessionDuration: 43200
       # Trusting the account root lets any IAM principal in this account that
       # holds sts:AssumeRole take this role. Suitable for a single-operator
       # development account; restrict Principal.AWS to specific users/roles
@@ -226,7 +262,52 @@ Resources:
             Principal:
               AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
             Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: credentials.iot.amazonaws.com
+            Action: sts:AssumeRole
       Policies:
+        - PolicyName: RobotGreengrass
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GreengrassLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/greengrass/*
+              - Sid: EcrAuth
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: EcrPull
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
+              - !If
+                - HasRobotArtifactBucket
+                - Sid: RobotArtifactBucket
+                  Effect: Allow
+                  Action:
+                    - s3:GetBucketLocation
+                    - s3:ListBucket
+                  Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}
+                - !Ref AWS::NoValue
+              - !If
+                - HasRobotArtifactBucket
+                - Sid: RobotArtifactObjects
+                  Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                  Resource: !Sub arn:${AWS::Partition}:s3:::${RobotArtifactBucketName}/*
+                - !Ref AWS::NoValue
         - PolicyName: StudioJobStorage
           PolicyDocument:
             Version: "2012-10-17"
@@ -434,6 +515,9 @@ Resources:
   G4dnJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      JobQueueName: !Sub
+        - pai-g4dn-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       State: ENABLED
       Priority: 1
       ComputeEnvironmentOrder:
@@ -443,6 +527,9 @@ Resources:
   G6eJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      JobQueueName: !Sub
+        - pai-g6e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       State: ENABLED
       Priority: 1
       ComputeEnvironmentOrder:
@@ -452,6 +539,9 @@ Resources:
   G7eJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      JobQueueName: !Sub
+        - pai-g7e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       State: ENABLED
       Priority: 1
       ComputeEnvironmentOrder:
@@ -461,6 +551,9 @@ Resources:
   TrainerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
+      LogGroupName: !Sub
+        - /pai/trainer/${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       RetentionInDays: 14
 
   # S3 contract between Studio and the one-shot trainer container. Studio
@@ -471,6 +564,9 @@ Resources:
   G4dnJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
+      JobDefinitionName: !Sub
+        - pai-g4dn-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       Type: container
       Parameters:
         job_prefix: ""
@@ -509,6 +605,9 @@ Resources:
   G6eJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
+      JobDefinitionName: !Sub
+        - pai-g6e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       Type: container
       Parameters:
         job_prefix: ""
@@ -547,6 +646,9 @@ Resources:
   G7eJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
+      JobDefinitionName: !Sub
+        - pai-g7e-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
       Type: container
       Parameters:
         job_prefix: ""
@@ -594,9 +696,15 @@ Resources:
           - Effect: Allow
             Action: batch:SubmitJob
             Resource:
-              - !Ref G4dnJobDefinition
-              - !Ref G6eJobDefinition
-              - !Ref G7eJobDefinition
+              - !Sub
+                - arn:${AWS::Partition}:batch:${AWS::Region}:${AWS::AccountId}:job-definition/pai-g4dn-${StackUuid}*
+                - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+              - !Sub
+                - arn:${AWS::Partition}:batch:${AWS::Region}:${AWS::AccountId}:job-definition/pai-g6e-${StackUuid}*
+                - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+              - !Sub
+                - arn:${AWS::Partition}:batch:${AWS::Region}:${AWS::AccountId}:job-definition/pai-g7e-${StackUuid}*
+                - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
               - !Ref G4dnJobQueue
               - !Ref G6eJobQueue
               - !Ref G7eJobQueue
@@ -660,7 +768,8 @@ Resources:
                   if event["RequestType"] == "Delete":
                       bucket = boto3.resource("s3").Bucket(event["ResourceProperties"]["BucketName"])
                       bucket.object_versions.delete()
-                      bucket.multipart_uploads.abort()
+                      for upload in bucket.multipart_uploads.all():
+                          upload.abort()
                   else:
                       configuration = event["ResourceProperties"]["Configuration"]
                       configuration["schema_version"] = int(configuration["schema_version"])
@@ -696,7 +805,46 @@ Resources:
             queue: !Ref G7eJobQueue
             job_definition: !Ref G7eJobDefinition
 
+  # Robot fleet: robots exchange their certificate for StudioRole credentials.
+  StudioRoleAlias:
+    Type: AWS::IoT::RoleAlias
+    Properties:
+      RoleAlias: !Sub
+        - pai-studio-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      RoleArn: !GetAtt StudioRole.Arn
+      CredentialDurationSeconds: !Ref RobotCredentialDurationSeconds
+
+  RobotIoTPolicy:
+    Type: AWS::IoT::Policy
+    Properties:
+      PolicyName: !Sub
+        - pai-robot-${StackUuid}
+        - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: iot:Connect
+            Resource: !Sub arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:client/${!iot:Connection.Thing.ThingName}*
+          - Effect: Allow
+            Action:
+              - iot:Publish
+              - iot:Receive
+            Resource: !Sub arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topic/*
+          - Effect: Allow
+            Action: iot:Subscribe
+            Resource: !Sub arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topicfilter/*
+          - Effect: Allow
+            Action: greengrass:*
+            Resource: "*"
+          - Effect: Allow
+            Action: iot:AssumeRoleWithCertificate
+            Resource: !GetAtt StudioRoleAlias.RoleAliasArn
+
 Outputs:
-  ConfigurationUri:
-    Description: S3 configuration URI for the Studio training target. The backend AWS identity requires s3:GetObject on this object.
-    Value: !Sub s3://${JobsBucket}/studio-config.json
+  StackIdentifier:
+    Description: <account-id>-<region>-<stack-uuid>; resource names and ARNs derive from it, e.g. pai-studio-<stack-uuid>.
+    Value: !Sub
+      - ${AWS::AccountId}-${AWS::Region}-${StackUuid}
+      - StackUuid: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
