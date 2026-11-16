@@ -451,6 +451,7 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 image_grid_thw=input_sample["image_grid_thw"],
                 embodiment_id=input_sample["embodiment_id"],
                 num_views=input_sample["num_views"],
+                # TODO: drop once the OpenVINO GPU f16 shared-weight vl_mlp.w3 bug is fixed.
                 untie_first_step=True,
             ),
         ):

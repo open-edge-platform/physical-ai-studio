@@ -259,14 +259,16 @@ F16_SAFE_RESIDUAL_SCALE = 16.0
 def _residual_stream_layout(
     msat: MSAT,
 ) -> tuple[list[nn.Linear], list[nn.LayerNorm | RMSNorm], list[nn.Module]] | None:
-    """Return the linear writers, norm readers and pass-through writers of the SA residual stream.
+    """Return the writers and norm readers of the SA residual stream.
 
     Args:
         msat: The action head to inspect.
 
     Returns:
-        ``(linears, norms, passthrough)`` or ``None`` when some reader of the
+        ``(linears, norms, hooked_writers)`` or ``None`` when some reader of the
         stream is not scale-invariant, so the stream cannot be rescaled exactly.
+        ``linears`` are rescaled through their weights; ``hooked_writers``
+        (time token projection, ``nn.Identity`` VL projection) through their output.
     """
     if msat.use_physics:
         return None
@@ -281,12 +283,12 @@ def _residual_stream_layout(
     if len(scale_invariant) != len(norms):
         return None
     linears = [m for b in double for m in (b.sa_proj, b.sa_mlp.w3)] + [b.linear2 for b in single]
-    passthrough: list[nn.Module] = [msat.time_token_proj]
+    hooked_writers: list[nn.Module] = [msat.time_token_proj]
     if isinstance(msat.vl_proj_to_sa, nn.Linear):
         linears.append(msat.vl_proj_to_sa)
     else:
-        passthrough.append(msat.vl_proj_to_sa)
-    return linears, scale_invariant, passthrough
+        hooked_writers.append(msat.vl_proj_to_sa)
+    return linears, scale_invariant, hooked_writers
 
 
 @contextmanager
@@ -309,33 +311,47 @@ def f16_safe_residual_stream(msat: MSAT, scale: float = F16_SAFE_RESIDUAL_SCALE)
     if layout is None:
         yield
         return
-    linears, norms, passthrough = layout
+    linears, norms, hooked_writers = layout
     inv = 1.0 / scale
 
-    def scale_stream_input(
+    def shrink_sa_input_tokens(
         _module: nn.Module,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ) -> tuple[tuple[Any, ...], dict[str, Any]]:
+        """Divide MSAT's ``hidden_states`` (the SA tokens that seed the stream) by ``scale``.
+
+        Returns:
+            The forward ``(args, kwargs)`` with ``hidden_states`` scaled.
+        """
         if "hidden_states" in kwargs:
             return args, {**kwargs, "hidden_states": kwargs["hidden_states"] * inv}
         return (args[0] * inv, *args[1:]), kwargs
 
-    def scale_output(_module: nn.Module, _args: tuple[Any, ...], output: torch.Tensor) -> torch.Tensor:
+    def shrink_writer_output(_module: nn.Module, _args: tuple[Any, ...], output: torch.Tensor) -> torch.Tensor:
+        """Divide the output of a hooked writer (time token / VL tokens joining the stream) by ``scale``.
+
+        Returns:
+            The scaled module output.
+        """
         return output * inv
 
     original_eps = [norm.eps for norm in norms]
     handles: list[torch.utils.hooks.RemovableHandle] = []
     scaled: list[torch.Tensor] = []
     try:
-        handles.append(msat.register_forward_pre_hook(scale_stream_input, with_kwargs=True))
-        handles.extend(module.register_forward_hook(scale_output) for module in passthrough)
+        handles.append(msat.register_forward_pre_hook(shrink_sa_input_tokens, with_kwargs=True))
+        handles.extend(module.register_forward_hook(shrink_writer_output) for module in hooked_writers)
         with torch.no_grad():
             for linear in linears:
                 for tensor in (linear.weight, linear.bias):
                     if tensor is not None:
                         tensor.mul_(inv)
                         scaled.append(tensor)
+        # Variance shrinks by scale**2, so eps must too for the norm output to stay exact:
+        #   x' = x/s  =>  mean' = mean/s,  var' = var/s**2
+        #   (x' - mean') / sqrt(var' + eps') = (x - mean) / sqrt(var + s**2 * eps')
+        #   which equals LN(x) iff eps' = eps / s**2  (same for RMSNorm without the mean).
         for norm, eps in zip(norms, original_eps, strict=True):
             norm.eps = eps * inv * inv
         yield
