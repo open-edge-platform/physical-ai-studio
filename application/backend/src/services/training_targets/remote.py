@@ -12,7 +12,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from exceptions import InvalidResourceError, RemoteResumeUnsupportedError
 from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJobPayload
 from schemas.remote_trainer import AwsBatchConnection
-from services.aws_auth_service import AwsAuthenticationRequiredError, authentication_issue
+from services.aws_auth_service import AwsAuthenticationRequiredError, get_credential_provider
 from services.aws_batch import _make_session, aws_batch_trainer_url
 from services.remote_trainer_service import RemoteTrainerService
 
@@ -43,7 +43,7 @@ class RemoteTrainingTargetHandler:
             try:
                 await asyncio.to_thread(_make_session, remote_trainer.connection)
             except (BotoCoreError, ClientError) as error:
-                if issue := authentication_issue(error, remote_trainer.connection.profile_name):
+                if issue := get_credential_provider(remote_trainer.connection).diagnose_error(error):
                     raise AwsAuthenticationRequiredError(issue) from error
                 raise
         if remote_trainer.url is None and not is_batch:

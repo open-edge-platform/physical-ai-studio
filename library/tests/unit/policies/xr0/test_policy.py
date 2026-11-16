@@ -149,6 +149,7 @@ def test_build_optimizer_falls_back_without_torchao(
         optimizer = _build_optimizer(XR0Config(), [{"params": [torch.nn.Parameter(torch.ones(1))]}])
     assert type(optimizer) is torch.optim.AdamW
     assert "requires the 'torchao' package" in caplog.text
+    assert "`cpu`, `cu132`, or `xpu`" in caplog.text
 
 
 class TestXR0Policy:
