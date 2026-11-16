@@ -11,12 +11,22 @@ from typing import Any
 from uuid import UUID  # noqa: TC003
 
 from loguru import logger
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from training import TrainingJobSpec
 
 _DEFAULT_PROTOCOL_VERSION = 1
+
+TRAINER_CAPABILITIES: tuple[str, ...] = ("all_devices",)
+"""Optional features this trainer image supports, reported by ``/health``.
+
+Lets Studio offer a feature only to trainers that can run it, without a
+protocol bump: an image that predates a feature simply does not list it.
+
+- ``all_devices``: trains one job on every CUDA device with DDP
+  (``TrainingJobSpec.all_devices``).
+"""
 
 
 def _installed_library_version() -> str:
@@ -125,6 +135,12 @@ class HealthInfo(BaseSettings):
                 _DEFAULT_PROTOCOL_VERSION,
             )
             return _DEFAULT_PROTOCOL_VERSION
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def capabilities(self) -> list[str]:
+        """Optional features this image supports (see :data:`TRAINER_CAPABILITIES`)."""
+        return list(TRAINER_CAPABILITIES)
 
 
 class StorageInfo(BaseModel):

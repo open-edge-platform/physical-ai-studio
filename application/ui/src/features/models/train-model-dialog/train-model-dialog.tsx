@@ -218,10 +218,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         ) === true;
     const remoteDevices = isBatchTarget ? [] : (remoteTrainerHealth?.devices ?? []);
     const busyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget?.id ?? ''), remoteDevices);
-    // Training on every GPU is opt-in and only offered by trainers with several CUDA GPUs.
+    // Training on every GPU is opt-in, and only offered by trainers with several CUDA GPUs
+    // whose image reports it can (older trainer images reject the request).
     const remoteCudaDevices = remoteDevices.filter((device) => device.type === 'cuda');
+    const trainerSupportsAllGpus = remoteTrainerHealth?.capabilities?.includes('all_devices') === true;
     const allGpusCount =
-        isRemoteTarget && !isBatchTarget && remoteCudaDevices.length > 1 ? remoteCudaDevices.length : 0;
+        isRemoteTarget && !isBatchTarget && trainerSupportsAllGpus && remoteCudaDevices.length > 1
+            ? remoteCudaDevices.length
+            : 0;
     const isAllGpus = isRemoteTarget && !isBatchTarget && selectedGpuKey === ALL_GPUS_KEY;
     const trainingDeviceCount = isAllGpus ? remoteCudaDevices.length : 1;
     // With every GPU selected, the first one stands in for "the device" wherever a
@@ -390,6 +394,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 const latestBusyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget.id), latestDevices);
                 if (isAllGpus) {
                     const latestCudaDevices = latestDevices.filter((device) => device.type === 'cuda');
+                    if (latestHealth.capabilities?.includes('all_devices') !== true) {
+                        setSubmitError(
+                            "This trainer's image doesn't support training on all GPUs yet. " +
+                                'Choose a single GPU instead.'
+                        );
+                        return;
+                    }
                     if (latestCudaDevices.length < 2) {
                         setSubmitError('This trainer no longer has several CUDA GPUs. Choose a single GPU instead.');
                         return;

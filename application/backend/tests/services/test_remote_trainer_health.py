@@ -190,7 +190,29 @@ async def test_check_remote_trainer_reports_healthy_devices() -> None:
     assert result.storage is not None
     assert result.storage.total_bytes == 1_000_000_000_000
     assert result.storage.free_bytes == 600_000_000_000
+    # A trainer image that predates capability reporting lists none.
+    assert result.capabilities == []
     async_client.assert_called_once_with(timeout=httpx.Timeout(5.0), follow_redirects=False, trust_env=False)
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_the_trainers_capabilities() -> None:
+    trainer = _trainer()
+    client = _Client(
+        [
+            _Response({"status": "healthy", "capabilities": ["all_devices", 7, "future_feature"]}),
+            _Response([{"type": "cuda", "name": "RTX 3090", "memory": 24_000_000_000, "index": 0}]),
+            _Response({"total_bytes": 1, "free_bytes": 1}),
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.capabilities == ["all_devices", "future_feature"]
 
 
 @pytest.mark.anyio

@@ -29,6 +29,7 @@ def test_health_reports_image_compatibility_metadata(monkeypatch) -> None:
         "build_date": "2026-07-14T08:00:00Z",
         "application_version": "0.1.0",
         "library_version": _installed_library_version(),
+        "capabilities": ["all_devices"],
     }
 
 
@@ -73,4 +74,5 @@ def test_health_endpoint_serializes_by_field_name_not_env_alias(monkeypatch) -> 
         "build_date": "2026-07-14T08:00:00Z",
         "application_version": "0.1.0",
         "library_version": _installed_library_version(),
+        "capabilities": ["all_devices"],
     }

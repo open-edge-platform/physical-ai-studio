@@ -656,6 +656,7 @@ describe('TrainModelDialog', () => {
             http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
                 HttpResponse.json({
                     ...healthyRemoteTrainer,
+                    capabilities: ['all_devices'],
                     devices: [
                         { type: 'cuda', index: 0, name: 'RTX 3090', memory: 24_000_000_000 },
                         { type: 'cuda', index: 1, name: 'RTX 3090', memory: 24_000_000_000 },
@@ -690,6 +691,33 @@ describe('TrainModelDialog', () => {
         expect(submitted.auto_scale_batch_size).toBe(false);
     });
 
+    it('does not offer all GPUs when the trainer image does not support it', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    // An image that predates multi-GPU training reports no capabilities.
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 24_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        await user.click(await screen.findByRole('button', { name: /CUDA 0 — GPU zero/i }));
+
+        expect(await screen.findByRole('option', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: /All GPUs/i })).not.toBeInTheDocument();
+    });
+
     it('does not offer all GPUs when the trainer has no pair of CUDA GPUs', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();
@@ -697,6 +725,7 @@ describe('TrainModelDialog', () => {
             http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
                 HttpResponse.json({
                     ...healthyRemoteTrainer,
+                    capabilities: ['all_devices'],
                     devices: [
                         { type: 'xpu', index: 0, name: 'Arc A', memory: 16_000_000_000 },
                         { type: 'xpu', index: 1, name: 'Arc B', memory: 16_000_000_000 },
