@@ -8,6 +8,8 @@ Use remote training when the Studio backend host does not meet the policy's GPU 
 
 If you select **Set up Docker and GPU support** for an Ubuntu SSH trainer, Studio installs missing packages and configures Docker on that host. The SSH user needs passwordless sudo for these changes (and for a separately confirmed reboot); an already-ready host does not need it for the prerequisite check. A root SSH user does not need sudo.
 
+CUDA trainers need NVIDIA driver branch 595 or newer. Automatic setup may install or upgrade the driver and require a host reboot.
+
 On the **SSH host**, have an administrator grant the dedicated SSH user non-interactive sudo. For example, replace `trainer` with the SSH username you enter in Studio:
 
 ```bash
