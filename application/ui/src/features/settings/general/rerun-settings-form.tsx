@@ -76,6 +76,7 @@ export const RerunSettingsForm = ({ rerun }: RerunSettingsFormProps) => {
                         value={values.spawn_port}
                         minValue={1}
                         maxValue={65535}
+                        formatOptions={{ useGrouping: false, maximumFractionDigits: 0 }}
                         step={1}
                         isDisabled={!values.enabled}
                         onChange={(spawn_port) => {

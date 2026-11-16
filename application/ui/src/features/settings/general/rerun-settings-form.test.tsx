@@ -46,7 +46,7 @@ describe('RerunSettingsForm', () => {
         expect(
             screen.getByRole('checkbox', { name: 'Open the native viewer when a model run starts' })
         ).not.toBeChecked();
-        expect(screen.getByRole('textbox', { name: /Local Rerun port/ })).toHaveValue('9,876');
+        expect(screen.getByRole('textbox', { name: /Local Rerun port/ })).toHaveValue('9876');
         expect(screen.getByText(/Changes apply to new runs/)).toBeInTheDocument();
     });
 
