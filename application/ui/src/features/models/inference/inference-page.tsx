@@ -28,13 +28,13 @@ const InferenceWorkspace = ({
     model: SchemaModel;
     environment: SchemaEnvironmentDraft | null;
 }) => {
-    const { project_id, backend, device } = useInferenceParams();
+    const { project_id, backend, device, variant } = useInferenceParams();
 
     return (
         <RuntimeSessionProvider
             project_id={project_id}
             environment={environment}
-            model={{ model_id: model.id!, backend, device: device ?? 'auto' }}
+            model={{ model_id: model.id!, backend, device: device ?? 'auto', variant }}
         >
             <Grid
                 areas={['header', 'content', 'footer']}

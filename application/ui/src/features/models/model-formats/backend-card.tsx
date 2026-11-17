@@ -16,7 +16,9 @@ import { DownloadIcon } from '@geti-ui/ui/icons';
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
+import { OptimizeModel } from './optimize-model';
 import { RuntimeExportDialog } from './runtime-export-dialog';
+import { useVariantSelection, VariantSelection } from './variant-selection';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
 type ExportBackend = components['schemas']['physicalai__export__backends__ExportBackend'];
@@ -80,7 +82,7 @@ const formatSize = (bytes: number): string => {
     return `${mb.toFixed(1)} MB`;
 };
 
-const ModelFormatSize = ({ exportDetail }: { exportDetail: BackendExportDetail | undefined }) => {
+const ModelFormatSize = ({ exportDetail }: { exportDetail: Pick<BackendExportDetail, 'size_bytes'> | undefined }) => {
     if (exportDetail === undefined) {
         return (
             <Flex direction='column' gap='size-10'>
@@ -98,8 +100,8 @@ const ModelFormatSize = ({ exportDetail }: { exportDetail: BackendExportDetail |
     );
 };
 
-const ModelPrecision = ({ exportDetail }: { exportDetail: BackendExportDetail | undefined }) => {
-    if (exportDetail === undefined) {
+const ModelPrecision = ({ isAvailable, isInt8 }: { isAvailable: boolean; isInt8: boolean }) => {
+    if (!isAvailable) {
         return (
             <Flex direction='column' gap='size-10'>
                 <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Precision</Text>
@@ -108,11 +110,10 @@ const ModelPrecision = ({ exportDetail }: { exportDetail: BackendExportDetail | 
         );
     }
 
-    // At the moment we only support FP16 models
     return (
         <Flex direction='column' gap='size-10'>
             <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Precision</Text>
-            <Text>FP16</Text>
+            <Text>{isInt8 ? 'INT8 (weights)' : 'FP16'}</Text>
         </Flex>
     );
 };
@@ -124,11 +125,13 @@ interface BackendCardProps {
 }
 
 export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProps) => {
-    const exportDetail = modelDetail.exports.find(({ type }) => type === backendType);
-    const isAvailable = exportDetail !== undefined;
+    const backendDetail = modelDetail.exports.find(({ type }) => type === backendType);
+    const selection = useVariantSelection(model.id, backendType, 'original', modelDetail);
+    const exportDetail = selection.selected ?? backendDetail;
+    const isAvailable = backendDetail !== undefined;
     const backend = INFERENCE_BACKENDS[backendType];
     const downloadUrl = fetchClient.PATH('/api/models/{model_id}/exports/{backend}/download', {
-        params: { path: { model_id: model.id!, backend: backendType } },
+        params: { path: { model_id: model.id!, backend: backendType }, query: { variant: selection.variant } },
     });
 
     return (
@@ -152,10 +155,23 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
 
                 <Divider size='S' />
 
+                {selection.variants.length > 1 && (
+                    <View paddingX='size-200'>
+                        <VariantSelection
+                            variants={selection.variants}
+                            variant={selection.variant}
+                            onChange={selection.setVariant}
+                        />
+                    </View>
+                )}
+
                 <View paddingX='size-200'>
                     <Flex gap='size-400' marginTop='size-100' width='100%'>
                         <ModelFormatSize exportDetail={exportDetail} />
-                        <ModelPrecision exportDetail={exportDetail} />
+                        <ModelPrecision
+                            isAvailable={isAvailable}
+                            isInt8={selection.selected?.weight_compression === 'int8_sym'}
+                        />
                         {isAvailable && (
                             <View marginStart='auto' alignSelf={'center'}>
                                 <Flex gap='size-100'>
@@ -172,6 +188,7 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                                                     close={close}
                                                     model={model}
                                                     backend={backendType}
+                                                    variant={selection.variant}
                                                 />
                                             )}
                                         </DialogTrigger>
@@ -200,6 +217,14 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                         )}
                     </Flex>
                 </View>
+                {isAvailable && backendType === 'openvino' && (
+                    <View paddingX='size-200'>
+                        <OptimizeModel
+                            modelId={model.id!}
+                            hasInt8={selection.variants.some((variant) => variant.id === 'int8')}
+                        />
+                    </View>
+                )}
             </Flex>
         </View>
     );
