@@ -1,6 +1,6 @@
 # Adds issues/PRs labeled track-on-pai-board to the dual-era Physical AI
-# org project (open-edge-platform/projects/45). Works in Era 1 (two repos)
-# and Era 2 (Studio source + OpenVINO mirror) without changing this workflow.
+# org project (open-edge-platform/projects/45), and archives them when closed
+# so Done work does not stay on the board.
 #
 # Requires repository secret PAI_BOARD_TOKEN: a fine-grained PAT or GitHub App
 # token with access to open-edge-platform projects (read/write projects) and
@@ -13,22 +13,30 @@ on:
       - opened
       - labeled
       - reopened
+      - closed
   # Does not checkout or execute contributed code; only calls the GitHub API
-  # with PAI_BOARD_TOKEN to add the issue/PR to the org project.
+  # with PAI_BOARD_TOKEN to add/archive project items.
   pull_request_target:
     types:
       - opened
       - labeled
-      - reopened # zizmor: ignore[dangerous-triggers]
+      - reopened
+      - closed # zizmor: ignore[dangerous-triggers]
 
 permissions: {}
+
+env:
+  PROJECT_ID: PVT_kwDOC9nek84Br_v4
+  PROJECT_URL: https://github.com/orgs/open-edge-platform/projects/45
 
 jobs:
   add-to-project:
     if: >-
-      github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'track-on-pai-board')
-      || github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'track-on-pai-board')
-      || (github.event.action == 'labeled' && github.event.label.name == 'track-on-pai-board')
+      github.event.action != 'closed' && (
+        (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'track-on-pai-board'))
+        || (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'track-on-pai-board'))
+        || (github.event.action == 'labeled' && github.event.label.name == 'track-on-pai-board')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner
@@ -43,6 +51,64 @@ jobs:
       - name: Add to Physical AI project
         uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
         with:
-          project-url: https://github.com/orgs/open-edge-platform/projects/45
+          project-url: ${{ env.PROJECT_URL }}
           github-token: ${{ secrets.PAI_BOARD_TOKEN }}
           labeled: track-on-pai-board
+
+  archive-when-closed:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: Archive closed item on Physical AI project
+        env:
+          GH_TOKEN: ${{ secrets.PAI_BOARD_TOKEN }}
+          CONTENT_ID: ${{ github.event_name == 'issues' && github.event.issue.node_id || github.event.pull_request.node_id }}
+        run: |
+          set -euo pipefail
+          ITEM_ID="$(gh api graphql -f query='
+            query($content:ID!, $project:ID!) {
+              node(id: $content) {
+                ... on Issue {
+                  projectItems(first: 20) {
+                    nodes {
+                      id
+                      isArchived
+                      project { ... on ProjectV2 { id } }
+                    }
+                  }
+                }
+                ... on PullRequest {
+                  projectItems(first: 20) {
+                    nodes {
+                      id
+                      isArchived
+                      project { ... on ProjectV2 { id } }
+                    }
+                  }
+                }
+              }
+            }' -f content="$CONTENT_ID" -f project="$PROJECT_ID" \
+            --jq ".data.node.projectItems.nodes[]
+              | select(.project.id == \"$PROJECT_ID\" and .isArchived == false)
+              | .id" \
+            | head -n1)"
+          if [ -z "$ITEM_ID" ]; then
+            echo "No active project item for $CONTENT_ID; nothing to archive."
+            exit 0
+          fi
+          gh api graphql -f query='
+            mutation($project:ID!, $item:ID!) {
+              archiveProjectV2Item(input: {projectId: $project, itemId: $item}) {
+                item { id isArchived }
+              }
+            }' -f project="$PROJECT_ID" -f item="$ITEM_ID" \
+            --jq '.data.archiveProjectV2Item.item'
