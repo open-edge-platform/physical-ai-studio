@@ -1,6 +1,6 @@
-# Adds issues/PRs labeled track-on-pai-board to the dual-era Physical AI
-# org project (open-edge-platform/projects/45), and archives them when closed
-# so Done work does not stay on the board.
+# Adds issues/PRs labeled track-on-pai-board to the Physical AI org project
+# (open-edge-platform/projects/45), and archives them when closed so Done
+# work does not stay on the board.
 #
 # Requires repository secret PAI_BOARD_TOKEN: a fine-grained PAT or GitHub App
 # token with access to open-edge-platform projects (read/write projects) and
