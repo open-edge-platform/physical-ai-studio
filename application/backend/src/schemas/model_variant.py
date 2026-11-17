@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from utils.filesystem import FileTree
+
 VariantId = Literal["original", "int8"]
 VARIANT_IDS: frozenset[VariantId] = frozenset({"original", "int8"})
 BACKENDS = frozenset({"openvino", "onnx", "torch", "executorch"})
@@ -39,35 +41,21 @@ class ExportPackage:
         """Resolve a package location, rejecting unknown names and symbolic links."""
         if backend not in BACKENDS or variant not in VARIANT_IDS:
             raise ValueError("Unknown export backend or variant")
-        root = model_path.resolve()
-        directory = root / "exports" / backend
+        relative = Path("exports") / backend
         if variant != "original":
-            directory = directory / "variants" / variant
-        if not directory.resolve().is_relative_to(root) or any(
-            parent.is_symlink() for parent in (directory, *directory.parents) if parent.is_relative_to(root)
-        ):
-            raise ValueError("Export paths must not contain symbolic links")
-        return cls(directory, backend, variant)
+            relative = relative / "variants" / variant
+        return cls(FileTree(model_path.absolute()).resolve(relative), backend, variant)
 
     @cached_property
     def files(self) -> tuple[Path, ...]:
-        """Package files, excluding sibling variants and private staging."""
-        files = []
-        root = self.directory.resolve()
-        for path in self.directory.rglob("*"):
-            relative = path.relative_to(self.directory)
-            if relative.parts[0] == "variants" or any(part.startswith(".") for part in relative.parts):
-                continue
-            if path.is_symlink() or not path.resolve().is_relative_to(root):
-                raise ValueError("Export packages must not contain symbolic links")
-            if path.is_file():
-                files.append(path)
-        return tuple(files)
+        """Package files, excluding sibling variants."""
+        return tuple(FileTree(self.directory).files(exclude=("variants",)))
 
     @cached_property
     def manifest(self) -> dict:
         """The manifest, validated against the package's local artifact files."""
-        manifest = json.loads((self.directory / "manifest.json").read_text(encoding="utf-8"))
+        path = FileTree(self.directory).resolve(Path("manifest.json"))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
         artifacts = manifest["model"]["artifacts"]
         if not isinstance(artifacts, dict) or self.backend not in artifacts:
             raise ValueError("Missing backend artifact")

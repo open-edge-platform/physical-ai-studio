@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from schemas.model_variant import ExportPackage
+from utils.filesystem import FileTree
 
 SNAPSHOT_DIR_PATTERN = re.compile(r"^snapshot_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
@@ -33,20 +34,8 @@ class ModelDownloadService:
         temporary_archive_path = Path(tempfile.gettempdir()) / f"model-{uuid4()}.zip"
 
         with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
-            for path in model_path.rglob("*"):
-                if not path.is_file():
-                    continue
-
+            for path in FileTree(model_path).files():
                 relative = path.relative_to(model_path)
-                if any(part.startswith(".") for part in relative.parts):
-                    continue
-                if any(
-                    (parent / ".unpublished").exists() for parent in path.parents if parent.is_relative_to(model_path)
-                ):
-                    continue
-                if path.is_symlink() or not path.resolve().is_relative_to(model_path.resolve()):
-                    raise ValueError("Model archives must not contain symbolic links")
-
                 if not include_snapshot and self._is_snapshot_path(relative):
                     continue
 

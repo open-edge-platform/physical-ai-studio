@@ -88,13 +88,34 @@ def test_package_requires_openvino_weights(tmp_path: Path) -> None:
         _ = ExportPackage(tmp_path, "openvino").manifest
 
 
+def test_package_keeps_dot_named_artifacts(tmp_path: Path) -> None:
+    write_package(tmp_path)
+    (tmp_path / ".tokenizer").write_text("tokenizer")
+    manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["model"]["preprocessor"] = {"artifact": ".tokenizer"}
+    manifest_path.write_text(json.dumps(manifest))
+    package = ExportPackage(tmp_path, "openvino")
+    assert (tmp_path / ".tokenizer") in package.files
+    assert package.artifact == tmp_path / "model.xml"
+
+
+def test_model_archive_uses_the_same_symlink_validation(tmp_path: Path) -> None:
+    root = tmp_path / "model"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "linked-directory").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="symbolic"):
+        ModelDownloadService().create_model_archive(root)
+
+
 def test_variant_discovery_and_downloads_keep_packages_separate(tmp_path: Path) -> None:
     model = Model(path=str(tmp_path), name="Policy", policy="act", project_id=uuid4(), properties={})
     original = ExportPackage.for_model(tmp_path, "openvino")
     variant = ExportPackage.for_model(tmp_path, "openvino", "int8")
     write_package(original.directory)
     write_package(variant.directory, VariantInfo(id="int8", weight_compression="int8_sym"))
-    (variant.directory / ".private").write_text("not exported")
     details = ModelService.get_backend_details(model)[0]
     assert [item.id for item in details.variants] == ["original", "int8"]
     assert details.size_bytes == details.variants[0].size_bytes
@@ -105,8 +126,6 @@ def test_variant_discovery_and_downloads_keep_packages_separate(tmp_path: Path) 
             assert set(archive.namelist()) == {"manifest.json", "model.xml", "model.bin"}
     finally:
         archive_path.unlink()
-    (variant.directory / ".unpublished").write_text(str(uuid4()))
-    assert set(model.export_packages()) == {("openvino", "original")}
 
 
 def test_variant_only_backend_is_not_counted_as_an_original(tmp_path: Path) -> None:

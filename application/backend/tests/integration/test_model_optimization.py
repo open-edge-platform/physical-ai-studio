@@ -20,6 +20,7 @@ from sqlalchemy.sql.dml import Update
 from api.dependencies import get_scheduler
 from db.engine import get_async_db_session
 from db.schema import Base, ProjectDB
+from exceptions import DuplicateJobException
 from main import app
 from schemas.base_job import JobStatus
 from schemas.dataset import Dataset
@@ -56,7 +57,6 @@ async def optimization(tmp_path, monkeypatch):
     models_dir.mkdir()
     settings = SimpleNamespace(models_dir=models_dir)
     monkeypatch.setattr("services.model_optimization_service.get_settings", lambda: settings)
-    monkeypatch.setattr("workers.model_optimization_worker.get_settings", lambda: settings)
     monkeypatch.setattr("workers.model_optimization_worker.get_async_db_session_ctx", session_scope)
     monkeypatch.setitem(app.dependency_overrides, get_async_db_session, dependency)
     monkeypatch.setitem(app.dependency_overrides, get_settings, lambda: settings)
@@ -155,6 +155,27 @@ async def test_original_copy_does_not_copy_other_variants(optimization):
     details = ModelService.get_backend_details(optimization.source)[0]
     assert details.size_bytes == next(item.size_bytes for item in details.variants if item.id == "original")
     assert details.size_bytes < sum(item.size_bytes for item in details.variants)
+
+
+async def test_staging_is_outside_the_model_and_adds_no_hidden_paths(optimization, monkeypatch):
+    def compress(path):
+        optimization.compress(path)
+        archive_path = ModelDownloadService().create_model_archive(Path(optimization.source.path))
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                assert not any("optimization" in name or "variants/int8" in name for name in archive.namelist())
+        finally:
+            archive_path.unlink()
+
+    monkeypatch.setattr("physicalai.export.hooks.compress_weights_openvino_int8_sym", compress)
+    job = await submit(optimization)
+    await worker(job).run_loop()
+    assert not ModelOptimizationService.staging(job.id).exists()
+    assert not any(
+        part.startswith(".")
+        for path in optimization.models_dir.rglob("*")
+        for part in path.relative_to(optimization.models_dir).parts
+    )
 
 
 @pytest.mark.parametrize("phase", ["queued", "before_compression", "during_compression", "failure"])
@@ -276,7 +297,7 @@ async def test_cancellation_wins_before_publication_even_if_process_signal_is_lo
         assert (await JobService(session).get_job_by_id(job.id)).status == JobStatus.CANCELED
 
 
-async def test_commit_failure_cleans_renamed_but_unpublished_package(optimization, monkeypatch):
+async def test_commit_failure_discards_staging_without_publishing(optimization, monkeypatch):
     job = await submit(optimization)
     execute, commit = AsyncSession.execute, AsyncSession.commit
 
@@ -294,45 +315,85 @@ async def test_commit_failure_cleans_renamed_but_unpublished_package(optimizatio
     monkeypatch.setattr(AsyncSession, "commit", fail)
     await worker(job).run_loop()
     assert not (optimization.root / "variants/int8").exists()
+    assert not ModelOptimizationService.staging(job.id).exists()
     async with optimization.sessions() as session:
         assert (await JobService(session).get_job_by_id(job.id)).status == JobStatus.FAILED
 
 
-async def test_completed_publication_marker_is_reconciled_without_database_migration(optimization):
+async def test_uncertain_commit_keeps_output_for_publication_recovery(optimization, monkeypatch):
+    from services.job_handlers import get_job_handler
+
     job = await submit(optimization)
-    await worker(job).run_loop()
-    marker = optimization.root / "variants/int8/.unpublished"
-    marker.write_text(str(job.id))
+    execute, commit = AsyncSession.execute, AsyncSession.commit
+
+    async def track(self, statement, *args, **kwargs):
+        if publication(statement):
+            self.info["publishing"] = True
+        return await execute(self, statement, *args, **kwargs)
+
+    async def fail_after_commit(self):
+        await commit(self)
+        if self.info.get("publishing"):
+            raise RuntimeError("Connection lost after commit")
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(AsyncSession, "execute", track)
+        patcher.setattr(AsyncSession, "commit", fail_after_commit)
+        await worker(job).run_loop()
+    assert ModelOptimizationService.staging(job.id).exists()
+    async with optimization.sessions() as session:
+        completed = await JobService(session).get_job_by_id(job.id)
+        assert completed.status == JobStatus.COMPLETED
+        await get_job_handler(job.type).recover(completed, JobService(session))
+    assert (optimization.root / "variants/int8/act.bin").read_bytes() == b"INT8"
+
+
+async def test_completed_job_recovers_publication_without_changing_reads(optimization, monkeypatch):
+    from services.job_handlers import get_job_handler
+
+    job = await submit(optimization)
+    publish = ModelOptimizationService.publish
+    with monkeypatch.context() as patcher:
+        patcher.setattr(ModelOptimizationService, "publish", MagicMock(side_effect=RuntimeError("worker exited")))
+        await worker(job).run_loop()
     assert ("openvino", "int8") not in optimization.source.export_packages()
     async with optimization.sessions() as session:
-        recovered = await ModelService(session).get_model_by_id(optimization.source.id)
-    assert ("openvino", "int8") in recovered.export_packages()
-    assert not marker.exists()
+        completed = await JobService(session).get_job_by_id(job.id)
+        assert completed.status == JobStatus.COMPLETED
+        model = await ModelService(session).get_model_by_id(optimization.source.id)
+        assert ("openvino", "int8") not in model.export_packages()
+        with pytest.raises(DuplicateJobException):
+            await submit(optimization)
+        handler = get_job_handler(job.type)
+        assert handler.needs_exit_recovery(job, completed)
+        await handler.recover(completed, JobService(session))
+        assert not handler.needs_exit_recovery(job, completed)
+    assert ("openvino", "int8") in model.export_packages()
+    publish(model, job.id)  # Repeated recovery must not overwrite a published package.
 
 
-async def test_orphan_recovery_only_removes_job_owned_unpublished_output(optimization):
+async def test_orphan_recovery_only_removes_job_staging(optimization):
     job = await submit(optimization)
     async with optimization.sessions() as session:
         await JobService(session).claim_pending_job(job.id, job.type)
     staging = ModelOptimizationService.staging(job.id)
     ModelOptimizationService.compress(optimization.source, staging, job.id)
-    (staging / ".unpublished").write_text(str(job.id))
     destination = optimization.root / "variants/int8"
-    destination.parent.mkdir()
-    staging.rename(destination)
     async with optimization.sessions() as session:
         from services.job_handlers import get_job_handler
 
         await get_job_handler(job.type).recover(job, JobService(session))
     assert not destination.exists()
+    assert not staging.exists()
     assert optimization.root.exists()
     assert (await submit(optimization)).id != job.id
 
 
-async def test_reservation_left_by_uncommitted_submission_can_be_reused(optimization):
-    reservation = Path(optimization.source.path) / ".variant-reservations/openvino-int8"
-    reservation.parent.mkdir()
-    reservation.write_text(str(uuid4()))
+async def test_uncommitted_submission_releases_its_database_reservation(optimization, monkeypatch):
+    with monkeypatch.context() as patcher:
+        patcher.setattr(AsyncSession, "commit", AsyncMock(side_effect=RuntimeError("commit failed")))
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await submit(optimization)
     assert (await submit(optimization)).payload.model_id == optimization.source.id
 
 

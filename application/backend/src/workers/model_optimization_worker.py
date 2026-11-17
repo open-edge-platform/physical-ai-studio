@@ -21,7 +21,6 @@ from services.event_processor import EventType
 from services.job_service import JobService
 from services.model_optimization_service import ModelOptimizationService
 from services.model_service import ModelService
-from settings import get_settings
 from workers.base import ProcessWorker
 
 if TYPE_CHECKING:
@@ -43,7 +42,6 @@ class ModelOptimizationWorker(ProcessWorker[None]):
         self.job_id = job_id
         self.cancel_event = cancel_event
         self.queue = event_queue
-        self._published = False
 
     def should_stop(self) -> bool:
         """Stop on the worker's own stop or the scheduler's shutdown."""
@@ -63,9 +61,10 @@ class ModelOptimizationWorker(ProcessWorker[None]):
                 result = await self._optimize(job)
             except Exception as exc:
                 logger.exception("Model optimization worker failed")
-                if self._published:
-                    return
                 async with get_async_db_session_ctx() as session:
+                    current = await JobService(session).get_job_by_id(job.id)
+                    if current.status == JobStatus.COMPLETED:
+                        return
                     await ModelOptimizationService(session).cleanup(job)
                 await self._finish(job, JobStatus.FAILED, f"Model optimization failed: {exc}")
                 return
@@ -77,8 +76,6 @@ class ModelOptimizationWorker(ProcessWorker[None]):
     async def _optimize(self, job: OptimizeModelJob) -> tuple[Model, Job] | None:
         async with get_async_db_session_ctx() as session:
             source = await ModelService(session).get_model_by_id(job.payload.model_id)
-        models_dir = get_settings().models_dir
-        models_dir.mkdir(parents=True, exist_ok=True)
         staging = ModelOptimizationService.staging(job.id)
         destination = ExportPackage.for_model(Path(source.path), "openvino", "int8").directory
         if self.should_stop() or self.cancel_event.is_set():
@@ -93,7 +90,6 @@ class ModelOptimizationWorker(ProcessWorker[None]):
                 await ModelOptimizationService(session).cleanup(job)
             await self._finish(job, JobStatus.CANCELED, "Model optimization canceled")
             return None
-        (staging / ".unpublished").write_text(str(job.id), encoding="utf-8")
         completed = job.model_copy(
             update={
                 "status": JobStatus.COMPLETED,
@@ -127,15 +123,13 @@ class ModelOptimizationWorker(ProcessWorker[None]):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
                     raise FileExistsError(f"Export variant already exists: {destination.name}")
-                staging.rename(destination)
                 await session.commit()
-                self._published = True
         if canceled:
             async with get_async_db_session_ctx() as session:
                 await ModelOptimizationService(session).cleanup(job)
             await self._finish(job, JobStatus.CANCELED, "Model optimization canceled")
             return None
-        (destination / ".unpublished").unlink(missing_ok=True)
+        ModelOptimizationService.publish(source, job.id)
         return source, completed
 
     async def _finish(self, job: OptimizeModelJob, status: JobStatus, message: str) -> None:

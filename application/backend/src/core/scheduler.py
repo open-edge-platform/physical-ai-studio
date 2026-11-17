@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from db import get_async_db_session_ctx
-from schemas.base_job import JobStatus
+from schemas.base_job import JobStatus, JobType
 from services.event_processor import EventType
 from services.job_handlers import get_job_handler
 from services.job_service import JobService
@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from schemas import Job
-    from schemas.base_job import JobType
 
 
 def _run_job(
@@ -145,9 +144,18 @@ class Scheduler:
         async with get_async_db_session_ctx() as session:
             service = JobService(session)
             jobs = await service.get_job_list(extra_filters={"status": JobStatus.RUNNING})
+            completed = await service.get_job_list(
+                extra_filters={"type": JobType.OPTIMIZE_MODEL, "status": JobStatus.COMPLETED}
+            )
+            jobs = jobs + [
+                job for job in completed if job.type == JobType.OPTIMIZE_MODEL and job.status == JobStatus.COMPLETED
+            ]
             for job in jobs:
                 if job.id not in active_ids:
-                    updated = await get_job_handler(job.type).recover(job, service)
+                    handler = get_job_handler(job.type)
+                    if not handler.needs_exit_recovery(job, job):
+                        continue
+                    updated = await handler.recover(job, service)
                     self.event_queue.put((EventType.JOB_UPDATE, updated))
 
     def _shutdown_processes(self) -> None:

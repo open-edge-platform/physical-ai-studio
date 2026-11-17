@@ -205,7 +205,7 @@ async def test_reap_releases_target_clears_interrupt_and_starts_next_job(schedul
     assert not scheduler.processes
     assert not scheduler._cancel_events
     recover.assert_not_awaited()
-    jobs.get_job_list.assert_awaited_once()
+    assert jobs.get_job_list.await_count == 2
     with patch(f"{MODULE}.mp.Process"):
         await scheduler._schedule_jobs()
         assert scheduler.processes["local"][1].id == second.id
@@ -447,3 +447,18 @@ async def test_reap_notifies_clients_if_optimization_exits_after_publication(sch
         cleanup.assert_not_called()
     scheduler.event_queue.put.assert_called_once_with((EventType.JOB_UPDATE, job))
     services[0].update_job_status.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_startup_recovers_committed_optimization_publications(scheduler, services):
+    job = _optimization_job()
+    job.status = JobStatus.COMPLETED
+    services[0].get_job_list.side_effect = [[], [job]]
+    handler = get_job_handler(job.type)
+    with (
+        patch.object(handler, "needs_exit_recovery", return_value=True),
+        patch.object(handler, "recover", AsyncMock(return_value=job)) as recover,
+    ):
+        await scheduler._recover_jobs()
+    recover.assert_awaited_once_with(job, services[0])
+    scheduler.event_queue.put.assert_called_once_with((EventType.JOB_UPDATE, job))

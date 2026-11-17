@@ -21,36 +21,14 @@ class ModelService:
         self.repo = ModelRepository(session)
 
     async def get_model_list(self) -> list[Model]:
-        return await self._publication_state(await self.repo.get_all())
+        return await self.repo.get_all()
 
     async def get_model_by_id(self, model_id: UUID) -> Model:
         model = await self.repo.get_by_id(model_id)
         if model is None:
             raise ResourceNotFoundError(ResourceType.MODEL, str(model_id))
 
-        return (await self._publication_state([model]))[0]
-
-    async def _publication_state(self, models: list[Model]) -> list[Model]:
-        # Recover a worker that committed completion before removing its publication marker.
-        for model in models:
-            try:
-                package = ExportPackage.for_model(Path(model.path), "openvino", "int8")
-                marker = package.directory / ".unpublished"
-                if not marker.is_file():
-                    continue
-                job_id = UUID(marker.read_text(encoding="utf-8"))
-                job = await self.session.scalar(select(JobDB).where(JobDB.id == str(job_id)))
-                if (
-                    job is not None
-                    and job.type == "optimize_model"
-                    and job.status == "completed"
-                    and job.payload.get("model_id") == str(model.id)
-                    and package.info.job_id == job_id
-                ):
-                    marker.unlink(missing_ok=True)
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
-        return models
+        return model
 
     async def create_model(self, model: Model) -> Model:
         return await self.repo.save(model)
@@ -80,7 +58,7 @@ class ModelService:
         shutil.rmtree(model_path)
 
     async def get_project_models(self, project_id: UUID) -> list[Model]:
-        return await self._publication_state(await self.repo.get_project_models(project_id))
+        return await self.repo.get_project_models(project_id)
 
     @staticmethod
     def get_backend_details(model: Model) -> list[BackendExportDetail]:

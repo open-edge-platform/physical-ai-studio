@@ -12,10 +12,16 @@ from sqlalchemy import func, or_
 
 from core.security import require_aws_feature_active
 from db.schema import JobDB
-from exceptions import InvalidJobStateError
+from exceptions import InvalidJobStateError, ResourceNotFoundError
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import ImportStep
-from schemas.job import DatasetImportJob, RemoteTrainJobPayload, TrainingTarget, TrainJobPayloadAdapter
+from schemas.job import (
+    DatasetImportJob,
+    OptimizeModelJob,
+    RemoteTrainJobPayload,
+    TrainingTarget,
+    TrainJobPayloadAdapter,
+)
 from services.training_targets import target_key
 
 if TYPE_CHECKING:
@@ -249,8 +255,27 @@ class ModelOptimizationJobHandler(JobHandler):
     async def recover(self, job: Job, service: JobService) -> Job:
         from services.model_optimization_service import ModelOptimizationService
 
+        if not isinstance(job, OptimizeModelJob):
+            raise TypeError("Model optimization recovery requires an optimization job")
+        if job.status == JobStatus.COMPLETED:
+            from services.model_service import ModelService
+
+            try:
+                model = await ModelService(service.session).get_model_by_id(job.payload.model_id)
+            except ResourceNotFoundError:
+                await ModelOptimizationService(service.session).cleanup(job)
+            else:
+                ModelOptimizationService.publish(model, job.id)
+            return job
         await ModelOptimizationService(service.session).cleanup(job)
         return await super().recover(job, service)
+
+    def needs_exit_recovery(self, assigned: Job, current: Job) -> bool:
+        from services.model_optimization_service import ModelOptimizationService
+
+        return super().needs_exit_recovery(assigned, current) or (
+            current.status == JobStatus.COMPLETED and ModelOptimizationService.staging(current.id).exists()
+        )
 
 
 _HANDLERS: dict[JobType, JobHandler] = {

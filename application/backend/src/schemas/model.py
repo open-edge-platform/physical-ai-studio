@@ -43,8 +43,6 @@ class Model(BaseIDModel):
             for variant in VARIANT_IDS:
                 try:
                     package = ExportPackage.for_model(Path(self.path), backend, variant)
-                    if (package.directory / ".unpublished").exists():
-                        continue
                     info = package.info
                 except (OSError, ValueError, KeyError, TypeError):
                     continue
