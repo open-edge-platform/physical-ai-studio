@@ -1,0 +1,40 @@
+# Adds issues/PRs labeled track-on-pai-board to the dual-era Physical AI
+# org project (open-edge-platform/projects/45). Works in Era 1 (two repos)
+# and Era 2 (Studio source + OpenVINO mirror) without changing this workflow.
+#
+# Requires repository secret PAI_BOARD_TOKEN: a fine-grained PAT or GitHub App
+# token with access to open-edge-platform projects (read/write projects) and
+# read access to this repository's issues and pull requests.
+name: Add to Physical AI board
+
+on:
+  issues:
+    types: [opened, labeled, reopened]
+  pull_request_target:
+    types: [opened, labeled, reopened]
+
+permissions: {}
+
+jobs:
+  add-to-project:
+    if: >-
+      github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'track-on-pai-board')
+      || github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'track-on-pai-board')
+      || (github.event.action == 'labeled' && github.event.label.name == 'track-on-pai-board')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: Add to Physical AI project
+        uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
+        with:
+          project-url: https://github.com/orgs/open-edge-platform/projects/45
+          github-token: ${{ secrets.PAI_BOARD_TOKEN }}
+          labeled: track-on-pai-board
