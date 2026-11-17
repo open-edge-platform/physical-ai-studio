@@ -137,6 +137,7 @@ async def test_delete_model_deletes_snapshot_when_snapshot_id_set() -> None:
     mock_snapshot_repo = AsyncMock()
 
     mock_session = AsyncMock()
+    mock_session.scalar.return_value = None
 
     with (
         patch("services.model_service.ModelRepository", return_value=mock_model_repo),
@@ -158,6 +159,7 @@ async def test_delete_model_skips_snapshot_delete_when_no_snapshot_id() -> None:
     mock_snapshot_repo = AsyncMock()
 
     mock_session = AsyncMock()
+    mock_session.scalar.return_value = None
 
     with (
         patch("services.model_service.ModelRepository", return_value=mock_model_repo),
