@@ -45,10 +45,10 @@
         "react-resizable-panels": "^4.14.2",
         "react-router": "^8.4.0",
         "react-use-websocket": "^4.13.0",
-        "recharts": "^3.10.1",
         "sonner": "^2.0.8",
         "static-path": "^0.0.4",
         "three": "^0.186.1",
+        "uplot": "^1.6.32",
         "urdf-loader": "^0.13.1",
         "uuid": "^14.0.2"
     },

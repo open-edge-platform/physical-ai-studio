@@ -1,0 +1,14 @@
+.chart {
+    position: relative;
+    user-select: none;
+}
+
+.chart :global(.u-cursor-x) {
+    border-right: 1px solid var(--metric-graph-color);
+}
+
+.tooltip {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+}
