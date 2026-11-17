@@ -72,6 +72,29 @@ def test_ssh_host_alias_rejects_wildcard() -> None:
         SshConnection(ssh_host_alias="*.internal")
 
 
+def test_aws_batch_connection_derives_resources_from_stack_id() -> None:
+    connection = AwsBatchConnection.model_validate(
+        {
+            "stack_id": " 123456789012-eu-central-1-f4a9b2c0 ",
+            "profile_name": "studio",
+        }
+    )
+
+    assert connection.stack_id == "123456789012-eu-central-1-f4a9b2c0"
+    assert connection.region == "eu-central-1"
+    assert connection.studio_role_arn == "arn:aws:iam::123456789012:role/pai-studio-f4a9b2c0"
+    assert connection.bucket == "pai-jobs-f4a9b2c0"
+    assert set(connection.targets) == {"g4dn.2xlarge", "g6e.2xlarge", "g7e.8xlarge"}
+    assert (
+        connection.targets["g4dn.2xlarge"].queue
+        == "arn:aws:batch:eu-central-1:123456789012:job-queue/pai-g4dn-f4a9b2c0"
+    )
+    assert (
+        connection.targets["g4dn.2xlarge"].job_definition
+        == "arn:aws:batch:eu-central-1:123456789012:job-definition/pai-g4dn-f4a9b2c0"
+    )
+
+
 def test_aws_batch_connection_parses_cloudformation_output() -> None:
     target = {
         "queue": "arn:aws:batch:eu-west-1:123456789012:job-queue/studio",
