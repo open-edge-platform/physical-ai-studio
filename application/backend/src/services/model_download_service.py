@@ -7,6 +7,8 @@ import zipfile
 from pathlib import Path
 from uuid import uuid4
 
+from schemas.model_variant import ExportPackage
+
 SNAPSHOT_DIR_PATTERN = re.compile(r"^snapshot_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
 
@@ -36,6 +38,14 @@ class ModelDownloadService:
                     continue
 
                 relative = path.relative_to(model_path)
+                if any(part.startswith(".") for part in relative.parts):
+                    continue
+                if any(
+                    (parent / ".unpublished").exists() for parent in path.parents if parent.is_relative_to(model_path)
+                ):
+                    continue
+                if path.is_symlink() or not path.resolve().is_relative_to(model_path.resolve()):
+                    raise ValueError("Model archives must not contain symbolic links")
 
                 if not include_snapshot and self._is_snapshot_path(relative):
                     continue
@@ -57,9 +67,7 @@ class ModelDownloadService:
         archive_path = Path(tempfile.gettempdir()) / f"model-export-{backend}-{uuid4()}.zip"
 
         with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
-            for path in export_dir.rglob("*"):
-                if not path.is_file():
-                    continue
+            for path in ExportPackage(export_dir, backend).files:
                 archive.write(path, arcname=path.relative_to(export_dir))
 
         return archive_path
@@ -89,9 +97,7 @@ class ModelDownloadService:
         with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
             archive.writestr("runtime.yaml", runtime_yaml)
             archive.writestr("README.md", readme)
-            for path in export_dir.rglob("*"):
-                if not path.is_file():
-                    continue
+            for path in ExportPackage(export_dir, backend).files:
                 archive.write(path, arcname=(prefix / path.relative_to(export_dir)).as_posix())
 
         return archive_path

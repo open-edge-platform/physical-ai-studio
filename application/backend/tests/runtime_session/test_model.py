@@ -32,7 +32,10 @@ def _export(path: Path, *, joints: int = 2, cameras: tuple[str, ...] = ("images.
     features += [{"init_args": {"ftype": "VISUAL", "shape": [3, 120, 160], "name": name}} for name in cameras]
     features.append({"init_args": {"ftype": "LANGUAGE", "shape": [48], "name": "task"}})
     path.mkdir(parents=True)
-    (path / "manifest.json").write_text(json.dumps({"model": {"input_features": features}}))
+    (path / "model.pt").write_bytes(b"fake")
+    (path / "manifest.json").write_text(
+        json.dumps({"model": {"input_features": features, "artifacts": {"torch": "model.pt"}}})
+    )
     return path
 
 

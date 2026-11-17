@@ -164,6 +164,8 @@ def test_openvino_export_download_is_weights_only_without_recipe(tmp_path: Path)
     export_dir = model_dir / "exports" / "openvino"
     export_dir.mkdir(parents=True)
     (export_dir / "model.xml").write_text("<net/>")
+    (export_dir / "model.bin").write_bytes(b"weights")
+    (export_dir / "manifest.json").write_text('{"model":{"artifacts":{"openvino":"model.xml"}}}')
     model = _make_model(model_dir)
     # Weights-only must not require a robot manager / client factory.
     _override_model_service(model)
@@ -178,8 +180,30 @@ def test_openvino_export_download_is_weights_only_without_recipe(tmp_path: Path)
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         names = set(archive.namelist())
-        assert names == {"model.xml"}
+        assert names == {"model.xml", "model.bin", "manifest.json"}
         assert "runtime.yaml" not in names
+
+
+def test_export_download_selects_int8_without_sibling_files(tmp_path: Path) -> None:
+    model = _make_model(tmp_path)
+    for variant, directory in (
+        ("original", tmp_path / "exports/openvino"),
+        ("int8", tmp_path / "exports/openvino/variants/int8"),
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "model.xml").write_text(variant)
+        (directory / "model.bin").write_bytes(b"weights")
+        (directory / "manifest.json").write_text('{"model":{"artifacts":{"openvino":"model.xml"}}}')
+    _override_model_service(model)
+    app.dependency_overrides[get_environment_service] = lambda: MagicMock()
+    try:
+        response = TestClient(app).get(f"/api/models/{model.id}/exports/openvino/download?variant=int8")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.read("model.xml") == b"int8"
+        assert set(archive.namelist()) == {"manifest.json", "model.xml", "model.bin"}
 
 
 def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path, mocker) -> None:
@@ -187,6 +211,8 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
     export_dir = model_dir / "exports" / "openvino"
     export_dir.mkdir(parents=True)
     (export_dir / "model.xml").write_text("<net/>")
+    (export_dir / "model.bin").write_bytes(b"weights")
+    (export_dir / "manifest.json").write_text('{"model":{"artifacts":{"openvino":"model.xml"}}}')
     model = _make_model(model_dir)
     environment = _environment()
     document = Config(
@@ -245,6 +271,10 @@ def test_openvino_export_download_recipe_400_when_device_missing(tmp_path) -> No
     model_dir = tmp_path / "model"
     (model_dir / "exports" / "openvino").mkdir(parents=True)
     (model_dir / "exports" / "openvino" / "model.xml").write_text("<net/>")
+    (model_dir / "exports" / "openvino" / "model.bin").write_bytes(b"weights")
+    (model_dir / "exports" / "openvino" / "manifest.json").write_text(
+        '{"model":{"artifacts":{"openvino":"model.xml"}}}'
+    )
     model = _make_model(model_dir)
     _override_export_download(model)
     try:

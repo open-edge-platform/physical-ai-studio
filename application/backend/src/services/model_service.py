@@ -1,4 +1,5 @@
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -8,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
 from schemas.job import TrainJob
-from schemas.model import BackendExportDetail, Model, TrainingSummary
+from schemas.model import BackendExportDetail, BackendIOSpec, ExportVariantDetail, Model, TrainingSummary
+from schemas.model_variant import ExportPackage, VariantId
 
 
 class ModelService:
@@ -48,17 +50,41 @@ class ModelService:
     @staticmethod
     def get_backend_details(model: Model) -> list[BackendExportDetail]:
         """Compute per-backend export details from the filesystem."""
-        exports_dir = Path(model.path) / "exports"
-        if not exports_dir.is_dir():
-            return []
-
-        details: list[BackendExportDetail] = []
-        for backend_dir in sorted(exports_dir.iterdir()):
-            detail = BackendExportDetail.from_backend_dir(backend_dir)
-            if detail is not None:
-                details.append(detail)
-
+        grouped: dict[str, list[ExportVariantDetail]] = {}
+        for (backend, variant), directory in sorted(model.export_packages().items()):
+            package = ExportPackage(directory, backend, variant)
+            grouped.setdefault(backend, []).append(
+                ExportVariantDetail(
+                    **package.info.model_dump(),
+                    size_bytes=sum(path.stat().st_size for path in package.files),
+                    file_count=len(package.files),
+                    exported_at=package.info.created_at
+                    or datetime.fromtimestamp((directory / "manifest.json").stat().st_mtime, tz=UTC),
+                    io_spec=BackendIOSpec.from_manifest(package.manifest),
+                )
+            )
+        details = []
+        for backend, variants in sorted(grouped.items()):
+            variants.sort(key=lambda variant: variant.id != "original")
+            original = next((variant for variant in variants if variant.id == "original"), None)
+            details.append(
+                BackendExportDetail(
+                    type=backend,
+                    size_bytes=original.size_bytes if original else 0,
+                    file_count=original.file_count if original else 0,
+                    exported_at=original.exported_at if original else None,
+                    io_spec=original.io_spec if original else None,
+                    variants=variants,
+                )
+            )
         return details
+
+    @staticmethod
+    def resolve_export(model: Model, backend: str, variant: VariantId = "original") -> Path:
+        directory = model.export_packages().get((backend, variant))
+        if directory is None:
+            raise ResourceNotFoundError(ResourceType.MODEL, f"{model.id}/{backend}/{variant}")
+        return directory
 
     @staticmethod
     def get_hparams(model: Model) -> dict | None:
