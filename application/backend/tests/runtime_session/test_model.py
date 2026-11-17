@@ -19,7 +19,7 @@ from runtime_session.session import RuntimeSession
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
 from schemas.model import Model
 from schemas.runtime_session import ExecutionConfig, ModelControlConfig
-from tests.workers.fake_model import FakeModelWorker
+from tests.workers.fake_model import CHUNK, FakeModelWorker
 from workers.base import WorkerStartupError
 
 from .fixtures import make_environment
@@ -28,11 +28,24 @@ SPEC = FeatureSpec(("shoulder_pan.pos", "gripper.pos"), {"cam 0": ImageSpec(120,
 
 
 def _export(
-    path: Path, *, joints: int = 2, cameras: tuple[str, ...] = ("images.cam 0",), tasks: list[str] | None = None
+    path: Path,
+    *,
+    joints: int = 2,
+    cameras: tuple[str, ...] = ("images.cam 0",),
+    tasks: list[str] | None = None,
+    rtc_chunk: int | None = None,
 ) -> Path:
     features = [{"init_args": {"ftype": "STATE", "shape": [joints], "name": "state"}}]
     features += [{"init_args": {"ftype": "VISUAL", "shape": [3, 120, 160], "name": name}} for name in cameras]
     features.append({"init_args": {"ftype": "LANGUAGE", "shape": [48], "name": "task"}})
+    if rtc_chunk is not None:  # as a pi05 export made with rtc_enabled lists them
+        features.append(
+            {"init_args": {"ftype": "COMMON", "shape": [rtc_chunk, joints], "name": "prev_chunk_left_over"}}
+        )
+        features += [
+            {"init_args": {"ftype": "COMMON", "shape": [], "name": name}}
+            for name in ("inference_delay", "max_guidance_weight", "execution_horizon")
+        ]
     path.mkdir(parents=True)
     manifest: dict = {"model": {"input_features": features, "preprocessors": [{"type": "to_float_tensor"}]}}
     if tasks is not None:
@@ -90,16 +103,28 @@ def test_an_export_for_other_joints_or_cameras_does_not_fit(tmp_path: Path) -> N
         model_inputs(_export(tmp_path / "b", cameras=("images.wrist",)), SPEC)
 
 
-@pytest.mark.parametrize("mode", ["sync", "async"])
-async def test_the_model_drives_the_follower(new_session, fake_cameras, fake_model_worker, tmp_path, mode) -> None:
+def test_an_export_with_rtc_inputs_says_its_chunk(tmp_path: Path) -> None:
+    assert model_inputs(_export(tmp_path / "a", rtc_chunk=50), SPEC).rtc_chunk == (50, 2)
+    assert model_inputs(_export(tmp_path / "b"), SPEC).rtc_chunk is None
+
+
+@pytest.mark.parametrize(
+    ("mode", "rtc_export"), [("sync", False), ("async", False), ("sync", True), ("async", True), ("rtc", True)]
+)
+async def test_the_model_drives_the_follower(
+    new_session, fake_cameras, fake_model_worker, tmp_path, mode, rtc_export
+) -> None:
     session: RuntimeSession = await new_session()
     await session.load_environment(make_environment())
-    model = _model(tmp_path)
+    # The oracle's chunk is 10 actions; an RTC export of it guides at most 5.
+    model = _model(tmp_path, rtc_chunk=CHUNK if rtc_export else None)
     await session.load_model(model, "torch", "cpu")
     assert session.state().model.name == "Picker"
+    assert session.state().model.rtc is rtc_export
 
     start = session.store.read(STATE).value.copy()
-    config = ModelControlConfig(task="pick", hz=50, execution=ExecutionConfig(mode=mode), grace_s=0)
+    execution = ExecutionConfig(mode=mode, execution_horizon=5)
+    config = ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0)
     await session.set_control(config)
     assert session.state().control == config
     # The oracle commands state + 1 and up, so a follower it drives keeps climbing.
@@ -108,6 +133,25 @@ async def test_the_model_drives_the_follower(new_session, fake_cameras, fake_mod
     await session.unload_model()
     assert session.state().model is None
     assert session.state().control is None
+
+
+async def test_rtc_refuses_an_export_without_rtc_inputs(new_session, fake_cameras, fake_model_worker, tmp_path) -> None:
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_model(_model(tmp_path), "torch", "cpu")
+    with pytest.raises(ValueError, match="without RTC inputs"):
+        await session.set_control(ModelControlConfig(execution=ExecutionConfig(mode="rtc")))
+    assert session.state().control is None
+
+
+async def test_rtc_refuses_a_horizon_past_half_the_chunk(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_model(_model(tmp_path, rtc_chunk=CHUNK), "torch", "cpu")
+    with pytest.raises(ValueError, match="at most half the chunk"):
+        await session.set_control(ModelControlConfig(execution=ExecutionConfig(mode="rtc", execution_horizon=6)))
 
 
 async def test_a_model_needs_an_environment_it_fits(new_session, fake_cameras, fake_model_worker, tmp_path) -> None:

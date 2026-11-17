@@ -44,10 +44,30 @@ class TeleopControlConfig(BaseModel):
 class ExecutionConfig(BaseModel):
     """How a model's action chunks are requested, as ``physicalai.runtime`` runs them."""
 
-    mode: Literal["sync", "async"] = "sync"
-    """``sync`` infers in the control's tick and waits; ``async`` infers alongside, while the queue plays."""
+    mode: Literal["sync", "async", "rtc"] = "sync"
+    """``sync`` infers in the control's tick and waits; ``async`` infers alongside, while the queue plays;
+    ``rtc`` (real-time chunking) infers alongside and guides each new chunk to continue the actions still queued.
+    ``rtc`` needs an export made with RTC inputs."""
     request_threshold: float = Field(
-        default=0.5, ge=0, le=1, description="Request the next chunk once this fraction of the current one is left"
+        default=0.5,
+        ge=0,
+        le=1,
+        description="Request the next chunk once this fraction of the current one is left (sync and async)",
+    )
+    execution_horizon: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+        description="RTC: how many of the queued actions the new chunk is guided to continue; at most half the chunk",
+    )
+    max_guidance_weight: float = Field(
+        default=5.0, ge=0, le=100, description="RTC: how strongly the new chunk is pulled towards the queued actions"
+    )
+    initial_latency_s: float | None = Field(
+        default=None,
+        gt=0,
+        le=10,
+        description="RTC: seed for the inference delay estimate; empty measures it on the first inferences",
     )
 
 
@@ -300,6 +320,8 @@ class SessionModel(BaseModel):
     device: str
     tasks: list[str] = []
     """The tasks the model takes, when it only knows a fixed set; empty if it takes any text."""
+    rtc: bool = False
+    """The loaded export takes RTC inputs, so it can run with ``rtc`` execution."""
 
 
 AutopilotRecordingPhase = Literal[

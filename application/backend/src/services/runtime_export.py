@@ -90,18 +90,34 @@ def policy_source_fragment(
             "physicalai.inference.InferenceModel",
             {"export_dir": export_dir, "backend": backend, "device": device},
         ).to_dict(),
-        "execution": Config(
-            "physicalai.runtime.AsyncExecution" if execution.mode == "async" else "physicalai.runtime.SyncExecution",
-            {"request_threshold": execution.request_threshold},
-        ).to_dict(),
-        "action_queue": Config(
-            "physicalai.runtime.ChunkedActionQueue",
-            {"smoother": Config("physicalai.runtime.LerpSmoother", {}).to_dict()},
-        ).to_dict(),
+        "execution": _execution_config(execution),
+        "action_queue": (
+            Config("physicalai.runtime.RTCActionQueue", {}).to_dict()
+            if execution.mode == "rtc"
+            else Config(
+                "physicalai.runtime.ChunkedActionQueue",
+                {"smoother": Config("physicalai.runtime.LerpSmoother", {}).to_dict()},
+            ).to_dict()
+        ),
     }
     if task:
         init_args["task"] = task
     return Config("physicalai.runtime.PolicySource", init_args).to_dict()
+
+
+def _execution_config(execution: ExecutionConfig) -> dict[str, Any]:
+    if execution.mode == "rtc":
+        init_args: dict[str, Any] = {
+            "execution_horizon": execution.execution_horizon,
+            "max_guidance_weight": execution.max_guidance_weight,
+        }
+        if execution.initial_latency_s is not None:
+            init_args["initial_latency_s"] = execution.initial_latency_s
+        return Config("physicalai.runtime.RTCExecution", init_args).to_dict()
+    return Config(
+        "physicalai.runtime.AsyncExecution" if execution.mode == "async" else "physicalai.runtime.SyncExecution",
+        {"request_threshold": execution.request_threshold},
+    ).to_dict()
 
 
 def runtime_export_readme(document: dict[str, Any], *, unresolved: list[str]) -> str:

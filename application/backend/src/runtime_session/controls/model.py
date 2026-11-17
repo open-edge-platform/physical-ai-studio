@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import inspect
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
-from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource, SyncExecution
+from physicalai.runtime import (
+    AsyncExecution,
+    ChunkedActionQueue,
+    LerpSmoother,
+    PolicySource,
+    RTCActionQueue,
+    RTCExecution,
+    SyncExecution,
+)
 from physicalai.runtime.events import TickEvent
 
 from runtime_session.controls.base import Control
@@ -12,6 +21,8 @@ from runtime_session.store import ACTION, STATE
 
 if TYPE_CHECKING:
     import numpy as np
+    from physicalai.runtime.execution.base import Execution
+    from physicalai.runtime.execution.queue import ActionQueue
 
     from runtime_session.model import ProcessModel
     from runtime_session.rerun import RerunObserver, _ModelEvents
@@ -39,7 +50,8 @@ class ModelControl(Control):
     ``physicalai.runtime``'s ``PolicySource`` decides when to ask the model for a
     chunk, queues and smooths it, as an exported runtime does; only the model
     runs in its own process. With ``async`` execution the chunk is requested on the executor's
-    own thread while the queue keeps playing.
+    own thread while the queue keeps playing. ``rtc`` does too, and guides each new chunk to
+    continue the actions still queued; it needs an export with RTC inputs.
 
     A model can command a pose far from where the follower is (its rest pose,
     say), so for the first ``grace_s`` each action is stamped due at the end of
@@ -55,14 +67,8 @@ class ModelControl(Control):
         if model.inputs.tasks and config.task not in model.inputs.tasks:
             raise ValueError(f"Pick one of the model's tasks: {', '.join(model.inputs.tasks)}")
         super().__init__(store, config, name="ModelControl", hz=config.hz)
-        execution = (
-            AsyncExecution(request_threshold=config.execution.request_threshold)
-            if config.execution.mode == "async"
-            else SyncExecution(request_threshold=config.execution.request_threshold)
-        )
-        self.source = PolicySource(
-            cast("Any", model), execution, ChunkedActionQueue(smoother=LerpSmoother()), task=config.task or None
-        )
+        execution, queue = _execution(model, config)
+        self.source = PolicySource(cast("Any", model), execution, queue, task=config.task or None)
         self.step = 0
         self.grace_s = config.grace_s
         self.started_at = 0.0
@@ -105,3 +111,36 @@ class ModelControl(Control):
                 )
             )
         self.step += 1
+
+
+def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Execution, ActionQueue]:
+    """The executor and queue for ``config``'s mode.
+
+    Raises:
+        ValueError: ``rtc`` with an export that takes no RTC inputs, which would run unguided without a word,
+            or a horizon the export's chunk has no room for.
+    """
+    settings = config.execution
+    if settings.mode != "rtc":
+        cls = AsyncExecution if settings.mode == "async" else SyncExecution
+        return cls(request_threshold=settings.request_threshold), ChunkedActionQueue(smoother=LerpSmoother())
+    if model.inputs.rtc_chunk is None:
+        raise ValueError(
+            f"Model {model.model.name!r} ({model.backend}) was exported without RTC inputs, so it cannot run with "
+            "real-time chunking: choose Synchronous or Asynchronous, or load an RTC export"
+        )
+    if "initial_latency_s" not in inspect.signature(RTCExecution).parameters:
+        # Without the RTC fixes the runtime guides each chunk one tick late and can pull it towards zeros.
+        raise ValueError("Real-time chunking needs a physicalai runtime with the RTC fixes (initial_latency_s)")
+    chunk_size = model.inputs.rtc_chunk[0]
+    if settings.execution_horizon > chunk_size // 2:
+        raise ValueError(f"The RTC horizon is at most half the chunk: {settings.execution_horizon} > {chunk_size // 2}")
+    execution = RTCExecution(
+        chunk_size=chunk_size,
+        execution_horizon=settings.execution_horizon,
+        fps=config.hz,
+        max_guidance_weight=settings.max_guidance_weight,
+        queue_threshold=None,  # the horizon plus the measured delay
+        initial_latency_s=settings.initial_latency_s,
+    )
+    return execution, RTCActionQueue()

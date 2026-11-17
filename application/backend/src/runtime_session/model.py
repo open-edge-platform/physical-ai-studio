@@ -5,7 +5,8 @@ exports, and reports as ``model`` on the session's bus. To ``ModelControl``'s
 executor it is the model itself: ``predict_action_chunk`` sends the state and
 the task to the worker, which adds the frames from the store, and returns the
 whole chunk. Queueing it, smoothing and deciding when to ask again stays with
-the executor, as ``physicalai.runtime`` runs it.
+the executor, as ``physicalai.runtime`` runs it. ``RTCExecution`` calls the
+model itself instead, with its RTC inputs added; those cross to the worker too.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import numpy as np
 from runtime_session.bus import Bus, publish_status, until_serving
 from schemas.runtime_session import CommandDone, SessionModel
 from workers import model_worker as model_rpc
-from workers.model_worker import ActionChunk, InferRequest, ModelWorker
+from workers.model_worker import RTC_INPUTS, ActionChunk, InferRequest, ModelWorker, RtcInputs
 
 if TYPE_CHECKING:
     from runtime_session.store import FeatureSpec, Store
@@ -49,6 +50,8 @@ class ModelInputs:
     """Model input name to the store camera it reads."""
     tasks: tuple[str, ...] = ()
     """The only tasks a policy trained on a fixed set takes, such as a multi-task ACT; empty if any text goes."""
+    rtc_chunk: tuple[int, int] | None = None
+    """``prev_chunk_left_over``'s shape, ``(chunk_size, action_dim)``, when the export takes RTC inputs."""
 
 
 def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
@@ -62,8 +65,12 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     reasons: list[str] = []
     state_size = 0
     images: dict[str, str] = {}
+    names = {feature["name"] for feature in features}
+    rtc_chunk: tuple[int, int] | None = None
     for feature in features:
         name: str = feature["name"]
+        if name == model_rpc.PREV_CHUNK_LEFT_OVER and names.issuperset(RTC_INPUTS):
+            rtc_chunk = (int(feature["shape"][0]), int(feature["shape"][1]))
         if feature["ftype"] == "STATE":
             state_size = int(feature["shape"][0])
             if state_size != len(spec.joint_names):
@@ -80,7 +87,7 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     tasks = next(
         (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
     )
-    return ModelInputs(state_size, images, tuple(tasks))
+    return ModelInputs(state_size, images, tuple(tasks), rtc_chunk)
 
 
 class ProcessModel:
@@ -107,6 +114,7 @@ class ProcessModel:
             store_name=store.name,
             spec=store.spec,
             images=self.inputs.images,
+            rtc_chunk=self.inputs.rtc_chunk,
         )
         self._session_id = session_id
         self._bus: Bus | None = None
@@ -120,7 +128,13 @@ class ProcessModel:
             backend=self.backend,
             device=self.device,
             tasks=list(self.inputs.tasks),
+            rtc=self.inputs.rtc_chunk is not None,
         )
+
+    @property
+    def chunk_size(self) -> int:
+        """The export's chunk size when it says (an RTC export does), else 1 as ``InferenceModel`` reports."""
+        return self.inputs.rtc_chunk[0] if self.inputs.rtc_chunk is not None else 1
 
     async def __aenter__(self) -> Self:
         """Start the worker and wait until the model is loaded.
@@ -161,11 +175,28 @@ class ProcessModel:
             NoResponderError: The model is no longer loaded.
         """
         task = observation.get(model_rpc.TASK)
+        rtc = None
+        if model_rpc.PREV_CHUNK_LEFT_OVER in observation:
+            rtc = RtcInputs(
+                prev_chunk_left_over=np.asarray(observation[model_rpc.PREV_CHUNK_LEFT_OVER])[0].tolist(),
+                inference_delay=int(observation[model_rpc.INFERENCE_DELAY]),
+                max_guidance_weight=float(observation[model_rpc.MAX_GUIDANCE_WEIGHT]),
+                execution_horizon=int(observation[model_rpc.EXECUTION_HORIZON]),
+            )
         request = InferRequest(
-            state=np.asarray(observation[model_rpc.STATE])[0].tolist(), task=task[0] if task else None
+            state=np.asarray(observation[model_rpc.STATE])[0].tolist(), task=task[0] if task else None, rtc=rtc
         )
         chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
         return np.asarray(chunk.actions, dtype=np.float32)
+
+    def __call__(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
+        """What ``RTCExecution`` calls: the chunk for ``inputs``, RTC inputs included, as ``{"action": chunk}``.
+
+        Raises:
+            BusRequestError: The model failed on it.
+            NoResponderError: The model is no longer loaded.
+        """
+        return {"action": self.predict_action_chunk(inputs)}
 
     def reset(self) -> None:
         self._loaded_bus().request_sync(model_rpc.RESET, model_rpc.Empty(), CommandDone, timeout=_INFER_S)
