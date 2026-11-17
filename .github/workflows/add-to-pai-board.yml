@@ -9,9 +9,17 @@ name: Add to Physical AI board
 
 on:
   issues:
-    types: [opened, labeled, reopened]
+    types:
+      - opened
+      - labeled
+      - reopened
+  # Does not checkout or execute contributed code; only calls the GitHub API
+  # with PAI_BOARD_TOKEN to add the issue/PR to the org project.
   pull_request_target:
-    types: [opened, labeled, reopened]
+    types:
+      - opened
+      - labeled
+      - reopened # zizmor: ignore[dangerous-triggers]
 
 permissions: {}
 
@@ -24,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: true
           disable-telemetry: true
