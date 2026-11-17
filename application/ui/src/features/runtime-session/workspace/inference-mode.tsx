@@ -78,10 +78,13 @@ export const InferenceMode = () => {
             type: 'model',
             task: selectedTask,
             hz,
-            execution:
-                mode === 'rtc'
-                    ? { mode, execution_horizon: horizon, max_guidance_weight: guidance }
-                    : { mode, request_threshold: threshold },
+            // Each mode reads its own settings: the threshold for sync and async, the horizon and weight for RTC.
+            execution: {
+                mode,
+                request_threshold: threshold,
+                execution_horizon: horizon,
+                max_guidance_weight: guidance,
+            },
             // The follower eases onto the model's actions, which may start far from where it is.
             grace_s: 3,
         });
