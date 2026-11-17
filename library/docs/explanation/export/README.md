@@ -139,7 +139,7 @@ ExecuTorch programs cannot be modified after lowering, so post-export hooks do
 not apply there. Instead, `delegate_config={"compress_weights": True}` with the
 `openvino` delegate applies INT8 symmetric weights quantization
 to the traced program before lowering.
- See
+See
 [ExecuTorch with OpenVINO Delegate INT8 Weight Compression](../../how-to/export/export_inference.md#executorch-with-openvino-delegate-int8-weight-compression).
 
 ## Configuration Serialization for Torch models

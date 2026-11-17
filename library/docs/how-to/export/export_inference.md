@@ -98,7 +98,7 @@ policy.export(
 The exported `model.xml` / `model.bin` are replaced with their INT8-compressed
 counterparts and load transparently through `InferenceModel("./exports")`.
 
-### ExecuTorch with OpenVINO Delegate INT8 Weight Compression 
+### ExecuTorch with OpenVINO Delegate INT8 Weight Compression
 
 A `.pte` cannot be rewritten after lowering, so ExecuTorch compression runs
 _before_ lowering instead of a post-export hook. Enable it through
@@ -118,6 +118,7 @@ policy.export(
 
 Such export compresses the traced program's weights to INT8 symmetric with NNCF and re-exports it with the same `torch.export.export` arguments.
 It requires `physicalai-train[nncf]` and is ignored for other delegates.
+
 ## Inference
 
 ```python test="skip" reason="requires exported model and environment"
