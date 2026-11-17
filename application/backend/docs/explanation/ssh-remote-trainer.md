@@ -84,6 +84,16 @@ retried in the background. A container that stopped independently may still
 need to be started again by saving the target. Installation is never retried
 automatically on Studio restart.
 
+New managed trainer containers inherit the remote SSH session's standard proxy
+variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and lowercase
+equivalents). Configure these for non-interactive SSH sessions, not only in an
+interactive terminal. Studio forwards variable names to Docker without reading
+their values. A Docker daemon proxy alone does not configure model downloads
+inside the container. Include loopback addresses in `NO_PROXY` when using a proxy.
+Proxy changes require recreating the trainer container: cancel active jobs,
+stop the container, then save the target again. Studio recreates a stopped
+container with its existing data volume.
+
 Settings > General > Managed SSH Training exposes four timeouts
 (`connect_timeout_s`, `command_timeout_s`, `preflight_timeout_s`, and
 `image_pull_timeout_s`) and the trainer's shared-memory size

@@ -1,68 +1,17 @@
-import { useCallback, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
-import { Flex, ProgressCircle } from '@geti-ui/ui';
 import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
 import { SchemaProjectCamera } from '../../api/types';
-import { useFittedMediaSize } from './use-fitted-media-size';
+import { CameraView, FrameSource } from './camera-view';
 
 const CAMERA_WS_URL = fetchClient.PATH('/api/cameras/ws');
 
-const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; width: number; height: number }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const processingRef = useRef(false);
-    const frameQueueRef = useRef<Blob | null>(null);
-
-    const processFrame = useCallback(async (blobData: Blob) => {
-        if (processingRef.current) {
-            frameQueueRef.current = blobData;
-            return;
-        }
-
-        processingRef.current = true;
-        try {
-            let currentBlob: Blob | null = blobData;
-
-            while (currentBlob) {
-                const bitmap = await createImageBitmap(currentBlob);
-                const canvas = canvasRef.current;
-                const ctx = canvas?.getContext('2d', { alpha: false });
-
-                if (canvas && ctx) {
-                    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                    setIsLoading(false);
-                }
-
-                bitmap.close();
-
-                currentBlob = frameQueueRef.current;
-                frameQueueRef.current = null;
-            }
-        } catch (error) {
-            console.error('Failed to process camera frame:', error);
-        } finally {
-            processingRef.current = false;
-        }
-    }, []);
-
-    // WebSocket message handler
-    const handleMessage = useCallback(
-        (event: WebSocketEventMap['message']) => {
-            try {
-                if (event.data instanceof Blob) {
-                    // Binary JPEG frame
-                    void processFrame(event.data);
-                } else {
-                    console.info('Received unknown event', event.data);
-                }
-            } catch (error) {
-                console.error('Failed to parse WebSocket message:', error);
-            }
-        },
-        [processFrame]
-    );
+/** A standalone camera socket, for the camera form. Pages with a runtime session use the session's frames. */
+export const useCameraSocket = (camera: SchemaProjectCamera) => {
+    const listeners = useRef(new Set<(jpeg: Blob) => void>()).current;
+    const [error, setError] = useState<string | null>(null);
 
     useWebSocket(CAMERA_WS_URL, {
         queryParams: {
@@ -73,41 +22,48 @@ const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; 
             }),
         },
         share: true,
-        shouldReconnect: () => true,
+        shouldReconnect: () => error === null,
         reconnectAttempts: 5,
         reconnectInterval: 3000,
-        onMessage: handleMessage,
-        onError: (error) => console.error('WebSocket error:', error),
-        onClose: () => console.info('WebSocket closed'),
+        onOpen: () => setError(null),
+        onMessage: (event: MessageEvent) => {
+            if (event.data instanceof Blob) {
+                listeners.forEach((listener) => listener(event.data));
+                return;
+            }
+            const message = JSON.parse(event.data) as { event?: string; message?: string };
+            if (message.event === 'error') {
+                setError(message.message ?? 'The camera stream failed.');
+            }
+        },
+        onError: (wsError) => console.error('WebSocket error:', wsError),
     });
 
-    return (
-        <>
-            {isLoading && (
-                <Flex width='100%' height='100%' justifyContent='center' alignItems='center'>
-                    <ProgressCircle isIndeterminate />
-                </Flex>
-            )}
-            <canvas
-                ref={canvasRef}
-                width={width}
-                height={height}
-                style={{ display: isLoading ? 'none' : 'block' }}
-                aria-label={`Camera: ${camera.name}`}
-            />
-        </>
+    const source: FrameSource = useMemo(
+        () => ({
+            subscribe: (listener) => {
+                listeners.add(listener);
+                return () => {
+                    listeners.delete(listener);
+                };
+            },
+        }),
+        [listeners]
     );
+
+    return { source, error };
 };
 
 export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
-    const { containerRef, width, height } = useFittedMediaSize(
-        Number(camera.payload?.width),
-        Number(camera.payload?.height)
-    );
+    const { source, error } = useCameraSocket(camera);
 
     return (
-        <div ref={containerRef} style={{ height: '100%', width: '100%' }}>
-            <CameraCanvas camera={camera} width={width} height={height} />
-        </div>
+        <CameraView
+            source={source}
+            label={`Camera: ${camera.name}`}
+            width={camera.payload?.width}
+            height={camera.payload?.height}
+            error={error}
+        />
     );
 };

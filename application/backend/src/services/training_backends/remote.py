@@ -30,10 +30,10 @@ from pydantic import ValidationError
 from schemas.hardware import DeviceInfo
 from services.dataset_download_service import DatasetDownloadService
 from services.staged_archive import cleanup_staged_archive
-from services.training_backends._log_format import render_progress_log
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
 from settings import get_settings
+from training.log_format import render_progress_log
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

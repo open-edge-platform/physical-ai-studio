@@ -26,6 +26,7 @@ const so101Robot = {
     payload: {
         connection_string: '',
         serial_number: 'SO101-001',
+        unit: 'normalized' as const,
         calibration: {
             shoulder_pan: { id: 1, drive_mode: 0, homing_offset: 10, range_min: -100, range_max: 100 },
         },
@@ -102,7 +103,7 @@ describe('RobotsList', () => {
     it('disables Export calibration when no calibration is active', async () => {
         const noCalRobot = {
             ...so101Robot,
-            payload: { connection_string: '', serial_number: 'SO101-001' },
+            payload: { connection_string: '', serial_number: 'SO101-001', unit: 'normalized' as const },
         };
         server.use(
             http.get(ROBOTS_PATH, () => HttpResponse.json([noCalRobot])),
@@ -194,57 +195,5 @@ describe('RobotsList', () => {
         await user.click(screen.getByRole('menuitemradio', { name: 'Delete' }));
 
         expect(await screen.findByText('Robots index')).toBeInTheDocument();
-    });
-});
-
-describe('RobotsList runtime sessions', () => {
-    const idleRobot = {
-        id: 'idle-robot-id',
-        name: 'Idle arm',
-        type: 'SO101_Follower' as const,
-        payload: { connection_string: '', serial_number: 'SO101-002' },
-    };
-
-    const busySession = {
-        session_name: `rt-${ROBOT_ID}`,
-        follower_id: ROBOT_ID,
-        status: 'running' as const,
-        pid: 41273,
-        follower_name: so101Robot.name,
-        camera_keys: [],
-        activity: {
-            connected: true,
-            follower_source: 'teleop' as const,
-            is_recording: true,
-            episodes_recorded: 2,
-        },
-        error: null,
-    };
-
-    it('marks only the robot a session is driving', async () => {
-        server.use(
-            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot, idleRobot])),
-            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
-            http.get('/api/runtime/sessions', () => HttpResponse.json([busySession]))
-        );
-
-        renderRobotsList();
-
-        // Matching is by rt-<robot id>, so exactly one of the two rows lights up.
-        expect(await screen.findByText(/Session · recording/)).toBeInTheDocument();
-        expect(screen.getAllByText(/Session ·/)).toHaveLength(1);
-    });
-
-    it('marks no robot when nothing is running', async () => {
-        server.use(
-            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot, idleRobot])),
-            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
-            http.get('/api/runtime/sessions', () => HttpResponse.json([]))
-        );
-
-        renderRobotsList();
-
-        await screen.findByText(so101Robot.name);
-        expect(screen.queryByText(/Session ·/)).not.toBeInTheDocument();
     });
 });

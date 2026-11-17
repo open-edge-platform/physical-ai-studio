@@ -49,6 +49,34 @@ _launch_failure: dict[UUID, str] = {}
 # actually is - something a user should look into, not silently wait out.
 _STARTUP_GRACE_PERIOD: Final = timedelta(minutes=15)
 
+_PROXY_VARIABLES: Final = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+)
+
+
+async def _proxy_environment_args(transport: SshTransport) -> list[str]:
+    """Forward remote proxy variables by name without retrieving their values."""
+    result = await transport.run_command(
+        [
+            "sh",
+            "-c",
+            'for name do if printenv "$name" >/dev/null; then printf "%s\\n" "$name"; fi; done',
+            "_",
+            *_PROXY_VARIABLES,
+        ]
+    )
+    if not result.ok:
+        raise ValueError("Could not check the SSH host proxy environment")
+    present = set(result.stdout.splitlines())
+    return [f"--env={name}" for name in _PROXY_VARIABLES if name in present]
+
 
 def get_launch_phase(remote_trainer_id: UUID) -> str | None:
     """Return the in-progress launch phase for a trainer, or ``None`` if it isn't launching."""
@@ -168,6 +196,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
                 render_gid=(None if device is DeviceType.CUDA else await resolve_render_group_gid(transport)),
                 shm_size_gb=settings.ssh_trainer_shm_size_gb,
             )
+            argv[2:2] = await _proxy_environment_args(transport)
             # The tunnel needs a stable loopback port for the reusable trainer container.
             argv[argv.index("127.0.0.1::8001")] = f"127.0.0.1:{remote_port}:8001"
             _launch_phase[remote_trainer.id] = "Starting trainer container"

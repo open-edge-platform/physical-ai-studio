@@ -9,6 +9,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from physicalai.config import Config
 from physicalai.export.backends import ExportBackend
+from pydantic import BaseModel, StringConstraints
 from sse_starlette import EventSourceResponse
 from starlette import status
 from starlette.background import BackgroundTask
@@ -28,17 +29,17 @@ from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
 from robots.robot_client_factory import RobotClientFactory
-from runtime.config_builder import (
+from schemas import Model, ModelDetailResponse
+from schemas.job import TrainJob
+from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
+from services.environment_service import EnvironmentService
+from services.runtime_export import (
     RUNTIME_FPS,
     build_runtime_config,
     policy_source_fragment,
     runtime_config_change_me,
     runtime_export_readme,
 )
-from schemas import Model, ModelDetailResponse
-from schemas.job import TrainJob
-from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
-from services.environment_service import EnvironmentService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
@@ -115,6 +116,21 @@ async def get_model_by_id(
         training_summary=training_summary,
         hparams=hparams,
     )
+
+
+class ModelNameUpdate(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+@router.patch("/{model_id}")
+async def update_model(
+    model_id: UUID,
+    payload: ModelNameUpdate,
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+) -> Model:
+    """Update a model's display name without changing its files or training history."""
+    model = await model_service.get_model_by_id(model_id)
+    return await model_service.update_model(model, payload.model_dump())
 
 
 @router.get("/{model_id}/tasks")

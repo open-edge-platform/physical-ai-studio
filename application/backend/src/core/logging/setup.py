@@ -47,7 +47,7 @@ def setup_logging(config: LogConfig | None = None) -> None:
     Args:
         config: Optional LogConfig instance. If None, uses default configuration.
 
-    Important: Must be called in each child process (BaseProcessWorker does this
+    Important: Must be called in each child process (ProcessWorker does this
     automatically) and once at main process startup. Loguru sinks don't transfer
     to child processes.
     """

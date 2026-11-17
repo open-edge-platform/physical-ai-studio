@@ -10,8 +10,7 @@ import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
 import { useRobotCatalogDefinitionQuery } from '../robot-catalog.hooks';
-import { SchemaRobot } from '../robot-types';
-import { mapJointToURDFJoint, useLoadModelQuery } from './../robot-models-context';
+import { mapJointToURDFJoint, RobotModelConfig, useLoadModelQuery } from './../robot-models-context';
 import { RobotViewerScene, SCENE_COLORS, useConfigureModelShadows } from './../robot-viewer-scene';
 
 import classes from './robot-viewer.module.css';
@@ -97,7 +96,7 @@ const ActualURDFModel = ({ model, isTrossen }: { model: URDFRobot; isTrossen: bo
 };
 
 interface RobotViewerProps {
-    robot: Pick<SchemaRobot, 'type'>;
+    robot: RobotModelConfig;
     featureValues?: number[];
     featureNames?: string[];
 }
@@ -134,11 +133,12 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
                         value: featureValues[index],
                     },
                     model,
-                    jointMap
+                    jointMap,
+                    robot
                 );
             });
         }
-    }, [featureValues, featureNames, model, jointMap]);
+    }, [featureValues, featureNames, model, jointMap, robot]);
 
     return (
         <div ref={ref} className={classes.viewer}>

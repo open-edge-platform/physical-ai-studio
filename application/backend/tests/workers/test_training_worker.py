@@ -133,10 +133,10 @@ def worker(stop_event, cancel_event, event_queue):
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
-    # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
-    # private stop event; _should_interrupt() also reads the per-job event.
+    # Mirror ProcessWorker/TrainingWorker wiring: should_stop() reads the
+    # private and the scheduler's stop events; _should_interrupt() also reads the per-job event.
     w._stop_event = stop_event
-    w._interrupt_event = mp.Event()
+    w.shutdown_event = mp.Event()
     w.cancel_event = cancel_event
     w.queue = event_queue
     return w
@@ -583,7 +583,7 @@ class TestAssignedJob:
 
     @pytest.mark.anyio
     async def test_shutdown_before_start_does_not_run_job(self, worker) -> None:
-        worker._interrupt_event.set()
+        worker.shutdown_event.set()
         with patch.object(worker, "_run_training_job", AsyncMock()) as run_job:
             await worker.run_loop()
         run_job.assert_not_awaited()

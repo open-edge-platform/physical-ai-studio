@@ -14,7 +14,7 @@ rs.mock('../zero-calibration/use-zero-calibration-websocket', () => ({
 rs.mock('../shared/setup-robot-viewer', () => ({
     SetupRobotViewer: () => <div>robot-viewer</div>,
 }));
-rs.mock('../../use-joint-state', () => ({
+rs.mock('../../use-synchronize-model-joints', () => ({
     useSynchronizeModelJoints: rs.fn(),
 }));
 

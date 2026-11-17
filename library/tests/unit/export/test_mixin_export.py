@@ -501,6 +501,64 @@ class TestToOpenVINO:
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
 
+    def test_to_openvino_converts_and_saves_on_cpu_then_restores_device(self, tmp_path):
+        """Convert and save run with the model on CPU; the original device is restored afterwards."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        # Pretend the policy lives on an accelerator; ``to`` is mocked so no real move happens.
+        wrapper.device = torch.device("meta")
+        input_sample = {"input_tensor": torch.randn(1, 10)}
+
+        calls = MagicMock()
+        calls.convert_model.side_effect = openvino.convert_model
+        calls.save_model.side_effect = openvino.save_model
+        with (
+            patch.object(model, "to", side_effect=lambda *_args, **_kwargs: calls.to(*_args) or model),
+            patch("physicalai.export.mixin_policy.openvino.convert_model", calls.convert_model),
+            patch("physicalai.export.mixin_policy.openvino.save_model", calls.save_model),
+        ):
+            wrapper.to_openvino(tmp_path / "model.xml", input_sample=input_sample)
+
+        call_names = [name for name, *_ in calls.mock_calls if name in {"to", "convert_model", "save_model"}]
+        assert call_names == ["to", "convert_model", "save_model", "to"]
+        assert calls.to.call_args_list[0].args == ("cpu",)
+        assert calls.to.call_args_list[-1].args == (torch.device("meta"),)
+
+    def test_to_openvino_restores_device_when_conversion_fails(self, tmp_path):
+        """The original device is restored even if conversion raises."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        wrapper.device = torch.device("meta")
+
+        to_calls = []
+        with (
+            patch.object(model, "to", side_effect=lambda *args, **_kwargs: to_calls.append(args) or model),
+            patch(
+                "physicalai.export.mixin_policy.openvino.convert_model",
+                side_effect=RuntimeError("conversion failed"),
+            ),
+            pytest.raises(RuntimeError, match="conversion failed"),
+        ):
+            wrapper.to_openvino(tmp_path / "model.xml", input_sample={"input_tensor": torch.randn(1, 10)})
+
+        assert to_calls == [("cpu",), (torch.device("meta"),)]
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+    def test_to_openvino_bf16_cuda_model(self, tmp_path):
+        """Regression: bf16 weights on CUDA used to segfault in ``openvino.save_model``."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5).to("cuda", torch.bfloat16)
+        wrapper = ExportWrapper(model)
+        wrapper.device = torch.device("cuda")
+
+        output_path = tmp_path / "model.xml"
+        wrapper.to_openvino(
+            output_path, input_sample={"input_tensor": torch.randn(1, 10, device="cuda", dtype=torch.bfloat16)}
+        )
+
+        assert output_path.exists()
+        assert (tmp_path / "model.bin").exists()
+        assert next(model.parameters()).device.type == "cuda"
+
 
 class TestOpenVINOInputNames:
     """Tests for OpenVINO input name normalization."""

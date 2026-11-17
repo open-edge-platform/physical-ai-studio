@@ -7,9 +7,9 @@ from fastapi.responses import Response
 from physicalai.config import Config
 
 from api.dependencies import RobotClientFactoryDep, get_environment_service
-from runtime.config_builder import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
 from schemas.environment import Environment, EnvironmentWithRelations, TeleoperatorRobotWithRobot
 from services.environment_service import EnvironmentService
+from services.runtime_export import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
 
 router = APIRouter(prefix="/api/projects/{project_id}/environments", tags=["Project Environments"])
 

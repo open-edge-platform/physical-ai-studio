@@ -29,6 +29,7 @@ const so101Robot = <T extends 'SO101_Follower' | 'SO101_Leader'>(
     payload: {
         connection_string: '',
         serial_number: serialNumber,
+        unit: 'normalized' as const,
         calibration: withCalibration ? calibration : null,
     },
 });
@@ -83,6 +84,7 @@ describe('BimanualSO101FormFields', () => {
                         payload: {
                             connection_string: '',
                             serial_number: '',
+                            unit: 'normalized' as const,
                             calibration,
                         },
                     },

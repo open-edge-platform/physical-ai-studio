@@ -30,6 +30,7 @@ from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
 from physicalai.policies.act.preprocessor import ACTPreprocessor
 from physicalai.policies.base import Policy
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 logger = logging.getLogger(__name__)
@@ -525,7 +526,7 @@ class ACT(ExportablePolicyMixin, Policy):
                 {"params": backbone_params, "lr": self.config.optimizer_lr_backbone},
             )
 
-        optimizer = torch.optim.AdamW(
+        optimizer = build_adamw_auto_precision(
             param_groups,
             weight_decay=self.config.optimizer_weight_decay,
         )
@@ -708,6 +709,8 @@ class ACT(ExportablePolicyMixin, Policy):
             )
 
         preproc_specs = [
+            # Resize float pixels like training, avoiding OpenCV's uint8 interpolation rounding.
+            ComponentSpec(type="to_float_tensor"),
             ComponentSpec(
                 type="resize",
                 image_resolution=self.config.image_size,

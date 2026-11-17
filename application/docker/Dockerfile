@@ -62,7 +62,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 # PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
 # artifacts in the runtime stages. Built in parallel with the other stages.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS ffmpeg-builder
+FROM python:${PYTHON_VERSION}-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS ffmpeg-builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -186,9 +186,9 @@ RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS builder-base
 
-COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
 # Build-time system dependencies (not shipped in final image)
@@ -344,10 +344,10 @@ RUN set -eu; \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
-COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /uvx /bin/
 
 # Non-root user — override at build time to match host UID/GID for
 # bind-mounted volumes (e.g. calibration data, HuggingFace cache).
@@ -528,11 +528,13 @@ CMD ["./run.sh"]
 # ===========================================================================
 FROM runtime-base AS runtime-cuda
 
-# NVIDIA CUDA 12.8 runtime libraries (matches cu128 PyTorch wheels).
+# NVIDIA CUDA 13 runtime libraries (match the cu132 PyTorch wheels).
+# Versions track the nvidia-* wheels pinned in application/backend/uv.lock.
 # Requires NVIDIA Container Toolkit on the host for GPU passthrough.
 #
-# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo
-# only has CUDA 13.1 packages (not 12.8). trusted=yes is required because
+# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo only
+# carries the newest CUDA 13 point releases, not the ones the wheels pin.
+# trusted=yes is required because
 # Debian 13's sqv GPG verifier cannot validate the NVIDIA signing key.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -543,9 +545,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && dpkg -i /tmp/cuda-keyring.deb \
     && rm -f /tmp/cuda-keyring.deb \
     && apt-get update -o APT::Key::GPGVCommand=/usr/bin/gpgv && apt-get install -y --no-install-recommends \
-        cuda-cudart-12-8=12.8.90-1 \
-        libcublas-12-8=12.8.4.1-1 \
-        libcudnn9-cuda-12=9.19.0.56-1 \
+        cuda-cudart-13-2=13.2.86-1 \
+        libcublas-13-2=13.4.1.3-1 \
+        libcudnn9-cuda-13=9.26.0.51-1 \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
 

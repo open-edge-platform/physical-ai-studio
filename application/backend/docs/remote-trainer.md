@@ -86,7 +86,7 @@ directory.
 | `HF_TOKEN`                   | no       | Fallback used only when the studio sends no token for a job (see the [!IMPORTANT] note above); has no effect for SSH-provisioned trainers. |
 | `TRAINER_STORAGE_DIR`        | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Maximum parallel jobs on distinct GPUs (default 8). Same-GPU jobs queue. |
-| `TRAINER_GPU_BUSY_MEMORY_MB` | no | GPU memory usage that marks a device busy (default 512 MiB). Tune for driver/desktop overhead. |
+| `TRAINER_GPU_BUSY_MEMORY_MB` | no | GPU memory usage that marks a device busy (default 1024 MiB). Tune for driver/desktop overhead. |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
 | `TRAINER_MIN_FREE_BYTES`     | no       | Disk headroom kept free after extraction.    |
 | `TRAINER_PORT`               | no       | Listen port (default 8001).                  |
@@ -266,13 +266,13 @@ will fail on restart, and queued jobs can then proceed.
 
 #### CUDA
 
-The Docker host needs an NVIDIA driver and NVIDIA Container Toolkit. Verify the
-host can grant GPU access with a disposable CUDA container before starting the
-trainer.
+The Docker host needs NVIDIA driver branch 595 or newer and NVIDIA Container
+Toolkit. Verify the driver version and GPU access before starting the trainer.
 
 ```bash
+nvidia-smi --query-gpu=driver_version --format=csv,noheader
 docker run --rm --gpus all \
-  nvidia/cuda:12.8.0-base-ubuntu24.04 \
+  nvidia/cuda:13.2.0-base-ubuntu24.04 \
   nvidia-smi
 ```
 

@@ -50,7 +50,7 @@ jobs:
       security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -71,7 +71,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Zizmor scan
-        uses: open-edge-platform/geti-ci/actions/zizmor@27a17d738348699840c32f98edc9947f21278154 # zizmor/v0.1.5
+        uses: open-edge-platform/geti-ci/actions/zizmor@7472e413816546d70cf1b735225ec6fd2af50418 # zizmor/v0.1.6
         with:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
           severity-level: "LOW"
@@ -85,7 +85,7 @@ jobs:
       security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -116,7 +116,7 @@ jobs:
       security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -155,7 +155,7 @@ jobs:
       security-events: write # Needed to upload the results to code-scanning dashboard
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -198,7 +198,7 @@ jobs:
           - image: physicalai-trainer-xpu
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -232,11 +232,11 @@ jobs:
             storage.geti.intel.com:443
 
       - name: Run Trivy scan diff (${{ matrix.image }})
-        uses: open-edge-platform/geti-ci/actions/trivy-scan-diff@7cb99ede8752d628eb220fc36c86b4eb043ac525 # trivy-scan-diff/v0.1.0
+        uses: open-edge-platform/geti-ci/actions/trivy-scan-diff@f1328ee7c6ad00e90204ff9902491ead4b28c7da # trivy-scan-diff/v0.1.1
         with:
           image: "ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:main"
           # renovate: datasource=docker depName=python
-          base-image: "python:3.13-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81"
+          base-image: "python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc"
           artifact-name: "trivy-scan-diff-${{ matrix.image }}"
           ignore_unfixed: true
 
@@ -250,7 +250,7 @@ jobs:
         ai-device: [cpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -335,7 +335,7 @@ jobs:
           artifact_name: zapapi
 
       - name: Run Schemathesis Scan
-        uses: schemathesis/action@806cace2053cbbac93188e1281ff7da415643160 # v3
+        uses: schemathesis/action@b0cacf86f25caaa79ac110cc2077afd70fdd67ff # v3
         continue-on-error: true
         with:
           schema: "http://localhost:7860/api/openapi.json"
@@ -406,7 +406,7 @@ jobs:
         ai-device: [xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -436,7 +436,7 @@ jobs:
           persist-credentials: false
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -519,7 +519,7 @@ jobs:
           artifact_name: zapapi-trainer
 
       - name: Run Schemathesis Scan
-        uses: schemathesis/action@806cace2053cbbac93188e1281ff7da415643160 # v3
+        uses: schemathesis/action@b0cacf86f25caaa79ac110cc2077afd70fdd67ff # v3
         continue-on-error: true
         with:
           schema: "http://localhost:8001/openapi.json"

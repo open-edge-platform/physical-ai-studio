@@ -19,6 +19,7 @@ from transformers.cache_utils import DynamicCache
 
 from physicalai.data.constants import (
     IMAGE_MASKS,
+    NOISE,
     RTC_EXECUTION_HORIZON,
     RTC_INFERENCE_DELAY,
     RTC_MAX_GUIDANCE_WEIGHT,
@@ -1235,6 +1236,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
             img_masks,
             tokens,
             masks,
+            noise=batch.get(NOISE),
             **rtc_kwargs,
         )
 
@@ -1295,7 +1297,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
         dt = -1.0 / num_steps
 
-        x_t = noise
+        x_t = noise.clone()  # denoising updates x_t in place; keep the caller's noise
         for step in range(num_steps):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)

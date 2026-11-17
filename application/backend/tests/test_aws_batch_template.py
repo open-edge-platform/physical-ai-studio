@@ -21,7 +21,6 @@ def _template() -> dict:
 def _resolved_configuration(template: dict, region: str = "us-east-1") -> dict:
     references = {
         "AWS::Region": region,
-        "DeploymentRegion": region,
         "StudioRole.Arn": "arn:aws:iam::123456789012:role/studio",
         "JobsBucket": "jobs-bucket",
     }
@@ -47,18 +46,41 @@ def test_template_configuration_matches_resource_schema(region: str) -> None:
     parsed = AwsBatchResourceConfiguration.model_validate(_resolved_configuration(template, region=region))
     assert set(parsed.targets) == {"g4dn.2xlarge", "g6e.2xlarge", "g7e.8xlarge"}
     assert parsed.region == region
-    deployment_region = template["Parameters"]["DeploymentRegion"]
-    assert deployment_region["Default"] == "us-east-1"
-    assert deployment_region["AllowedValues"] == ["us-east-1", "us-west-2", "eu-central-1"]
     assertions = template["Rules"]["SupportedRegion"]["Assertions"]
     assert assertions == [
         {
-            "Assert": {"Fn::Equals": [{"Ref": "DeploymentRegion"}, {"Ref": "AWS::Region"}]},
-            "AssertDescription": "Selected DeploymentRegion must match the current AWS Console region (AWS::Region).",
+            "Assert": {"Fn::Contains": [["us-east-1", "us-west-2", "eu-central-1"], {"Ref": "AWS::Region"}]},
+            "AssertDescription": (
+                "Unsupported AWS Region. Switch the region selector in the top-right corner of the AWS "
+                "Console to one of the supported regions: us-east-1 (N. Virginia), us-west-2 (Oregon), "
+                "or eu-central-1 (Frankfurt), then retry creating the stack."
+            ),
         }
     ]
     assert parsed.studio_role_arn == "arn:aws:iam::123456789012:role/studio"
-    assert set(template["Outputs"]) == {"ConfigurationUri"}
+    assert set(template["Outputs"]) == {"StackIdentifier"}
+
+
+@pytest.mark.parametrize(
+    ("resource", "name_property", "prefix"),
+    [
+        ("JobsBucket", "BucketName", "pai-jobs-"),
+        ("StudioRole", "RoleName", "pai-studio-"),
+        ("StudioRoleAlias", "RoleAlias", "pai-studio-"),
+        ("RobotIoTPolicy", "PolicyName", "pai-robot-"),
+        ("TrainerLogGroup", "LogGroupName", "/pai/trainer/"),
+        ("G4dnJobQueue", "JobQueueName", "pai-g4dn-"),
+        ("G4dnJobDefinition", "JobDefinitionName", "pai-g4dn-"),
+        ("G6eJobQueue", "JobQueueName", "pai-g6e-"),
+        ("G6eJobDefinition", "JobDefinitionName", "pai-g6e-"),
+        ("G7eJobQueue", "JobQueueName", "pai-g7e-"),
+        ("G7eJobDefinition", "JobDefinitionName", "pai-g7e-"),
+    ],
+)
+def test_resource_names_derive_from_stack_identifier(resource: str, name_property: str, prefix: str) -> None:
+    template_string, variables = _template()["Resources"][resource]["Properties"][name_property]
+    assert template_string == f"{prefix}${{StackUuid}}"
+    assert variables == {"StackUuid": ["0", ["-", ["2", ["/", "AWS::StackId"]]]]}
 
 
 def test_configuration_object_is_excluded_from_data_expiration() -> None:
@@ -69,10 +91,15 @@ def test_configuration_object_is_excluded_from_data_expiration() -> None:
 
 def test_studio_can_read_only_the_trainer_log_group() -> None:
     policies = _template()["Resources"]["StudioRole"]["Properties"]["Policies"]
-    statements = [statement for policy in policies for statement in policy["PolicyDocument"]["Statement"]]
+    statements = [
+        statement
+        for policy in policies
+        for statement in policy["PolicyDocument"]["Statement"]
+        if isinstance(statement, dict)
+    ]
     logs = next(statement for statement in statements if statement["Action"] == "logs:GetLogEvents")
     assert logs["Effect"] == "Allow"
-    assert logs["Resource"] == "TrainerLogGroup.Arn"
+    assert logs["Resource"] == ["TrainerLogGroup.Arn", "${TrainerLogGroup.Arn}:*"]
 
 
 def test_studio_can_inspect_ecs_startup_without_modifying_tasks() -> None:
@@ -128,7 +155,11 @@ def test_job_prefix_parameter_reaches_trainer(definition: str, prefix: str, tmp_
 
 def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
     template = _template()
-    assert set(template["Parameters"]) == {"DeploymentRegion", "JobTimeoutSeconds"}
+    assert set(template["Parameters"]) == {
+        "JobTimeoutSeconds",
+        "RobotArtifactBucketName",
+        "RobotCredentialDurationSeconds",
+    }
     expected_region_mapping = {
         "Small": "g4dn.2xlarge",
         "Medium": "g6e.2xlarge",
@@ -152,12 +183,12 @@ def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
         ("G7eComputeEnvironment", "Large"),
     ]:
         compute_resources = template["Resources"][compute_env]["Properties"]["ComputeResources"]
-        assert compute_resources["InstanceTypes"] == [["RegionInstanceTypes", "DeploymentRegion", size_key]]
+        assert compute_resources["InstanceTypes"] == [["RegionInstanceTypes", "AWS::Region", size_key]]
         assert compute_resources["Subnets"] == expected_subnets
     assert template["Resources"]["TrainerLogGroup"]["Properties"]["RetentionInDays"] == "14"
     for definition, vcpus, memory, shm_size in [
         ("G4dnJobDefinition", "8", "30000", "8192"),
-        ("G6eJobDefinition", "8", "30000", "8192"),
+        ("G6eJobDefinition", "8", "60000", "16384"),
         ("G7eJobDefinition", "16", "240000", "32768"),
     ]:
         properties = template["Resources"][definition]["Properties"]
@@ -183,7 +214,12 @@ def test_job_definitions_keep_resource_limits_and_use_defaults() -> None:
 )
 def test_bucket_location_permission_has_no_prefix_condition(role: str, prefixes: list[str] | str) -> None:
     policies = _template()["Resources"][role]["Properties"]["Policies"]
-    statements = [statement for policy in policies for statement in policy["PolicyDocument"]["Statement"]]
+    statements = [
+        statement
+        for policy in policies
+        for statement in policy["PolicyDocument"]["Statement"]
+        if isinstance(statement, dict)
+    ]
     location = next(statement for statement in statements if statement["Action"] == "s3:GetBucketLocation")
     assert location["Effect"] == "Allow"
     assert location["Resource"] == "JobsBucket.Arn"

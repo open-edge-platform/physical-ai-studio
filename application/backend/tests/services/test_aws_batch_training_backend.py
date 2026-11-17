@@ -1,5 +1,6 @@
 """Exercise the Batch execution path with mocked AWS clients."""
 
+import re
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -113,10 +114,10 @@ async def test_batch_catalog_and_preparation_do_not_use_http(connection, monkeyp
     http.assert_not_called()
 
 
-@pytest.mark.parametrize("configuration_uri", [None, "s3://config-bucket/trainer.json"])
+@pytest.mark.parametrize("stack_id", [None, "123456789012-us-east-1-f4a9b2c0"])
 @pytest.mark.parametrize("profile_name", ["default", "studio"])
-def test_batch_trainer_url_preserves_resolved_resources(connection, configuration_uri, profile_name) -> None:
-    connection.configuration_uri = configuration_uri
+def test_batch_trainer_url_preserves_resolved_resources(connection, stack_id, profile_name) -> None:
+    connection.stack_id = stack_id
     connection.profile_name = profile_name
     connection.targets["g4dn.2xlarge"].job_definition = "arn:aws:batch:us-east-1:123456789012:job-definition/small:1"
     assert aws_batch_connection_from_url(aws_batch_trainer_url(connection)) == connection
@@ -302,9 +303,19 @@ async def test_submission_rejects_expired_profile_before_creating_job(connection
 
 def test_policy_routes_match_existing_cloudformation_mapping() -> None:
     path = Path(__file__).resolve().parents[3] / "cloudformation" / "remote-trainer.yaml"
-    mapping = yaml.load(path.read_text(), Loader=yaml.BaseLoader)["Mappings"]["PolicyInstanceType"]
+    template = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+    mapping = template["Mappings"]["PolicyInstanceType"]
+    parameter = template["Parameters"]["TrainingPolicy"]
+    assert all(re.fullmatch(r"[A-Za-z0-9.-]+", key) for key in mapping)
+    assert set(parameter["AllowedValues"]) == set(mapping)
+    assert parameter["Default"] in mapping
+    assert template["Resources"]["TrainerInstance"]["Properties"]["InstanceType"] == [
+        "PolicyInstanceType",
+        "TrainingPolicy",
+        "InstanceType",
+    ]
     assert {
-        label.split(" (")[0].lower().replace(".", ""): value["InstanceType"] for label, value in mapping.items()
+        label.split("-", 1)[0].lower().replace(".", ""): value["InstanceType"] for label, value in mapping.items()
     } == POLICY_INSTANCE_TYPES
 
 

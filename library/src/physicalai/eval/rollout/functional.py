@@ -222,9 +222,8 @@ def _collect_frame(
     if not isinstance(frame_key, str):
         if not isinstance(images, dict):
             return None
-        frames = [
-            torch.as_tensor(images[key]).squeeze(0).permute(1, 2, 0).cpu().numpy() for key in frame_key if key in images
-        ]
+        frames = [_collect_frame(observation, key) for key in frame_key if key in images]
+        frames = [frame for frame in frames if frame is not None]
         return np.concatenate(frames, axis=1) if frames else None
 
     # images can be a Tensor (single camera) or dict (multiple cameras)
@@ -236,6 +235,9 @@ def _collect_frame(
         img = torch.as_tensor(images[frame_key])
     else:
         return None
+    # [B, T, C, H, W]: record only the current frame.
+    if img.ndim == 5:  # noqa: PLR2004
+        img = img[:, -1]
     return img.squeeze(0).permute(1, 2, 0).cpu().numpy()
 
 

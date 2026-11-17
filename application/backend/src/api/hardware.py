@@ -6,6 +6,7 @@ from physicalai.capture import DeviceInfo, discover_all
 
 from schemas import Camera, CameraProfile
 from utils.camera_factory import DRIVER_KEY_MAP
+from utils.v4l2_frame_interval import fix_zero_frame_intervals
 
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
@@ -47,6 +48,9 @@ async def get_cameras(
 
     When `all=true`, cameras currently in use by another process are also included.
     """
+    # Some UVC cameras report a 1/0 frame interval after being plugged in, which makes
+    # discovery drop them as unusable. Repair those before discovering.
+    fix_zero_frame_intervals()
     discovered = discover_all(only_usable=not all)
     logger.debug("Discovered cameras: {}", discovered)
     return _build_camera_list(discovered)

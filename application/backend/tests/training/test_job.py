@@ -16,6 +16,8 @@ import gc
 import inspect
 import os
 import weakref
+from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -261,6 +263,32 @@ class _ExportablePolicy(ExportablePolicyMixin):
         self.exported.append((str(output_path), backend))
 
 
+def _wire_mocked_fit(trainer: Any, checkpoint: Path, *, model: Any, datamodule: Any) -> None:
+    """Simulate the trainer references Lightning leaves attached after fit."""
+    model._trainer = trainer
+    trainer.datamodule = datamodule
+    trainer.strategy._lightning_module = model
+    checkpoint.write_text("x")
+
+
+def _assert_resources_released_before_reload(
+    trainer_ref: weakref.ReferenceType[Any],
+    policy_ref: list[weakref.ReferenceType[_ExportablePolicy] | None],
+    release_memory: MagicMock,
+    exported_policy: _ExportablePolicy,
+    *_args: Any,
+    **_kwargs: Any,
+) -> _ExportablePolicy:
+    """Ensure checkpoint construction starts after training resources are released."""
+    trainer = trainer_ref()
+    assert trainer is not None
+    assert policy_ref[0] is not None and policy_ref[0]() is None
+    assert trainer.datamodule is None
+    assert trainer.strategy._lightning_module is None
+    release_memory.assert_called_once_with()
+    return exported_policy
+
+
 def _run(
     spec: TrainingJobSpec,
     tmp_path: Path,
@@ -271,6 +299,7 @@ def _run(
     write_checkpoint: bool = True,
     reach_snapflow_phase: bool = False,
     write_distilled_checkpoint: bool = True,
+    checkpoint_loader: MagicMock | None = None,
 ) -> MagicMock:
     """Run a job with the datamodule and Lightning trainer mocked out.
 
@@ -306,9 +335,19 @@ def _run(
     def fake_save_checkpoint(path: str | Path, *_args: object, **_kwargs: object) -> None:
         Path(path).write_text("checkpoint")
 
+    loader_patch = (
+        nullcontext(checkpoint_loader)
+        if checkpoint_loader is not None
+        else patch(
+            f"{JOB}._load_policy_from_checkpoint",
+            return_value=policy if policy is not None else MagicMock(),
+        )
+    )
+
     with (
         patch("physicalai.data.LeRobotDataModule"),
         patch(f"{JOB}.build_policy", return_value=policy if policy is not None else MagicMock()),
+        loader_patch,
         patch("physicalai.train.trainer.Trainer") as trainer_class,
     ):
         trainer_class.return_value.fit.side_effect = fake_fit
@@ -338,6 +377,7 @@ class TestRunTrainingJob:
         with (
             patch("physicalai.data.LeRobotDataModule"),
             patch(f"{JOB}.build_policy", return_value=MagicMock()),
+            patch(f"{JOB}._load_policy_from_checkpoint", return_value=MagicMock()),
             patch("physicalai.train.trainer.Trainer") as trainer_class,
         ):
             trainer_class.return_value.fit.side_effect = fake_fit
@@ -402,6 +442,7 @@ class TestRunTrainingJob:
         with (
             patch("physicalai.data.LeRobotDataModule") as datamodule,
             patch(f"{JOB}.build_policy"),
+            patch(f"{JOB}._load_policy_from_checkpoint", return_value=MagicMock()),
             patch("physicalai.train.trainer.Trainer") as trainer_class,
         ):
             trainer_class.return_value.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
@@ -429,6 +470,7 @@ class TestRunTrainingJob:
         with (
             patch("physicalai.data.LeRobotDataModule") as datamodule,
             patch(f"{JOB}.build_policy"),
+            patch(f"{JOB}._load_policy_from_checkpoint", return_value=MagicMock()),
             patch("physicalai.train.trainer.Trainer") as trainer_class,
         ):
             trainer_class.return_value.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
@@ -549,45 +591,85 @@ class TestRunTrainingJob:
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
     @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi05"])
-    def test_compiled_policy_exports_without_reloading(self, policy_name: str, tmp_path: Path) -> None:
-        """Compiled policies are traced directly by the library; no checkpoint reload is needed."""
+    def test_compiled_policy_reloads_the_selected_checkpoint_for_export(self, policy_name: str, tmp_path: Path) -> None:
+        """Exports must use the selected checkpoint even when training was compiled."""
         policy = _ExportablePolicy([ExportBackend.OPENVINO])
 
         with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
-            _run(TrainingJobSpec(policy=policy_name, compile_model=True), tmp_path, policy=policy)
+            reload.return_value = policy
+            _run(
+                TrainingJobSpec(policy=policy_name, compile_model=True),
+                tmp_path,
+                policy=policy,
+                checkpoint_loader=reload,
+            )
 
-        reload.assert_not_called()
+        reload.assert_called_once()
+        assert reload.call_args.args[1] == tmp_path / "model" / CHECKPOINT_NAME
+        assert reload.call_args.args[0].compile_model is False
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
+    def test_checkpoint_reload_failure_fails_the_job(self, tmp_path: Path) -> None:
+        """Do not silently export final-epoch weights when the selected checkpoint fails to load."""
+        with (
+            patch(f"{JOB}._load_policy_from_checkpoint", side_effect=RuntimeError("reload failed")) as reload,
+            pytest.raises(RuntimeError, match="reload failed"),
+        ):
+            _run(TrainingJobSpec(policy="act"), tmp_path, checkpoint_loader=reload)
+
+        reload.assert_called_once()
+
     def test_trainer_and_datamodule_are_released_before_export(self, tmp_path: Path) -> None:
-        """The trainer must not still be resident (optimizer state, dataloaders) during export.
+        """Release training resources and the live policy before checkpoint reload.
 
         Lightning wires ``policy._trainer = trainer`` and ``trainer.datamodule =
         datamodule`` during ``fit`` and never undoes it; that link is simulated
         here since the real ``Trainer`` is mocked out. Without breaking it, the
-        exported policy keeps the whole trainer graph reachable and no amount of
-        ``gc.collect()`` can reclaim it: this is what regresses if the reference
-        cycle is left in place instead of explicitly detached before export.
+        trained policy keeps the whole trainer graph reachable and no amount of
+        ``gc.collect()`` can reclaim it. Checkpoint reconstruction must happen
+        only after those references and the trained policy are released.
         """
-        policy = _ExportablePolicy([ExportBackend.TORCH])
         cache_dir = tmp_path / "cache" / "job"
+        trained_policy_ref: list[weakref.ReferenceType[_ExportablePolicy] | None] = [None]
+        exported_policy = _ExportablePolicy([ExportBackend.TORCH])
 
         with (
             patch("physicalai.data.LeRobotDataModule") as datamodule_class,
-            patch(f"{JOB}.build_policy", return_value=policy),
+            patch(f"{JOB}.build_policy") as build_policy_mock,
             patch("physicalai.train.trainer.Trainer") as trainer_class,
+            patch(f"{JOB}._release_memory", side_effect=gc.collect) as release_memory,
+            patch(f"{JOB}._load_policy_from_checkpoint") as reload,
         ):
             trainer_instance = trainer_class.return_value
             datamodule_instance = datamodule_class.return_value
+
+            def build_test_policy(*args: Any, **kwargs: Any) -> _ExportablePolicy:
+                policy = _ExportablePolicy([ExportBackend.TORCH])
+                trained_policy_ref[0] = weakref.ref(policy)
+                return policy
+
+            build_policy_mock.side_effect = build_test_policy
+
             # Simulate what Lightning's real `trainer.fit(policy, datamodule)` wires up,
             # including writing the checkpoint via the ModelCheckpoint callback.
-            trainer_instance.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
-            policy._trainer = trainer_instance
-            trainer_instance.datamodule = datamodule_instance
-            trainer_instance.strategy._lightning_module = policy
+            # A plain function avoids unittest.mock retaining fit's policy
+            # argument in call history after training has returned.
+            trainer_instance.fit = partial(
+                _wire_mocked_fit,
+                trainer_instance,
+                cache_dir / CHECKPOINT_NAME,
+            )
 
             trainer_ref = weakref.ref(trainer_instance)
             datamodule_ref = weakref.ref(datamodule_instance)
+
+            reload.side_effect = partial(
+                _assert_resources_released_before_reload,
+                trainer_ref,
+                trained_policy_ref,
+                release_memory,
+                exported_policy,
+            )
 
             run_training_job(
                 TrainingJobSpec(policy="act"),
@@ -598,14 +680,16 @@ class TestRunTrainingJob:
                 should_stop=lambda: False,
             )
 
+            reload.assert_called_once()
+
         # Drop the test's own strong refs before collecting, mirroring what
         # run_training_job does internally with its local `trainer`/`datamodule`.
-        del trainer_instance, datamodule_instance, trainer_class, datamodule_class
+        del trainer_instance, datamodule_instance, trainer_class, datamodule_class, reload, release_memory
         gc.collect()
 
         assert trainer_ref() is None, "trainer is still reachable; the reference cycle was not broken"
         assert datamodule_ref() is None, "datamodule is still reachable; the reference cycle was not broken"
-        assert policy._trainer is None
+        assert trained_policy_ref[0] is not None and trained_policy_ref[0]() is None
 
 
 SNAPFLOW_SPEC = TrainingJobSpec(policy="pi05", max_epochs=8, snapflow_start_epoch=5)
@@ -672,18 +756,26 @@ class TestSnapFlowDistillation:
         policy = _ExportablePolicy([ExportBackend.OPENVINO])
 
         with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
-            _run(SNAPFLOW_SPEC, tmp_path, policy=policy, reach_snapflow_phase=True)
+            _run(
+                SNAPFLOW_SPEC,
+                tmp_path,
+                policy=policy,
+                reach_snapflow_phase=True,
+                checkpoint_loader=reload,
+            )
 
         reload.assert_called_once()
         assert reload.call_args.args[1] == tmp_path / "model" / SNAPFLOW_CHECKPOINT_NAME
 
-    def test_a_flow_matching_run_exports_the_live_policy_without_reloading(self, tmp_path: Path) -> None:
+    def test_a_flow_matching_run_reloads_the_selected_checkpoint_for_export(self, tmp_path: Path) -> None:
         policy = _ExportablePolicy([ExportBackend.OPENVINO])
 
         with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
-            _run(TrainingJobSpec(policy="pi05"), tmp_path, policy=policy)
+            reload.return_value = policy
+            _run(TrainingJobSpec(policy="pi05"), tmp_path, policy=policy, checkpoint_loader=reload)
 
-        reload.assert_not_called()
+        reload.assert_called_once()
+        assert reload.call_args.args[1] == tmp_path / "model" / CHECKPOINT_NAME
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
 

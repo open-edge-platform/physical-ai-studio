@@ -14,7 +14,7 @@ class ProjectRobotMapper(IBaseMapper[ProjectRobotDB, Robot | UnavailableRobot]):
             id=str(db_schema.id),
             name=db_schema.name,
             type=db_schema.type,
-            payload=db_schema.payload.model_dump(),
+            payload=db_schema.payload.model_dump(mode="json"),
         )
 
     @staticmethod

@@ -59,7 +59,7 @@ describe('CreateEnvironmentForm', () => {
                             id: 'robot-1',
                             type: 'SO101_Follower',
                             name: 'Test Robot',
-                            payload: { connection_string: '', serial_number: '' },
+                            payload: { connection_string: '', serial_number: '', unit: 'normalized' },
                         },
                     ])
                 )
@@ -88,7 +88,7 @@ describe('CreateEnvironmentForm', () => {
                             id: 'robot-1',
                             type: 'SO101_Follower',
                             name: 'Test Robot',
-                            payload: { connection_string: '', serial_number: '' },
+                            payload: { connection_string: '', serial_number: '', unit: 'normalized' },
                         },
                     ])
                 )
