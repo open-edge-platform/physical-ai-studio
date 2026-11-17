@@ -14,17 +14,20 @@ import asyncio
 import json
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 
 from runtime_session.bus import Bus, publish_status, until_serving
+from schemas.model_variant import VariantId
 from schemas.runtime_session import CommandDone, SessionModel
+from services.model_service import ModelService
 from workers import model_worker as model_rpc
 from workers.model_worker import ActionChunk, InferRequest, ModelWorker
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from runtime_session.store import FeatureSpec, Store
     from schemas.model import Model
 
@@ -86,10 +89,14 @@ class ProcessModel:
     that dies is reported ``failed``.
     """
 
-    def __init__(self, model: Model, session_id: str, store: Store, *, backend: str, device: str) -> None:
+    def __init__(
+        self, model: Model, session_id: str, store: Store, *, backend: str, device: str, variant: VariantId = "original"
+    ) -> None:
         if backend not in model.available_backends:
             raise ValueError(f"Model {model.name!r} has no {backend} export; it has {model.available_backends}")
-        export_dir = Path(model.path) / "exports" / backend
+        export_dir = ModelService.resolve_export(model, backend, variant)
+        self.export_dir = export_dir
+        self.variant = variant
         self.model = model
         self.backend = backend
         self.device = device
@@ -109,7 +116,9 @@ class ProcessModel:
         self._started = False
 
     def state(self) -> SessionModel:
-        return SessionModel(model_id=self.model.id, name=self.model.name, backend=self.backend, device=self.device)
+        return SessionModel(
+            model_id=self.model.id, name=self.model.name, backend=self.backend, device=self.device, variant=self.variant
+        )
 
     async def __aenter__(self) -> Self:
         """Start the worker and wait until the model is loaded.
