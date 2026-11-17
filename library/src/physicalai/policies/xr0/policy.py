@@ -19,6 +19,7 @@ from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Feature, Fe
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import ExportParameters, OpenVINOExportParameters, TorchExportParameters
 from physicalai.policies.base import Policy
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -66,16 +67,15 @@ def _build_optimizer(config: XR0Config, param_groups: list[dict[str, Any]]) -> t
         warning when a low-bit optimizer is requested but torchao is missing.
     """
     if config.optimizer_type != "adamw":
-        # torchao ships only with the `cu128` (Linux x86-64) / `xpu` extras, so
-        # import it lazily to keep other installs working.
+        # Import torchao lazily to keep installs without a hardware extra working.
         try:
             from torchao.optim import AdamW4bit, AdamW8bit  # noqa: PLC0415  # pyrefly: ignore[missing-import]
         except ImportError:
             logger.warning(
                 "optimizer_type=%r requires the 'torchao' package, which is not installed; "
                 "falling back to torch.optim.AdamW (fp32 moments: more optimizer memory, "
-                "no bf16 stochastic rounding). Install torchao (`uv sync --extra cu128` on "
-                "Linux x86-64, or `uv sync --extra xpu`) or set optimizer_type='adamw'.",
+                "no bf16 stochastic rounding). Install torchao with the appropriate hardware extra "
+                "(`cpu`, `cu132`, or `xpu`) or set optimizer_type='adamw'.",
                 config.optimizer_type,
             )
         else:
@@ -89,7 +89,7 @@ def _build_optimizer(config: XR0Config, param_groups: list[dict[str, Any]]) -> t
                 bf16_stochastic_round=config.dtype == "bfloat16",
             )
 
-    return torch.optim.AdamW(
+    return build_adamw_auto_precision(
         param_groups,
         lr=config.optimizer_lr,
         betas=config.optimizer_betas,

@@ -13,7 +13,7 @@ client = TestClient(app)
 
 CONFIGURATION = {
     "profile_name": "studio",
-    "configuration_uri": "s3://config-bucket/studio-config.json",
+    "stack_id": "123456789012-eu-west-1-f4a9b2c0",
 }
 
 
@@ -22,23 +22,12 @@ def test_provider_schema_exposes_only_connection_fields() -> None:
     assert response.status_code == 200
     provider = response.json()[0]
     assert provider["id"] == "aws"
-    assert [field["name"] for field in provider["fields"]] == ["configuration_uri"]
-    assert provider["fields"][0]["pattern"].startswith("^s3://")
+    assert [field["name"] for field in provider["fields"]] == ["stack_id"]
+    assert provider["fields"][0]["pattern"].startswith("^[0-9]{12}-")
 
 
 def test_resolve_provider_configuration() -> None:
-    resolved = AwsBatchConnection(
-        **CONFIGURATION,
-        region="eu-west-1",
-        studio_role_arn="arn:aws:iam::123456789012:role/studio",
-        bucket="jobs-bucket",
-        targets={
-            "g4dn.xlarge": {
-                "queue": "arn:aws:batch:eu-west-1:123456789012:job-queue/queue-name",
-                "job_definition": "arn:aws:batch:eu-west-1:123456789012:job-definition/definition-name:1",
-            }
-        },
-    )
+    resolved = AwsBatchConnection.model_validate(CONFIGURATION)
     with patch("api.remote_trainers.resolve_aws_batch_configuration", return_value=resolved):
         response = client.post("/api/remote-trainers/providers/aws/configuration", json=CONFIGURATION)
     assert response.status_code == 200
@@ -46,7 +35,7 @@ def test_resolve_provider_configuration() -> None:
 
 
 def test_resolver_returns_sanitized_aws_error() -> None:
-    error = ClientError({"Error": {"Code": "AccessDenied", "Message": "private details"}}, "GetObject")
+    error = ClientError({"Error": {"Code": "AccessDenied", "Message": "private details"}}, "DescribeJobQueues")
     with patch("api.remote_trainers.resolve_aws_batch_configuration", side_effect=error):
         response = client.post("/api/remote-trainers/providers/aws/configuration", json=CONFIGURATION)
     assert response.status_code == 400
@@ -60,11 +49,11 @@ def test_resolver_rejects_invalid_document() -> None:
     assert response.status_code == 400
 
 
-def test_resolver_rejects_non_s3_configuration_before_aws_request() -> None:
+def test_resolver_rejects_invalid_stack_id_before_aws_request() -> None:
     with patch("api.remote_trainers.resolve_aws_batch_configuration") as resolve:
         response = client.post(
             "/api/remote-trainers/providers/aws/configuration",
-            json={**CONFIGURATION, "configuration_uri": "https://example.com/config.json"},
+            json={**CONFIGURATION, "stack_id": "invalid-stack-id"},
         )
     assert response.status_code == 422
     resolve.assert_not_called()

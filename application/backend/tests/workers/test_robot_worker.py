@@ -67,7 +67,7 @@ async def test_holds_still_then_follows_the_action(log: Path, store: Store) -> N
     async with RobotWorker(recipe, store.name, store.spec, hz=HZ):
         # Seeded with the measured position, so the first commands hold still.
         await _until(lambda: len(sent_actions(log)) >= 2)
-        assert sent_actions(log)[0] == {"action": [1.0, 2.0], "goal_time": pytest.approx(1 / HZ)}
+        assert sent_actions(log)[0] == {"action": [1.0, 2.0], "goal_time": pytest.approx(3 / HZ)}
 
         before = len(sent_actions(log))
         sent_at = time.monotonic()
@@ -81,7 +81,7 @@ async def test_holds_still_then_follows_the_action(log: Path, store: Store) -> N
     assert approach == sorted(approach)
     assert max(approach) == 5.0
     assert 0.4 < arrived_after < 1.0
-    assert all(sent["goal_time"] == pytest.approx(1 / HZ) for sent in sent_actions(log))
+    assert all(sent["goal_time"] == pytest.approx(3 / HZ) for sent in sent_actions(log))
 
 
 async def test_a_robot_with_other_joints_fails_to_start(log: Path) -> None:

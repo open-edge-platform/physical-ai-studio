@@ -252,8 +252,8 @@ class TestLeRobotPolicyErrorCases:
         """Test that invalid policy name raises ValueError."""
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
-        # LeRobot's error message format
-        with pytest.raises(ValueError, match="is not available"):
+        # LeRobot's error message format (wording differs across LeRobot versions)
+        with pytest.raises(ValueError, match=r"is not available|Unknown policy name"):
             LeRobotPolicy.from_dataset("nonexistent_policy", pusht_dataset)
 
 

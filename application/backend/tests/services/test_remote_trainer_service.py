@@ -1,9 +1,7 @@
 import asyncio
 import errno
-import json
 import socket
 from datetime import UTC, datetime
-from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -43,72 +41,68 @@ MODULE = "services.remote_trainer_service"
 
 @pytest.mark.parametrize("profile_name", ["default", "studio"])
 def test_resolve_aws_configuration(profile_name: str) -> None:
+    stack_id = "123456789012-eu-west-1-f4a9b2c0"
     configuration = AwsBatchProviderConfiguration(
-        configuration_uri="s3://config-bucket/studio-config.json",
+        stack_id=stack_id,
         profile_name=profile_name,
     )
-    target = {
-        "queue": "arn:aws:batch:eu-west-1:123456789012:job-queue/queue-name",
-        "job_definition": "arn:aws:batch:eu-west-1:123456789012:job-definition/definition-name:1",
+    session = MagicMock()
+    session.client.return_value.describe_job_queues.return_value = {
+        "jobQueues": [{"state": "ENABLED", "status": "VALID"} for _ in range(3)]
     }
-    resources = {
-        "schema_version": 1,
-        "region": "eu-west-1",
-        "studio_role_arn": "arn:aws:iam::123456789012:role/studio",
-        "bucket": "jobs-bucket",
-        "targets": {"g4dn.xlarge": target},
-    }
-    body = BytesIO(json.dumps(resources).encode())
-    with patch("boto3.Session") as make_session:
-        client = make_session.return_value.client.return_value
-        client.get_object.return_value = {"Body": body}
+    with patch("services.aws_batch._make_session", return_value=session) as make_session:
         result = resolve_aws_batch_configuration(configuration)
 
-    make_session.assert_called_once_with(profile_name=profile_name)
-    make_session.return_value.client.assert_called_once_with("s3")
-    client.get_object.assert_called_once_with(Bucket="config-bucket", Key="studio-config.json")
-    assert result.configuration_uri == configuration.configuration_uri
+    make_session.assert_called_once()
+    session.client.assert_called_once_with("batch")
+    assert result.stack_id == stack_id
     assert result.profile_name == profile_name
-    assert result.region == resources["region"]
-    assert result.studio_role_arn == resources["studio_role_arn"]
-    assert result.bucket == "jobs-bucket"
-    assert result.targets["g4dn.xlarge"].queue == target["queue"]
-    assert body.closed
+    assert result.region == "eu-west-1"
+    assert result.studio_role_arn == "arn:aws:iam::123456789012:role/pai-studio-f4a9b2c0"
+    assert result.bucket == "pai-jobs-f4a9b2c0"
+    assert result.targets["g4dn.2xlarge"].queue == "arn:aws:batch:eu-west-1:123456789012:job-queue/pai-g4dn-f4a9b2c0"
+    assert (
+        result.targets["g4dn.2xlarge"].job_definition
+        == "arn:aws:batch:eu-west-1:123456789012:job-definition/pai-g4dn-f4a9b2c0"
+    )
 
 
-@pytest.mark.parametrize("payload", [b"{}", b'{"schema_version":2}', b"not json", b"x" * 65537])
-def test_resolve_aws_configuration_rejects_invalid_document(payload: bytes) -> None:
+@pytest.mark.parametrize(
+    "queues",
+    [
+        [],
+        [{"state": "ENABLED", "status": "VALID"}],
+        [
+            {"state": "DISABLED", "status": "VALID"},
+            {"state": "ENABLED", "status": "VALID"},
+            {"state": "ENABLED", "status": "VALID"},
+        ],
+    ],
+)
+def test_resolve_aws_configuration_rejects_missing_or_disabled_queues(queues: list[dict[str, str]]) -> None:
     configuration = AwsBatchProviderConfiguration(
-        configuration_uri="s3://config-bucket/studio-config.json",
+        stack_id="123456789012-eu-west-1-f4a9b2c0",
         profile_name="studio",
     )
-    body = BytesIO(payload)
-    with patch("boto3.Session") as make_session:
-        make_session.return_value.client.return_value.get_object.return_value = {"Body": body}
-        with pytest.raises(ValueError):
-            resolve_aws_batch_configuration(configuration)
-    assert body.closed
+    session = MagicMock()
+    session.client.return_value.describe_job_queues.return_value = {"jobQueues": queues}
+    with patch("services.aws_batch._make_session", return_value=session), pytest.raises(ValueError):
+        resolve_aws_batch_configuration(configuration)
 
 
-@pytest.mark.parametrize("uri", ["https://bucket/config.json", "s3://bucket/", "s3://bucket/config?version=1"])
-def test_aws_configuration_requires_s3_object_uri(uri: str) -> None:
+@pytest.mark.parametrize(
+    "stack_id",
+    [
+        "s3://bucket/config.json",
+        "12345-eu-west-1-f4a9b2c0",
+        "123456789012-INVALID-f4a9b2c0",
+        "123456789012-eu-west-1-nothex!!",
+        "123456789012-eu-west-1-f4a9b2",
+    ],
+)
+def test_aws_configuration_requires_valid_stack_id(stack_id: str) -> None:
     with pytest.raises(ValidationError):
-        AwsBatchProviderConfiguration(configuration_uri=uri, profile_name="studio")
-
-
-@pytest.mark.parametrize("missing_field", ["region", "studio_role_arn"])
-def test_aws_configuration_requires_connection_fields_in_document(missing_field: str) -> None:
-    resources = _aws().model_dump(exclude={"connection_mode", "configuration_uri", "profile_name", missing_field})
-    body = BytesIO(json.dumps(resources).encode())
-    with patch("boto3.Session") as session:
-        session.return_value.client.return_value.get_object.return_value = {"Body": body}
-        with pytest.raises(ValidationError, match=missing_field):
-            resolve_aws_batch_configuration(
-                AwsBatchProviderConfiguration(
-                    configuration_uri="s3://config-bucket/studio-config.json", profile_name="studio"
-                )
-            )
-    assert body.closed
+        AwsBatchProviderConfiguration(stack_id=stack_id, profile_name="studio")
 
 
 def _session() -> AsyncMock:
