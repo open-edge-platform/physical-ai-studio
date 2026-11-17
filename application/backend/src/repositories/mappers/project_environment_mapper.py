@@ -6,6 +6,8 @@ from schemas.environment import (
     CameraEnvironmentConfiguration,
     Environment,
     RobotEnvironmentConfiguration,
+    Teleoperator,
+    TeleoperatorAutopilot,
     TeleoperatorNone,
     TeleoperatorRobot,
 )
@@ -28,6 +30,15 @@ class ProjectEnvironmentMapper(IBaseMapper):
             )
             for robot in db_schema.robots
         ]
+
+    @staticmethod
+    def teleoperator(link: EnvironmentRobotDB) -> Teleoperator:
+        """The stored teleoperator; a robot teleoperator without its robot is none."""
+        if link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None:
+            return TeleoperatorRobot(robot_id=UUID(link.tele_operator_robot_id))
+        if link.tele_operator_type == "autopilot":
+            return TeleoperatorAutopilot()
+        return TeleoperatorNone()
 
     @staticmethod
     def build_camera_links(db_schema: Environment) -> list[EnvironmentCameraDB]:
@@ -59,11 +70,7 @@ class ProjectEnvironmentMapper(IBaseMapper):
         robots = [
             RobotEnvironmentConfiguration(
                 robot_id=UUID(link.robot_id),
-                tele_operator=(
-                    TeleoperatorRobot(robot_id=UUID(link.tele_operator_robot_id))
-                    if link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None
-                    else TeleoperatorNone()
-                ),
+                tele_operator=ProjectEnvironmentMapper.teleoperator(link),
             )
             for link in model.robot_links
         ]

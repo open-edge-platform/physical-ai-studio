@@ -26,7 +26,7 @@ from api.dependencies import (
 from api.runtime_ws import _follow_simulations, observation_message
 from main import app
 from schemas.runtime_session import ObservationFrame, ObservationMessage
-from schemas.simulation import Simulation, SimulationStatus
+from schemas.simulation import Simulation, SimulationStatus, simulation_run
 from tests.runtime_session.fixtures import FOLLOWER_ID, LEADER_ID, make_environment
 
 if TYPE_CHECKING:
@@ -54,6 +54,7 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
     simulations = SimpleNamespace(
         point_leader_at_follower=AsyncMock(side_effect=lambda _project, *robots: robots),
         subscribe=lambda: _states(),
+        state=Simulation,  # none runs
     )
     app.dependency_overrides.update(
         {
@@ -102,7 +103,8 @@ async def test_a_session_follows_the_simulation_of_its_project_s_robots() -> Non
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(_follow_simulations(session, simulations), 0.2)
 
-    session.follow_simulation.assert_awaited_once_with(robot_id, "http://127.0.0.1:50123", run=str(started))
+    run = simulation_run(Simulation(**running, project_id=PROJECT_ID))
+    session.follow_simulation.assert_awaited_once_with(robot_id, "http://127.0.0.1:50123", run=run)
 
 
 def _url() -> str:

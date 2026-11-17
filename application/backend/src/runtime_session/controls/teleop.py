@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 from robots.features import feature_names
 from runtime_session.controls.base import Control
 from runtime_session.store import ACTION
@@ -37,6 +39,14 @@ class TeleopControl(Control):
 
     def on_start(self) -> None:
         self.started_at = time.monotonic()
+        # A leader that reads over a connection idle since it connected (a simulation's virtual
+        # leader keeps an HTTP connection, which the simulation closes after a few idle seconds)
+        # fails its first read, and connects again for the next one.
+        try:
+            self.leader.get_observation()
+        except ConnectionError as error:
+            logger.info("The leader's first reading failed ({}); reading it again", error)
+            self.leader.get_observation()
 
     def on_tick(self) -> None:
         observation = self.leader.get_observation()
