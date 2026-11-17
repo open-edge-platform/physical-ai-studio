@@ -135,6 +135,46 @@ async def test_the_model_drives_the_follower(
     assert session.state().control is None
 
 
+async def test_switching_modes_keeps_driving_the_follower(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_model(_model(tmp_path, rtc_chunk=CHUNK), "torch", "cpu")
+    for mode in ("rtc", "sync", "async", "rtc"):
+        start = session.store.read(STATE).value.copy()
+        execution = ExecutionConfig(mode=mode, execution_horizon=5)
+        await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
+        await _until(lambda start=start: session.store.read(STATE).value[0] > start[0] + 3)
+    await session.set_control(None)
+    assert session.state().control is None
+
+
+async def test_stopping_rtc_while_it_infers_holds_the_follower(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path, rtc_chunk=CHUNK)
+    (Path(model.path) / "exports" / "torch" / "slow").touch()
+    await session.load_model(model, "torch", "cpu")
+    execution = ExecutionConfig(mode="rtc", execution_horizon=5)
+    await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
+    start = session.store.read(STATE).value.copy()
+    await _until(lambda: session.store.read(STATE).value[0] > start[0] + 1)
+    started = time.monotonic()
+    await session.set_control(None)  # an inference is in flight most of the time
+    assert time.monotonic() - started < 10
+    assert session.state().control is None
+    held = session.store.read(ACTION).value.copy()
+    await asyncio.sleep(1.0)
+    np.testing.assert_allclose(session.store.read(ACTION).value, held)
+    # The model is still loaded and runs again.
+    await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
+    again = session.store.read(STATE).value.copy()
+    await _until(lambda: session.store.read(STATE).value[0] > again[0] + 1)
+
+
 async def test_rtc_refuses_an_export_without_rtc_inputs(new_session, fake_cameras, fake_model_worker, tmp_path) -> None:
     session = await new_session()
     await session.load_environment(make_environment())
