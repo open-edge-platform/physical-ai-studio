@@ -219,8 +219,6 @@ override-dependencies = [
 
 conflicts = [
     [{ extra = "cpu" }, { extra = "cu132" }, { extra = "xpu" }],
-    [{ extra = "executorch" }, { extra = "xpu" }],
-    [{ extra = "executorch-openvino" }, { extra = "xpu" }],
 ]
 
 # PyTorch index configuration
