@@ -110,6 +110,7 @@ def test_get_returns_idle_when_nothing_runs(client: TestClient) -> None:
         "pid": None,
         "started_at": None,
         "http_url": None,
+        "robot_http_url": None,
         "viewer_url": None,
         "viewer_proxy_url": None,
         "cameras": [],

@@ -31,9 +31,12 @@ const launch: RobotSimulationLaunch = {
 
 const idle: Simulation = { status: 'idle', cameras: [] };
 
+const ROBOT_SIMULATION_PATH = '/api/projects/{project_id}/robots/{robot_id}/simulation';
+
 const mockSimulation = (simulation: Simulation) => {
     server.use(
         http.get('/api/simulation', () => HttpResponse.json(simulation)),
+        http.get(ROBOT_SIMULATION_PATH, () => HttpResponse.json({ running: false, owner_name: 'sim-a', cameras: [] })),
         http.get('/api/robots/catalog', () =>
             HttpResponse.json([
                 {
@@ -50,6 +53,10 @@ const mockSimulation = (simulation: Simulation) => {
         )
     );
 };
+
+/** The command block, whose arguments are separate spans, by its whole text. */
+const findCommand = (command: string) =>
+    screen.findByText((_content, element) => element?.tagName === 'PRE' && element.textContent === command);
 
 const renderDialog = (close = rs.fn(), onRunning = rs.fn()) => {
     render(
@@ -146,6 +153,104 @@ describe('SimulationDialog', () => {
         expect(await screen.findByRole('radio', { name: 'Fixed' })).toBeInTheDocument();
     });
 
+    it('offers the command for the chosen scene and seed to run it yourself', async () => {
+        mockSimulation(idle);
+        server.use(
+            http.get('/api/projects/{project_id}/robots/{robot_id}/simulation/command', ({ request }) => {
+                const query = new URL(request.url).searchParams;
+                const argv = ['physicalai-mujoco', 'start', '--scene', query.get('scene') ?? ''];
+                const seed = query.get('seed');
+                const full = seed === null ? argv : [...argv, '--seed', seed];
+                return HttpResponse.json({ argv: full, command: full.join(' ') });
+            })
+        );
+        const user = userEvent.setup();
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: 'Run it yourself' }));
+        expect(screen.getByText(/Studio connects to it, scripts can too/)).toBeVisible();
+        expect(await findCommand('physicalai-mujoco start --scene single_pick_place')).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: /Scene/ }));
+        await user.click(await screen.findByRole('option', { name: 'Yahtzee' }));
+        expect(await findCommand('physicalai-mujoco start --scene yahtzee')).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: 'Advanced' }));
+        await user.click(await screen.findByRole('radio', { name: 'Fixed' }));
+        expect(await findCommand('physicalai-mujoco start --scene yahtzee --seed 0')).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: 'Copy command' }));
+        expect(await navigator.clipboard.readText()).toBe('physicalai-mujoco start --scene yahtzee --seed 0');
+        expect(screen.getByText('Copied')).toBeInTheDocument();
+    });
+
+    it('quotes an argument with a space and keeps each argument on one line', async () => {
+        mockSimulation(idle);
+        const argv = ['physicalai-mujoco', 'start', '--scene', 'bucket_sort', '--name=my sim'];
+        server.use(
+            http.get('/api/projects/{project_id}/robots/{robot_id}/simulation/command', () =>
+                HttpResponse.json({ argv, command: "physicalai-mujoco start --scene bucket_sort '--name=my sim'" })
+            )
+        );
+        const user = userEvent.setup();
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: 'Run it yourself' }));
+        expect(await findCommand("physicalai-mujoco start --scene bucket_sort '--name=my sim'")).toBeVisible();
+        expect(screen.getByText("'--name=my sim'")).toBeInTheDocument();
+        expect(screen.getByText('--scene')).toBeInTheDocument();
+    });
+
+    it('has no command to run it yourself when the plugin offers none', async () => {
+        mockSimulation(idle);
+        const asked: string[] = [];
+        server.use(
+            http.get('/api/projects/{project_id}/robots/{robot_id}/simulation/command', ({ request }) => {
+                asked.push(request.url);
+                return HttpResponse.json(
+                    {
+                        error_code: 'simulation_command_unavailable',
+                        message: 'No command',
+                        http_status: 404,
+                    } as never,
+                    { status: 404 }
+                );
+            })
+        );
+        renderDialog();
+
+        expect(await screen.findByRole('button', { name: 'Start simulation' })).toBeInTheDocument();
+        await waitFor(() => expect(asked).toHaveLength(1));
+        expect(screen.queryByRole('button', { name: 'Run it yourself' })).not.toBeInTheDocument();
+    });
+
+    it('shows that Studio is connected once the simulation runs, started outside Studio', async () => {
+        mockSimulation(idle);
+        let running = false;
+        server.use(
+            http.get(ROBOT_SIMULATION_PATH, () =>
+                HttpResponse.json(
+                    running
+                        ? { running: true, started_by: 'external', owner_name: 'sim-a', scene: 'yahtzee', cameras: [] }
+                        : { running: false, owner_name: 'sim-a', cameras: [] }
+                )
+            )
+        );
+        const { close } = renderDialog();
+
+        expect(await screen.findByRole('heading', { name: 'Start simulation' })).toBeInTheDocument();
+        running = true;
+
+        // The robot's simulation is probed every 2 s while the form shows.
+        expect(
+            await screen.findByRole('heading', { name: 'Simulation running' }, { timeout: 4_000 })
+        ).toBeInTheDocument();
+        expect(screen.getByText('SO101 Follower (experimental) · Yahtzee')).toBeInTheDocument();
+        expect(screen.getByText('Started outside Studio')).toBeInTheDocument();
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Close' }));
+        expect(close).toHaveBeenCalled();
+    });
+
     it('shows the download progress of a starting simulation', async () => {
         mockSimulation({
             ...idle,
@@ -209,6 +314,43 @@ describe('SimulationDialog', () => {
 
         await waitFor(() => expect(started[0]?.replace).toBe(true));
         expect(await screen.findByRole('heading', { name: 'Starting simulation' })).toBeInTheDocument();
+    });
+
+    it('says when the port of the robot was taken and the simulation moved to another one', async () => {
+        mockSimulation({
+            ...idle,
+            status: 'running',
+            robot_id: robot.id,
+            robot_type: 'SO101_Follower',
+            scene: 'yahtzee',
+            cameras: ['wrist'],
+            robot_http_url: 'http://127.0.0.1:8765',
+            http_url: 'http://127.0.0.1:58153',
+        });
+        renderDialog();
+
+        expect(await screen.findByRole('heading', { name: 'Simulation running' })).toBeInTheDocument();
+        expect(screen.getByText('SO101 Follower (experimental) · Yahtzee')).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                'Port 8765 was in use; the simulation runs on 58153, and the robot and its cameras now use it.'
+            )
+        ).toBeInTheDocument();
+    });
+
+    it('says nothing about the port when the simulation kept the port of the robot', async () => {
+        mockSimulation({
+            ...idle,
+            status: 'running',
+            robot_id: robot.id,
+            cameras: ['wrist'],
+            robot_http_url: 'http://127.0.0.1:8765',
+            http_url: 'http://127.0.0.1:8765',
+        });
+        renderDialog();
+
+        expect(await screen.findByRole('heading', { name: 'Simulation running' })).toBeInTheDocument();
+        expect(screen.queryByText(/was in use/)).not.toBeInTheDocument();
     });
 
     it('reports when the simulation is running', async () => {

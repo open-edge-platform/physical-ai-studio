@@ -188,6 +188,11 @@ Toolkit for the `graphics` driver capability (`NVIDIA_DRIVER_CAPABILITIES=comput
 rendering runs on the GPU; set the variable yourself when you run the image another way. Without a usable
 GPU driver, a simulation starts without cameras and says so in its start log.
 
+The start dialog's **Run it yourself** command, for a simulation you start in a terminal and drive from
+your own scripts, needs a native install: a simulation accepts robot connections from its own machine
+only, so Studio in a container can't reach one started on the host. See
+[Run a policy on a simulation from your own script](../docs/08-deploying-model-policies.md#run-a-policy-on-a-simulation-from-your-own-script).
+
 ## Volumes and Data Persistence
 
 The compose file defines one named volume:

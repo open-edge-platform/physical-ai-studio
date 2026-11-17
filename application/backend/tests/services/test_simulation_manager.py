@@ -249,11 +249,14 @@ async def test_start_reports_phases_then_ready_and_stores_the_address(harness: H
     assert started.seed == 7
     assert started.robot_type == "Sim_Follower"
     assert started.started_at is not None
+    # The address the robot had: the simulation took another port, as the dialog then says.
+    assert started.robot_http_url == "http://127.0.0.1:8080"
 
     running = await harness.wait_for(SimulationStatus.RUNNING)
     collector.cancel()
 
     assert running.http_url == "http://127.0.0.1:56209"
+    assert running.robot_http_url == "http://127.0.0.1:8080"
     assert running.viewer_url == "http://127.0.0.1:56210"
     assert running.viewer_proxy_url == f"/api/projects/{harness.project_id}/robots/{robot_id}/simulation/viewer/"
     assert running.cameras == ["wrist", "overview"]
@@ -748,6 +751,9 @@ async def test_the_database_store_writes_the_address_only_when_it_changes(
         async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Any:
             return robot
 
+        async def get_robot_list(self, project_id: UUID) -> list[Any]:
+            return []
+
         async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
             updates.append(updated)
 
@@ -802,6 +808,9 @@ async def test_the_database_store_stores_each_started_robots_address_after_seque
         async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Any:
             return robots[robot_id]
 
+        async def get_robot_list(self, project_id: UUID) -> list[Any]:
+            return list(robots.values())
+
         async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
             robots[updated.id] = updated
 
@@ -821,6 +830,54 @@ async def test_the_database_store_stores_each_started_robots_address_after_seque
         "http://127.0.0.1:50001",
         "http://127.0.0.1:50002",
     ]
+
+
+async def test_a_start_on_the_robots_own_port_moves_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The simulation reuses the robot's port when it is free: leaders and payload stay put."""
+    import services.simulation_manager as module
+
+    address = "http://127.0.0.1:8765"
+    robot_id, leader_id = uuid4(), uuid4()
+    robots: dict[UUID, Any] = {
+        robot_id: _StoredRobot(id=robot_id, payload=FakePayload(name="sim-a", http_url=address)),
+        leader_id: _StoredLeader(id=leader_id, payload=_StoredLeaderPayload(http_port=8765)),
+    }
+    environment = Environment(
+        id=uuid4(),
+        name="Env",
+        robots=[RobotEnvironmentConfiguration(robot_id=robot_id, tele_operator=TeleoperatorRobot(robot_id=leader_id))],
+    )
+    updates: list[Any] = []
+
+    class FakeRobotService:
+        def __init__(self, session: Any, registry: Any) -> None:
+            pass
+
+        async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Any:
+            return robots[robot_id]
+
+        async def get_robot_list(self, project_id: UUID) -> list[Any]:
+            return list(robots.values())
+
+        async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
+            updates.append(updated)
+
+    async def environments(project_id: UUID) -> list[Environment]:
+        return [environment]
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield SimpleNamespace(commit=_nothing)
+
+    roles = {"Sim_Follower": "follower", "Sim_Leader": "leader"}
+    registry = SimpleNamespace(get_definition=lambda robot_type: SimpleNamespace(role=roles[robot_type]))
+    monkeypatch.setattr(module, "RobotService", FakeRobotService)
+    monkeypatch.setattr(module, "get_async_db_session_ctx", fake_session)
+    monkeypatch.setattr(module, "EnvironmentService", lambda *_args: SimpleNamespace(get_environment_list=environments))
+
+    await module.DatabaseSimulationRobots(registry).set_http_url(uuid4(), robot_id, address)  # type: ignore[arg-type]
+
+    assert updates == []
 
 
 class _StoredLeaderPayload(BaseModel):
@@ -866,6 +923,9 @@ class LeaderWorld:
 
             async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Any:
                 return robots[robot_id]
+
+            async def get_robot_list(self, project_id: UUID) -> list[Any]:
+                return list(robots.values())
 
             async def update_robot(self, project_id: UUID, updated: Any, commit: bool = True) -> None:
                 robots[updated.id] = updated
