@@ -2,6 +2,9 @@
 # (open-edge-platform/projects/45), and archives them when closed so Done
 # work does not stay on the board.
 #
+# Uses addProjectV2ItemById (linked issue/PR), not draft issues, and skips
+# when the content is already on the board so reruns do not duplicate cards.
+#
 # Requires repository secret PAI_BOARD_TOKEN: a fine-grained PAT or GitHub App
 # token with access to open-edge-platform projects (read/write projects) and
 # read access to this repository's issues and pull requests.
@@ -27,7 +30,6 @@ permissions: {}
 
 env:
   PROJECT_ID: PVT_kwDOC9nek84Br_v4
-  PROJECT_URL: https://github.com/orgs/open-edge-platform/projects/45
 
 jobs:
   add-to-project:
@@ -48,12 +50,70 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
 
-      - name: Add to Physical AI project
-        uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
-        with:
-          project-url: ${{ env.PROJECT_URL }}
-          github-token: ${{ secrets.PAI_BOARD_TOKEN }}
-          labeled: track-on-pai-board
+      - name: Add linked issue or PR to Physical AI project
+        env:
+          GH_TOKEN: ${{ secrets.PAI_BOARD_TOKEN }}
+          CONTENT_ID: ${{ github.event_name == 'issues' && github.event.issue.node_id || github.event.pull_request.node_id }}
+        run: |
+          set -euo pipefail
+
+          ITEMS_JSON="$(gh api graphql -f query='
+            query($content:ID!) {
+              node(id: $content) {
+                ... on Issue {
+                  projectItems(first: 20) {
+                    nodes {
+                      id
+                      isArchived
+                      project { ... on ProjectV2 { id } }
+                    }
+                  }
+                }
+                ... on PullRequest {
+                  projectItems(first: 20) {
+                    nodes {
+                      id
+                      isArchived
+                      project { ... on ProjectV2 { id } }
+                    }
+                  }
+                }
+              }
+            }' -f content="$CONTENT_ID")"
+
+          ACTIVE_ID="$(echo "$ITEMS_JSON" | jq -r --arg p "$PROJECT_ID" '
+            .data.node.projectItems.nodes[]?
+            | select(.project.id == $p and .isArchived == false)
+            | .id' | head -n1)"
+          if [ -n "$ACTIVE_ID" ] && [ "$ACTIVE_ID" != "null" ]; then
+            echo "Already on board as $ACTIVE_ID; skipping."
+            exit 0
+          fi
+
+          ARCHIVED_ID="$(echo "$ITEMS_JSON" | jq -r --arg p "$PROJECT_ID" '
+            .data.node.projectItems.nodes[]?
+            | select(.project.id == $p and .isArchived == true)
+            | .id' | head -n1)"
+          if [ -n "$ARCHIVED_ID" ] && [ "$ARCHIVED_ID" != "null" ]; then
+            echo "Unarchiving existing item $ARCHIVED_ID"
+            gh api graphql -f query='
+              mutation($project:ID!, $item:ID!) {
+                unarchiveProjectV2Item(input: {projectId: $project, itemId: $item}) {
+                  item { id isArchived }
+                }
+              }' -f project="$PROJECT_ID" -f item="$ARCHIVED_ID" \
+              --jq '.data.unarchiveProjectV2Item.item'
+            exit 0
+          fi
+
+          echo "Adding content $CONTENT_ID to project $PROJECT_ID"
+          gh api graphql -f query='
+            mutation($project:ID!, $content:ID!) {
+              addProjectV2ItemById(input: {projectId: $project, contentId: $content}) {
+                item { id }
+              }
+            }' -f project="$PROJECT_ID" -f content="$CONTENT_ID" \
+            --jq '.data.addProjectV2ItemById.item'
 
   archive-when-closed:
     if: github.event.action == 'closed'
@@ -75,7 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           ITEM_ID="$(gh api graphql -f query='
-            query($content:ID!, $project:ID!) {
+            query($content:ID!) {
               node(id: $content) {
                 ... on Issue {
                   projectItems(first: 20) {
@@ -96,7 +156,7 @@ jobs:
                   }
                 }
               }
-            }' -f content="$CONTENT_ID" -f project="$PROJECT_ID" \
+            }' -f content="$CONTENT_ID" \
             --jq ".data.node.projectItems.nodes[]
               | select(.project.id == \"$PROJECT_ID\" and .isArchived == false)
               | .id" \
