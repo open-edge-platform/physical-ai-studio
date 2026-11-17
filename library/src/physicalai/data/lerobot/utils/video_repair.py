@@ -128,7 +128,7 @@ def find_videos_with_corrupt_frame(dataset: LeRobotDataset, frame_index: int) ->
     episode_index = item["episode_index"].item()
     current_timestamp = item["timestamp"].item()
 
-    query_timestamps = reader._get_query_timestamps([current_timestamp], [None])[0]  # noqa: SLF001
+    query_timestamps = reader._get_query_timestamps(current_timestamp)  # noqa: SLF001
 
     corrupt_videos = []
     for video_key, query_timestamp in query_timestamps.items():
