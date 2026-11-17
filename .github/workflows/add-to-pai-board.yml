@@ -1,4 +1,4 @@
-# Adds issues/PRs labeled track-on-pai-board to the Physical AI org project
+# Adds issues/PRs labeled pai-board to the Physical AI org project
 # (open-edge-platform/projects/45), and archives them when closed so Done
 # work does not stay on the board.
 #
@@ -35,9 +35,9 @@ jobs:
   add-to-project:
     if: >-
       github.event.action != 'closed' && (
-        (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'track-on-pai-board'))
-        || (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'track-on-pai-board'))
-        || (github.event.action == 'labeled' && github.event.label.name == 'track-on-pai-board')
+        (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'pai-board'))
+        || (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'pai-board'))
+        || (github.event.action == 'labeled' && github.event.label.name == 'pai-board')
       )
     runs-on: ubuntu-latest
     steps:
