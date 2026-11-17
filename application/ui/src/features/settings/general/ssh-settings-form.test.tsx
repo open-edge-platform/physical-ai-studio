@@ -4,6 +4,7 @@ import { HttpResponse } from 'msw';
 
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedRerunSettings } from '../../../test-utils/mocks/mock-settings';
 import { render } from '../../../test-utils/render';
 import { SshSettingsForm } from './ssh-settings-form';
 
@@ -39,6 +40,7 @@ describe('SshSettingsForm', () => {
                     huggingface: { hf_token: null },
                     ssh: { ...baseSsh, connect_timeout_s: 42 },
                     hotkeys: { bindings: {} },
+                    rerun: getMockedRerunSettings(),
                 });
             })
         );
@@ -72,6 +74,7 @@ describe('SshSettingsForm', () => {
                     huggingface: { hf_token: null },
                     ssh: { ...baseSsh, trainer_shm_size_gb: 48 },
                     hotkeys: { bindings: {} },
+                    rerun: getMockedRerunSettings(),
                 });
             })
         );
