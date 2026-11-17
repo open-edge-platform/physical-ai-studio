@@ -1,6 +1,6 @@
 import {Highlight, themes} from 'prism-react-renderer';
 import type {CSSProperties} from 'react';
-import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import {progress} from './animation.ts';
 
 export type Stage = {
   number: string;
@@ -18,6 +18,7 @@ export type CodeLine = {
 };
 
 export type WorkflowDemoProps = {
+  frame: number;
   eyebrow: string;
   title: string;
   command: string;
@@ -27,8 +28,8 @@ export type WorkflowDemoProps = {
   stages: Stage[];
 };
 
-const font = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const mono = '"JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace';
+const font = '"Inter Variable", sans-serif';
+const mono = '"JetBrains Mono Variable", monospace';
 
 const card: CSSProperties = {
   border: '1px solid rgba(255,255,255,0.12)',
@@ -36,8 +37,6 @@ const card: CSSProperties = {
   boxShadow: '0 30px 90px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
   backdropFilter: 'blur(20px)',
 };
-
-const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 
 const bashColor = (part: string, index: number) => {
   if (part.startsWith('#')) return '#7f8ea3';
@@ -63,16 +62,20 @@ const BashLine = ({text}: {text: string}) => {
   );
 };
 
-export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines, stages}: WorkflowDemoProps) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const intro = spring({frame, fps, config: {damping: 18, stiffness: 90}});
+export const WorkflowDemo = ({frame, eyebrow, title, command, filename, language, lines, stages}: WorkflowDemoProps) => {
+  const intro = 1 - (1 - progress(frame, 0, 30)) ** 3;
   const current = stages.reduce((active, stage, index) => (frame >= stage.start ? index : active), 0);
   const code = lines.map((line) => line.text).join('\n');
 
   return (
-    <AbsoluteFill
+    <div
+      data-demo="api"
       style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
         background:
           'radial-gradient(circle at 12% 12%, rgba(88,120,255,0.34), transparent 30%), radial-gradient(circle at 88% 78%, rgba(33,212,167,0.20), transparent 32%), linear-gradient(135deg, #070a13 0%, #0c1222 48%, #090d18 100%)',
         color: 'white',
@@ -86,7 +89,7 @@ export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines
           alignItems: 'center',
           justifyContent: 'space-between',
           opacity: intro,
-          transform: `translateY(${interpolate(intro, [0, 1], [24, 0])}px)`,
+          transform: `translateY(${24 * (1 - intro)}px)`,
         }}
       >
         <div>
@@ -131,7 +134,7 @@ export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines
               >
                 {tokens.map((line, index) => {
                   const meta = lines[index];
-                  const opacity = interpolate(frame, [meta.start, meta.start + 12], [0, 1], clamp);
+                  const opacity = progress(frame, meta.start, meta.start + 12);
                   const isActive = meta.stage === current;
                   const lineProps = getLineProps({line});
                   return (
@@ -142,7 +145,7 @@ export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines
                         ...lineProps.style,
                         display: 'flex',
                         opacity,
-                        transform: `translateX(${interpolate(opacity, [0, 1], [-18, 0])}px)`,
+                        transform: `translateX(${-18 * (1 - opacity)}px)`,
                         background: isActive ? 'rgba(124,156,255,0.105)' : 'transparent',
                         borderLeft: isActive ? `4px solid ${stages[current].accent}` : '4px solid transparent',
                         paddingRight: 28,
@@ -168,12 +171,14 @@ export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines
 
         <div style={{display: 'flex', flexDirection: 'column', gap: 16, width: 390}}>
           {stages.map((stage, index) => {
-            const progress = interpolate(frame, [stage.start, stage.end], [0, 1], clamp);
+            const stageProgress = progress(frame, stage.start, stage.end);
             const isActive = current === index;
             const isDone = frame > stage.end;
             return (
               <div
                 key={stage.title}
+                data-stage={stage.title}
+                aria-current={isActive ? 'step' : undefined}
                 style={{
                   ...card,
                   borderRadius: 22,
@@ -204,7 +209,7 @@ export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines
                 <div style={{height: 6, borderRadius: 99, background: 'rgba(255,255,255,0.08)', marginTop: 16}}>
                   <div
                     style={{
-                      width: `${progress * 100}%`,
+                      width: `${stageProgress * 100}%`,
                       height: '100%',
                       borderRadius: 99,
                       background: stage.accent,
@@ -217,6 +222,6 @@ export const WorkflowDemo = ({eyebrow, title, command, filename, language, lines
           })}
         </div>
       </div>
-    </AbsoluteFill>
+    </div>
   );
 };
