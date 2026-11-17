@@ -307,6 +307,48 @@ class TestSmolVLAPreprocessor:
         with pytest.raises(ValueError, match="must match the batch image keys exactly"):
             preprocessor._preprocess_images(batch)
 
+    def test_image_key_reorder_map_applies_to_single_unnamed_image(self) -> None:
+        """Test a single-entry reorder map applies to the lone ``images`` key used by export (#1384)."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 1},
+            num_cameras=2,
+        )
+
+        batch = {
+            IMAGES: torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        assert result[IMAGES].shape[0] == 2
+        torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), 1.0))
+        torch.testing.assert_close(result[IMAGE_MASKS], torch.tensor([[False], [True]]))
+
+    def test_image_key_reorder_map_rejects_single_unnamed_image_with_multi_entry_map(self) -> None:
+        """Test a lone ``images`` key is still rejected when the map names several cameras."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "gripper": 1},
+        )
+
+        batch = {
+            IMAGES: torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="must match the batch image keys exactly"):
+            preprocessor._preprocess_images(batch)
+
     def test_empty_cameras_are_appended_as_masked_dummy_images(self) -> None:
         """Test unused camera slots are filled with masked dummy images."""
         from physicalai.data.constants import IMAGE_MASKS
