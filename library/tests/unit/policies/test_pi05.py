@@ -1199,7 +1199,7 @@ class TestPi05ExtraExportArgs:
         for backend, tokenizer in tokenizers.items():
             specs = args[backend].preprocessors_specs
             types = [s.type for s in specs]
-            assert types == ["normalize", "pi05", tokenizer], f"{backend}: unexpected order {types}"
+            assert types == ["normalize", "pi05", "noise", tokenizer], f"{backend}: unexpected order {types}"
             assert [s.type for s in args[backend].postprocessors_specs][0] == "denormalize"
 
         assert args["executorch"].delegate == "portable"
