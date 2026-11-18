@@ -255,7 +255,9 @@ def test_training_validates_deployment_export_epochs_and_loss(tmp_path, monkeypa
     if exported:
         export = tmp_path / "exports/openvino"
         export.mkdir(parents=True)
-        (export / "manifest.json").write_text("{}")
+        (export / "manifest.json").write_text('{"model":{"artifacts":{"openvino":"model.xml"}}}')
+        (export / "model.xml").write_text("graph")
+        (export / "model.bin").write_bytes(b"weights")
     model = Model.model_construct(
         id=uuid4(), name="ACT", policy="act", project_id=uuid4(), path=str(tmp_path), properties={}
     ).model_dump(mode="json")

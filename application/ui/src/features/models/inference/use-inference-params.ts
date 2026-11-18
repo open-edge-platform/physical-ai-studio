@@ -5,6 +5,8 @@ import { defaultBackend } from '../backend-selection/backend-selection';
 export const useInferenceParams = () => {
     const { project_id, model_id, backend } = useParams();
     const [searchParams] = useSearchParams();
+    const variant = searchParams.get('variant') ?? 'original';
+    if (variant !== 'original' && variant !== 'int8') throw new Error('Unknown model variant');
 
     if (project_id === undefined) {
         throw new Error('Unknown project_id parameter');
@@ -19,5 +21,6 @@ export const useInferenceParams = () => {
         model_id,
         backend: backend ?? defaultBackend,
         device: searchParams.get('device') ?? undefined,
-    };
+        variant,
+    } as const;
 };

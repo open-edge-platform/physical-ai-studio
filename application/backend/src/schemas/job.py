@@ -407,10 +407,26 @@ class DatasetImportJob(BaseJob):
     payload: DatasetImportJobPayload
 
 
-JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload
+class OptimizeModelJobPayload(BaseModel):
+    """Compress the original OpenVINO export without changing model identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: UUID
+    cancellation_requested: bool = Field(
+        default=False, description="Persisted interruption request, checked atomically during model publication"
+    )
+
+
+class OptimizeModelJob(BaseJob):
+    type: Literal[JobType.OPTIMIZE_MODEL] = JobType.OPTIMIZE_MODEL  # type: ignore[valid-type]
+    payload: OptimizeModelJobPayload
+
+
+JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload | OptimizeModelJobPayload
 
 Job = Annotated[
-    TrainJob | DatasetImportJob,
+    TrainJob | DatasetImportJob | OptimizeModelJob,
     Field(discriminator="type"),
 ]
 

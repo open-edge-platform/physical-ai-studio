@@ -9,6 +9,7 @@ import { issueToasts } from '../../components/notification/issue-toasts';
 import { createQueryClient } from '../../query-client/query-client';
 import { getMockedDatasetImportJob } from '../../test-utils/mocks/mock-dataset-import-job';
 import { getMockedOperationalIssue } from '../../test-utils/mocks/mock-operational-issue';
+import { getMockedOptimizeModelJob } from '../../test-utils/mocks/mock-optimize-model-job';
 import { getMockedTrainJob } from '../../test-utils/mocks/mock-train-job';
 import { renderHook } from '../../test-utils/render';
 import { JOBS_QUERY_KEY, SchemaJob } from './use-job-cache';
@@ -187,5 +188,17 @@ describe('useJobUpdates', () => {
         });
 
         expect(queryClient.getQueryState(JOBS_QUERY_KEY)?.isInvalidated).toBe(true);
+    });
+
+    it('refreshes only the optimized model when its INT8 job completes', () => {
+        const queryClient = createQueryClient();
+        queryClient.setQueryData(JOBS_QUERY_KEY, []);
+        const key = (model_id: string) => ['get', '/api/models/{model_id}', { params: { path: { model_id } } }];
+        queryClient.setQueryData(key('model-1'), {});
+        queryClient.setQueryData(key('other-model'), {});
+        renderHook(() => useJobUpdates(PROJECT_ID), { queryClient });
+        deliver(getMockedOptimizeModelJob({ status: 'completed' }));
+        expect(queryClient.getQueryState(key('model-1'))?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(key('other-model'))?.isInvalidated).toBe(false);
     });
 });

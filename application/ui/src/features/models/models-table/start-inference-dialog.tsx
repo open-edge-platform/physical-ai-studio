@@ -13,6 +13,7 @@ import {
     getSupportedInferenceDevices,
     InferenceDevice,
 } from '../backend-selection/backend-selection';
+import { useVariantSelection, VariantSelection } from '../model-formats/variant-selection';
 
 const getDefaultbackend = (model: SchemaModel) => {
     if (model.available_backends.includes(defaultBackend)) {
@@ -33,6 +34,7 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
 
     const { data: inferenceDevices = [], isLoading } = $api.useQuery('get', '/api/system/devices/inference');
     const backend = selectedInferenceDevice?.backend ?? initialBackend;
+    const selection = useVariantSelection(model.id, backend);
 
     const selectedDevice = getSupportedInferenceDevices(inferenceDevices, backend).find(
         (inferenceDevice) => inferenceDevice.device === selectedInferenceDevice?.device
@@ -52,7 +54,7 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
                 model_id: model.id!,
                 backend,
             }),
-            search: createSearchParams({ device: inferenceDevice.device }).toString(),
+            search: createSearchParams({ device: inferenceDevice.device, variant: selection.variant }).toString(),
         });
     };
 
@@ -68,13 +70,24 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
                         inferenceDevices={inferenceDevices}
                         setInferenceDevice={setSelectedInferenceDevice}
                     />
+                    {selection.variants.length > 1 && (
+                        <VariantSelection
+                            variants={selection.variants}
+                            variant={selection.variant}
+                            onChange={selection.setVariant}
+                        />
+                    )}
                 </Suspense>
             </Content>
             <ButtonGroup>
                 <Button variant='secondary' onPress={close}>
                     Cancel
                 </Button>
-                <Button variant='accent' onPress={onStart} isDisabled={isLoading || inferenceDevice === undefined}>
+                <Button
+                    variant='accent'
+                    onPress={onStart}
+                    isDisabled={isLoading || inferenceDevice === undefined || selection.isPending || selection.isError}
+                >
                     Start
                 </Button>
             </ButtonGroup>

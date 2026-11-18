@@ -6,14 +6,16 @@ import { $api } from '../../../api/client';
 import { SchemaModel } from '../../../api/openapi-spec';
 import { getDefaultInferenceDevice, getSupportedInferenceDevices } from '../backend-selection/backend-selection';
 import { runtimeExportUrl } from '../runtime-export';
+import { ModelVariant } from './variant-selection';
 
 interface RuntimeExportDialogProps {
     close: () => void;
     model: SchemaModel;
     backend: string;
+    variant?: ModelVariant;
 }
 
-export const RuntimeExportDialog = ({ close, model, backend }: RuntimeExportDialogProps) => {
+export const RuntimeExportDialog = ({ close, model, backend, variant = 'original' }: RuntimeExportDialogProps) => {
     const { data: environments = [] } = $api.useQuery('get', '/api/projects/{project_id}/environments', {
         params: { path: { project_id: model.project_id } },
     });
@@ -51,6 +53,7 @@ export const RuntimeExportDialog = ({ close, model, backend }: RuntimeExportDial
                   backend,
                   device: selectedDevice,
                   task: selectedTask,
+                  variant,
               })
             : undefined;
 

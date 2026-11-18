@@ -105,6 +105,8 @@ class LogService:
                 else:
                     display_name = f"dataset-import-{self._short_id(str(job.id))}.zip"
                 names[str(job.id)] = f"Import: {display_name}"
+            elif job.type == JobType.OPTIMIZE_MODEL:
+                names[str(job.id)] = f"Optimize model: {self._short_id(str(job.payload.model_id))}"
 
         return names
 

@@ -207,7 +207,7 @@ export const PartsPanel = () => {
             <PartRow
                 label='Model'
                 name={model?.name}
-                detail={model ? `${model.backend} · ${model.device}` : undefined}
+                detail={model ? `${model.backend} · ${model.variant ?? 'original'} · ${model.device}` : undefined}
                 error={failureOf(statuses, 'model')}
                 isLoaded={model != null}
                 actions={partActions(model != null)}

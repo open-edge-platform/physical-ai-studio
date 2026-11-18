@@ -8,7 +8,7 @@ from pydantic import Field, TypeAdapter, model_validator
 from schemas.base_job import BaseJob, JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.job import Job as InternalJob
-from schemas.job import LocalTrainJobPayload, TrainingTarget, TrainJobPayloadBase
+from schemas.job import LocalTrainJobPayload, OptimizeModelJobPayload, TrainingTarget, TrainJobPayloadBase
 from schemas.operational_issue import OperationalIssue
 
 
@@ -31,10 +31,11 @@ class JobResponseBase(BaseJob):
     @classmethod
     def from_worker_job(cls, value: Any) -> Any:
         from schemas.job import DatasetImportJob as InternalDatasetImportJob
+        from schemas.job import OptimizeModelJob as InternalOptimizeModelJob
         from schemas.job import TrainJob as InternalTrainJob
         from services.aws_auth_service import operational_authentication_issue
 
-        if not isinstance(value, (InternalTrainJob, InternalDatasetImportJob)):
+        if not isinstance(value, (InternalTrainJob, InternalDatasetImportJob, InternalOptimizeModelJob)):
             return value
         data = value.model_dump(mode="json")
         issue = getattr(value.payload, "authentication_issue", None)
@@ -61,10 +62,17 @@ class DatasetImportJob(JobResponseBase):
     payload: DatasetImportJobPayload
 
 
-JobResponse = Annotated[TrainJob | DatasetImportJob, Field(discriminator="type")]
-JOB_RESPONSE_ADAPTER: TypeAdapter[TrainJob | DatasetImportJob] = TypeAdapter(JobResponse)
+class OptimizeModelJob(JobResponseBase):
+    """Model optimization job API response."""
+
+    type: Literal[JobType.OPTIMIZE_MODEL] = JobType.OPTIMIZE_MODEL  # type: ignore[valid-type]
+    payload: OptimizeModelJobPayload
 
 
-def job_response(job: InternalJob) -> TrainJob | DatasetImportJob:
+JobResponse = Annotated[TrainJob | DatasetImportJob | OptimizeModelJob, Field(discriminator="type")]
+JOB_RESPONSE_ADAPTER: TypeAdapter[TrainJob | DatasetImportJob | OptimizeModelJob] = TypeAdapter(JobResponse)
+
+
+def job_response(job: InternalJob) -> TrainJob | DatasetImportJob | OptimizeModelJob:
     """Use the HTTP response contract for WebSocket snapshots as well."""
     return JOB_RESPONSE_ADAPTER.validate_python(job, from_attributes=True)

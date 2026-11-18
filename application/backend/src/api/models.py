@@ -15,6 +15,7 @@ from starlette import status
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
+    AsyncSessionDep,
     EnvironmentServiceDep,
     get_dataset_service,
     get_job_service,
@@ -30,9 +31,12 @@ from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Model, ModelDetailResponse
-from schemas.job import TrainJob
+from schemas.job import OptimizeModelJob, TrainJob
+from schemas.job_response import JobResponse
+from schemas.model_variant import VariantId
 from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
 from services.environment_service import EnvironmentService
+from services.model_optimization_service import ModelOptimizationService
 from services.runtime_export import (
     RUNTIME_FPS,
     build_runtime_config,
@@ -118,6 +122,12 @@ async def get_model_by_id(
     )
 
 
+@router.post("/{model_id}/optimize", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
+async def optimize_model(model_id: UUID, session: AsyncSessionDep) -> OptimizeModelJob:
+    """Queue symmetric INT8 weight compression of the original OpenVINO export."""
+    return await ModelOptimizationService(session).submit(model_id)
+
+
 class ModelNameUpdate(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -190,6 +200,7 @@ async def download_model_backend(  # noqa: PLR0913
     environment_id: UUID | None = None,
     device: str | None = None,
     task: str | None = None,
+    variant: VariantId = "original",
 ) -> FileResponse:
     """Download a single backend export as a zip archive.
 
@@ -204,7 +215,7 @@ async def download_model_backend(  # noqa: PLR0913
             detail=f"Backend '{backend.value}' is not available for this model.",
         )
 
-    export_dir = Path(model.path) / "exports" / backend.value
+    export_dir = ModelService.resolve_export(model, backend.value, variant)
     if not export_dir.is_dir():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
