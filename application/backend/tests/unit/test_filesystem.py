@@ -57,3 +57,30 @@ def test_walk_rejects_a_symlinked_root(tmp_path: Path) -> None:
     root.symlink_to(target, target_is_directory=True)
     with pytest.raises(ValueError, match="symbolic"):
         list(FileTree(root).files())
+
+
+def test_pruning_removes_only_empty_directories(tmp_path: Path) -> None:
+    root = tmp_path / "backend"
+    (root / "variants/empty/nested").mkdir(parents=True)
+    (root / "assets").mkdir()
+    weights = root / "assets/weights.bin"
+    weights.write_bytes(b"keep")
+    FileTree(root).prune_empty_directories()
+    assert not (root / "variants").exists()
+    assert weights.read_bytes() == b"keep"
+    weights.unlink()
+    FileTree(root).prune_empty_directories()
+    assert not root.exists()
+
+
+def test_pruning_never_follows_symlinks(tmp_path: Path) -> None:
+    target = tmp_path / "outside"
+    (target / "empty").mkdir(parents=True)
+    root = tmp_path / "backend"
+    root.mkdir()
+    (root / "linked").symlink_to(target, target_is_directory=True)
+    FileTree(root).prune_empty_directories()
+    assert (target / "empty").is_dir()
+    assert (root / "linked").is_symlink()
+    with pytest.raises(ValueError, match="symbolic"):
+        FileTree(root / "linked").prune_empty_directories()

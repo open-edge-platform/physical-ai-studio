@@ -11,6 +11,7 @@ from schemas import Model, TrainJob
 from schemas.base_job import JobStatus
 from schemas.dataset import Dataset
 from schemas.job import LocalTrainJobPayload
+from schemas.model_export import VARIANT_IDS
 from settings import get_settings
 from utils.model_manifest import EXPORT_BACKENDS, manifest_artifact, manifest_policy
 
@@ -160,7 +161,15 @@ class ModelImportService:
 
     def _is_exports_directory(self, reader: ModelReader) -> bool:
         """Return whether the reader is rooted at an ``exports`` directory."""
-        return any(reader.file_exists(f"{backend}/manifest.json") for backend in EXPORT_BACKENDS)
+        return any(
+            reader.file_exists(f"{directory}/manifest.json")
+            for backend in EXPORT_BACKENDS
+            for directory in self._package_directories(backend)
+        )
+
+    @staticmethod
+    def _package_directories(backend: str) -> list[str]:
+        return [backend, *[f"{backend}/variants/{variant}" for variant in sorted(VARIANT_IDS - {"original"})]]
 
     def _inspect_model(self, reader: ModelReader, *, source_is_exports_dir: bool) -> str:
         """Validate model structure and infer policy."""
@@ -169,8 +178,13 @@ class ModelImportService:
                 if not reader.file_exists(required):
                     raise InvalidArchiveError(f"Model is missing required file '{required}'")
 
-        for backend in EXPORT_BACKENDS:
-            manifest_path = f"{backend}/manifest.json" if source_is_exports_dir else f"exports/{backend}/manifest.json"
+        packages = (
+            (backend, directory) for backend in EXPORT_BACKENDS for directory in self._package_directories(backend)
+        )
+        for backend, directory in packages:
+            manifest_path = (
+                f"{directory}/manifest.json" if source_is_exports_dir else f"exports/{directory}/manifest.json"
+            )
             if not reader.file_exists(manifest_path):
                 continue
             manifest = self._read_manifest(reader, manifest_path)
@@ -180,7 +194,6 @@ class ModelImportService:
                     reader,
                     backend,
                     manifest_path,
-                    source_is_exports_dir=source_is_exports_dir,
                 )
                 return manifest_policy(manifest, manifest_path)
             except ValueError as exc:
@@ -203,11 +216,9 @@ class ModelImportService:
         reader: ModelReader,
         backend: str,
         manifest_path: str,
-        *,
-        source_is_exports_dir: bool,
     ) -> None:
         """Validate that a manifest references an existing backend artifact."""
         artifact = manifest_artifact(manifest, backend, manifest_path)
-        artifact_path = f"{backend}/{artifact}" if source_is_exports_dir else f"exports/{backend}/{artifact}"
+        artifact_path = (Path(manifest_path).parent / artifact).as_posix()
         if not reader.file_exists(artifact_path):
             raise InvalidArchiveError(f"Manifest '{manifest_path}' references missing {backend} artifact '{artifact}'")

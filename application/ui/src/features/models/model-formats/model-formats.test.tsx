@@ -31,7 +31,7 @@ describe('ModelFormats', () => {
         expect(screen.getByRole('radiogroup', { name: 'Model format' })).toBeInTheDocument();
         expect(
             screen.getByText(
-                'Select a model format to export the stored training checkpoint. Existing model formats stay unchanged.'
+                'Export the stored checkpoint or create an optimized model format. Existing model formats stay unchanged.'
             )
         ).toBeInTheDocument();
         expect(screen.getByRole('radio', { name: /PyTorch/ })).toBeChecked();
@@ -245,7 +245,7 @@ describe('ModelFormats', () => {
             );
             queryClient.setQueryData(JOBS_QUERY_KEY, [getMockedModelExportJob({ status: 'completed', progress: 100 })]);
         });
-        expect(await screen.findByRole('button', { name: 'Download PyTorch export' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'Actions for PyTorch Original' })).toBeInTheDocument();
         expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
         expect(card).toHaveAttribute('aria-busy', 'false');
         expect(within(card).getByText('Size')).toBeInTheDocument();
@@ -305,7 +305,7 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const card = await screen.findByRole('region', { name: 'PyTorch model format' });
-        expect(within(card).getByRole('button', { name: 'Download PyTorch export' })).toBeEnabled();
+        expect(within(card).getByRole('button', { name: 'Actions for PyTorch Original' })).toBeEnabled();
         expect(within(card).queryByRole('button', { name: 'Retry export' })).not.toBeInTheDocument();
         expect(card).toHaveAttribute('aria-busy', 'false');
     });
@@ -323,7 +323,7 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const card = await screen.findByRole('region', { name: 'ONNX model format' });
-        expect(within(card).getByRole('button', { name: 'Download ONNX export' })).toBeEnabled();
+        expect(within(card).getByRole('button', { name: 'Actions for ONNX Original' })).toBeEnabled();
         expect(within(card).queryByRole('status')).not.toBeInTheDocument();
         expect(card).toHaveAttribute('aria-busy', 'false');
         expect(await screen.findByRole('region', { name: 'PyTorch model format' })).toHaveAttribute(

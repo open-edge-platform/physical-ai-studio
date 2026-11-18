@@ -6,27 +6,28 @@ import { getApiErrorMessage } from '../../../api/errors';
 import type { SchemaModelExportAction } from '../../../api/openapi-spec';
 import { BackendOption } from '../backend-selection/backend-option';
 
-type ExportBackend = SchemaModelExportAction['backend'];
-
 interface AddModelFormatDialogProps {
-    backends: ExportBackend[];
+    actions: SchemaModelExportAction[];
+    initialAction?: SchemaModelExportAction;
     isSubmitting: boolean;
     isExportDisabled: boolean;
     error: unknown;
-    onExport: (backend: ExportBackend) => void;
+    onExport: (action: SchemaModelExportAction) => void;
     close: () => void;
 }
 
 export const AddModelFormatDialog = ({
-    backends,
+    actions,
+    initialAction,
     isSubmitting,
     isExportDisabled,
     error,
     onExport,
     close,
 }: AddModelFormatDialogProps) => {
-    const [selectedBackend, setSelectedBackend] = useState(backends[0]);
+    const [selection, setSelection] = useState(initialAction ?? actions[0]);
     const [hasSubmitted, setHasSubmitted] = useState(false);
+    const isCompression = selection?.operation === 'int8_sym';
 
     return (
         <Dialog>
@@ -35,16 +36,16 @@ export const AddModelFormatDialog = ({
             <Content>
                 <Flex direction='column' gap='size-200'>
                     <Text>
-                        Select a model format to export the stored training checkpoint. Existing model formats stay
+                        Export the stored checkpoint or create an optimized model format. Existing model formats stay
                         unchanged.
                     </Text>
                     <RadioGroup
                         label='Model format'
-                        value={selectedBackend}
+                        value={selection?.backend}
                         onChange={(value) => {
-                            const backend = backends.find((option) => option === value);
-                            if (backend) {
-                                setSelectedBackend(backend);
+                            const action = actions.find((option) => option.backend === value);
+                            if (action) {
+                                setSelection(action);
                                 setHasSubmitted(false);
                             }
                         }}
@@ -53,8 +54,18 @@ export const AddModelFormatDialog = ({
                         width='100%'
                     >
                         <Flex direction='column' gap='size-200'>
-                            {backends.map((backend) => (
-                                <BackendOption key={backend} id={backend} isSelected={backend === selectedBackend} />
+                            {actions.map((action) => (
+                                <BackendOption
+                                    key={`${action.backend}/${action.operation}`}
+                                    id={action.backend}
+                                    isSelected={action.backend === selection?.backend}
+                                    label={action.operation === 'int8_sym' ? 'OpenVINO · INT8' : undefined}
+                                    description={
+                                        action.operation === 'int8_sym'
+                                            ? 'Compress weights to INT8. The original export stays unchanged.'
+                                            : undefined
+                                    }
+                                />
                             ))}
                         </Flex>
                     </RadioGroup>
@@ -66,6 +77,7 @@ export const AddModelFormatDialog = ({
                     >
                         Exporting can take several minutes and additional memory.
                     </Text>
+                    {isCompression && <Text>INT8 compresses weights, not activations.</Text>}
                     {isSubmitting && <div role='status'>Requesting export…</div>}
                     {hasSubmitted && Boolean(error) && (
                         <div role='alert'>{getApiErrorMessage(error) ?? 'Export failed. Please try again.'}</div>
@@ -79,15 +91,15 @@ export const AddModelFormatDialog = ({
                 <Button
                     variant='accent'
                     isPending={isSubmitting}
-                    isDisabled={isExportDisabled || selectedBackend === undefined}
+                    isDisabled={isExportDisabled || selection === undefined}
                     onPress={() => {
-                        if (selectedBackend) {
+                        if (selection) {
                             setHasSubmitted(true);
-                            onExport(selectedBackend);
+                            onExport(selection);
                         }
                     }}
                 >
-                    Export model
+                    {isCompression ? 'Optimize to INT8' : 'Export model'}
                 </Button>
             </ButtonGroup>
         </Dialog>

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,13 @@ class FileTree:
     """Safe traversal of a model or export directory."""
 
     root: Path
+
+    def prune_empty_directories(self) -> None:
+        """Remove empty directories bottom-up, including the root, without following symlinks."""
+        self.resolve(Path())
+        for directory, _, _ in self.root.walk(top_down=False, follow_symlinks=False):
+            with suppress(OSError):
+                directory.rmdir()
 
     def resolve(self, relative: Path) -> Path:
         """Resolve a child without following symbolic links or leaving the tree."""

@@ -116,7 +116,10 @@ def worker(job):
 async def test_missing_backend_export_preserves_original_and_model_identity(exports):
     before = {path.name: path.read_bytes() for path in exports.original.iterdir()}
     detail = (await exports.client.get(f"/api/models/{exports.source.id}")).json()
-    assert {item["backend"] for item in detail["available_actions"]} == {"torch", "onnx"}
+    assert {item["backend"] for item in detail["available_actions"] if item["operation"] == "export"} == {
+        "torch",
+        "onnx",
+    }
     response = await exports.client.post(f"/api/models/{exports.source.id}/exports/torch")
     assert response.status_code == 202
     assert response.json()["type"] == "model_export"
@@ -131,7 +134,7 @@ async def test_missing_backend_export_preserves_original_and_model_identity(expo
     detail = (await exports.client.get(f"/api/models/{exports.source.id}")).json()
     assert detail["model"]["id"] == str(exports.source.id)
     assert {item["type"] for item in detail["exports"]} == {"torch", "openvino"}
-    assert {item["backend"] for item in detail["available_actions"]} == {"onnx"}
+    assert {item["backend"] for item in detail["available_actions"] if item["operation"] == "export"} == {"onnx"}
     assert (await exports.client.post(f"/api/models/{exports.source.id}/exports/torch")).status_code == 409
 
 
@@ -148,7 +151,9 @@ async def test_unavailable_exports_are_not_offered_or_queued(exports, monkeypatc
         backend = "executorch"
     else:
         backend = "openvino"
-    assert backend not in {action.backend for action in ModelService.get_export_actions(exports.source)}
+    assert backend not in {
+        action.backend for action in ModelService.get_export_actions(exports.source) if action.operation == "export"
+    }
     assert (await exports.client.post(f"/api/models/{exports.source.id}/exports/{backend}")).status_code == 409
 
 

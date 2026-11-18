@@ -26,6 +26,7 @@ import {
     getSupportedInferenceDevices,
     InferenceDevice,
 } from '../../models/backend-selection/backend-selection';
+import { ModelVariant, useVariantSelection, VariantSelection } from '../../models/model-formats/variant-selection';
 import { useProject, useProjectId } from '../../projects/use-project';
 import { SessionPartName, useRuntimeSession } from '../runtime-session-provider';
 import { PendingConfirmation, SessionCommand, usePartCommand } from './use-part-command';
@@ -102,8 +103,8 @@ const LoadModelDialog = ({
 }: {
     models: SchemaModel[];
     datasetNames: Map<string, string>;
-    current: { model_id: string; backend: string; device: string } | null | undefined;
-    onPick: (model_id: string, backend: string, device: string) => void;
+    current: { model_id: string; backend: string; device: string; variant?: ModelVariant } | null | undefined;
+    onPick: (model_id: string, backend: string, device: string, variant: ModelVariant) => void;
     close: () => void;
 }) => {
     const [selected, setSelected] = useState<string | null>(current?.model_id ?? null);
@@ -125,6 +126,11 @@ const LoadModelDialog = ({
         getSupportedInferenceDevices(inferenceDevices, backend).find(
             (candidate) => candidate.device === inferenceDevice?.device
         ) ?? getDefaultInferenceDevice(inferenceDevices, backend);
+    const selection = useVariantSelection(
+        picked?.id,
+        backend,
+        current?.model_id === picked?.id ? current?.variant : undefined
+    );
 
     return (
         <Dialog>
@@ -165,6 +171,13 @@ const LoadModelDialog = ({
                                 inferenceDevices={inferenceDevices}
                                 setInferenceDevice={setInferenceDevice}
                             />
+                            {selection.variants.length > 1 && (
+                                <VariantSelection
+                                    variants={selection.variants}
+                                    variant={selection.variant}
+                                    onChange={selection.setVariant}
+                                />
+                            )}
                         </Suspense>
                     )}
                 </Flex>
@@ -175,11 +188,17 @@ const LoadModelDialog = ({
                 </Button>
                 <Button
                     variant='accent'
-                    isDisabled={picked?.id === undefined || device === undefined || isLoading}
+                    isDisabled={
+                        picked?.id === undefined ||
+                        device === undefined ||
+                        isLoading ||
+                        selection.isPending ||
+                        selection.isError
+                    }
                     onPress={() => {
                         close();
                         if (picked?.id !== undefined && device !== undefined) {
-                            onPick(picked.id, backend, device.device);
+                            onPick(picked.id, backend, device.device, selection.variant);
                         }
                     }}
                 >
@@ -286,6 +305,7 @@ export const PartControlsProvider = ({ children }: { children: ReactNode }) => {
                 model_id: model.model_id,
                 backend: model.backend,
                 device: model.device,
+                variant: model.variant,
             });
         }
     };
@@ -340,8 +360,8 @@ export const PartControlsProvider = ({ children }: { children: ReactNode }) => {
                             new Map(datasets.flatMap((choice) => (choice.id ? [[choice.id, choice.name]] : [])))
                         }
                         current={model}
-                        onPick={(model_id, backend, device) =>
-                            void runFor('model', { command: 'load_model', model_id, backend, device })
+                        onPick={(model_id, backend, device, variant) =>
+                            void runFor('model', { command: 'load_model', model_id, backend, device, variant })
                         }
                         close={close}
                     />

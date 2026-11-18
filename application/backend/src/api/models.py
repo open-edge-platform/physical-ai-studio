@@ -36,6 +36,7 @@ from schemas import Model, ModelDetailResponse
 from schemas.job import ModelExportJob, TrainJob
 from schemas.job_response import JobResponse
 from schemas.model import ModelExportAction
+from schemas.model_export import VariantId
 from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
 from services.environment_service import EnvironmentService
 from services.model_export_service import ModelExportService
@@ -125,11 +126,19 @@ async def get_model_by_id(
     )
 
 
+@router.post("/{model_id}/optimize", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
+async def optimize_model(model_id: UUID, session: AsyncSessionDep) -> ModelExportJob:
+    """Queue symmetric INT8 weight compression of the original OpenVINO export."""
+    return await ModelExportService(session).submit(
+        model_id, ModelExportAction(backend="openvino", operation="int8_sym")
+    )
+
+
 @router.post("/{model_id}/exports/{backend}", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
 async def export_model_backend(model_id: UUID, backend: ExportBackend, session: AsyncSessionDep) -> ModelExportJob:
     """Export the stored checkpoint to a missing supported backend."""
     return await ModelExportService(session).submit(
-        model_id, ModelExportAction.model_validate({"backend": backend.value})
+        model_id, ModelExportAction.model_validate({"backend": backend.value, "operation": "export"})
     )
 
 
@@ -140,9 +149,22 @@ async def delete_model_backend(
     session: AsyncSessionDep,
     registry: Annotated[RuntimeSessionRegistry, Depends(get_runtime_session_registry)],
 ) -> None:
-    """Remove a backend export without removing the checkpoint or training history."""
+    """Remove a backend and all its variants without removing the checkpoint."""
     with registry.deleting_model_export(model_id, backend.value):
         await ModelService(session).delete_export(model_id, backend.value)
+
+
+@router.delete("/{model_id}/exports/{backend}/variants/{variant}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_model_variant(
+    model_id: UUID,
+    backend: ExportBackend,
+    variant: VariantId,
+    session: AsyncSessionDep,
+    registry: Annotated[RuntimeSessionRegistry, Depends(get_runtime_session_registry)],
+) -> None:
+    """Remove just one export, preserving the backend's other variants."""
+    with registry.deleting_model_export(model_id, backend.value, variant):
+        await ModelService(session).delete_export(model_id, backend.value, variant)
 
 
 class ModelNameUpdate(BaseModel):
@@ -217,6 +239,7 @@ async def download_model_backend(  # noqa: PLR0913
     environment_id: UUID | None = None,
     device: str | None = None,
     task: str | None = None,
+    variant: VariantId = "original",
 ) -> FileResponse:
     """Download a single backend export as a zip archive.
 
@@ -231,7 +254,7 @@ async def download_model_backend(  # noqa: PLR0913
             detail=f"Backend '{backend.value}' is not available for this model.",
         )
 
-    export_dir = Path(model.path) / "exports" / backend.value
+    export_dir = ModelService.resolve_export(model, backend.value, variant)
     if not export_dir.is_dir():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -1,9 +1,10 @@
-"""The live runtime sessions of this API process, and which robots they hold.
+"""The live runtime sessions of this API process, and the resources they hold.
 
 In memory: a session lives and dies with its websocket in this process, so
 nothing outlives a restart. The device lock (``claim_robot``) already keeps two
 holders off one robot; the registry names the holder, so a form, a delete or
 another session gets a ``device_in_use`` error that says which session to close.
+Export leases also exclude file removal while a model is loading, loaded, or unloading.
 """
 
 from __future__ import annotations
@@ -28,8 +29,8 @@ class RuntimeSessionRegistry:
         self._sessions: dict[str, RuntimeSession] = {}
         self._robots: dict[UUID, RuntimeSession] = {}
         self._watchers: set[asyncio.Queue[None]] = set()
-        self._model_exports: dict[tuple[UUID, str], int] = {}
-        self._export_deletions: set[tuple[UUID, str]] = set()
+        self._model_exports: dict[tuple[UUID, str, str], int] = {}
+        self._export_deletions: set[tuple[UUID, str, str | None]] = set()
 
     def add(self, session: RuntimeSession) -> None:
         self._sessions[session.id] = session
@@ -63,13 +64,16 @@ class RuntimeSessionRegistry:
         return list(self._sessions.values())
 
     @contextmanager
-    def reading_model_export(self, model_id: UUID, backend: str) -> Iterator[None]:
+    def reading_model_export(self, model_id: UUID, backend: str, variant: str = "original") -> Iterator[None]:
         """Keep an export available throughout loading, inference, and teardown."""
-        key = (model_id, backend)
-        if key in self._export_deletions:
+        if any(
+            mid == model_id and name == backend and (scope is None or scope == variant)
+            for mid, name, scope in self._export_deletions
+        ):
             raise ResourceInUseError(
-                ResourceType.MODEL, model_id, "This export is being removed. Try loading it later."
+                ResourceType.MODEL, model_id, "This export is being removed. Try loading it again later."
             )
+        key = (model_id, backend, variant)
         self._model_exports[key] = self._model_exports.get(key, 0) + 1
         try:
             yield
@@ -79,15 +83,23 @@ class RuntimeSessionRegistry:
                 del self._model_exports[key]
 
     @contextmanager
-    def deleting_model_export(self, model_id: UUID, backend: str) -> Iterator[None]:
+    def deleting_model_export(self, model_id: UUID, backend: str, variant: str | None = None) -> Iterator[None]:
         """Exclude inference readers and overlapping removals while deleting files."""
-        key = (model_id, backend)
-        if key in self._model_exports or key in self._export_deletions:
+        readers = any(
+            mid == model_id and name == backend and (variant is None or scope == variant)
+            for mid, name, scope in self._model_exports
+        )
+        deleting = any(
+            mid == model_id and name == backend and (variant is None or scope is None or scope == variant)
+            for mid, name, scope in self._export_deletions
+        )
+        if readers or deleting:
             raise ResourceInUseError(
                 ResourceType.MODEL,
                 model_id,
                 "This export is in use. Unload the model or wait for the current removal to finish.",
             )
+        key = (model_id, backend, variant)
         self._export_deletions.add(key)
         try:
             yield

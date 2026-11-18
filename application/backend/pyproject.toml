@@ -12,7 +12,7 @@ dependencies = [
   "fastapi[standard]<1",
   "physicalai[capture, transport, observer-rerun]>=0.4.1.dev0,<0.5",
   "rerun-sdk>=0.42.0",
-  "physicalai-train[molmoact2,pi05,rldx1,smolvla,xr0]~=0.3.0",
+  "physicalai-train[molmoact2,nncf,pi05,rldx1,smolvla,xr0]~=0.3.0",
   "lerobot[dataset,feetech]==0.7",
   "numpy",
   "websockets",

@@ -1,4 +1,5 @@
 import shutil
+from datetime import UTC, datetime
 from importlib.util import find_spec
 from pathlib import Path
 from uuid import UUID
@@ -11,8 +12,15 @@ from db.schema import JobDB, ModelDB
 from exceptions import InvalidResourceError, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
 from schemas.job import ExportBackend, TrainJob
-from schemas.model import BackendExportDetail, Model, ModelExportAction, TrainingSummary
-from schemas.model_export import ExportPackage
+from schemas.model import (
+    BackendExportDetail,
+    BackendIOSpec,
+    ExportVariantDetail,
+    Model,
+    ModelExportAction,
+    TrainingSummary,
+)
+from schemas.model_export import ExportPackage, VariantId
 from utils.filesystem import FileTree
 
 
@@ -61,8 +69,8 @@ class ModelService:
     async def get_project_models(self, project_id: UUID) -> list[Model]:
         return await self.repo.get_project_models(project_id)
 
-    async def delete_export(self, model_id: UUID, backend: str) -> None:
-        """Remove a backend export, keeping its checkpoint and training history."""
+    async def delete_export(self, model_id: UUID, backend: str, variant: VariantId | None = None) -> None:
+        """Remove one export or an entire backend, keeping checkpoint and training data."""
         from services.model_export_service import ModelExportService
 
         try:
@@ -82,12 +90,20 @@ class ModelService:
                 raise ResourceInUseError(
                     ResourceType.MODEL, model_id, "Wait for this model's export jobs to finish before removing files."
                 )
-            package = ExportPackage.for_model(Path(model.path), backend)
+            package = ExportPackage.for_model(Path(model.path), backend, variant or "original")
             if not package.directory.is_dir():
-                raise ResourceNotFoundError(ResourceType.MODEL, f"{model_id}/{backend}")
-            # Validate the entire tree before deleting any files.
-            _ = tuple(FileTree(package.directory).files())
-            shutil.rmtree(package.directory)
+                raise ResourceNotFoundError(ResourceType.MODEL, f"{model_id}/{backend}/{variant or 'all'}")
+            if variant == "original":
+                files = package.files
+                if not files:
+                    raise ResourceNotFoundError(ResourceType.MODEL, f"{model_id}/{backend}/original")
+                for path in files:
+                    path.unlink()
+            else:
+                _ = tuple(FileTree(package.directory).files())
+                shutil.rmtree(package.directory)
+            backend_directory = ExportPackage.for_model(Path(model.path), backend).directory
+            FileTree(backend_directory).prune_empty_directories()
             await self.session.commit()
         except ValueError as exc:
             await self.session.rollback()
@@ -99,45 +115,75 @@ class ModelService:
     @staticmethod
     def get_backend_details(model: Model) -> list[BackendExportDetail]:
         """Compute per-backend export details from the filesystem."""
-        exports_dir = Path(model.path) / "exports"
-        if not exports_dir.is_dir():
-            return []
-
-        details: list[BackendExportDetail] = []
-        for backend_dir in sorted(exports_dir.iterdir()):
-            detail = BackendExportDetail.from_backend_dir(backend_dir)
-            if detail is not None:
-                details.append(detail)
-
+        grouped: dict[str, list[ExportVariantDetail]] = {}
+        for (backend, variant), directory in sorted(model.export_packages().items()):
+            package = ExportPackage(directory, backend, variant)
+            grouped.setdefault(backend, []).append(
+                ExportVariantDetail(
+                    **package.info.model_dump(),
+                    size_bytes=sum(path.stat().st_size for path in package.files),
+                    file_count=len(package.files),
+                    exported_at=package.info.created_at
+                    or datetime.fromtimestamp((directory / "manifest.json").stat().st_mtime, tz=UTC),
+                    io_spec=BackendIOSpec.from_manifest(package.manifest),
+                )
+            )
+        details = []
+        for backend, variants in sorted(grouped.items()):
+            variants.sort(key=lambda variant: variant.id != "original")
+            original = next((variant for variant in variants if variant.id == "original"), None)
+            details.append(
+                BackendExportDetail(
+                    type=backend,
+                    size_bytes=original.size_bytes if original else 0,
+                    file_count=original.file_count if original else 0,
+                    exported_at=original.exported_at if original else None,
+                    io_spec=original.io_spec if original else None,
+                    variants=variants,
+                )
+            )
         return details
 
     @staticmethod
+    def resolve_export(model: Model, backend: str, variant: VariantId = "original") -> Path:
+        directory = model.export_packages().get((backend, variant))
+        if directory is None:
+            raise ResourceNotFoundError(ResourceType.MODEL, f"{model.id}/{backend}/{variant}")
+        return directory
+
+    @staticmethod
     def get_export_actions(model: Model) -> list[ModelExportAction]:
-        """Offer only missing formats supported by the policy and installed backends."""
+        packages = model.export_packages()
+        actions = []
+        original = packages.get(("openvino", "original"))
+        if (
+            original is not None
+            and ("openvino", "int8") not in packages
+            and ExportPackage(original, "openvino").info.weight_compression is None
+        ):
+            actions.append(ModelExportAction(backend=ExportBackend.OPENVINO, operation="int8_sym"))
         try:
             checkpoint = FileTree(Path(model.path)).resolve(Path("model.ckpt"))
             if not checkpoint.is_file():
-                return []
+                return actions
             from physicalai.export import ExportablePolicyMixin
             from physicalai.policies import get_physicalai_policy_class
 
             from training.policy_catalog import missing_policy_dependencies
 
             if missing_policy_dependencies(model.policy):
-                return []
+                return actions
             policy = get_physicalai_policy_class(model.policy)
             if not issubclass(policy, ExportablePolicyMixin):
-                return []
+                return actions
             supported = policy.get_supported_export_backends()
         except (ImportError, ValueError, OSError):
-            return []
-        return [
-            ModelExportAction(backend=backend)
-            for backend in ExportBackend
-            if backend in supported
-            and not ExportPackage.for_model(Path(model.path), backend).directory.exists()
-            and find_spec(backend.value) is not None
-        ]
+            return actions
+        for backend in ExportBackend:
+            destination = ExportPackage.for_model(Path(model.path), backend).directory
+            if backend in supported and not destination.exists() and find_spec(backend.value) is not None:
+                actions.append(ModelExportAction(backend=backend, operation="export"))
+        return actions
 
     @staticmethod
     def get_hparams(model: Model) -> dict | None:

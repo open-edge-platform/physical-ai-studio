@@ -32,7 +32,7 @@ test('removes a canceled export card and keeps it hidden after a refresh', async
     await card.getByRole('button', { name: 'Cancel export' }).click();
     await expect(card).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Retry export' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Download PyTorch export' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Actions for PyTorch Original' })).toBeVisible();
 
     await page.reload();
     await page.getByRole('button', { name: `Show details for ${model.name}` }).click();
@@ -138,7 +138,7 @@ test('selects a model format in a dialog and hands export progress over to its c
     await expect(border).toHaveCSS('animation-name', 'none');
     await expect(border).toBeVisible();
     updateJob('completed');
-    await expect(card.getByRole('button', { name: 'Download ONNX export' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Actions for ONNX Original' })).toBeVisible();
     await expect(border).toHaveCount(0);
     await expect(card).toHaveAttribute('aria-busy', 'false');
     await expect(addModelFormat).toBeEnabled();

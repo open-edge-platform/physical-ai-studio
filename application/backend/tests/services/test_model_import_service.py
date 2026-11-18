@@ -150,6 +150,29 @@ async def test_import_model_directory_success(tmp_path, project_id, dataset_id, 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("exports_only", [False, True])
+async def test_import_retained_variant_after_original_removal(
+    tmp_path, project_id, dataset_id, settings, dataset, exports_only
+):
+    prefix = "" if exports_only else "exports/"
+    files = {
+        f"{prefix}openvino/variants/int8/manifest.json": json.dumps(_make_manifest("act", "act.xml", "openvino")),
+        f"{prefix}openvino/variants/int8/act.xml": "graph",
+        f"{prefix}openvino/variants/int8/act.bin": "weights",
+    }
+    if not exports_only:
+        files["model.ckpt"] = "checkpoint"
+    source_dir = _create_model_directory(tmp_path, files)
+    with _mock_services(settings, dataset) as service:
+        model = await service.import_model_directory(
+            source_dir=source_dir, project_id=project_id, dataset_id=dataset_id, model_name="retained variant"
+        )
+    assert model.policy == "act"
+    assert model.available_backends == ["openvino"]
+    assert (Path(model.path) / "exports/openvino/variants/int8/act.bin").read_text() == "weights"
+
+
+@pytest.mark.anyio
 async def test_import_model_directory_move_removes_source(tmp_path, project_id, dataset_id, settings, dataset, job):
     source_dir = _create_model_directory(tmp_path, _base_files())
 

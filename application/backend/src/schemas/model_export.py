@@ -1,24 +1,30 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Portable export metadata and package-local filesystem access."""
+"""Portable backend exports, named variants, and package-local filesystem access."""
 
 import json
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from utils.filesystem import FileTree
 
+VariantId = Literal["original", "int8"]
+VariantOperation = Literal["int8_sym", "export"]
+VARIANT_IDS: frozenset[VariantId] = frozenset({"original", "int8"})
 BACKENDS = frozenset({"openvino", "onnx", "torch", "executorch"})
 
 
-class ExportInfo(BaseModel):
+class VariantInfo(BaseModel):
+    schema_version: Literal[1] = 1
+    id: VariantId
+    weight_compression: Literal["int8_sym"] | None = None
     created_at: datetime | None = None
     job_id: UUID | None = None
 
@@ -29,27 +35,35 @@ class ExportPackage:
 
     directory: Path
     backend: str
+    variant: VariantId = "original"
 
     @classmethod
-    def for_model(cls, model_path: Path, backend: str) -> Self:
+    def for_model(cls, model_path: Path, backend: str, variant: VariantId = "original") -> Self:
         """Resolve a package location, rejecting unknown names and symbolic links."""
-        if backend not in BACKENDS:
-            raise ValueError("Unknown export backend")
-        return cls(FileTree(model_path.absolute()).resolve(Path("exports") / backend), backend)
+        if backend not in BACKENDS or variant not in VARIANT_IDS:
+            raise ValueError("Unknown export backend or variant")
+        relative = Path("exports") / backend
+        if variant != "original":
+            relative = relative / "variants" / variant
+        return cls(FileTree(model_path.absolute()).resolve(relative), backend, variant)
 
     @cached_property
     def files(self) -> tuple[Path, ...]:
-        """Return package files without following symbolic links."""
-        return tuple(FileTree(self.directory).files())
+        """Package files, excluding sibling variants."""
+        return tuple(FileTree(self.directory).files(exclude=("variants",)))
 
     @cached_property
     def manifest(self) -> dict:
-        """Read the manifest and validate its local artifact files."""
+        """The manifest, validated against the package's local artifact files."""
         path = FileTree(self.directory).resolve(Path("manifest.json"))
         manifest = json.loads(path.read_text(encoding="utf-8"))
         artifacts = manifest["model"]["artifacts"]
         if not isinstance(artifacts, dict) or self.backend not in artifacts:
             raise ValueError("Missing backend artifact")
+        if self.backend == "openvino" and (
+            not isinstance(artifacts[self.backend], str) or Path(artifacts[self.backend]).suffix != ".xml"
+        ):
+            raise ValueError("OpenVINO policy artifact must be XML")
         files = {path.relative_to(self.directory).as_posix() for path in self.files}
 
         def require_file(value: str) -> None:
@@ -83,6 +97,19 @@ class ExportPackage:
         return self.directory / self.manifest["model"]["artifacts"][self.backend]
 
     @property
-    def info(self) -> ExportInfo:
-        """Read metadata without requiring it on existing exports."""
-        return ExportInfo.model_validate(self.manifest.get("studio", {}).get("export", {}))
+    def info(self) -> VariantInfo:
+        """Read metadata without requiring it on existing original exports."""
+        studio = self.manifest.get("studio", {})
+        if not isinstance(studio, dict):
+            raise ValueError("Manifest studio metadata must be an object")
+        metadata = studio.get("variant")
+        if metadata is None and self.variant == "original":
+            # Checkpoint exports created before variant support use this metadata key.
+            metadata = {"id": "original", **studio["export"]} if "export" in studio else None
+        if metadata is not None:
+            info = VariantInfo.model_validate(metadata)
+            return info.model_copy(update={"id": self.variant})
+        return VariantInfo(
+            id=self.variant,
+            weight_compression="int8_sym" if self.variant == "int8" else None,
+        )

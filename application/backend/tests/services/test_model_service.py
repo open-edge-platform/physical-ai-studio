@@ -119,17 +119,12 @@ def test_get_hparams_parses_hparams_written_with_omegaconf(tmp_path) -> None:
     assert hparams == {"chunk_size": [384, 384], "learning_rate": 0.0001}
 
 
-def test_get_backend_details_delegates_to_backend_export_detail(tmp_path) -> None:
+def test_get_backend_details_ignores_incomplete_backend(tmp_path) -> None:
     model = _make_model()
     model.path = str(tmp_path)
     backend_dir = tmp_path / "exports" / "torch"
     backend_dir.mkdir(parents=True)
-    with patch(
-        "services.model_service.BackendExportDetail.from_backend_dir", return_value=None
-    ) as mock_from_backend_dir:
-        ModelService.get_backend_details(model)
-
-    mock_from_backend_dir.assert_called_once_with(backend_dir)
+    assert ModelService.get_backend_details(model) == []
 
 
 @pytest.mark.anyio
@@ -142,13 +137,13 @@ async def test_delete_model_deletes_snapshot_when_snapshot_id_set() -> None:
     mock_snapshot_repo = AsyncMock()
 
     mock_session = AsyncMock()
+    mock_session.scalar.return_value = None
 
     with (
         patch("services.model_service.ModelRepository", return_value=mock_model_repo),
         patch("services.model_service.SnapshotRepository", return_value=mock_snapshot_repo),
         patch("services.model_service.shutil.rmtree"),
     ):
-        mock_session.scalar.return_value = None
         await ModelService(mock_session).delete_model(model)
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)
@@ -164,13 +159,13 @@ async def test_delete_model_skips_snapshot_delete_when_no_snapshot_id() -> None:
     mock_snapshot_repo = AsyncMock()
 
     mock_session = AsyncMock()
+    mock_session.scalar.return_value = None
 
     with (
         patch("services.model_service.ModelRepository", return_value=mock_model_repo),
         patch("services.model_service.SnapshotRepository", return_value=mock_snapshot_repo),
         patch("services.model_service.shutil.rmtree"),
     ):
-        mock_session.scalar.return_value = None
         await ModelService(mock_session).delete_model(model)
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)

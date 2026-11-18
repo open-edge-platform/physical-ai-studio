@@ -1,204 +1,183 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { Button, DialogTrigger, Divider, Flex, Heading, Icon, Text, View } from '@geti-ui/ui';
-import { DownloadIcon } from '@geti-ui/ui/icons';
+import {
+    ActionButton,
+    Button,
+    DialogContainer,
+    Divider,
+    Flex,
+    Heading,
+    Item,
+    Menu,
+    MenuTrigger,
+    Text,
+    View,
+} from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { fetchClient } from '../../../api/client';
-import type { components, SchemaModel } from '../../../api/openapi-spec';
-import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
-import { RemoveBackendDialog } from './remove-backend-dialog';
+import { SchemaExportVariantDetail, SchemaModel, SchemaModelExportAction } from '../../../api/openapi-spec';
+import { INFERENCE_BACKENDS, InferenceBackendConfig } from '../inference-backends';
+import { RemoveModelDialog } from './remove-model-dialog';
+import { RunVariant } from './run-variant';
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
 import classes from './model-formats.module.css';
 
-type BackendExportDetail = components['schemas']['BackendExportDetail'];
-type ExportBackend = components['schemas']['physicalai__export__backends__ExportBackend'];
-type ModelDetailResponse = components['schemas']['ModelDetailResponse'];
-
 export const InferenceBackendLogo = ({
     backend,
     isAvailable,
+    compact = false,
+    variantLabel,
 }: {
     backend: InferenceBackendConfig;
     isAvailable: boolean;
+    compact?: boolean;
+    variantLabel?: string;
 }) => {
     const Logo = backend.logo;
-    const unavailableStyle = isAvailable ? undefined : { opacity: 0.4 };
-
     return (
-        <Flex alignItems='center' gap='size-200' UNSAFE_style={unavailableStyle}>
-            <Flex>
-                <Logo height={'50px'} width={'50px'} />
-            </Flex>
-            <Flex direction='column' gap='size-10' justifyContent={'center'}>
-                <Heading level={4} marginBottom={0}>
-                    {backend.label}
-                </Heading>
-                <Text
-                    UNSAFE_style={{
-                        fontSize: '11px',
-                    }}
-                >
-                    {backend.description}
-                </Text>
+        <Flex alignItems='center' gap='size-200' UNSAFE_style={isAvailable ? undefined : { opacity: 0.4 }}>
+            <Logo height={compact ? '32px' : '50px'} width={compact ? '32px' : '50px'} />
+            <Flex direction='column' gap='size-50'>
+                <Flex alignItems='baseline' gap='size-100' wrap>
+                    <Heading level={4} margin={0}>
+                        {backend.label}
+                    </Heading>
+                    {variantLabel && <Text UNSAFE_className={classes.variantDescription}>{variantLabel}</Text>}
+                </Flex>
+                {!compact && <Text UNSAFE_style={{ fontSize: '11px' }}>{backend.description}</Text>}
             </Flex>
         </Flex>
     );
 };
 
-const formatSize = (bytes: number): string => {
-    const mb = bytes / (1024 * 1024);
-    if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(1)} GB`;
-    }
-    return `${mb.toFixed(1)} MB`;
-};
-
-const ModelFormatSize = ({ exportDetail }: { exportDetail: BackendExportDetail | undefined }) => {
-    if (exportDetail === undefined) {
-        return (
-            <Flex direction='column' gap='size-10'>
-                <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Size</Text>
-                <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>—</Text>
-            </Flex>
-        );
-    }
-
-    return (
-        <Flex direction='column' gap='size-10'>
-            <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Size</Text>
-            <Text>{formatSize(exportDetail.size_bytes)}</Text>
-        </Flex>
-    );
-};
-
-const ModelPrecision = ({ exportDetail }: { exportDetail: BackendExportDetail | undefined }) => {
-    if (exportDetail === undefined) {
-        return (
-            <Flex direction='column' gap='size-10'>
-                <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Precision</Text>
-                <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>—</Text>
-            </Flex>
-        );
-    }
-
-    // At the moment we only support FP16 models
-    return (
-        <Flex direction='column' gap='size-10'>
-            <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-700)' }}>Precision</Text>
-            <Text>FP16</Text>
-        </Flex>
-    );
-};
-
-interface BackendCardProps {
-    modelDetail: ModelDetailResponse;
-    backendType: ExportBackend;
+export const BackendCard = ({
+    backendType,
+    model,
+    variant,
+    variantId = variant?.id ?? 'original',
+    isExporting = false,
+    children,
+    action,
+    isCreateDisabled = false,
+    onCreate,
+}: {
+    backendType: SchemaModelExportAction['backend'];
     model: SchemaModel;
-    children?: ReactNode;
+    variant?: SchemaExportVariantDetail;
+    variantId?: SchemaExportVariantDetail['id'];
     isExporting?: boolean;
-}
-
-export const BackendCard = ({ modelDetail, backendType, model, children, isExporting = false }: BackendCardProps) => {
-    const exportDetail = modelDetail.exports.find(({ type }) => type === backendType);
-    const isAvailable = exportDetail !== undefined;
+    children?: ReactNode;
+    action?: SchemaModelExportAction;
+    isCreateDisabled?: boolean;
+    onCreate: (action: SchemaModelExportAction) => void;
+}) => {
+    const [dialog, setDialog] = useState<'runtime' | 'remove' | null>(null);
     const backend = INFERENCE_BACKENDS[backendType];
+    const label = variantId === 'int8' ? 'INT8' : 'Original';
+    const megabytes = (variant?.size_bytes ?? 0) / 1024 ** 2;
+    const size = megabytes >= 1024 ? `${(megabytes / 1024).toFixed(1)} GB` : `${megabytes.toFixed(1)} MB`;
+    const weights = variant?.weight_compression === 'int8_sym' ? 'INT8 symmetric' : 'Original';
     const downloadUrl = fetchClient.PATH('/api/models/{model_id}/exports/{backend}/download', {
-        params: { path: { model_id: model.id!, backend: backendType } },
+        params: { path: { model_id: model.id!, backend: backendType }, query: { variant: variantId } },
     });
-
     return (
-        <View
-            backgroundColor={'gray-50'}
-            paddingY='size-200'
-            borderRadius={'medium'}
-            borderWidth='thin'
-            borderColor={isExporting ? 'transparent' : 'gray-100'}
-            height='100%'
-            UNSAFE_className={isExporting ? classes.exportingCard : undefined}
+        <section
+            aria-label={variantId === 'original' ? `${backend.label} model format` : `${backend.label} · ${label}`}
+            aria-busy={isExporting}
         >
-            {isExporting && (
-                <svg className={classes.exportBorder} aria-hidden='true' focusable='false'>
-                    <rect x='1' y='1' rx='8' />
-                </svg>
-            )}
-            <Flex direction='column' gap='size-200' height='100%'>
-                <View paddingX='size-200' UNSAFE_className={isExporting ? classes.exportingIdentity : undefined}>
-                    <Flex justifyContent={'space-between'}>
-                        <Flex direction='column' gap='size-100' marginEnd='size-200' justifyContent='center'>
-                            <InferenceBackendLogo backend={backend} isAvailable={isAvailable || isExporting} />
-                        </Flex>
-                    </Flex>
-                </View>
-
-                <Divider size='S' />
-                {children && <View paddingX='size-200'>{children}</View>}
-
-                {!isExporting && (
-                    <View
-                        paddingX='size-200'
-                        marginTop='auto'
-                        UNSAFE_style={isAvailable ? undefined : { opacity: 0.4 }}
-                    >
-                        <Flex gap='size-200' wrap='wrap' alignItems='end' marginTop='size-100' width='100%'>
-                            <Flex gap='size-400' flexShrink={0}>
-                                <ModelFormatSize exportDetail={exportDetail} />
-                                <ModelPrecision exportDetail={exportDetail} />
-                            </Flex>
-                            {isAvailable && (
-                                <View marginStart='auto' maxWidth='100%' flexShrink={0}>
-                                    <Flex direction='column' gap='size-100'>
-                                        {backendType === 'openvino' && (
-                                            <DialogTrigger>
-                                                <Button
-                                                    aria-label={`Download ${backend.label} runtime export`}
-                                                    variant='secondary'
-                                                    UNSAFE_style={{ whiteSpace: 'nowrap' }}
-                                                >
-                                                    Runtime export
-                                                </Button>
-                                                {(close) => (
-                                                    <RuntimeExportDialog
-                                                        close={close}
-                                                        model={model}
-                                                        backend={backendType}
-                                                    />
-                                                )}
-                                            </DialogTrigger>
-                                        )}
-                                        <Button
-                                            href={downloadUrl}
-                                            aria-label={`Download ${backend.label} export`}
-                                            UNSAFE_style={{
-                                                color: 'inherit',
-                                                display: 'inline-flex',
-                                                textDecoration: 'none',
-                                                paddingInline: 'var(--spectrum-global-dimension-size-200)',
-                                                alignItems: 'center',
-                                                whiteSpace: 'nowrap',
-                                            }}
-                                            target='_blank'
-                                            rel='noopener noreferrer'
-                                            variant='secondary'
-                                        >
-                                            <Icon marginEnd='size-100'>
-                                                <DownloadIcon />
-                                            </Icon>
-                                            <span>Download</span>
-                                        </Button>
-                                        <DialogTrigger>
-                                            <Button variant='negative'>Remove model</Button>
-                                            {(close) => (
-                                                <RemoveBackendDialog model={model} backend={backendType} close={close} />
-                                            )}
-                                        </DialogTrigger>
-                                    </Flex>
-                                </View>
-                            )}
-                        </Flex>
-                    </View>
+            <View
+                backgroundColor='gray-50'
+                padding='size-200'
+                borderRadius='medium'
+                borderWidth='thin'
+                borderColor={isExporting ? 'transparent' : 'gray-100'}
+                height='100%'
+                UNSAFE_className={isExporting ? classes.exportingCard : undefined}
+            >
+                {isExporting && (
+                    <svg className={classes.exportBorder} aria-hidden='true' focusable='false'>
+                        <rect x='1' y='1' rx='8' />
+                    </svg>
                 )}
-            </Flex>
-        </View>
+                <Flex direction='column' justifyContent='space-between' gap='size-200' height='100%'>
+                    <Flex alignItems='center' justifyContent='space-between' gap='size-100'>
+                        <View UNSAFE_className={isExporting ? classes.exportingIdentity : undefined}>
+                            <InferenceBackendLogo
+                                backend={backend}
+                                isAvailable={variant !== undefined || isExporting}
+                                compact
+                                variantLabel={variantId === 'int8' ? label : undefined}
+                            />
+                        </View>
+                        {variant && (
+                            <MenuTrigger>
+                                <ActionButton isQuiet aria-label={`Actions for ${backend.label} ${label}`}>
+                                    <MoreMenu />
+                                </ActionButton>
+                                <Menu
+                                    onAction={(key) => {
+                                        if (key === 'runtime' || key === 'remove') setDialog(key);
+                                    }}
+                                >
+                                    <Item key='download' href={downloadUrl} target='_blank' rel='noopener noreferrer'>
+                                        Download
+                                    </Item>
+                                    {backendType === 'openvino' ? <Item key='runtime'>Runtime export</Item> : null}
+                                    <Item key='remove'>Remove model</Item>
+                                </Menu>
+                            </MenuTrigger>
+                        )}
+                    </Flex>
+                    <Divider size='S' />
+                    {children}
+                    {!isExporting && (
+                        <Flex alignItems='end' gap='size-200' wrap>
+                            <Flex direction='column'>
+                                <Text>Size</Text>
+                                <Text>{variant ? size : '—'}</Text>
+                            </Flex>
+                            <Flex direction='column'>
+                                <Text>Weights</Text>
+                                <Text>{variant ? weights : '—'}</Text>
+                            </Flex>
+                            <View marginStart='auto'>
+                                <Flex gap='size-100' alignItems='center'>
+                                    {action && (
+                                        <Button
+                                            variant='secondary'
+                                            isDisabled={isCreateDisabled}
+                                            onPress={() => onCreate(action)}
+                                        >
+                                            Optimize
+                                        </Button>
+                                    )}
+                                    {variant && <RunVariant model={model} backend={backendType} variant={variantId} />}
+                                </Flex>
+                            </View>
+                        </Flex>
+                    )}
+                </Flex>
+            </View>
+            <DialogContainer onDismiss={() => setDialog(null)}>
+                {dialog === 'runtime' && variant && (
+                    <RuntimeExportDialog
+                        model={model}
+                        backend={backendType}
+                        variant={variantId}
+                        close={() => setDialog(null)}
+                    />
+                )}
+                {dialog === 'remove' && variant && (
+                    <RemoveModelDialog
+                        model={model}
+                        backend={backendType}
+                        variant={variant}
+                        close={() => setDialog(null)}
+                    />
+                )}
+            </DialogContainer>
+        </section>
     );
 };

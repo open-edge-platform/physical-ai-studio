@@ -5,7 +5,12 @@ import { Add } from '@geti-ui/ui/icons';
 import { Button as AriaButton } from 'react-aria-components';
 
 import { $api } from '../../../api/client';
-import type { SchemaModel, SchemaModelExportAction, SchemaModelExportJob } from '../../../api/openapi-spec';
+import type {
+    SchemaExportVariantDetail,
+    SchemaModel,
+    SchemaModelExportAction,
+    SchemaModelExportJob,
+} from '../../../api/openapi-spec';
 import { JOBS_QUERY_KEY, useJobCache } from '../../jobs/use-job-cache';
 import { INFERENCE_BACKENDS, isExportBackend } from '../inference-backends';
 import { AddModelFormatDialog } from './add-model-format-dialog';
@@ -21,8 +26,24 @@ interface ModelExportsProps {
 const cardGridColumns = 'repeat(auto-fill, minmax(min(100%, var(--spectrum-global-dimension-size-4600)), 1fr))';
 const backendOrder = ['torch', 'openvino', 'onnx', 'executorch'];
 
+interface VariantTarget {
+    backend: SchemaModelExportAction['backend'];
+    variant: SchemaExportVariantDetail['id'];
+}
+
+const actionTarget = (action: SchemaModelExportAction): VariantTarget => ({
+    backend: action.backend,
+    variant: action.operation === 'int8_sym' ? 'int8' : 'original',
+});
+
+const targetKey = ({ backend, variant }: VariantTarget) => `${backend}/${variant}`;
+
 const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
-    const [creationBackends, setCreationBackends] = useState<SchemaModelExportAction['backend'][] | null>(null);
+    const [creation, setCreation] = useState<{
+        actions: SchemaModelExportAction[];
+        initialAction?: SchemaModelExportAction;
+    } | null>(null);
+    const [requestedAction, setRequestedAction] = useState<SchemaModelExportAction | null>(null);
     const { data: modelDetail } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
         params: { path: { model_id: model.id! } },
     });
@@ -32,34 +53,52 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
         meta: { invalidates: [[...JOBS_QUERY_KEY]] },
         onSuccess: addJob,
     });
+    const optimizeModel = $api.useMutation('post', '/api/models/{model_id}/optimize', {
+        meta: { invalidates: [[...JOBS_QUERY_KEY]] },
+        onSuccess: addJob,
+    });
+    const submission = requestedAction?.operation === 'int8_sym' ? optimizeModel : exportModel;
     const modelJobs = (jobs.data ?? [])
         .filter((job): job is SchemaModelExportJob => job.type === 'model_export' && job.payload.model_id === model.id)
         .toSorted((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
     const isExporting =
-        exportModel.isPending || modelJobs.some(({ status }) => status === 'pending' || status === 'running');
-    const requestedBackend = exportModel.variables?.params.path.backend;
+        submission.isPending || modelJobs.some(({ status }) => status === 'pending' || status === 'running');
     // Job history does not prove an artifact still exists: exports can be removed independently.
     const incompleteJobs = modelJobs.filter(
         (job, index) =>
             job.status !== 'completed' &&
             job.status !== 'canceled' &&
-            modelJobs.findIndex(({ payload }) => payload.backend === job.payload.backend) === index
+            modelJobs.findIndex(
+                ({ payload }) => targetKey(actionTarget(payload)) === targetKey(actionTarget(job.payload))
+            ) === index
     );
-    const backends = [
-        ...new Set([
-            ...modelDetail.exports.map(({ type }) => type),
-            ...incompleteJobs.map(({ payload }) => payload.backend),
-            ...(requestedBackend && (exportModel.isPending || exportModel.isError) ? [requestedBackend] : []),
-        ]),
-    ]
-        .filter(isExportBackend)
-        .toSorted((a, b) => backendOrder.indexOf(a) - backendOrder.indexOf(b));
+    const candidates: VariantTarget[] = [
+        ...modelDetail.exports.flatMap(({ type, variants }) =>
+            isExportBackend(type) ? (variants ?? []).map(({ id }) => ({ backend: type, variant: id })) : []
+        ),
+        ...incompleteJobs.map(({ payload }) => actionTarget(payload)),
+        ...(requestedAction && (submission.isPending || submission.isError) ? [actionTarget(requestedAction)] : []),
+    ];
+    const cards = candidates
+        .filter(
+            (target, index) => candidates.findIndex((candidate) => targetKey(candidate) === targetKey(target)) === index
+        )
+        .toSorted(
+            (a, b) =>
+                backendOrder.indexOf(a.backend) - backendOrder.indexOf(b.backend) ||
+                Number(a.variant !== 'original') - Number(b.variant !== 'original')
+        );
     const actions = (modelDetail.available_actions ?? [])
-        .filter(({ backend, operation }) => operation === 'export' && !backends.includes(backend))
+        .filter((action) => !cards.some((target) => targetKey(target) === targetKey(actionTarget(action))))
         .toSorted((a, b) => backendOrder.indexOf(a.backend) - backendOrder.indexOf(b.backend));
     const isExportDisabled = jobs.isPending || jobs.isError || isExporting;
-    const startExport = (backend: (typeof backends)[number], onSuccess?: () => void) => {
-        exportModel.mutate({ params: { path: { model_id: model.id!, backend } } }, { onSuccess });
+    const startExport = (action: SchemaModelExportAction, onSuccess?: () => void) => {
+        setRequestedAction(action);
+        if (action.operation === 'int8_sym') {
+            optimizeModel.mutate({ params: { path: { model_id: model.id! } } }, { onSuccess });
+        } else {
+            exportModel.mutate({ params: { path: { model_id: model.id!, backend: action.backend } } }, { onSuccess });
+        }
     };
 
     return (
@@ -73,7 +112,7 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                 </Flex>
             )}
             {jobs.isPending && <div role='status'>Loading export status…</div>}
-            {backends.length === 0 && (
+            {cards.length === 0 && (
                 <Text>
                     {actions.length > 0
                         ? 'No model formats yet. Add a model format to export the stored checkpoint.'
@@ -86,45 +125,58 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                     gridTemplateColumns: cardGridColumns,
                 }}
             >
-                {backends.map((backendType) => {
-                    const isAvailable = modelDetail.exports.some(({ type }) => type === backendType);
-                    const job =
-                        modelJobs.find(
-                            ({ payload, status }) =>
-                                payload.backend === backendType && (status === 'pending' || status === 'running')
-                        ) ?? modelJobs.find(({ payload }) => payload.backend === backendType);
-                    const isSubmitting = exportModel.isPending && requestedBackend === backendType;
-                    const isExportInProgress =
-                        !isAvailable && (isSubmitting || job?.status === 'pending' || job?.status === 'running');
-                    const error = requestedBackend === backendType ? exportModel.error : undefined;
-                    const canRetry = modelDetail.available_actions?.some(
-                        ({ backend, operation }) => backend === backendType && operation === 'export'
+                {cards.map((target) => {
+                    const backendType = target.backend;
+                    const variant = modelDetail.exports
+                        .find(({ type }) => type === backendType)
+                        ?.variants?.find(({ id }) => id === target.variant);
+                    const matchingJobs = modelJobs.filter(
+                        ({ payload }) => targetKey(actionTarget(payload)) === targetKey(target)
                     );
+                    const job =
+                        matchingJobs.find(({ status }) => status === 'pending' || status === 'running') ??
+                        matchingJobs[0];
+                    const isRequested =
+                        requestedAction !== null && targetKey(actionTarget(requestedAction)) === targetKey(target);
+                    const isSubmitting = submission.isPending && isRequested;
+                    const isExportInProgress =
+                        !variant && (isSubmitting || job?.status === 'pending' || job?.status === 'running');
+                    const error = isRequested ? submission.error : undefined;
+                    const retryAction = modelDetail.available_actions?.find(
+                        (action) => targetKey(actionTarget(action)) === targetKey(target)
+                    );
+                    const optimizeAction =
+                        target.variant === 'original'
+                            ? actions.find(
+                                  (action) => action.backend === backendType && action.operation === 'int8_sym'
+                              )
+                            : undefined;
+                    const statusLabel =
+                        INFERENCE_BACKENDS[backendType].label + (target.variant === 'int8' ? ' INT8' : '');
                     return (
-                        <section
-                            key={backendType}
-                            aria-label={`${INFERENCE_BACKENDS[backendType].label} model format`}
-                            aria-busy={isExportInProgress}
+                        <BackendCard
+                            key={targetKey(target)}
+                            backendType={backendType}
+                            model={model}
+                            variant={variant}
+                            variantId={target.variant}
+                            isExporting={isExportInProgress}
+                            action={optimizeAction}
+                            isCreateDisabled={isExportDisabled}
+                            onCreate={(initialAction) => setCreation({ actions, initialAction })}
                         >
-                            <BackendCard
-                                backendType={backendType}
-                                model={model}
-                                modelDetail={modelDetail}
-                                isExporting={isExportInProgress}
-                            >
-                                {!isAvailable && (
-                                    <ExportJobControls
-                                        key={job?.id}
-                                        label={INFERENCE_BACKENDS[backendType].label}
-                                        job={error ? undefined : job}
-                                        isSubmitting={isSubmitting}
-                                        error={error}
-                                        onRetry={canRetry ? () => startExport(backendType) : undefined}
-                                        isRetryDisabled={isExportDisabled}
-                                    />
-                                )}
-                            </BackendCard>
-                        </section>
+                            {!variant && (
+                                <ExportJobControls
+                                    key={job?.id}
+                                    label={statusLabel}
+                                    job={error ? undefined : job}
+                                    isSubmitting={isSubmitting}
+                                    error={error}
+                                    onRetry={retryAction ? () => startExport(retryAction) : undefined}
+                                    isRetryDisabled={isExportDisabled}
+                                />
+                            )}
+                        </BackendCard>
                     );
                 })}
                 {actions.length > 0 && (
@@ -132,7 +184,7 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                         aria-label='Add model format'
                         className={classes.addCard}
                         isDisabled={isExportDisabled}
-                        onPress={() => setCreationBackends(actions.map(({ backend }) => backend))}
+                        onPress={() => setCreation({ actions })}
                     >
                         <span className={classes.addTitle}>
                             <Add aria-hidden='true' />
@@ -143,19 +195,20 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                 )}
             </Grid>
             <DialogContainer
-                isKeyboardDismissDisabled={exportModel.isPending}
+                isKeyboardDismissDisabled={submission.isPending}
                 onDismiss={() => {
-                    if (!exportModel.isPending) setCreationBackends(null);
+                    if (!submission.isPending) setCreation(null);
                 }}
             >
-                {creationBackends !== null && (
+                {creation !== null && (
                     <AddModelFormatDialog
-                        backends={creationBackends}
-                        isSubmitting={exportModel.isPending}
+                        actions={creation.actions}
+                        initialAction={creation.initialAction}
+                        isSubmitting={submission.isPending}
                         isExportDisabled={isExportDisabled}
-                        error={exportModel.error}
-                        onExport={(backend) => startExport(backend, () => setCreationBackends(null))}
-                        close={() => setCreationBackends(null)}
+                        error={submission.error}
+                        onExport={(action) => startExport(action, () => setCreation(null))}
+                        close={() => setCreation(null)}
                     />
                 )}
             </DialogContainer>

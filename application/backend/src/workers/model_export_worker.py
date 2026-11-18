@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 class ModelExportWorker(ProcessWorker[None]):
-    """Build one export in a short-lived, memory-isolated process."""
+    """Build one export variant in a short-lived, memory-isolated process."""
 
     ROLE = "ModelExportWorker"
 
@@ -48,7 +48,7 @@ class ModelExportWorker(ProcessWorker[None]):
         return super().should_stop() or self.shutdown_event.is_set()
 
     async def run_loop(self, context: None = None) -> None:  # noqa: ARG002
-        """Claim the job and publish only after its complete package succeeds."""
+        """Claim the job and attach a variant only after its complete package succeeds."""
         if self.should_stop():
             return
         async with get_async_db_session_ctx() as session:
@@ -77,13 +77,18 @@ class ModelExportWorker(ProcessWorker[None]):
         async with get_async_db_session_ctx() as session:
             source = await ModelService(session).get_model_by_id(job.payload.model_id)
         staging = ModelExportService.staging(job.id)
-        destination = ExportPackage.for_model(Path(source.path), job.payload.backend).directory
+        destination = ExportPackage.for_model(
+            Path(source.path), job.payload.backend, job.payload.target_variant
+        ).directory
         if self.should_stop() or self.cancel_event.is_set():
             async with get_async_db_session_ctx() as session:
                 await ModelExportService(session).cleanup(job)
             await self._finish(job, JobStatus.CANCELED, "Model export canceled")
             return None
-        ModelExportService.export_checkpoint(source, staging, job)
+        if job.payload.operation == "export":
+            ModelExportService.export_checkpoint(source, staging, job)
+        else:
+            ModelExportService.compress(source, staging, job.id)
         # Conversion cannot be interrupted mid-call; never publish after cancellation.
         if self.should_stop() or self.cancel_event.is_set():
             async with get_async_db_session_ctx() as session:
@@ -93,7 +98,7 @@ class ModelExportWorker(ProcessWorker[None]):
         completed = job.model_copy(
             update={
                 "status": JobStatus.COMPLETED,
-                "message": f"{job.payload.backend} export created",
+                "message": f"{job.payload.backend} {job.payload.target_variant} export created",
                 "progress": 100,
                 "end_time": datetime.now(UTC),
             }
@@ -122,14 +127,14 @@ class ModelExportWorker(ProcessWorker[None]):
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
-                    raise FileExistsError(f"Export already exists: {destination.name}")
+                    raise FileExistsError(f"Export variant already exists: {destination.name}")
                 await session.commit()
         if canceled:
             async with get_async_db_session_ctx() as session:
                 await ModelExportService(session).cleanup(job)
             await self._finish(job, JobStatus.CANCELED, "Model export canceled")
             return None
-        ModelExportService.publish(source, job.id, job.payload.backend)
+        ModelExportService.publish(source, job.id, job.payload.backend, job.payload.target_variant)
         return source, completed
 
     async def _finish(self, job: ModelExportJob, status: JobStatus, message: str) -> None:

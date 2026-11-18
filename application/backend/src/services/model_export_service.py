@@ -12,11 +12,11 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.schema import JobDB, ModelDB
-from exceptions import DuplicateJobException, InvalidResourceError
+from exceptions import DuplicateJobException, InsufficientDiskSpaceError, InvalidResourceError
 from repositories.mappers import JobMapper
 from schemas.job import Job, ModelExportJob, ModelExportJobPayload
 from schemas.model import Model, ModelExportAction
-from schemas.model_export import ExportInfo, ExportPackage
+from schemas.model_export import ExportPackage, VariantId, VariantInfo
 from services.model_service import ModelService
 from settings import get_settings
 from utils.filesystem import FileTree
@@ -42,13 +42,13 @@ class ModelExportService:
                 )
             )
             pending = any(status != "completed" or self.staging(UUID(job_id)).exists() for job_id, status in jobs)
-            target = ExportPackage.for_model(Path(model.path), payload.backend)
+            target = ExportPackage.for_model(Path(model.path), payload.backend, payload.target_variant)
             if pending or target.directory.exists():
                 raise DuplicateJobException("An export already exists or is being created")
             job = ModelExportJob(
                 project_id=model.project_id,
                 payload=payload,
-                message=f"Creating {payload.backend} export",
+                message=f"Creating {payload.backend} {payload.target_variant} export",
             )
             self.session.add(JobMapper.to_schema(job))
             await self.session.commit()
@@ -56,6 +56,27 @@ class ModelExportService:
             await self.session.rollback()
             raise
         return job
+
+    @staticmethod
+    def compress(model: Model, destination: Path, job_id: UUID) -> None:
+        from physicalai.export.hooks import compress_weights_openvino_int8_sym
+
+        source = ExportPackage(ModelService.resolve_export(model, "openvino"), "openvino")
+        required_bytes = sum(path.stat().st_size for path in source.files)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if shutil.disk_usage(destination.parent).free < required_bytes * 3:
+            raise InsufficientDiskSpaceError("Not enough disk space to create the INT8 export")
+        destination.mkdir()
+        for path in source.files:
+            target = destination / path.relative_to(source.directory)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+        compress_weights_openvino_int8_sym(str(ExportPackage(destination, "openvino").artifact))
+        manifest = ExportPackage(destination, "openvino").manifest
+        manifest.setdefault("studio", {})["variant"] = VariantInfo(
+            id="int8", weight_compression="int8_sym", created_at=datetime.now(UTC), job_id=job_id
+        ).model_dump(mode="json")
+        (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     @staticmethod
     def staging(job_id: UUID) -> Path:
@@ -87,22 +108,22 @@ class ModelExportService:
                 finally:
                     tempfile.tempdir = previous
         manifest = ExportPackage(destination, job.payload.backend).manifest
-        manifest.setdefault("studio", {})["export"] = ExportInfo(
-            created_at=datetime.now(UTC), job_id=job.id
+        manifest.setdefault("studio", {})["variant"] = VariantInfo(
+            id="original", created_at=datetime.now(UTC), job_id=job.id
         ).model_dump(mode="json")
         (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     @staticmethod
-    def publish(model: Model, job_id: UUID, backend: str) -> None:
+    def publish(model: Model, job_id: UUID, backend: str, variant: VariantId = "original") -> None:
         """Publish an already-committed job's complete package with one rename."""
         staging = ModelExportService.staging(job_id)
-        destination = ExportPackage.for_model(Path(model.path), backend)
+        destination = ExportPackage.for_model(Path(model.path), backend, variant)
         if destination.directory.exists():
             if destination.info.job_id != job_id:
                 raise FileExistsError("An export from another job already exists")
             shutil.rmtree(staging, ignore_errors=True)
             return
-        if ExportPackage(staging, backend).info.job_id != job_id:
+        if ExportPackage(staging, backend, variant).info.job_id != job_id:
             raise ValueError("The staged export does not belong to this job")
         staging.rename(destination.directory)
 

@@ -7,9 +7,17 @@ interface BackendOptionProps {
     id: string;
     isSelected?: boolean;
     isDisabled?: boolean;
+    label?: string;
+    description?: string;
 }
 
-export const BackendOption = ({ id, isSelected = false, isDisabled = false }: BackendOptionProps) => {
+export const BackendOption = ({
+    id,
+    isSelected = false,
+    isDisabled = false,
+    label,
+    description,
+}: BackendOptionProps) => {
     const backend = INFERENCE_BACKENDS[id];
 
     return (
@@ -24,7 +32,13 @@ export const BackendOption = ({ id, isSelected = false, isDisabled = false }: Ba
             >
                 <Flex direction='row' gap='size-100' alignItems='center'>
                     <View padding='size-200'>
-                        <Radio id={id} value={id} marginEnd={0} isDisabled={isDisabled} />
+                        <Radio
+                            id={id}
+                            value={id}
+                            marginEnd={0}
+                            isDisabled={isDisabled}
+                            aria-label={label ?? backend.label}
+                        />
                     </View>
 
                     <Divider orientation='vertical' size='S' />
@@ -34,14 +48,14 @@ export const BackendOption = ({ id, isSelected = false, isDisabled = false }: Ba
                         </View>
                     </Flex>
                     <View>
-                        <Heading level={4}>{backend.label}</Heading>
+                        <Heading level={4}>{label ?? backend.label}</Heading>
                         <Text
                             UNSAFE_style={{
                                 fontSize: '12px',
                                 color: 'var(--spectrum-global-color-gray-700)',
                             }}
                         >
-                            {backend.description}
+                            {description ?? backend.description}
                         </Text>
                     </View>
                 </Flex>

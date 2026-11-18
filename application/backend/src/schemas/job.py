@@ -10,6 +10,7 @@ from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
+from schemas.model_export import VariantId, VariantOperation
 from training.job import PEFT_POLICIES, SNAPFLOW_POLICIES
 
 
@@ -413,11 +414,21 @@ class ModelExportJobPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_id: UUID
-    operation: Literal["export"] = "export"
+    operation: VariantOperation = "export"
     backend: ExportBackend
     cancellation_requested: bool = Field(
         default=False, description="Persisted interruption request, checked atomically during model publication"
     )
+
+    @property
+    def target_variant(self) -> VariantId:
+        return "int8" if self.operation == "int8_sym" else "original"
+
+    @model_validator(mode="after")
+    def validate_backend(self) -> "ModelExportJobPayload":
+        if self.operation == "int8_sym" and self.backend != ExportBackend.OPENVINO:
+            raise ValueError("INT8 compression requires the OpenVINO backend")
+        return self
 
 
 class ModelExportJob(BaseJob):

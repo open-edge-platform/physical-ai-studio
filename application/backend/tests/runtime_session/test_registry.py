@@ -34,33 +34,35 @@ async def test_a_load_waits_only_for_the_closing_session_that_holds_its_robot() 
     assert 0.25 < time.monotonic() - started < 2.0
 
 
-def test_export_readers_exclude_removal_until_the_last_reader_leaves() -> None:
+def test_export_readers_are_reference_counted_and_scoped() -> None:
     registry = RuntimeSessionRegistry()
     model_id = uuid4()
-    with registry.reading_model_export(model_id, "torch"):
-        with (
-            registry.reading_model_export(model_id, "torch"),
-            pytest.raises(ResourceInUseError),
-            registry.deleting_model_export(model_id, "torch"),
-        ):
+    with registry.reading_model_export(model_id, "openvino", "original"):
+        with registry.reading_model_export(model_id, "openvino", "original"):
+            assert registry._model_exports[(model_id, "openvino", "original")] == 2
+            with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "openvino"):
+                pass
+        with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "openvino", "original"):
             pass
-        with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "torch"):
+        with registry.deleting_model_export(model_id, "openvino", "int8"):
             pass
-        with registry.deleting_model_export(model_id, "onnx"):
+        with registry.deleting_model_export(model_id, "torch"):
             pass
-    with registry.deleting_model_export(model_id, "torch"):
-        with pytest.raises(ResourceInUseError), registry.reading_model_export(model_id, "torch"):
+        with registry.deleting_model_export(uuid4(), "openvino"):
             pass
-        with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "torch"):
-            pass
+    with registry.deleting_model_export(model_id, "openvino"):
+        pass
 
 
-def test_export_leases_are_released_after_errors() -> None:
+@pytest.mark.parametrize("scope", [None, "original"])
+def test_deletion_blocks_overlapping_readers_and_removals_and_releases_after_failure(scope) -> None:
     registry = RuntimeSessionRegistry()
     model_id = uuid4()
-    with pytest.raises(ValueError), registry.reading_model_export(model_id, "torch"):
-        raise ValueError("startup failed")
-    with pytest.raises(ValueError), registry.deleting_model_export(model_id, "torch"):
-        raise ValueError("removal failed")
-    with registry.reading_model_export(model_id, "torch"):
+    with pytest.raises(RuntimeError, match="failed"), registry.deleting_model_export(model_id, "openvino", scope):
+        with pytest.raises(ResourceInUseError), registry.reading_model_export(model_id, "openvino", "original"):
+            pass
+        with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "openvino"):
+            pass
+        raise RuntimeError("failed")
+    with registry.reading_model_export(model_id, "openvino", "original"):
         pass

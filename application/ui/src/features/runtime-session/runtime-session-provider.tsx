@@ -292,6 +292,7 @@ export const RuntimeSessionProvider = ({
             toLoad !== null &&
             (loaded?.model_id !== toLoad.model_id ||
                 loaded.backend !== toLoad.backend ||
+                (loaded.variant ?? 'original') !== (toLoad.variant ?? 'original') ||
                 loaded.device !== toLoad.device);
         const reload = async () => {
             setLoading('environment');

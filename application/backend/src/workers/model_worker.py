@@ -98,7 +98,12 @@ class ModelWorker(ProcessWorker[Inference]):
         spec: FeatureSpec,
         images: Mapping[str, str],
     ) -> None:
-        super().__init__(name=f"ModelWorker-{export_dir.parent.parent.name}")
+        identity = (
+            f"{export_dir.parents[3].name}-{export_dir.name}"
+            if export_dir.parent.name == "variants"
+            else export_dir.parent.parent.name
+        )
+        super().__init__(name=f"ModelWorker-{identity}")
         self.export_dir = export_dir
         self.backend = backend
         self.device = device

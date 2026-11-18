@@ -259,7 +259,7 @@ class ModelExportJobHandler(JobHandler):
             except ResourceNotFoundError:
                 await ModelExportService(service.session).cleanup(job)
             else:
-                ModelExportService.publish(model, job.id, job.payload.backend)
+                ModelExportService.publish(model, job.id, job.payload.backend, job.payload.target_variant)
             return job
         await ModelExportService(service.session).cleanup(job)
         return await super().recover(job, service)

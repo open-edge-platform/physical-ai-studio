@@ -190,7 +190,7 @@ describe('useJobUpdates', () => {
         expect(queryClient.getQueryState(JOBS_QUERY_KEY)?.isInvalidated).toBe(true);
     });
 
-    it('refreshes model details and available backends after export', () => {
+    it.each(['int8_sym', 'export'] as const)('refreshes model details and available backends after %s', (operation) => {
         const queryClient = createQueryClient();
         queryClient.setQueryData(JOBS_QUERY_KEY, []);
         const key = (model_id: string) => ['get', '/api/models/{model_id}', { params: { path: { model_id } } }];
@@ -204,8 +204,8 @@ describe('useJobUpdates', () => {
                 payload: {
                     model_id: 'model-1',
                     cancellation_requested: false,
-                    operation: 'export',
-                    backend: 'torch',
+                    operation,
+                    backend: operation === 'export' ? 'torch' : 'openvino',
                 },
             })
         );

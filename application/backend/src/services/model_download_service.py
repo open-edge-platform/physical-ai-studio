@@ -7,6 +7,9 @@ import zipfile
 from pathlib import Path
 from uuid import uuid4
 
+from schemas.model_export import ExportPackage
+from utils.filesystem import FileTree
+
 SNAPSHOT_DIR_PATTERN = re.compile(r"^snapshot_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 
 
@@ -31,12 +34,8 @@ class ModelDownloadService:
         temporary_archive_path = Path(tempfile.gettempdir()) / f"model-{uuid4()}.zip"
 
         with zipfile.ZipFile(temporary_archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
-            for path in model_path.rglob("*"):
-                if not path.is_file():
-                    continue
-
+            for path in FileTree(model_path).files():
                 relative = path.relative_to(model_path)
-
                 if not include_snapshot and self._is_snapshot_path(relative):
                     continue
 
@@ -57,9 +56,7 @@ class ModelDownloadService:
         archive_path = Path(tempfile.gettempdir()) / f"model-export-{backend}-{uuid4()}.zip"
 
         with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
-            for path in export_dir.rglob("*"):
-                if not path.is_file():
-                    continue
+            for path in ExportPackage(export_dir, backend).files:
                 archive.write(path, arcname=path.relative_to(export_dir))
 
         return archive_path
@@ -89,9 +86,7 @@ class ModelDownloadService:
         with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
             archive.writestr("runtime.yaml", runtime_yaml)
             archive.writestr("README.md", readme)
-            for path in export_dir.rglob("*"):
-                if not path.is_file():
-                    continue
+            for path in ExportPackage(export_dir, backend).files:
                 archive.write(path, arcname=(prefix / path.relative_to(export_dir)).as_posix())
 
         return archive_path
