@@ -135,7 +135,7 @@ jobs:
 
       - name: Build Docker image
         id: docker_build
-        uses: $/.github/actions/docker-build
+        uses: $/.github/actions/docker-build # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           device: ${{ matrix.device }}
           tags: ${{ steps.meta.outputs.tags }}
