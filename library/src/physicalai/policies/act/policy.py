@@ -16,7 +16,7 @@ from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
-from physicalai.data.observation import ACTION, IMAGES, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK_INDEX
 from physicalai.export.backends import (
     ExecuTorchExportParameters,
     ExportParameters,
@@ -76,6 +76,10 @@ class ACT(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping.
         use_imagenet_stats: Whether to normalize 3-channel visual observations using ImageNet
             mean and std instead of empirical dataset statistics.
+        tasks: Task prompts to condition on, a prompt's position being its task index. With two or
+            more, the model learns a task embedding and inference takes one of these prompts as
+            ``task``. ``None`` reads them from the training dataset, so a multi-task dataset trains a
+            multi-task policy.
         dataset_stats: Dataset normalization statistics for eager model initialization
             (used when restoring from a checkpoint).
 
@@ -130,6 +134,7 @@ class ACT(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 10.0,
         compile_model: bool = False,
         use_imagenet_stats: bool = True,
+        tasks: list[str] | None = None,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, Any] | None = None,
     ) -> None:
@@ -197,7 +202,9 @@ class ACT(ExportablePolicyMixin, Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size)
+        # A single task needs no conditioning.
+        self.tasks: list[str] = list(tasks) if tasks and len(tasks) > 1 else []
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
         self._postprocessor = None
 
         # Eager initialization if dataset_stats is provided
@@ -352,6 +359,7 @@ class ACT(ExportablePolicyMixin, Policy):
             dropout=self.config.dropout,
             kl_weight=self.config.kl_weight,
             compile_model=self.config.compile_model,
+            n_tasks=len(self.tasks),
         )
 
         if weights_file is not None:
@@ -403,6 +411,11 @@ class ACT(ExportablePolicyMixin, Policy):
         )
 
         self.hparams["dataset_stats"] = stats_dict
+
+        if not self.tasks and len(train_dataset.tasks) > 1:
+            self.tasks = train_dataset.tasks
+            self.hparams["tasks"] = self.tasks
+            self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
 
         self._initialize_model(stats_dict)
 
@@ -609,8 +622,9 @@ class ACT(ExportablePolicyMixin, Policy):
         """Describe the policy's expected model inputs for export tracing.
 
         Returns:
-            A list with a ``state`` feature and one or more image features keyed by
-            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns
+            A list with a ``state`` feature, one or more image features keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera), and a
+            ``task_index`` feature for a multi-task policy. Returns
             ``None`` if the underlying model has not been initialized yet.
 
         Raises:
@@ -661,7 +675,28 @@ class ACT(ExportablePolicyMixin, Policy):
                     ),
                 )
 
+        if self.tasks:
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.COMMON,
+                    shape=(1,),
+                    name=TASK_INDEX,
+                    dtype=InferenceFeatureDtype.INT64,
+                ),
+            )
+
         return schema
+
+    def create_manifest(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        """Create ``manifest.json``, listing a multi-task policy's ``tasks`` for callers that offer a choice of task.
+
+        Args:
+            *args: Forwarded to ``ExportablePolicyMixin.create_manifest``.
+            **kwargs: Forwarded to ``ExportablePolicyMixin.create_manifest``.
+        """
+        if self.tasks:
+            kwargs.setdefault("tasks", list(self.tasks))
+        super().create_manifest(*args, **kwargs)
 
     @property
     def outputs_schema(self) -> list[InferenceFeature] | None:
@@ -717,6 +752,11 @@ class ACT(ExportablePolicyMixin, Policy):
                 mode="letterbox",
             ),
         ]
+        torch_preproc_specs = [ComponentSpec(type="to_float_tensor")]
+        if self.tasks:
+            task_spec = ComponentSpec(type="task_index", tasks=list(self.tasks))
+            preproc_specs.append(task_spec)
+            torch_preproc_specs.append(task_spec)
 
         extra_args: dict[str, ExportParameters] = {}
         output_names = [feature.name for feature in (self.outputs_schema or [])]
@@ -740,7 +780,7 @@ class ACT(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
-            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            preprocessors_specs=torch_preproc_specs,
             postprocessors_specs=postproc_specs,
         )
 

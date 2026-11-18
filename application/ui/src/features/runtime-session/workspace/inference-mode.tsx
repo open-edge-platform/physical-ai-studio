@@ -42,6 +42,10 @@ export const InferenceMode = () => {
 
     useEffect(() => setTask(defaultTask), [defaultTask]);
 
+    // A model trained on a fixed set of tasks only takes one of them.
+    const tasks = state?.model?.tasks ?? [];
+    const selectedTask = tasks.length > 0 && !tasks.includes(task) ? tasks[0] : task;
+
     const isRunning = state?.control?.type === 'model';
     const canRun =
         state?.environment != null &&
@@ -64,7 +68,7 @@ export const InferenceMode = () => {
     const play = () =>
         void setControl({
             type: 'model',
-            task,
+            task: selectedTask,
             hz,
             execution: { mode, request_threshold: threshold },
             // The follower eases onto the model's actions, which may start far from where it is.
@@ -73,7 +77,20 @@ export const InferenceMode = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <TextArea label='Task' width='100%' value={task} onChange={setTask} isReadOnly={isRunning} />
+            {tasks.length > 0 ? (
+                <Picker
+                    label='Task'
+                    width='100%'
+                    items={tasks.map((value) => ({ id: value }))}
+                    selectedKey={selectedTask}
+                    onSelectionChange={(key) => key !== null && setTask(String(key))}
+                    isDisabled={isRunning}
+                >
+                    {(item) => <Item key={item.id}>{item.id}</Item>}
+                </Picker>
+            ) : (
+                <TextArea label='Task' width='100%' value={task} onChange={setTask} isReadOnly={isRunning} />
+            )}
             <Picker
                 label='Execution'
                 width='100%'

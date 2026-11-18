@@ -372,3 +372,16 @@ def test_import_does_not_load_lerobot_policy_factory():
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_tasks_ordered_by_task_index():
+    """Dataset tasks come from LeRobot metadata, ordered by task index."""
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    raw = SimpleNamespace(meta=SimpleNamespace(tasks=pd.DataFrame({"task_index": [1, 0]}, index=["place", "pick"])))
+    assert _LeRobotDatasetAdapter.from_lerobot(raw).tasks == ["pick", "place"]
+
+    raw.meta.tasks = None
+    assert _LeRobotDatasetAdapter.from_lerobot(raw).tasks == []

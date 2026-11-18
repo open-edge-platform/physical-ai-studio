@@ -3,7 +3,7 @@
 
 import copy
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import pytest
 import torch
 import numpy as np
@@ -384,6 +384,106 @@ class TestACTolicy:
         normed_empirical = policy_empirical.model._input_normalizer(dict(batch))
         expected_top_emp = (1.0 - 0.1) / 0.01
         assert torch.isclose(normed_empirical["images.top"][0, 0, 0, 0], torch.tensor(expected_top_emp), atol=1e-4)
+
+
+_STATS = {
+    "image": {"mean": [0.0] * 3, "std": [1.0] * 3, "type": "VISUAL", "name": "image", "shape": (3, 64, 64)},
+    "state": {"mean": [0.0] * 3, "std": [1.0] * 3, "type": "STATE", "name": "state", "shape": (3,)},
+    "action": {"mean": [0.0] * 3, "std": [1.0] * 3, "type": "ACTION", "name": "action", "shape": (3,)},
+}
+
+
+class TestACTMultiTask:
+    """ACT conditioned on a fixed set of task prompts."""
+
+    TASKS = ["pick", "place"]
+
+    @pytest.fixture
+    def policy(self):
+        return ACT(dataset_stats=_STATS, tasks=self.TASKS, pretrained_backbone_weights=None)
+
+    @staticmethod
+    def _obs(task, bs=1):
+        torch.manual_seed(0)
+        return Observation(images=torch.randn(bs, 3, 64, 64), state=torch.randn(bs, 3), task=task)
+
+    def test_single_task_is_not_conditioned(self):
+        policy = ACT(dataset_stats=_STATS, tasks=["only"], pretrained_backbone_weights=None)
+        assert policy.tasks == []
+        assert not hasattr(policy.model._model, "encoder_task_embed")
+        assert "task_index" not in [f.name for f in policy.inputs_schema]
+
+    def test_training_step(self, policy):
+        bs = 2
+        batch = Observation(
+            images=torch.randn(bs, 3, 64, 64),
+            state=torch.randn(bs, 3),
+            action=torch.randn(bs, 100, 3),
+            task=["place", "pick"],
+            task_index=torch.tensor([7, 7]),  # dataset indices are ignored in favour of the prompts
+            extra={"action_is_pad": torch.zeros(bs, 100, dtype=torch.bool)},
+        )
+        policy.train()
+        assert policy.training_step(batch, 0)["loss"] >= 0
+
+    def test_task_changes_prediction(self, policy):
+        policy.eval()
+        pick = policy.predict_action_chunk(self._obs("pick"))
+        place = policy.predict_action_chunk(self._obs("place"))
+        assert pick.shape == (1, 100, 3)
+        assert not torch.allclose(pick, place)
+
+    def test_unknown_or_missing_task_raises(self, policy):
+        policy.eval()
+        with pytest.raises(ValueError, match="Unknown task"):
+            policy.predict_action_chunk(self._obs("dance"))
+        with pytest.raises(ValueError, match="pass `task`"):
+            policy.predict_action_chunk(self._obs(None))
+
+    def test_setup_reads_tasks_from_dataset(self):
+        from physicalai.data import Dataset
+
+        dataset = MagicMock(spec=Dataset)
+        dataset.tasks = self.TASKS
+        dataset.stats = _STATS
+        policy = ACT(pretrained_backbone_weights=None)
+        policy.trainer = MagicMock()
+        policy.trainer.datamodule.train_dataset = dataset
+        with patch("physicalai.policies.act.policy.reformat_dataset_to_match_policy"):
+            policy.setup("fit")
+        assert policy.tasks == self.TASKS
+        assert policy.hparams["tasks"] == self.TASKS
+        assert policy.model._model.encoder_task_embed.num_embeddings == 2
+
+    def test_checkpoint_round_trip_keeps_tasks(self, policy, tmp_path):
+        path = tmp_path / "act.pt"
+        policy.to_torch(path)
+        loaded = ACT.load_from_checkpoint(path)
+        assert loaded.tasks == self.TASKS
+        loaded.eval()
+        policy.eval()
+        assert torch.allclose(loaded.predict_action_chunk(self._obs("place")), policy.predict_action_chunk(self._obs("place")))
+
+    @pytest.mark.parametrize("backend", ["onnx", "openvino", "torch"])
+    def test_exported_model_takes_the_task_prompt(self, policy, tmp_path, backend):
+        import json
+
+        from physicalai.inference import InferenceModel
+
+        policy.eval()
+        policy.export(tmp_path, backend)
+        manifest = json.loads((tmp_path / "manifest.json").read_text())
+        assert manifest["tasks"] == self.TASKS
+
+        obs = self._obs("place")
+        model = InferenceModel(tmp_path, backend=backend)
+        actions = model.predict_action_chunk({"state": obs.state.numpy(), "images": obs.images.numpy(), "task": ["place"]})
+        actions = np.asarray(actions).reshape(1, 100, 3)
+        place, pick = policy.predict_action_chunk(obs).numpy(), policy.predict_action_chunk(self._obs("pick")).numpy()
+        # OpenVINO's CPU plugin runs at lower precision, so compare against the other task, not a tight tolerance.
+        assert np.abs(actions - place).max() < 1e-2 < np.abs(actions - pick).max()
+        with pytest.raises(ValueError, match="Unknown task"):
+            model.predict_action_chunk({"state": obs.state.numpy(), "images": obs.images.numpy(), "task": ["dance"]})
 
 
 class TestACTPreprocessor:
