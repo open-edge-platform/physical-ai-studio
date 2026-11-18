@@ -29,6 +29,11 @@ async def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
             from services.training_backends.aws_batch import AwsBatchTrainingBackend
 
             return AwsBatchTrainingBackend(aws_batch_connection_from_url(payload.remote_trainer_url))
+        if payload.remote_trainer_url.startswith("modal://"):
+            from services.modal_training import modal_connection_from_url
+            from services.training_backends.modal import ModalTrainingBackend
+
+            return ModalTrainingBackend(modal_connection_from_url(payload.remote_trainer_url))
         from services.training_backends.remote import RemoteTrainingBackend
 
         return RemoteTrainingBackend(

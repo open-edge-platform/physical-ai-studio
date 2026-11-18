@@ -1,7 +1,7 @@
 import asyncio
 import errno
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from time import perf_counter
@@ -35,6 +35,7 @@ from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
 from schemas.remote_trainer import (
     AwsBatchConnection,
     HealthStatus,
+    ModalConnection,
     RemoteTrainer,
     RemoteTrainerConnectionMode,
     RemoteTrainerCreate,
@@ -44,6 +45,9 @@ from schemas.remote_trainer import (
 )
 from services import remote_trainer_tunnel_manager
 from services.aws_batch import batch_policy_catalog, probe_aws_batch
+from services.modal_cleanup import cleanup_modal_target
+from services.modal_deployment import forget_modal_deployment, modal_deployment_health
+from services.modal_training import modal_policy_catalog, probe_modal
 from services.ssh import host_installer, persistent_trainer
 from services.ssh.transport import SshTransport
 from training.policy_catalog import PolicyCatalog
@@ -100,6 +104,8 @@ class RemoteTrainerService:
         trainer = await self.get_remote_trainer(remote_trainer_id)
         if isinstance(trainer.connection, AwsBatchConnection):
             return batch_policy_catalog(trainer.connection)
+        if isinstance(trainer.connection, ModalConnection):
+            return modal_policy_catalog()
         try:
             async with httpx.AsyncClient(timeout=10, follow_redirects=False, trust_env=False) as client:
                 response = await client.get(f"{str(trainer.url).rstrip('/')}/policies")
@@ -143,6 +149,11 @@ class RemoteTrainerService:
         checked_at = datetime.now(UTC)
         if isinstance(remote_trainer.connection, AwsBatchConnection):
             return await probe_aws_batch(remote_trainer_id, remote_trainer.connection, checked_at)
+        if isinstance(remote_trainer.connection, ModalConnection):
+            deployment = modal_deployment_health(remote_trainer_id)
+            if deployment is not None:
+                return deployment
+            return await probe_modal(remote_trainer_id, remote_trainer.connection, checked_at)
         launch_phase = persistent_trainer.get_launch_phase(remote_trainer_id)
         if launch_phase is not None:
             return RemoteTrainerHealth(
@@ -556,7 +567,8 @@ class RemoteTrainerService:
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
-        if remote_trainer_id in _background_installs:
+        deployment = modal_deployment_health(remote_trainer_id)
+        if remote_trainer_id in _background_installs or (deployment and deployment.status == "starting"):
             raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
         async with _port_allocation_lock:
             for attempt in range(3):
@@ -604,6 +616,7 @@ class RemoteTrainerService:
         if connection_changed and isinstance(remote_trainer.connection, SshConnection):
             await self._cancel_launch(remote_trainer_id)
             await self._stop_replaced_container(remote_trainer, saved.connection)
+        forget_modal_deployment(remote_trainer_id)
         self._start_persistent_trainer_in_background(saved, accepted_host_key_fingerprint)
         return saved
 
@@ -622,12 +635,64 @@ class RemoteTrainerService:
         if host_changed or previous.ssh_remote_port != current.ssh_remote_port:
             await persistent_trainer.stop(remote_trainer, remove_volume=host_changed)
 
-    async def delete_remote_trainer(self, remote_trainer_id: UUID, *, forget_locally: bool = False) -> None:
-        """Delete a trainer; optionally leave unreachable SSH resources untouched."""
+    async def _delete_modal_trainer(
+        self,
+        remote_trainer: RemoteTrainer,
+        connection: ModalConnection,
+        signal_cancel: Callable[[UUID], None] | None,
+    ) -> None:
+        from services.job_service import JobService
+
+        job_service = JobService(self.session)
+        call_ids: list[str] = []
+        # Prevent a new submission from being saved between cancellation and target removal.
+        async with _setup_lock:
+            try:
+                jobs = await job_service.repo.get_all(
+                    expressions=[
+                        JobDB.type == JobType.TRAINING,
+                        JobDB.status.in_((JobStatus.PENDING, JobStatus.RUNNING, JobStatus.FAILED)),
+                        func.json_extract(JobDB.payload, "$.remote_trainer_id") == str(remote_trainer.id),
+                    ]
+                )
+            except Exception:
+                logger.exception("Could not find jobs for deleted Modal trainer {}", remote_trainer.id)
+                await self.session.rollback()
+                jobs = []
+            for job in jobs:
+                call_id = getattr(job.payload, "remote_job_id", None)
+                if isinstance(call_id, str) and call_id.startswith("fc-"):
+                    call_ids.append(call_id)
+                if job.status not in {JobStatus.PENDING, JobStatus.RUNNING}:
+                    continue
+                try:
+                    await job_service.update_remote_job_state(job.id, cancel_requested=True)
+                    await job_service.interrupt_job(job.id, signal_cancel or (lambda _: None))
+                except Exception:
+                    logger.exception("Could not request cancellation of Modal job {}", job.id)
+                    await self.session.rollback()
+            await self.repo.delete_by_id(remote_trainer.id)
+        try:
+            await cleanup_modal_target(remote_trainer.id, connection, call_ids)
+        except Exception:
+            logger.exception("Modal cleanup failed after removing trainer {} locally", remote_trainer.id)
+
+    async def delete_remote_trainer(
+        self,
+        remote_trainer_id: UUID,
+        *,
+        forget_locally: bool = False,
+        signal_cancel: Callable[[UUID], None] | None = None,
+    ) -> None:
+        """Delete a trainer, attempting all Modal cleanup even when cloud resources are unreachable."""
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
-        if remote_trainer_id in _background_installs:
+        if isinstance(remote_trainer.connection, ModalConnection):
+            await self._delete_modal_trainer(remote_trainer, remote_trainer.connection, signal_cancel)
+            return
+        deployment = modal_deployment_health(remote_trainer_id)
+        if remote_trainer_id in _background_installs or (deployment and deployment.status == "starting"):
             raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
         if isinstance(remote_trainer.connection, SshConnection):
             await self._require_no_active_jobs(remote_trainer_id)
@@ -638,6 +703,7 @@ class RemoteTrainerService:
             await persistent_trainer.stop(remote_trainer)
         await remote_trainer_tunnel_manager.stop_tunnel(remote_trainer_id)
         await self.repo.delete_by_id(remote_trainer_id)
+        forget_modal_deployment(remote_trainer_id)
 
     @staticmethod
     def _require_ssh_feature_if_tunneled(connection_mode: RemoteTrainerConnectionMode) -> None:

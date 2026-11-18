@@ -146,9 +146,10 @@ class TrainingJobHandler(JobHandler):
         if (
             isinstance(job.payload, RemoteTrainJobPayload)
             and job.payload.remote_trainer_url
-            and job.payload.remote_trainer_url.startswith("aws-batch://")
+            and job.payload.remote_trainer_url.startswith(("aws-batch://", "modal://"))
         ):
-            require_aws_feature_active()
+            if job.payload.remote_trainer_url.startswith("aws-batch://"):
+                require_aws_feature_active()
             await service.update_remote_job_state(job.id, cancel_requested=True)
             if job.payload.remote_job_id is not None or job.status == JobStatus.RUNNING:
                 signal_cancel(job.id)

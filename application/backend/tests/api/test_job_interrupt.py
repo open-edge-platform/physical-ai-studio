@@ -10,7 +10,7 @@ from api.job import interrupt_job
 from core.scheduler import Scheduler
 from exceptions import AwsFeatureDisabledError
 from schemas.base_job import JobStatus, JobType
-from schemas.job import RemoteTrainJobPayload, TrainJob
+from schemas.job import RemoteJobId, RemoteTrainJobPayload, TrainJob
 from services.job_service import JobService
 
 
@@ -43,7 +43,13 @@ async def test_stop_signals_worker_when_queued_cancellation_requires_cooperation
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("status", [JobStatus.PENDING, JobStatus.RUNNING])
-async def test_submitted_batch_stop_persists_cancellation_for_worker(status: JobStatus) -> None:
+@pytest.mark.parametrize(
+    ("trainer_url", "remote_job_id"),
+    [("aws-batch://trainer", uuid4()), ("modal://trainer", "fc-test")],
+)
+async def test_submitted_cloud_stop_persists_cancellation_for_worker(
+    status: JobStatus, trainer_url: str, remote_job_id: RemoteJobId
+) -> None:
     job = TrainJob(
         project_id=uuid4(),
         status=status,
@@ -51,10 +57,10 @@ async def test_submitted_batch_stop_persists_cancellation_for_worker(status: Job
             project_id=uuid4(),
             dataset_id=uuid4(),
             policy="act",
-            model_name="batch",
+            model_name="cloud",
             remote_trainer_id=uuid4(),
-            remote_trainer_url="aws-batch://trainer",
-            remote_job_id=uuid4(),
+            remote_trainer_url=trainer_url,
+            remote_job_id=remote_job_id,
         ),
     )
     service = JobService(MagicMock())
