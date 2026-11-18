@@ -181,7 +181,8 @@ sudo usermod -aG render $USER   # Intel XPU only
 
 ## Simulations
 
-Studio can start robot simulations (e.g. MuJoCo) from a simulation robot plugin. Their cameras render
+Studio can start robot simulations (e.g. MuJoCo) from a simulation robot plugin, when one is installed
+(the backend's `mujoco` extra; the image leaves it out for now). Their cameras render
 off-screen with EGL: the image includes Mesa's EGL drivers (Intel GPUs when `/dev/dri` is mapped, else
 software rendering). On NVIDIA hosts the `cuda` image asks the NVIDIA Container
 Toolkit for the `graphics` driver capability (`NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics`), so
