@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from schemas.base_job import JobStatus
-from schemas.job import RemoteTrainJobPayload, TrainJob
+from schemas.job import ModelExportJob, ModelExportJobPayload, RemoteTrainJobPayload, TrainJob
 from schemas.job_response import JobResponse, job_response
 from services.aws_auth_service import authentication_issue, operational_authentication_issue
 
@@ -42,6 +42,24 @@ def test_public_snapshot_preserves_storage_and_matches_http(status: JobStatus) -
     @app.get("/job", response_model=JobResponse)
     def get_job() -> TrainJob:
         return restored
+
+    assert TestClient(app).get("/job").json() == snapshot
+
+
+@pytest.mark.parametrize("status", list(JobStatus))
+def test_optimization_snapshot_matches_http_without_changing_storage(status: JobStatus) -> None:
+    job = ModelExportJob(
+        project_id=uuid4(), status=status, payload=ModelExportJobPayload(model_id=uuid4(), backend="torch")
+    )
+    stored = job.model_dump_json()
+    snapshot = job_response(job).model_dump(mode="json")
+    assert snapshot == {**job.model_dump(mode="json"), "issues": []}
+    assert job.model_dump_json() == stored
+    app = FastAPI()
+
+    @app.get("/job", response_model=JobResponse)
+    def get_job() -> ModelExportJob:
+        return job
 
     assert TestClient(app).get("/job").json() == snapshot
 

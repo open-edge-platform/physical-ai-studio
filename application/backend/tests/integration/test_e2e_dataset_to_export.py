@@ -180,6 +180,7 @@ def test_dataset_upload_train_export_infer_e2e(
             "val_split": 0.5,
             "device": {"type": "cpu"},
             "precision": "32-true",  # bf16-mixed (the default) is unreliable on CPU
+            "export_backends": ["onnx"],
         },
     )
     assert response.status_code == 200, response.text
@@ -211,6 +212,19 @@ def test_dataset_upload_train_export_infer_e2e(
     detail = response.json()
     assert any(export["type"] == _ONNX_BACKEND for export in detail["exports"])
     assert detail["training_summary"]["max_epochs"] == 1
+
+    # Create a missing backend from the stored checkpoint without training again.
+    response = client.post(f"/api/models/{model_id}/exports/torch")
+    assert response.status_code == 202, response.text
+    export_job_id = UUID(response.json()["id"])
+
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from workers.model_export_worker import ModelExportWorker
+
+    asyncio.run(ModelExportWorker(export_job_id, mp.Event(), mp.Event(), MagicMock()).run_loop())
+    assert client.get(f"/api/jobs/{export_job_id}").json()["status"] == "completed"
 
     # --- 5. Download the onnx export and confirm it is a valid archive -------------
     response = client.get(f"/api/models/{model_id}/exports/{_ONNX_BACKEND}/download")
@@ -259,6 +273,16 @@ def _assert_exported_model_runs_inference(export_dir: Path, dataset_id: str) -> 
 
     action = inference_model.select_action(observation)
     assert action.shape[-1] == 2
+    import numpy as np
+
+    rebuilt = InferenceModel(export_dir.parent / "torch")
+    inference_model.reset()
+    np.testing.assert_allclose(
+        rebuilt.predict_action_chunk(observation),
+        inference_model.predict_action_chunk(observation),
+        rtol=1e-3,
+        atol=1e-4,
+    )
 
 
 def test_submit_training_job_for_missing_project_returns_404(migrated_db: None) -> None:
