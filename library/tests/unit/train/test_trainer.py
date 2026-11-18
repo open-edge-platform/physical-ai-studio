@@ -19,6 +19,17 @@ class TestTrainer:
         # physicalai default: num_sanity_val_steps=0 (instead of Lightning's 2)
         assert trainer.num_sanity_val_steps == 0
 
+    def test_tf32_enabled_by_default(self, monkeypatch):
+        """Verify TF32 matmuls are enabled unless disabled explicitly."""
+        import torch
+
+        monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
+        Trainer(accelerator="cpu", logger=False, enable_checkpointing=False, allow_tf32=False)
+        assert not torch.backends.cuda.matmul.allow_tf32
+
+        Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
+        assert torch.backends.cuda.matmul.allow_tf32
+
     def test_policy_dataset_interaction_callback_injected(self):
         """Verify PolicyDatasetInteraction callback is automatically added."""
         from physicalai.train.callbacks import PolicyDatasetInteraction
