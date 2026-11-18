@@ -1,3 +1,23 @@
+.inlineCode {
+    padding: 2px 6px;
+    border: 1px solid var(--spectrum-global-color-gray-500);
+    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--spectrum-global-color-gray-50) 40%, black);
+    color: var(--spectrum-global-color-gray-900);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.875em;
+    white-space: nowrap;
+}
+
+.disclosureTitle {
+    --spectrum-accordion-icon-gap: 0px;
+
+    & > button {
+        padding-inline: 0;
+        gap: var(--spectrum-global-dimension-size-100);
+    }
+}
+
 .toggleLabel {
     color: var(--spectrum-global-color-gray-700);
     font-size: var(--spectrum-global-dimension-font-size-75);

@@ -284,7 +284,7 @@ async def _submitted_body(settings: MagicMock, context: TrainingContext) -> dict
     with (
         patch(f"{REMOTE}.get_settings", return_value=settings),
         patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-        patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+        patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
         patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
     ):
         await _backend(settings).train(context)
@@ -317,7 +317,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -372,7 +372,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -461,7 +461,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
         ):
             await asyncio.wait_for(_backend(settings).train(context), timeout=2)
@@ -484,7 +484,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -509,7 +509,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
         ):
@@ -540,7 +540,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
         ):
@@ -641,7 +641,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
         ):
@@ -693,7 +693,7 @@ class TestRemoteTrainingBackend:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -801,7 +801,7 @@ class TestHttpDatasetTransfer:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -944,7 +944,7 @@ class TestHttpDatasetTransfer:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -1192,7 +1192,7 @@ class TestModelDownloadCancellation:
             with (
                 patch(f"{REMOTE}.get_settings", return_value=settings),
                 patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-                patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+                patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
                 patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
                 # A negative interval forces a heartbeat on the first streamed chunk.
                 patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
@@ -1222,7 +1222,7 @@ class TestModelDownloadProgress:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -1248,7 +1248,7 @@ class TestModelDownloadProgress:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
@@ -1274,7 +1274,7 @@ class TestModelDownloadProgress:
             with (
                 patch(f"{REMOTE}.get_settings", return_value=settings),
                 patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-                patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+                patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
                 patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
                 # A negative interval makes every update cross the throttle threshold.
                 patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
@@ -1301,7 +1301,7 @@ class TestModelDownloadProgress:
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch("services.training_backends.artifacts.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)

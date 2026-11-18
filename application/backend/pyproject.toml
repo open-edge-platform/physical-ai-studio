@@ -40,6 +40,7 @@ dependencies = [
   "asyncssh~=2.24",
   "sigstore>=4.0,<5",
   "boto3[crt]>=1.42",
+  "modal[api-proxy-support]>=1.6.3,<2",
 ]
 
 [project.scripts]

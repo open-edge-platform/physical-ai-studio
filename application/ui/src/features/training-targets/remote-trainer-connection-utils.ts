@@ -2,11 +2,13 @@ import { SchemaRemoteTrainer } from '../../api/openapi-spec';
 
 type ConnectionMode = SchemaRemoteTrainer['connection_mode'];
 
-/** Label trainers by who maintains them: Studio, AWS, or the user. */
+/** Label trainers by who maintains them. */
 export const connectionModeLabel = (connectionMode: ConnectionMode): string => {
     switch (connectionMode) {
         case 'ssh':
             return 'Managed by Studio';
+        case 'modal':
+            return 'Modal';
         case 'aws_batch':
             return 'AWS Batch';
         default:
@@ -21,6 +23,8 @@ export const connectionModeDescription = (connectionMode: ConnectionMode): strin
                 'Studio starts and keeps a trainer container running on the SSH host, reached through a local ' +
                 'port-forward tunnel.'
             );
+        case 'modal':
+            return 'Each training run invokes a deployed Modal function; GPU compute is provisioned on demand.';
         case 'aws_batch':
             return 'Each training run is submitted as an AWS Batch job; compute is provisioned on demand.';
         default:
@@ -32,6 +36,8 @@ export const connectionModeDescription = (connectionMode: ConnectionMode): strin
 export const connectionSummary = (remoteTrainer: SchemaRemoteTrainer): string => {
     const { connection } = remoteTrainer;
     switch (connection.connection_mode) {
+        case 'modal':
+            return `${connection.app_name}/${connection.function_name} · ${connection.environment_name}`;
         case 'aws_batch':
             return `${connection.region} · ${Object.keys(connection.targets).join(', ')}`;
         default:

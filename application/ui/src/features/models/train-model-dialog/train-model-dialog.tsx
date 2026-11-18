@@ -4,7 +4,12 @@ import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Key, Text
 
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
-import { SchemaDeviceInfo, SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
+import {
+    SchemaDeviceInfo,
+    SchemaTrainJob as SchemaJob,
+    SchemaModel,
+    SchemaRemoteTrainJobPayload,
+} from '../../../api/openapi-spec';
 import { isOperationalIssue, issueToasts, showIssueError } from '../../../components/notification/issue-toasts';
 import { useProject } from '../../projects/use-project';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
@@ -99,7 +104,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                   const entry = remoteTrainerHealthById.get(remoteTrainer.id);
                   const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
                   const isChecking = entry?.isChecking ?? false;
-                  const devices = remoteTrainer.connection_mode === 'aws_batch' ? [] : (displayHealth?.devices ?? []);
+                  const devices = ['aws_batch', 'modal'].includes(remoteTrainer.connection_mode)
+                      ? []
+                      : (displayHealth?.devices ?? []);
                   const busyKeys = busyGpuKeysFor(remoteTrainer.id, devices);
                   const isTraining = busyKeys.size > 0;
                   const freeCount = devices.filter((device) => !busyKeys.has(gpuKey(device))).length;
@@ -131,8 +138,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
     const remoteTrainerId =
         targetId === null || targetId === LOCAL_TARGET_ID ? undefined : targetRawId(String(targetId));
-    const isBatchTarget =
-        remoteTrainers.find((trainer) => trainer.id === remoteTrainerId)?.connection_mode === 'aws_batch';
+    const targetConnectionMode = remoteTrainers.find((trainer) => trainer.id === remoteTrainerId)?.connection_mode;
+    const isModalTarget = targetConnectionMode === 'modal';
+    const isBatchTarget = isModalTarget || targetConnectionMode === 'aws_batch';
     const {
         data: availablePolicies = [],
         isLoading: isLoadingPolicies,
@@ -168,6 +176,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [augmentImages, setAugmentImages] = useState<boolean>(false);
     const [selectedGpuKey, setSelectedGpuKey] = useState<Key | null>(null);
+    const [modalGpu, setModalGpu] = useState<Key | null>('A10G');
     const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
     const isRemoteTarget = selectedTarget?.kind === 'trainer';
     const isLoraSupported = supportsLora(selectedPolicy);
@@ -205,9 +214,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         data: policyAccess,
         isLoading: isCheckingPolicyAccess,
         isError: policyAccessCheckFailed,
-    } = $api.useQuery('get', '/api/policies/{policy}/huggingface-access', {
-        params: { path: { policy: selectedPolicy } },
-    });
+    } = $api.useQuery(
+        'get',
+        '/api/policies/{policy}/huggingface-access',
+        { params: { path: { policy: selectedPolicy } } },
+        { enabled: !isModalTarget }
+    );
     // Fail closed: a policy with a *required* Hub dependency (see
     // `_HUGGINGFACE_REQUIREMENTS`) that we could not verify access for -
     // because the check is still loading, or because the request itself
@@ -217,12 +229,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const hasRequiredHuggingFaceDependency =
         policyAccess?.requirements.some((requirement) => requirement.required) ?? true;
     const policyAccessBlocksTraining =
-        isCheckingPolicyAccess ||
-        (policyAccessCheckFailed && hasRequiredHuggingFaceDependency) ||
-        policyAccess?.requirements.some(
-            (requirement) =>
-                requirement.required && (requirement.status === 'missing_token' || requirement.status === 'denied')
-        ) === true;
+        !isModalTarget &&
+        (isCheckingPolicyAccess ||
+            (policyAccessCheckFailed && hasRequiredHuggingFaceDependency) ||
+            policyAccess?.requirements.some(
+                (requirement) =>
+                    requirement.required && (requirement.status === 'missing_token' || requirement.status === 'denied')
+            ) === true);
     const remoteDevices = isBatchTarget ? [] : (remoteTrainerHealth?.devices ?? []);
     const busyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget?.id ?? ''), remoteDevices);
     const trainingDevices = isRemoteTarget
@@ -239,13 +252,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const selectedGpuUnavailable = selectedGpuKey !== null && activeDevice === null;
     const selectedGpuBusy = isRemoteTarget && activeDevice !== null && busyGpuKeys.has(gpuKey(activeDevice));
 
+    const deviceType = isModalTarget ? 'cuda' : activeDevice?.type;
+
     useEffect(() => {
-        if (activeDevice?.type === 'cuda') {
-            setPrecision('bf16-mixed');
-        } else {
-            setPrecision('32-true');
-        }
-    }, [activeDevice?.type]);
+        setPrecision(deviceType === 'cuda' ? 'bf16-mixed' : '32-true');
+    }, [deviceType]);
 
     // Cameras are mapped onto the policy's fixed camera slots; the mapping lives
     // here so the step can be left and re-entered without losing it.
@@ -308,12 +319,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // What the later steps recap: the trainer that runs the job and the device it
     // trains on, plus the dataset and policy the run is about.
     const targetLabel = selectedTarget?.label ?? 'This machine (local)';
-    const summaryDevice =
-        activeDevice === null || activeDevice === undefined
-            ? targetLabel
-            : `${targetLabel} — ${activeDevice.type.toUpperCase()} ${activeDevice.index} — ${activeDevice.name}${
-                  activeDevice.memory ? `, ${formatBytes(activeDevice.memory)}` : ''
-              }`;
+    const summaryDevice = isModalTarget
+        ? `${targetLabel} — NVIDIA ${modalGpu}`
+        : activeDevice === null || activeDevice === undefined
+          ? targetLabel
+          : `${targetLabel} — ${activeDevice.type.toUpperCase()} ${activeDevice.index} — ${activeDevice.name}${
+                activeDevice.memory ? `, ${formatBytes(activeDevice.memory)}` : ''
+            }`;
     const selectedDatasetName =
         datasets.find((dataset) => dataset.id === selectedDataset?.toString())?.name ?? 'No dataset';
 
@@ -425,6 +437,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                       ...commonPayload,
                       training_target: 'remote',
                       remote_trainer_id: targetRawId(selectedTarget.id),
+                      ...(isModalTarget ? { modal_gpu: modalGpu as SchemaRemoteTrainJobPayload['modal_gpu'] } : {}),
                   }
                 : { ...commonPayload, training_target: 'local' };
 
@@ -486,6 +499,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onTargetIdChange={(value) => {
                                     setTargetId(value);
                                     setSelectedGpuKey(null);
+                                    setModalGpu('A10G');
                                 }}
                                 trainingDevices={trainingDevices}
                                 busyGpuKeys={isRemoteTarget ? busyGpuKeys : undefined}
@@ -499,6 +513,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 isLoadingPolicies={isLoadingPolicies}
                                 onSelectedPolicyChange={setSelectedPolicy}
                                 isPolicyDisabled={baseModel !== undefined}
+                                isModalTarget={isModalTarget}
+                                modalGpu={modalGpu}
+                                onModalGpuChange={setModalGpu}
                                 activeDevice={activeDevice}
                             />
                         )}
@@ -524,8 +541,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onCompileModelChange={setCompileModel}
                                 augmentImages={augmentImages}
                                 onAugmentImagesChange={setAugmentImages}
-                                isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
-                                deviceType={activeDevice?.type}
+                                isAutoScaleBatchDisabled={deviceType !== 'cuda'}
+                                deviceType={deviceType}
                                 isLoraSupported={isLoraSupported}
                                 loraEnabled={loraEnabled}
                                 onLoraEnabledChange={setLoraEnabled}
