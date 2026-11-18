@@ -33,9 +33,18 @@ from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
 from services.snapshot_service import SnapshotService
+from services.streamdeck_service import StreamDeckService
 from services.system_service import SystemService
 from settings import Settings, get_settings
 from utils.serial_robot_tools import RobotConnectionManager
+
+
+def get_streamdeck_service(request: HTTPConnection) -> StreamDeckService:
+    """Provide this backend process's host-helper coordinator."""
+    return cast("StreamDeckService", request.app.state.streamdeck_service)
+
+
+StreamDeckServiceDep = Annotated[StreamDeckService, Depends(get_streamdeck_service)]
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]

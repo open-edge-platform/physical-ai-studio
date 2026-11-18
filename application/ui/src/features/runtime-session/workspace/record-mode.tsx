@@ -8,6 +8,7 @@ import { formatKeyCombo, getEffectiveBindings } from '../../hotkeys/key-combo';
 import { useHotkey } from '../../hotkeys/use-hotkey';
 import { TeleopSwitch } from '../cells/robot-cell';
 import { ERROR_TOAST, failureOf, useRuntimeSession } from '../runtime-session-provider';
+import { StreamDeckControls } from './streamdeck-controls';
 
 import classes from './record-mode.module.css';
 
@@ -152,6 +153,7 @@ export const RecordMode = () => {
                         isReadOnly={isRecording}
                         errorMessage={'A task is required in order to record.'}
                         name='Task'
+                        maxLength={20_000}
                         width='100%'
                         isRequired
                         value={task}
@@ -184,6 +186,7 @@ export const RecordMode = () => {
                     )}
                 </Flex>
             </Form>
+            {state !== null && <StreamDeckControls sessionId={state.session_id} task={task} canConnect={canRecord} />}
         </Flex>
     );
 };

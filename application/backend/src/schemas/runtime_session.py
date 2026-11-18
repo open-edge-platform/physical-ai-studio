@@ -147,6 +147,12 @@ class DiscardEpisodeCommand(BaseModel):
     request_id: str
 
 
+RecordingCommand = Annotated[
+    StartEpisodeCommand | SaveEpisodeCommand | DiscardEpisodeCommand, Field(discriminator="command")
+]
+"""Recording-only controls for clients attached to an existing session."""
+
+
 class SetControlCommand(BaseModel):
     """Switch what drives the follower. ``null`` holds it where it is."""
 

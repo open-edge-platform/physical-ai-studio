@@ -18,7 +18,6 @@ from fastapi import APIRouter, Query, WebSocket
 from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
-from pydantic import BaseModel, Field, ValidationError
 
 from api.dependencies import (
     CameraClaimRegistryDep,
@@ -31,17 +30,16 @@ from api.dependencies import (
     RuntimeSessionRegistryDep,
 )
 from runtime_session import session as runtime_session
-from runtime_session.bus import STATUSES, Bus, BusRequestError, NoResponderError, Subscription, command_key
+from runtime_session.bus import STATUSES, Bus, Subscription
+from runtime_session.commands import request_command
 from runtime_session.resolve import project_resolvers
 from runtime_session.session import RuntimeSession
 from runtime_session.store import ACTION, STATE, Sample
 from schemas.runtime_session import (
-    AckMessage,
     ObservationFrame,
     ObservationMessage,
     RuntimeSessionCommand,
     RuntimeSessionServerMessage,
-    SessionError,
     SessionEvent,
     StateMessage,
     StatusMessage,
@@ -49,16 +47,6 @@ from schemas.runtime_session import (
 from workers.rate import Rate
 
 router = APIRouter(prefix="/api/projects/{project_id}/runtime", tags=["Runtime Sessions"])
-
-_COMMAND_TIMEOUT_S = 600.0
-"""A backstop only: every handler bounds its own work (a dataset copy, a video encode)."""
-
-
-class _CommandHeader(BaseModel):
-    """All the socket reads of a command; whoever serves it validates the rest."""
-
-    command: str = Field(pattern=r"^[a-z_]+$")
-    request_id: str
 
 
 class _SessionEnded(Exception):
@@ -130,38 +118,8 @@ async def _forward_commands(websocket: WebSocket, bus: Bus) -> None:
     """Put each command onto the bus, one at a time and in order, and ack it with the reply."""
     while True:
         raw = await websocket.receive_text()
-        ack = await _request(bus, raw)
+        ack = await request_command(bus, raw)
         await websocket.send_json(ack.model_dump(mode="json"))
-
-
-async def _request(bus: Bus, raw: str) -> AckMessage:
-    try:
-        header = _CommandHeader.model_validate_json(raw)
-    except ValidationError as error:
-        return AckMessage(request_id="", ok=False, error=SessionError(message=str(error), error_code="invalid_command"))
-
-    def failed(message: str, error_code: str) -> AckMessage:
-        return AckMessage(
-            request_id=header.request_id, ok=False, error=SessionError(message=message, error_code=error_code)
-        )
-
-    try:
-        result: dict[str, Any] = await bus.request(
-            command_key(header.command), raw, dict[str, Any], timeout=_COMMAND_TIMEOUT_S
-        )
-    except BusRequestError as error:
-        # The handler's details (``parts`` for ``incompatible_parts``, say) go to the client as they are.
-        return AckMessage(
-            request_id=header.request_id,
-            ok=False,
-            error=SessionError(message=error.message, error_code=error.error_code, **error.data),
-        )
-    except NoResponderError:
-        # Nothing serves it now: an unknown command, or one for a part that is not loaded (a dataset, say).
-        return failed(f"Nothing can {header.command} right now; load what it needs first.", "command_unavailable")
-    except TimeoutError:
-        return failed(f"{header.command} did not finish in time", "command_timeout")
-    return AckMessage(request_id=header.request_id, ok=True, result=result or None)
 
 
 async def _forward_events(websocket: WebSocket, events: Subscription[Any]) -> None:

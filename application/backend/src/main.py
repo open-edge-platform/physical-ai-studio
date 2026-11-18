@@ -32,6 +32,7 @@ from api.robots import router as project_robots_router
 from api.runtime_sessions import router as runtime_sessions_router
 from api.runtime_ws import router as runtime_ws_router
 from api.settings import router as settings_router
+from api.streamdeck import router as streamdeck_router
 from api.system import system_router
 from api.webui import SPAStaticFiles
 from core.lifecycle import lifespan
@@ -58,6 +59,7 @@ app.include_router(robot_zero_calibration_router)
 app.include_router(robot_observations_router)
 app.include_router(runtime_ws_router)
 app.include_router(runtime_sessions_router)
+app.include_router(streamdeck_router)
 app.include_router(project_environments_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)

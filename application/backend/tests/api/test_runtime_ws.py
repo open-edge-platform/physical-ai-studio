@@ -18,10 +18,12 @@ from api.dependencies import (
     get_robot_client_factory,
     get_robot_service,
     get_runtime_session_registry,
+    get_streamdeck_service,
 )
 from api.runtime_ws import observation_message
 from main import app
 from schemas.runtime_session import ObservationFrame, ObservationMessage
+from services.streamdeck_service import StreamDeckService
 from tests.runtime_session.fixtures import FOLLOWER_ID, LEADER_ID, make_environment
 
 if TYPE_CHECKING:
@@ -45,6 +47,7 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
     robots = SimpleNamespace(get_robot_by_id=AsyncMock(side_effect=lambda _project, robot_id: rows[robot_id]))
     cameras = SimpleNamespace(get_camera_by_id=AsyncMock(return_value=ENVIRONMENT.cameras[0]))
     projects = SimpleNamespace(get_project_by_id=AsyncMock(return_value=SimpleNamespace(name="Alpha")))
+    streamdeck = StreamDeckService()
     app.dependency_overrides.update(
         {
             get_project_service: lambda: projects,
@@ -53,6 +56,7 @@ def client(robot_factory, registry, camera_claims, fake_cameras) -> Iterator[Tes
             get_robot_client_factory: lambda: robot_factory,
             get_runtime_session_registry: lambda: registry,
             get_camera_claim_registry: lambda: camera_claims,
+            get_streamdeck_service: lambda: streamdeck,
         }
     )
     try:
@@ -114,6 +118,38 @@ def _parse_observation(data: bytes) -> tuple[dict, dict[str, bytes]]:
         frames[frame["key"]] = data[offset : offset + frame["size"]]
         offset += frame["size"]
     return header, frames
+
+
+def test_ui_manages_streamdeck_attachment_without_owning_a_session(client: TestClient) -> None:
+    assert not client.get("/api/streamdeck").json()["helper_online"]
+    with client.websocket_connect(_url()) as websocket:
+        session_id = websocket.receive_json()["data"]["session_id"]
+        path = f"/api/streamdeck/sessions/{session_id}"
+        assert client.put(path, json={"task": "Pick block"}).status_code == 409
+        report = {"helper_id": str(uuid4())}
+        assert client.post("/api/streamdeck/heartbeat", json=report).json()["helper_online"]
+        assert client.post("/api/streamdeck/heartbeat", json={"helper_id": str(uuid4())}).status_code == 409
+        assert client.put("/api/streamdeck/sessions/missing", json={"task": "Pick block"}).status_code == 404
+        assert client.put(path, json={}).status_code == 400
+        target = client.put(path, json={"task": "Pick block"}).json()["target"]
+        assert target["session_id"] == session_id and target["task"] == "Pick block"
+        report.update(connection_id=target["connection_id"], device="Stream Deck Mini")
+        assert client.post("/api/streamdeck/heartbeat", json=report).json()["connected"]
+        updated = client.put(path, json={"task": "Place block"}).json()["target"]
+        assert updated["connection_id"] == target["connection_id"]
+        recording = f"/api/runtime/sessions/{session_id}/recording"
+        headers = {"X-StreamDeck-Connection": target["connection_id"]}
+        command = {"command": "start_episode", "request_id": "deck", "task": "Place block"}
+        # A current attachment reaches the shared handler; there is deliberately no dataset loaded here.
+        ack = client.post(recording, json=command, headers=headers).json()
+        assert ack["error"]["error_code"] == "command_unavailable"
+        assert client.delete(path).json()["target"] is None
+        assert client.post(recording, json=command, headers=headers).status_code == 409
+        assert client.get(f"/api/runtime/sessions/{session_id}/state").json()["session_id"] == session_id
+        new_target = client.put(path, json={"task": "Pick block"}).json()["target"]
+        assert new_target["connection_id"] != target["connection_id"]
+        assert client.post(recording, json=command, headers=headers).status_code == 409
+    assert client.get("/api/streamdeck").json()["target"] is None
 
 
 def test_observation_message_layout() -> None:
@@ -271,3 +307,90 @@ def test_recording_commands_over_the_socket(client: TestClient) -> None:
         swapped = socket.ack({"command": "load_environment", "environment": no_cameras, "unload_incompatible": True})
         assert swapped["ok"]
         assert socket.until_state(lambda data: data["dataset"] is None)["environment"]["cameras"] == []
+
+
+def test_attached_recording_controls_share_the_browser_session(client: TestClient, registry) -> None:
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from schemas.dataset import Dataset
+    from tests.workers.fake_dataset import FakeDatasetWorker
+
+    dataset = Dataset(id=uuid4(), name="Blocks", default_task="pick", project_id=PROJECT_ID, environment_id=uuid4())
+    Path(dataset.path).mkdir(parents=True)
+    app.dependency_overrides[get_dataset_service] = lambda: SimpleNamespace(
+        get_dataset_by_id=AsyncMock(return_value=dataset)
+    )
+    assert client.get("/api/runtime/sessions").json() == {"sessions": []}
+    with (
+        patch("runtime_session.dataset.DatasetWorker", FakeDatasetWorker),
+        client.websocket_connect(_url()) as websocket,
+    ):
+        websocket.receive_json()
+        socket = _Socket(websocket)
+        [session] = client.get("/api/runtime/sessions").json()["sessions"]
+        path = f"/api/runtime/sessions/{session['session_id']}"
+        assert client.get(f"{path}/state").json()["environment"] is None
+        unavailable = client.post(
+            f"{path}/recording", json={"command": "start_episode", "request_id": "empty", "task": "pick"}
+        )
+        assert unavailable.status_code == 200
+        assert unavailable.json()["error"]["error_code"] == "command_unavailable"
+        assert socket.ack({"command": "load_environment", "environment": _draft()})["ok"]
+        assert socket.ack({"command": "load_dataset", "dataset_id": str(dataset.id)})["ok"]
+        assert socket.ack({"command": "set_control", "control": {"type": "teleop"}})["ok"]
+
+        def command(name: str, **payload) -> dict:
+            response = client.post(f"{path}/recording", json={"command": name, "request_id": name, **payload})
+            assert response.status_code == 200
+            ack = response.json()
+            assert ack["request_id"] == name and ack["ok"]
+            return ack
+
+        command("start_episode", task="from deck")
+        socket.until_state(lambda data: (data["dataset"] or {}).get("is_recording"))
+        time.sleep(0.3)
+        command("save_episode")
+        socket.until_state(lambda data: (data["dataset"] or {}).get("episodes_recorded") == 1)
+        command("start_episode", task="discard me")
+        socket.until_state(lambda data: data["dataset"]["is_recording"])
+        command("discard_episode")
+        socket.until_state(lambda data: not data["dataset"]["is_recording"])
+        snapshot = client.get(f"{path}/state").json()
+        assert snapshot["dataset"]["episodes_recorded"] == 1
+        assert snapshot["control"]["type"] == "teleop"
+        assert [s.id for s in registry.sessions()] == [session["session_id"]]
+        # Attached clients cannot change motion, load hardware, or omit required fields.
+        for payload in (
+            {"command": "set_control", "control": None},
+            {"command": "load_environment", "environment": _draft()},
+            {"command": "start_episode"},
+            {"command": "fly"},
+        ):
+            assert client.post(f"{path}/recording", json={**payload, "request_id": "invalid"}).status_code == 400
+    assert client.get("/api/runtime/sessions").json() == {"sessions": []}
+    assert client.get(f"{path}/state").status_code == 404
+    assert client.post(f"{path}/recording", json={"command": "save_episode", "request_id": "gone"}).status_code == 404
+
+
+def test_native_launch_requires_local_ui_and_non_simple_header(client, monkeypatch) -> None:
+    from unittest.mock import Mock
+
+    launch = Mock()
+    monkeypatch.setattr(StreamDeckService, "start", launch)
+    monkeypatch.setattr(StreamDeckService, "native_launch_available", staticmethod(lambda: True))
+    headers = {"X-StreamDeck-Launch": "1"}
+    assert client.post("/api/streamdeck/start", headers=headers).status_code == 403
+    local = TestClient(app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1")
+    assert local.get("/api/streamdeck").json()["can_start_native"]
+    assert local.post("/api/streamdeck/start").status_code == 400
+    for origin in ("http://attacker.example", "null", "http://[invalid"):
+        assert local.post("/api/streamdeck/start", headers={**headers, "Origin": origin}).status_code == 403
+    launch.assert_not_called()
+    assert (
+        local.post("/api/streamdeck/start", headers={**headers, "Origin": "http://localhost:3000"}).status_code == 200
+    )
+    launch.assert_called_once()
+    assert local.post("/api/streamdeck/heartbeat", json={"helper_id": str(uuid4())}).status_code == 200
+    assert local.post("/api/streamdeck/start", headers=headers).status_code == 200
+    launch.assert_called_once()

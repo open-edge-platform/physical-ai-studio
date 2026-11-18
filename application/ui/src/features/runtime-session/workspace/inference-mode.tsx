@@ -5,6 +5,7 @@ import { Button, Flex, Item, Picker, Slider, TextArea, toast } from '@geti-ui/ui
 import { $api } from '../../../api/client';
 import { SchemaExecutionConfig, SchemaModelControlConfig } from '../../../api/openapi-spec';
 import { ERROR_TOAST, failureOf, useRuntimeSession } from '../runtime-session-provider';
+import { StreamDeckControls } from './streamdeck-controls';
 
 const EXECUTION_MODES: { key: SchemaExecutionConfig['mode']; label: string }[] = [
     { key: 'sync', label: 'Synchronous' },
@@ -39,6 +40,7 @@ export const InferenceMode = () => {
     // shortcut: set by hand, upgrade to the model's training fps once exports record it.
     const [hz, setHz] = useState(30);
     const [isPending, setIsPending] = useState(false);
+    const [dictationBusy, setDictationBusy] = useState(false);
 
     useEffect(() => setTask(defaultTask), [defaultTask]);
 
@@ -61,19 +63,26 @@ export const InferenceMode = () => {
         }
     };
 
-    const play = () =>
-        void setControl({
-            type: 'model',
-            task,
-            hz,
-            execution: { mode, request_threshold: threshold },
-            // The follower eases onto the model's actions, which may start far from where it is.
-            grace_s: 3,
-        });
+    const inference: SchemaModelControlConfig = {
+        type: 'model',
+        task,
+        hz,
+        execution: { mode, request_threshold: threshold },
+        // The follower eases onto the model's actions, which may start far from where it is.
+        grace_s: 3,
+    };
+    const play = () => void setControl(inference);
 
     return (
         <Flex direction='column' gap='size-200'>
-            <TextArea label='Task' width='100%' value={task} onChange={setTask} isReadOnly={isRunning} />
+            <TextArea
+                label='Task'
+                width='100%'
+                value={task}
+                onChange={setTask}
+                maxLength={20_000}
+                isReadOnly={isRunning || dictationBusy}
+            />
             <Picker
                 label='Execution'
                 width='100%'
@@ -111,9 +120,20 @@ export const InferenceMode = () => {
                     Stop
                 </Button>
             ) : (
-                <Button isPending={isPending} isDisabled={!canRun} onPress={play}>
+                <Button isPending={isPending} isDisabled={!canRun || dictationBusy} onPress={play}>
                     Play
                 </Button>
+            )}
+            {state !== null && (
+                <StreamDeckControls
+                    sessionId={state.session_id}
+                    task={task}
+                    page='inference'
+                    inference={inference}
+                    canConnect={canRun}
+                    onTaskChange={setTask}
+                    onDictationBusyChange={setDictationBusy}
+                />
             )}
         </Flex>
     );

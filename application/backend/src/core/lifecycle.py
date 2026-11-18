@@ -18,6 +18,7 @@ from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
 from services.health_service import HealthService
 from services.remote_trainer_service import RemoteTrainerService
+from services.streamdeck_service import StreamDeckService
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
@@ -83,6 +84,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # aliased project rows for the same physical device share one pin.
     app.state.camera_claim_registry = CameraClaimRegistry()
     app.state.runtime_session_registry = RuntimeSessionRegistry()
+    app.state.streamdeck_service = StreamDeckService()
 
     # Fail the SSH remote-trainer feature closed if it is bound to a
     # non-loopback address: the feature has no authentication model, so a
@@ -132,6 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # For now, we assume active workers unregistering will trigger releases.
 
     await app.state.runtime_session_registry.close_all()
+    await asyncio.to_thread(app.state.streamdeck_service.close)
     # Keep draining worker events while shutdown waits for child processes to exit.
     await asyncio.to_thread(app_scheduler.shutdown)
     app.state.event_processor.shutdown()

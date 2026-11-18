@@ -42,6 +42,9 @@ The application provides a graphical interface to:
 | [Remote Training](./docs/07-remote-training.md) (optional)                | Configure and use trainers on self-managed infrastructure or AWS.                 |
 | [Deploying Model Policies](./docs/08-deploying-model-policies.md)         | Run trained policies in Studio or deploy them externally.                         |
 
+For physical recording buttons on macOS, Windows, or Ubuntu, see the
+[Stream Deck recording and inference controls](./streamdeck/README.md).
+
 ## Components
 
 | Component                 | Description                                                    | Documentation                         |
