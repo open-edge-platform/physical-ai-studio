@@ -286,6 +286,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
                 model.freeze_backbone()
             if self.compile_model:
                 model.predict_action_chunk = torch.compile(model.predict_action_chunk)
+                model.forward = torch.compile(model.forward)  # type: ignore[method-assign]
             self.model = model
             try:
                 if config.use_lora:

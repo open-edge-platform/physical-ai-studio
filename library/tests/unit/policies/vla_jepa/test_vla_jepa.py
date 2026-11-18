@@ -213,6 +213,16 @@ def test_configure_model_repairs_missing_processors(tiny_config: VLAJEPAConfig, 
     assert not policy._postprocessor.training
 
 
+@pytest.mark.slow
+def test_compiled_training_step_has_gradients(tiny_config: VLAJEPAConfig, observation: Observation) -> None:
+    """Compiled action-only training keeps the loss differentiable."""
+    policy = VLAJEPA.from_config(tiny_config, gradient_checkpointing=False, compile_model=True).train()
+    loss, _ = policy(observation)
+    assert loss.requires_grad
+    loss.backward()
+    assert any(parameter.grad is not None for parameter in policy.model.qwen.parameters())
+
+
 def test_action_queue_and_reset(tiny_config: VLAJEPAConfig, observation: Observation) -> None:
     """The shared queue executes only the requested prefix and clears on reset."""
     policy = VLAJEPA.from_config(tiny_config).eval()
