@@ -60,6 +60,9 @@ interface TrainingParametersProps {
     onAugmentImagesChange: (value: boolean) => void;
     isAutoScaleBatchDisabled: boolean;
     deviceType: string | undefined;
+    isJepaSupported: boolean;
+    enableWorldModel: boolean;
+    onEnableWorldModelChange: (value: boolean) => void;
     /** False for policies without a LoRA/DoRA mixin; hides the LoRA controls entirely. */
     isLoraSupported: boolean;
     loraEnabled: boolean;
@@ -98,6 +101,9 @@ export const TrainingParameters = ({
     onAugmentImagesChange,
     isAutoScaleBatchDisabled,
     deviceType,
+    isJepaSupported,
+    enableWorldModel,
+    onEnableWorldModelChange,
     isLoraSupported,
     loraEnabled,
     onLoraEnabledChange,
@@ -280,6 +286,23 @@ export const TrainingParameters = ({
                 </ContextualHelp>
             </Flex>
         </Flex>
+        {isJepaSupported && (
+            <Flex direction='row' gap='size-100' alignItems='center'>
+                <Checkbox isEmphasized isSelected={enableWorldModel} onChange={onEnableWorldModelChange}>
+                    JEPA-assisted fine-tuning
+                </Checkbox>
+                <ContextualHelp variant='info'>
+                    <Heading>JEPA-assisted fine-tuning</Heading>
+                    <Content>
+                        <Text>
+                            Train the policy and world predictor with action and future-video feature losses. The
+                            V-JEPA2 target encoder stays frozen. Disable for action-only fine-tuning, which uses less
+                            training memory.
+                        </Text>
+                    </Content>
+                </ContextualHelp>
+            </Flex>
+        )}
         {isLoraSupported && (
             <Flex direction='column' gap='size-150' width='100%'>
                 <Flex direction='row' gap='size-100' alignItems='center'>

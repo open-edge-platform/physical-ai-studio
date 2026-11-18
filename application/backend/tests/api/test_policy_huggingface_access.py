@@ -184,5 +184,6 @@ def test_backends_cover_every_selectable_policy(monkeypatch, tmp_path: Path) -> 
         response = client.get("/api/policies/backends")
 
     backends = response.json()
-    assert set(backends) == {"act", "molmoact2", "pi05", "rldx1", "smolvla", "xr0"}
+    assert set(backends) == {"act", "molmoact2", "pi05", "rldx1", "smolvla", "vla_jepa", "xr0"}
     assert backends["xr0"]
+    assert backends["vla_jepa"] == ["torch", "openvino"]

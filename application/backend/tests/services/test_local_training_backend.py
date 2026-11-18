@@ -158,6 +158,13 @@ class TestBuildSpec:
 
         assert spec.augment_images is augment_images
 
+    @pytest.mark.parametrize("enabled", [None, True, False])
+    def test_jepa_mode_is_forwarded(self, tmp_path, enabled):
+        """Local and remote adapters share the same optional VLA-JEPA mode."""
+        payload = _payload(policy="vla_jepa", enable_world_model=enabled)
+        spec = build_spec(_context(tmp_path, payload, model_policy="vla_jepa"))
+        assert spec.enable_world_model is (True if enabled is None else enabled)
+
     def test_lora_fields_are_forwarded(self, tmp_path):
         payload = _payload(
             policy="pi05",

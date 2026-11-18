@@ -68,7 +68,7 @@ export const PolicySelection = ({
                                         direction='column'
                                         gap='size-50'
                                     >
-                                        {model.min_vram != null && <Text>&ge; {formatBytes(model.min_vram)} VRAM</Text>}
+                                        {model.min_vram != null && <Text>Est. {formatBytes(model.min_vram)} VRAM</Text>}
                                     </Flex>
                                 </Flex>
                                 <Divider size='S' />
@@ -78,6 +78,9 @@ export const PolicySelection = ({
                     );
                 })}
             </div>
+            <Text UNSAFE_style={{ fontSize: 12 }}>
+                VRAM estimates vary with batch size, precision, image resolution, and training mode.
+            </Text>
 
             {policiesUnavailable && (
                 <InlineAlert variant='warning'>
@@ -93,8 +96,8 @@ export const PolicySelection = ({
             {hasInsufficientVram && selectedModel?.min_vram != null && (
                 <View marginTop='size-100'>
                     <InlineAlert variant='warning'>
-                        {selectedModel.name} requires at least {formatBytes(selectedModel.min_vram)} VRAM, but the
-                        device reports less than that. Training may fail or be very slow.
+                        {selectedModel.name} has an estimated VRAM requirement of {formatBytes(selectedModel.min_vram)},
+                        but the device reports less than that. Training may fail or be very slow.
                     </InlineAlert>
                 </View>
             )}

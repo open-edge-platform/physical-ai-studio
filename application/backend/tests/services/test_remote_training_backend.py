@@ -836,7 +836,9 @@ class TestHttpDatasetTransfer:
 
         body = await _submitted_body(settings, context)
 
-        expected = build_spec(context).model_dump(mode="json", exclude={"run_options", "snapflow_start_epoch"}) | {
+        expected = build_spec(context).model_dump(
+            mode="json", exclude={"run_options", "snapflow_start_epoch", "enable_world_model"}
+        ) | {
             "device_type": None,
             "device_index": None,
         }
@@ -868,6 +870,26 @@ class TestHttpDatasetTransfer:
         for key in ("lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"):
             assert key in body["spec"]
         assert body["spec"]["lora_enabled"] is False
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("enabled", [True, False])
+    async def test_submit_carries_the_jepa_mode(self, tmp_path, enabled):
+        """Both JEPA-assisted and action-only choices survive the remote protocol."""
+        context = _context(tmp_path, policy="vla_jepa", enable_world_model=enabled)
+        body = await _submitted_body(_settings(), context)
+        assert body["spec"]["enable_world_model"] is enabled
+
+    @pytest.mark.anyio
+    async def test_default_vla_job_explicitly_requires_jepa_support(self, tmp_path):
+        """An old action-only trainer must reject a full-mode request, not silently downgrade it."""
+        body = await _submitted_body(_settings(), _context(tmp_path, policy="vla_jepa"))
+        assert body["spec"]["enable_world_model"] is True
+
+    @pytest.mark.anyio
+    async def test_submit_omits_unused_jepa_options(self, tmp_path):
+        """Unrelated jobs remain compatible with trainer images predating JEPA options."""
+        body = await _submitted_body(_settings(), _context(tmp_path))
+        assert "enable_world_model" not in body["spec"]
 
     @pytest.mark.anyio
     async def test_submit_omits_an_unset_distillation_boundary(self, tmp_path):

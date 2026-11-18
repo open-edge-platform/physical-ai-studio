@@ -1,0 +1,34 @@
+# Native VLA-JEPA fine-tuning. Override repo_id for your robot dataset.
+model:
+  class_path: physicalai.policies.VLAJEPA
+  init_args:
+    pretrained_name_or_path: lerobot/VLA-JEPA-Pretrain
+    chunk_size: 7
+    n_action_steps: 7
+    gradient_checkpointing: true
+    # Disable to use only the action objective, without the JEPA video/world model.
+    enable_world_model: true
+    world_model_loss_weight: 0.1
+    reinitialize_projections: true
+    optimizer_lr: 1e-5
+    optimizer_action_head_lr: 1e-4
+    scheduler_warmup_steps: 1000
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: Daankrol/pick-and-place-multi-obj
+    data_format: physicalai
+    train_batch_size: 4
+    val_batch_size: 4
+    val_split: 0.1
+    val_split_seed: 42
+    num_workers: 4
+
+trainer:
+  max_epochs: 10
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+  log_every_n_steps: 20

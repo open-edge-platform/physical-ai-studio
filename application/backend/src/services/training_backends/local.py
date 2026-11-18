@@ -108,9 +108,13 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
 
     payload = context.payload
     device = payload.device
+    policy = (context.base_model or context.model).policy
+    world_model = payload.enable_world_model
+    if world_model is None and policy.lower() == "vla_jepa" and context.base_model is None:
+        world_model = True
     return TrainingJobSpec(
         # A resumed run's architecture is dictated by the base model's checkpoint.
-        policy=(context.base_model or context.model).policy,
+        policy=policy,
         # SnapFlow distillation epochs are additive: the trainer's epoch budget
         # is the teacher run plus the distillation phase, not carved out of it.
         max_epochs=payload.total_epochs,
@@ -120,6 +124,7 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
         precision=str(payload.precision),
         compile_model=payload.compile_model,
         augment_images=payload.augment_images,
+        enable_world_model=world_model,
         auto_scale_batch_size=payload.auto_scale_batch_size,
         lora_enabled=payload.lora_enabled,
         lora_rank=payload.lora_rank,
