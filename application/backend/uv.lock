@@ -853,7 +853,7 @@ dependencies = [
     { name = "hydra-core" },
     { name = "mpmath" },
     { name = "numpy" },
-    { name = "omegaconf" },
+    { name = "omegaconf", version = "2.3.1", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
     { name = "pandas" },
     { name = "py-cpuinfo" },
@@ -1278,16 +1278,16 @@ wheels = [
 
 [[package]]
 name = "hydra-core"
-version = "1.3.0"
+version = "1.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "antlr4-python3-runtime" },
-    { name = "omegaconf" },
+    { name = "omegaconf", version = "2.3.1", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6f/34/708349b0ef8115b83e2c663f237af921e1f0202518139ef94f5f267b2f45/hydra-core-1.3.0.tar.gz", hash = "sha256:4e54420c3304c6f91c69b3dd9a04ac18d7e134464557ccab88474b4064a309f3", size = 3218042, upload-time = "2022-12-08T21:18:07.448Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/03/adfa2bf3a9eef568a85f2e7cf18ce1938e7aa0b5257c432e5eb48f89960a/hydra_core-1.3.6.tar.gz", hash = "sha256:8c4c215b6cfba68e9a4e76f565bd7399fc2a86b93cfe8cb7328b046834dfbee5", size = 3272413, upload-time = "2026-08-29T14:36:08.092Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/b1/777bdecfafa1883fe97e41e91edee0b543e447d7ad69d133ab4e18689a9f/hydra_core-1.3.0-py3-none-any.whl", hash = "sha256:47dac77149992ce3f4f36491f52d98e85f249b156410f4e1b99eea77a0a6674b", size = 153789, upload-time = "2022-12-08T21:18:04.443Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/fd/612cc7905787100dc9225ae6ad71b42b60cbc23cd56ca55afcdd1e000f81/hydra_core-1.3.6-py3-none-any.whl", hash = "sha256:55951f49c7e19c29f4281cce2eeaa6e73ef6c5620093a4efb402a7e4b839fc38", size = 163055, upload-time = "2026-08-29T14:36:06.385Z" },
 ]
 
 [[package]]
@@ -2202,10 +2202,50 @@ wheels = [
 
 [[package]]
 name = "omegaconf"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (platform_machine == 'AMD64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu')",
+    "sys_platform == 'win32' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'aarch64' or platform_machine == 'arm64') and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine != 'AMD64' and platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'x86_64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu')",
+    "sys_platform == 'emscripten' and extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'AMD64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "sys_platform == 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'aarch64' or platform_machine == 'arm64') and sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine != 'AMD64' and platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'x86_64' and sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu')",
+    "sys_platform == 'emscripten' and extra == 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+]
+dependencies = [
+    { name = "antlr4-python3-runtime", marker = "extra == 'extra-17-physicalai-studio-cpu' or extra == 'extra-17-physicalai-studio-cuda'" },
+    { name = "pyyaml", marker = "extra == 'extra-17-physicalai-studio-cpu' or extra == 'extra-17-physicalai-studio-cuda'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ce/3d/e4b57b8d9008c6ebe0d5eff901f91d5700cf7bdb8c8863df817463a7fd5e/omegaconf-2.3.1.tar.gz", hash = "sha256:e5e7de64aeebeddaf8e6d3f7a783b32ac2a01c0fbd9c878012caecb891a1f42a", size = 3298472, upload-time = "2026-06-11T05:05:12.885Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/0e/152509871bf30df6fc38569f52a2db9b55dd41aae957adae50a053ac7778/omegaconf-2.3.1-py3-none-any.whl", hash = "sha256:3d701d14e9a8828f1edd28bb70b725908b34277cdd72cf7d6a83f94dadc6b6a0", size = 79502, upload-time = "2026-06-11T05:05:09.954Z" },
+]
+
+[[package]]
+name = "omegaconf"
 version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu' or (platform_machine == 'AMD64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu'",
+    "sys_platform == 'win32' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'aarch64' or platform_machine == 'arm64') and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine != 'AMD64' and platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'x86_64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')",
+    "sys_platform == 'emscripten' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'AMD64' or platform_machine == 'x86_64') and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "sys_platform == 'win32' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine == 'aarch64' or platform_machine == 'arm64') and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+    "(platform_machine != 'AMD64' and platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'x86_64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu')",
+    "sys_platform == 'emscripten' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu'",
+]
 dependencies = [
-    { name = "pyyaml" },
+    { name = "pyyaml", marker = "extra == 'extra-17-physicalai-studio-xpu' or (extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cc/10/1cabf3188a4d9684a06568c7fd76f9536eede625733c8399cf1f5337b83e/omegaconf-2.4.0.tar.gz", hash = "sha256:7e219a70bea371da250285b9c01c7db027bc421722799c2cc4ff14bc4a2a753b", size = 3544508, upload-time = "2026-10-09T12:44:02.326Z" }
 wheels = [
@@ -2752,7 +2792,8 @@ dependencies = [
     { name = "lerobot", extra = ["dataset", "feetech"] },
     { name = "loguru" },
     { name = "numpy" },
-    { name = "omegaconf" },
+    { name = "omegaconf", version = "2.3.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-17-physicalai-studio-cpu' or extra == 'extra-17-physicalai-studio-cuda'" },
+    { name = "omegaconf", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-17-physicalai-studio-xpu' or (extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda')" },
     { name = "opencv-python" },
     { name = "physicalai", extra = ["capture", "observer-rerun", "transport"] },
     { name = "physicalai-so101-plugin" },
