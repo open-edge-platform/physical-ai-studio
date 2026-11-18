@@ -24,11 +24,14 @@ class TestTrainer:
         import torch
 
         monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
-        Trainer(accelerator="cpu", logger=False, enable_checkpointing=False, allow_tf32=False)
-        assert not torch.backends.cuda.matmul.allow_tf32
-
+        monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
         Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
         assert torch.backends.cuda.matmul.allow_tf32
+        assert torch.backends.cudnn.allow_tf32
+
+        Trainer(accelerator="cpu", logger=False, enable_checkpointing=False, allow_tf32=False)
+        assert not torch.backends.cuda.matmul.allow_tf32
+        assert not torch.backends.cudnn.allow_tf32
 
     def test_policy_dataset_interaction_callback_injected(self):
         """Verify PolicyDatasetInteraction callback is automatically added."""
