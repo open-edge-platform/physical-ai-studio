@@ -12,8 +12,8 @@ import click
 def datasets() -> None:
     """Import LeRobot v3 datasets from local folders.
 
-    For Hugging Face repositories, use hf dataset instead. Local-folder imports
-    require an environment association; Hub imports create a temporary empty one.
+    For Hugging Face repositories, use hf dataset instead. Both import paths
+    require an existing project, but no recording environment.
     """
 
 
