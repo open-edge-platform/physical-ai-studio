@@ -4,11 +4,11 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.schema import JobDB
-from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
+from db.schema import JobDB, ModelDB
+from exceptions import InvalidResourceError, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
 from schemas.job import ExportBackend, TrainJob
 from schemas.model import BackendExportDetail, Model, ModelExportAction, TrainingSummary
@@ -60,6 +60,41 @@ class ModelService:
 
     async def get_project_models(self, project_id: UUID) -> list[Model]:
         return await self.repo.get_project_models(project_id)
+
+    async def delete_export(self, model_id: UUID, backend: str) -> None:
+        """Remove a backend export, keeping its checkpoint and training history."""
+        from services.model_export_service import ModelExportService
+
+        try:
+            # Serialize removal with export submissions and publication decisions.
+            await self.session.execute(update(ModelDB).where(ModelDB.id == str(model_id)).values(id=ModelDB.id))
+            model = await self.get_model_by_id(model_id)
+            jobs = await self.session.execute(
+                select(JobDB.id, JobDB.status).where(
+                    JobDB.type == "model_export",
+                    JobDB.status.in_(("pending", "running", "completed")),
+                    func.json_extract(JobDB.payload, "$.model_id") == str(model_id),
+                )
+            )
+            if any(
+                status != "completed" or ModelExportService.staging(UUID(job_id)).exists() for job_id, status in jobs
+            ):
+                raise ResourceInUseError(
+                    ResourceType.MODEL, model_id, "Wait for this model's export jobs to finish before removing files."
+                )
+            package = ExportPackage.for_model(Path(model.path), backend)
+            if not package.directory.is_dir():
+                raise ResourceNotFoundError(ResourceType.MODEL, f"{model_id}/{backend}")
+            # Validate the entire tree before deleting any files.
+            _ = tuple(FileTree(package.directory).files())
+            shutil.rmtree(package.directory)
+            await self.session.commit()
+        except ValueError as exc:
+            await self.session.rollback()
+            raise InvalidResourceError("Model", str(exc)) from exc
+        except Exception:
+            await self.session.rollback()
+            raise
 
     @staticmethod
     def get_backend_details(model: Model) -> list[BackendExportDetail]:

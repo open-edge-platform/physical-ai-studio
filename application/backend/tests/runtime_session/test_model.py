@@ -12,9 +12,9 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-from exceptions import RuntimeSessionCommandError
+from exceptions import ResourceInUseError, RuntimeSessionCommandError
 from runtime_session.controls.model import ModelControl
-from runtime_session.model import ModelInputs, model_inputs
+from runtime_session.model import ModelInputs, ProcessModel, model_inputs
 from runtime_session.session import RuntimeSession
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
 from schemas.model import Model
@@ -86,6 +86,46 @@ async def test_the_model_drives_the_follower(new_session, fake_cameras, fake_mod
     await session.unload_model()
     assert session.state().model is None
     assert session.state().control is None
+
+
+async def test_export_is_leased_during_startup_loaded_lifetime_and_teardown(
+    new_session, fake_cameras, tmp_path, monkeypatch
+) -> None:
+    session = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path)
+    entering, finish_load = asyncio.Event(), asyncio.Event()
+    leaving, finish_unload = asyncio.Event(), asyncio.Event()
+
+    async def enter(candidate):
+        entering.set()
+        await finish_load.wait()
+        return candidate
+
+    async def exit_model(candidate, *args):
+        leaving.set()
+        await finish_unload.wait()
+
+    monkeypatch.setattr(ProcessModel, "__aenter__", enter)
+    monkeypatch.setattr(ProcessModel, "__aexit__", exit_model)
+    loading = asyncio.create_task(session.load_model(model, "torch", "cpu"))
+    await entering.wait()
+    assert session.state().model is None
+    with pytest.raises(ResourceInUseError), session._registry.deleting_model_export(model.id, "torch"):
+        pass
+    finish_load.set()
+    await loading
+    with pytest.raises(ResourceInUseError), session._registry.deleting_model_export(model.id, "torch"):
+        pass
+    unloading = asyncio.create_task(session.unload_model())
+    await leaving.wait()
+    assert session.state().model is None
+    with pytest.raises(ResourceInUseError), session._registry.deleting_model_export(model.id, "torch"):
+        pass
+    finish_unload.set()
+    await unloading
+    with session._registry.deleting_model_export(model.id, "torch"):
+        pass
 
 
 async def test_a_model_needs_an_environment_it_fits(new_session, fake_cameras, fake_model_worker, tmp_path) -> None:

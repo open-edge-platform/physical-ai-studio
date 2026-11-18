@@ -5,6 +5,9 @@ import time
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
+from exceptions import ResourceInUseError
 from runtime_session.registry import RuntimeSessionRegistry
 
 
@@ -29,3 +32,35 @@ async def test_a_load_waits_only_for_the_closing_session_that_holds_its_robot() 
     started = time.monotonic()
     await registry.until_closed(within=5.0, holding=[parking])
     assert 0.25 < time.monotonic() - started < 2.0
+
+
+def test_export_readers_exclude_removal_until_the_last_reader_leaves() -> None:
+    registry = RuntimeSessionRegistry()
+    model_id = uuid4()
+    with registry.reading_model_export(model_id, "torch"):
+        with (
+            registry.reading_model_export(model_id, "torch"),
+            pytest.raises(ResourceInUseError),
+            registry.deleting_model_export(model_id, "torch"),
+        ):
+            pass
+        with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "torch"):
+            pass
+        with registry.deleting_model_export(model_id, "onnx"):
+            pass
+    with registry.deleting_model_export(model_id, "torch"):
+        with pytest.raises(ResourceInUseError), registry.reading_model_export(model_id, "torch"):
+            pass
+        with pytest.raises(ResourceInUseError), registry.deleting_model_export(model_id, "torch"):
+            pass
+
+
+def test_export_leases_are_released_after_errors() -> None:
+    registry = RuntimeSessionRegistry()
+    model_id = uuid4()
+    with pytest.raises(ValueError), registry.reading_model_export(model_id, "torch"):
+        raise ValueError("startup failed")
+    with pytest.raises(ValueError), registry.deleting_model_export(model_id, "torch"):
+        raise ValueError("removal failed")
+    with registry.reading_model_export(model_id, "torch"):
+        pass

@@ -393,7 +393,7 @@ class RuntimeSession:
     async def _reload_model(self, model: ProcessModel) -> None:
         """Hold the lock. Load ``model`` again on a new store; a failure is reported, not raised."""
         try:
-            await self._model.load(self._process_model(model.model, model.backend, model.device))
+            await self._model.load(self._leased_model(self._process_model(model.model, model.backend, model.device)))
         except Exception as error:
             logger.opt(exception=error).error("Session {} could not load model {!r} again", self.id, model.model.name)
             self._emit(
@@ -571,14 +571,22 @@ class RuntimeSession:
         """
         async with self._lock:
             environment = self._environment.require("Load an environment first.")
-            await self._unload_model(environment.environment)
-            await self._model.load(self._process_model(model, backend, device))
+            with self._registry.reading_model_export(model.id, backend):
+                candidate = self._process_model(model, backend, device)
+                await self._unload_model(environment.environment)
+                await self._model.load(self._leased_model(candidate))
             logger.info("Session {} loaded model {!r} ({}, {})", self.id, model.name, backend, device)
         self._emit(StateMessage(data=self.state()))
 
     def _process_model(self, model: Model, backend: str, device: str) -> ProcessModel:
         # The store is there with any environment, even one that failed to connect.
         return ProcessModel(model, self.id, cast("Store", self._store), backend=backend, device=device)
+
+    @asynccontextmanager
+    async def _leased_model(self, model: ProcessModel) -> AsyncIterator[ProcessModel]:
+        with self._registry.reading_model_export(model.model.id, model.backend):
+            async with model:
+                yield model
 
     async def unload_model(self) -> None:
         """Stop a model control, then the model. A no-op when none is loaded."""

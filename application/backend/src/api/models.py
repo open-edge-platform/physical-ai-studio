@@ -25,11 +25,13 @@ from api.dependencies import (
     get_robot_catalog_service,
     get_robot_client_factory,
     get_robot_manager_service,
+    get_runtime_session_registry,
 )
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
 from robots.robot_client_factory import RobotClientFactory
+from runtime_session.registry import RuntimeSessionRegistry
 from schemas import Model, ModelDetailResponse
 from schemas.job import ModelExportJob, TrainJob
 from schemas.job_response import JobResponse
@@ -129,6 +131,18 @@ async def export_model_backend(model_id: UUID, backend: ExportBackend, session: 
     return await ModelExportService(session).submit(
         model_id, ModelExportAction.model_validate({"backend": backend.value})
     )
+
+
+@router.delete("/{model_id}/exports/{backend}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_model_backend(
+    model_id: UUID,
+    backend: ExportBackend,
+    session: AsyncSessionDep,
+    registry: Annotated[RuntimeSessionRegistry, Depends(get_runtime_session_registry)],
+) -> None:
+    """Remove a backend export without removing the checkpoint or training history."""
+    with registry.deleting_model_export(model_id, backend.value):
+        await ModelService(session).delete_export(model_id, backend.value)
 
 
 class ModelNameUpdate(BaseModel):

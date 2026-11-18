@@ -14,10 +14,12 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.sql.dml import Update
 
+from api.dependencies import get_runtime_session_registry
 from db.engine import get_async_db_session
 from db.schema import Base, ProjectDB
 from exceptions import DuplicateJobException
 from main import app
+from runtime_session.registry import RuntimeSessionRegistry
 from schemas.base_job import JobStatus
 from schemas.model import Model, ModelExportAction
 from schemas.model_export import ExportPackage
@@ -81,6 +83,8 @@ async def exports(tmp_path, monkeypatch):
     monkeypatch.setattr("services.model_export_service.get_settings", lambda: SimpleNamespace(models_dir=models_dir))
     monkeypatch.setattr("workers.model_export_worker.get_async_db_session_ctx", sessions)
     monkeypatch.setitem(app.dependency_overrides, get_async_db_session, dependency)
+    registry = RuntimeSessionRegistry()
+    monkeypatch.setitem(app.dependency_overrides, get_runtime_session_registry, lambda: registry)
     async with sessions() as session:
         session.add(ProjectDB(id=str(source.project_id), name="Test"))
         await session.commit()
@@ -94,6 +98,7 @@ async def exports(tmp_path, monkeypatch):
             policy=FakePolicy,
             loaded=loaded,
             client=client,
+            registry=registry,
             target=root / "exports/torch",
         )
     await engine.dispose()
@@ -276,3 +281,61 @@ async def test_model_deletion_is_blocked_by_active_export(exports):
     await submit(exports)
     assert (await exports.client.delete(f"/api/models/{exports.source.id}")).status_code == 409
     assert exports.root.exists()
+
+
+async def test_removal_preserves_checkpoint_history_and_other_backends_and_allows_reexport(exports):
+    await worker(await submit(exports)).run_loop()
+    history = exports.root / "version_0/metrics.csv"
+    history.parent.mkdir()
+    history.write_bytes(b"history")
+    url = f"/api/models/{exports.source.id}/exports/torch"
+    assert (await exports.client.delete(url)).status_code == 204
+    assert (await exports.client.delete(url)).status_code == 404
+    assert not exports.target.exists()
+    assert (exports.root / "model.ckpt").read_bytes() == b"trusted checkpoint"
+    assert history.read_bytes() == b"history"
+    assert (exports.original / "model.bin").read_bytes() == b"original weights"
+    detail = (await exports.client.get(f"/api/models/{exports.source.id}")).json()
+    assert "torch" not in detail["model"]["available_backends"]
+    assert "torch" in {action["backend"] for action in detail["available_actions"]}
+    await worker(await submit(exports)).run_loop()
+    assert (exports.target / "model.pt").read_bytes() == b"exported weights"
+
+
+@pytest.mark.parametrize("status", [JobStatus.PENDING, JobStatus.RUNNING, JobStatus.COMPLETED])
+async def test_removal_rejects_active_or_unpublished_export_jobs(exports, status):
+    job = await submit(exports)
+    async with exports.sessions() as session:
+        await JobService(session).update_job_status(job.id, status)
+    if status == JobStatus.COMPLETED:
+        ModelExportService.staging(job.id).mkdir(parents=True)
+    response = await exports.client.delete(f"/api/models/{exports.source.id}/exports/openvino")
+    assert response.status_code == 409
+    assert (exports.original / "model.bin").exists()
+
+
+async def test_removal_rejects_inference_readers(exports):
+    with exports.registry.reading_model_export(exports.source.id, "openvino"):
+        response = await exports.client.delete(f"/api/models/{exports.source.id}/exports/openvino")
+    assert response.status_code == 409
+    assert exports.original.exists()
+
+
+async def test_removal_validates_all_paths_before_deleting_anything(exports, tmp_path):
+    outside = tmp_path / "precious.bin"
+    outside.write_bytes(b"keep")
+    (exports.original / "unsafe").symlink_to(outside)
+    response = await exports.client.delete(f"/api/models/{exports.source.id}/exports/openvino")
+    assert response.status_code == 409
+    assert outside.read_bytes() == b"keep"
+    assert (exports.original / "model.bin").exists()
+
+
+async def test_removal_and_submission_serialize_filesystem_decisions(exports):
+    await worker(await submit(exports)).run_loop()
+    submitted, removed = await asyncio.gather(
+        exports.client.post(f"/api/models/{exports.source.id}/exports/torch"),
+        exports.client.delete(f"/api/models/{exports.source.id}/exports/torch"),
+    )
+    assert (submitted.status_code, removed.status_code) in {(409, 204), (202, 204)}
+    assert not exports.target.exists()

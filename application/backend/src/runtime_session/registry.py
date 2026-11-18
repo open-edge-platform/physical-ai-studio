@@ -13,7 +13,7 @@ import contextlib
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from exceptions import DeviceInUseError
+from exceptions import DeviceInUseError, ResourceInUseError, ResourceType
 from runtime_session.dataset import sessions_recording_into
 
 if TYPE_CHECKING:
@@ -28,6 +28,8 @@ class RuntimeSessionRegistry:
         self._sessions: dict[str, RuntimeSession] = {}
         self._robots: dict[UUID, RuntimeSession] = {}
         self._watchers: set[asyncio.Queue[None]] = set()
+        self._model_exports: dict[tuple[UUID, str], int] = {}
+        self._export_deletions: set[tuple[UUID, str]] = set()
 
     def add(self, session: RuntimeSession) -> None:
         self._sessions[session.id] = session
@@ -59,6 +61,38 @@ class RuntimeSessionRegistry:
 
     def sessions(self) -> list[RuntimeSession]:
         return list(self._sessions.values())
+
+    @contextmanager
+    def reading_model_export(self, model_id: UUID, backend: str) -> Iterator[None]:
+        """Keep an export available throughout loading, inference, and teardown."""
+        key = (model_id, backend)
+        if key in self._export_deletions:
+            raise ResourceInUseError(
+                ResourceType.MODEL, model_id, "This export is being removed. Try loading it later."
+            )
+        self._model_exports[key] = self._model_exports.get(key, 0) + 1
+        try:
+            yield
+        finally:
+            self._model_exports[key] -= 1
+            if self._model_exports[key] == 0:
+                del self._model_exports[key]
+
+    @contextmanager
+    def deleting_model_export(self, model_id: UUID, backend: str) -> Iterator[None]:
+        """Exclude inference readers and overlapping removals while deleting files."""
+        key = (model_id, backend)
+        if key in self._model_exports or key in self._export_deletions:
+            raise ResourceInUseError(
+                ResourceType.MODEL,
+                model_id,
+                "This export is in use. Unload the model or wait for the current removal to finish.",
+            )
+        self._export_deletions.add(key)
+        try:
+            yield
+        finally:
+            self._export_deletions.remove(key)
 
     def claim_robots(self, session: RuntimeSession, robots: dict[UUID, str]) -> None:
         """Claim every robot (id to display name) for ``session``, or none of them.

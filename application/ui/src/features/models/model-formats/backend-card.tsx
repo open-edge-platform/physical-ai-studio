@@ -6,6 +6,7 @@ import { DownloadIcon } from '@geti-ui/ui/icons';
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
+import { RemoveBackendDialog } from './remove-backend-dialog';
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
 import classes from './model-formats.module.css';
@@ -185,6 +186,12 @@ export const BackendCard = ({ modelDetail, backendType, model, children, isExpor
                                             </Icon>
                                             <span>Download</span>
                                         </Button>
+                                        <DialogTrigger>
+                                            <Button variant='negative'>Remove model</Button>
+                                            {(close) => (
+                                                <RemoveBackendDialog model={model} backend={backendType} close={close} />
+                                            )}
+                                        </DialogTrigger>
                                     </Flex>
                                 </View>
                             )}
