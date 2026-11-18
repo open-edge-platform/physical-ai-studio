@@ -686,10 +686,17 @@ async def test_a_simulation_without_an_autopilot_status_reports_none(robot: Simp
 async def test_the_simulation_reports_which_options_its_scene_takes(robot: SimpleNamespace) -> None:
     """The recording page shows only the options the running scene takes, from the protocol's GET."""
     from physicalai_studio_plugin.autopilot import AUTOPILOT_PATH
-    from physicalai_studio_plugin.testing.autopilot import example
 
     responses = sim_api(EXTERNAL)
-    responses[f"{EXTERNAL}{AUTOPILOT_PATH}"] = example("info_supported") | {"options": ["max_attempts"]}
+    responses[f"{EXTERNAL}{AUTOPILOT_PATH}"] = {
+        "protocol": 1,
+        "scene": "bucket_sort",
+        "supported": True,
+        "reason": None,
+        "options": ["max_attempts"],
+        "joint_names": ["joint_0", "gripper"],
+        "episode": None,
+    }
     launch = SimpleNamespace(owner_name=lambda payload: payload.name, autopilot=SimpleNamespace(path=AUTOPILOT_PATH))
     registry = SimpleNamespace(get_definition=lambda _type: SimpleNamespace(simulation=launch))
     manager = fake_manager(Simulation)
