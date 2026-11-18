@@ -129,6 +129,7 @@ class _LeRobotDatasetAdapter(Dataset):
         force_cache_sync: bool = False,
         download_videos: bool = True,
         video_backend: str | None = None,
+        return_uint8: bool = False,
         batch_encoding_size: int = 1,
         state_columns: list[str] | None = None,
         action_columns: list[str] | None = None,
@@ -158,6 +159,9 @@ class _LeRobotDatasetAdapter(Dataset):
                 Defaults to `True`.
             video_backend (str | None, optional): Backend to use for video decoding.
                 Defaults to `None`.
+            return_uint8 (bool, optional): Return RGB frames as uint8 in [0, 255] instead of
+                float32 in [0, 1]. Image transforms and the policy must support uint8 inputs.
+                Defaults to `False`.
             batch_encoding_size (int, optional): Number of samples per encoded batch.
                 Defaults to `1`.
             state_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
@@ -193,6 +197,7 @@ class _LeRobotDatasetAdapter(Dataset):
             force_cache_sync=force_cache_sync,
             download_videos=download_videos,
             video_backend=video_backend,
+            return_uint8=return_uint8,
             batch_encoding_size=batch_encoding_size,
         )
 

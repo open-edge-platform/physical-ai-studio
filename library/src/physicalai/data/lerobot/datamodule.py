@@ -137,6 +137,7 @@ class LeRobotDataModule(DataModule):
         force_cache_sync: bool = False,
         download_videos: bool = True,
         video_backend: str | None = None,
+        return_uint8: bool = False,
         batch_encoding_size: int = 1,
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
         state_columns: list[str] | None = None,
@@ -186,6 +187,10 @@ class LeRobotDataModule(DataModule):
                 Defaults to `True`.
             video_backend (str | None, optional): Backend to use for video decoding.
                 Defaults to `None`.
+            return_uint8 (bool, optional): Return RGB frames as uint8 in [0, 255] instead of
+                float32 in [0, 1], reducing batch memory and transfer size by four. Requires
+                compatible image transforms and policy preprocessing. Defaults to `False`.
+                A pre-initialized `dataset` keeps its own setting.
             batch_encoding_size (int, optional): Number of samples per encoded batch.
                 Defaults to `1`.
             data_format (Literal["physicalai", "lerobot"] | DataFormat, optional):
@@ -321,6 +326,7 @@ class LeRobotDataModule(DataModule):
                     force_cache_sync=force_cache_sync,
                     download_videos=download_videos,
                     video_backend=video_backend,
+                    return_uint8=return_uint8,
                     batch_encoding_size=batch_encoding_size,
                     state_columns=state_columns,
                     action_columns=action_columns,
@@ -336,6 +342,7 @@ class LeRobotDataModule(DataModule):
                         force_cache_sync=force_cache_sync,
                         download_videos=download_videos,
                         video_backend=video_backend,
+                        return_uint8=return_uint8,
                         batch_encoding_size=batch_encoding_size,
                         state_columns=state_columns,
                         action_columns=action_columns,
@@ -356,6 +363,7 @@ class LeRobotDataModule(DataModule):
                     force_cache_sync=force_cache_sync,
                     download_videos=download_videos,
                     video_backend=video_backend,
+                    return_uint8=return_uint8,
                     batch_encoding_size=batch_encoding_size,
                 )
         else:
