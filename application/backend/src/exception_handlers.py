@@ -34,7 +34,9 @@ def _log_handled_exception(request: Request, http_status: int, summary: str, exc
     if http_status >= 500:
         logger.opt(exception=exception).error(f"{location} -> {http_status} {summary}")
         return
-    cause = exception.__cause__ or exception.__context__
+    cause = exception.__cause__
+    if cause is None and not exception.__suppress_context__:
+        cause = exception.__context__
     if cause is not None:
         logger.opt(exception=cause).warning(f"{location} -> {http_status} {summary} (cause: {cause!r})")
     else:
