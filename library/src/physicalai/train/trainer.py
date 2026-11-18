@@ -194,9 +194,8 @@ class Trainer(lightning.Trainer):
         if auto_scale_batch_size:
             callbacks.append(BatchSizeFinder(mode="power"))
 
-        if allow_tf32:
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+        torch.backends.cudnn.allow_tf32 = allow_tf32
 
         if cudnn_benchmark:
             torch.backends.cudnn.benchmark = True
