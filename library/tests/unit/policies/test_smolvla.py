@@ -1123,6 +1123,19 @@ class TestActionPaddingMask:
         assert self._compute_val_loss(torch.full((2, 3, 2), 4.0), None) == pytest.approx(4.0)
 
 
+class TestTrainingNoise:
+    """Deterministic inference must not disable random training noise."""
+
+    @pytest.mark.parametrize("training", [True, False])
+    def test_zero_noise_only_at_inference(self, training: bool) -> None:
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        stub = SimpleNamespace(_use_random_input_noise=False, training=training)
+        noise = VLAFlowMatching._sample_noise(stub, (2, 4, 3), torch.device("cpu"))
+
+        assert bool(noise.any()) is training
+
+
 class TestNoiseDefault:
     def test_random_noise_is_on_by_default(self) -> None:
         """The model uses this flag for the training noise too; zero training noise lets the
