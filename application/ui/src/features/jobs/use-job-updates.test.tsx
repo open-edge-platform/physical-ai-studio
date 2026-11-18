@@ -8,6 +8,7 @@ import { act, waitFor } from '@testing-library/react';
 import { issueToasts } from '../../components/notification/issue-toasts';
 import { createQueryClient } from '../../query-client/query-client';
 import { getMockedDatasetImportJob } from '../../test-utils/mocks/mock-dataset-import-job';
+import { getMockedModelExportJob } from '../../test-utils/mocks/mock-model-export-job';
 import { getMockedOperationalIssue } from '../../test-utils/mocks/mock-operational-issue';
 import { getMockedTrainJob } from '../../test-utils/mocks/mock-train-job';
 import { renderHook } from '../../test-utils/render';
@@ -187,5 +188,29 @@ describe('useJobUpdates', () => {
         });
 
         expect(queryClient.getQueryState(JOBS_QUERY_KEY)?.isInvalidated).toBe(true);
+    });
+
+    it('refreshes model details and available backends after export', () => {
+        const queryClient = createQueryClient();
+        queryClient.setQueryData(JOBS_QUERY_KEY, []);
+        const key = (model_id: string) => ['get', '/api/models/{model_id}', { params: { path: { model_id } } }];
+        queryClient.setQueryData(key('model-1'), {});
+        queryClient.setQueryData(key('other-model'), {});
+        queryClient.setQueryData(modelsQueryKey(PROJECT_ID), []);
+        renderHook(() => useJobUpdates(PROJECT_ID), { queryClient });
+        deliver(
+            getMockedModelExportJob({
+                status: 'completed',
+                payload: {
+                    model_id: 'model-1',
+                    cancellation_requested: false,
+                    operation: 'export',
+                    backend: 'torch',
+                },
+            })
+        );
+        expect(queryClient.getQueryState(key('model-1'))?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(key('other-model'))?.isInvalidated).toBe(false);
+        expect(queryClient.getQueryState(modelsQueryKey(PROJECT_ID))?.isInvalidated).toBe(true);
     });
 });

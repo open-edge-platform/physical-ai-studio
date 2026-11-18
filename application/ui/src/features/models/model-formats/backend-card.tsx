@@ -16,6 +16,7 @@ import { DownloadIcon } from '@geti-ui/ui/icons';
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
+import { ExportJobControls } from './export-job-controls';
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
@@ -63,8 +64,8 @@ export const Unavailable = ({ backend }: { backend: InferenceBackendConfig }) =>
                 <Heading>Export missing</Heading>
                 <Content>
                     <Text>
-                        This model does not include an exported model for {backend.label}. Try retraining the model to
-                        restart the model export.
+                        This model does not include an export for {backend.label}. Export the stored checkpoint when
+                        this backend is supported and installed.
                     </Text>
                 </Content>
             </ContextualHelp>
@@ -127,6 +128,7 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
     const exportDetail = modelDetail.exports.find(({ type }) => type === backendType);
     const isAvailable = exportDetail !== undefined;
     const backend = INFERENCE_BACKENDS[backendType];
+    const exportAction = modelDetail.available_actions?.find((action) => action.backend === backendType);
     const downloadUrl = fetchClient.PATH('/api/models/{model_id}/exports/{backend}/download', {
         params: { path: { model_id: model.id!, backend: backendType } },
     });
@@ -151,6 +153,11 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                 </View>
 
                 <Divider size='S' />
+                {exportAction && (
+                    <View paddingX='size-200'>
+                        <ExportJobControls modelId={model.id!} action={exportAction} />
+                    </View>
+                )}
 
                 <View paddingX='size-200'>
                     <Flex gap='size-200' wrap='wrap' marginTop='size-100' width='100%'>

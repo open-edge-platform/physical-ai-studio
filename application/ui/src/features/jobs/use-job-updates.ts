@@ -51,6 +51,19 @@ export const useJobUpdates = (project_id?: string) => {
 
         addJob(job);
 
+        if (job.type === 'model_export' && job.status === 'completed') {
+            client.invalidateQueries({
+                queryKey: ['get', '/api/models/{model_id}', { params: { path: { model_id: job.payload.model_id } } }],
+            });
+            client.invalidateQueries({
+                queryKey: [
+                    'get',
+                    '/api/projects/{project_id}/models',
+                    { params: { path: { project_id: job.project_id } } },
+                ],
+            });
+        }
+
         if (!isTrainJob(job)) {
             return;
         }
@@ -74,6 +87,7 @@ export const useJobUpdates = (project_id?: string) => {
 
     const onOpen = () => {
         client.invalidateQueries({ queryKey: JOBS_QUERY_KEY });
+        client.invalidateQueries({ queryKey: ['get', '/api/models/{model_id}'] });
     };
 
     useWebSocket(fetchClient.PATH('/api/jobs/ws'), {
