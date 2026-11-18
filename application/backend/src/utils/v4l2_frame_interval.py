@@ -78,14 +78,14 @@ def fix_device_frame_interval(device: str | Path, fps: int = DEFAULT_FPS) -> boo
     if not sys.platform.startswith("linux"):
         return False
 
-    fd = None
     try:
         fd = os.open(device, os.O_RDWR | os.O_NONBLOCK)
-        return _repair_open_device(fd, device, fps)
     except OSError:
         return False
-    finally:
-        if fd is not None:
+    else:
+        try:
+            return _repair_open_device(fd, device, fps)
+        finally:
             os.close(fd)
 
 

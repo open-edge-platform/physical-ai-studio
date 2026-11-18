@@ -11,13 +11,13 @@
 #
 #   # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start
 #   physicalai fit \
-#       --config configs/physicalai/smolvla/pusht/snapflow.yaml \
-#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
+#       --config configs/physicalai/smolvla/pusht/snapflow_distillation.yaml \
+#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/<phase-1>.ckpt
 #
 # `--weights_from` loads only the phase-1 state_dict and then re-applies this
 # config's model init_args (train_expert_only, snapflow_enabled, ...) on top of
 # it. It does NOT resume the optimizer, LR schedule, or global step — training
-# starts fresh at step 0 with this file's own trainer.max_steps budget.
+# starts fresh at step 0 with this file's own trainer.max_epochs budget.
 #
 # Do not use `--fit.ckpt_path` for the phase-2 handoff: that performs a full
 # Lightning resume, which restores the phase-1 optimizer state (one param group
@@ -32,7 +32,7 @@
 #   Add SnapFlowPhaseCallback to trainer.callbacks in
 #   configs/physicalai/smolvla/pusht/default.yaml with a
 #   start_epoch (or start_step) boundary and run a single `physicalai fit`.
-#   See configs/physicalai/pi05/so101/snapflow.yaml for a
+#   See configs/physicalai/pi05/so101/finetune_and_snapflow.yaml for a
 #   worked example.
 #
 # See docs/how-to/training/snapflow_distillation.md.

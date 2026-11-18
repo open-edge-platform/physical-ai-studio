@@ -459,7 +459,14 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
         await goToSmolVlaTrainingParameters(user);
-        await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        expect(screen.getByRole('region', { name: 'Additional options' })).toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        const snapflowCheckbox = await screen.findByRole('checkbox', { name: /snapflow distillation/i });
+        await user.click(snapflowCheckbox);
+        expect(screen.getByRole('textbox', { name: 'Distillation epochs' })).toBeEnabled();
+        await user.click(snapflowCheckbox);
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        await user.click(snapflowCheckbox);
         await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 

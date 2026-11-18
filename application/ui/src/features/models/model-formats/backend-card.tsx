@@ -153,17 +153,20 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                 <Divider size='S' />
 
                 <View paddingX='size-200'>
-                    <Flex gap='size-400' marginTop='size-100' width='100%'>
-                        <ModelFormatSize exportDetail={exportDetail} />
-                        <ModelPrecision exportDetail={exportDetail} />
+                    <Flex gap='size-200' wrap='wrap' marginTop='size-100' width='100%'>
+                        <Flex gap='size-400' flexShrink={0}>
+                            <ModelFormatSize exportDetail={exportDetail} />
+                            <ModelPrecision exportDetail={exportDetail} />
+                        </Flex>
                         {isAvailable && (
-                            <View marginStart='auto' alignSelf={'center'}>
-                                <Flex gap='size-100'>
+                            <View marginStart='auto' alignSelf={'center'} maxWidth='100%' flexShrink={0}>
+                                <Flex direction='column' gap='size-100'>
                                     {backendType === 'openvino' && (
                                         <DialogTrigger>
                                             <Button
                                                 aria-label={`Download ${backend.label} runtime export`}
                                                 variant='secondary'
+                                                UNSAFE_style={{ whiteSpace: 'nowrap' }}
                                             >
                                                 Runtime export
                                             </Button>
@@ -185,6 +188,7 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                                             textDecoration: 'none',
                                             paddingInline: 'var(--spectrum-global-dimension-size-200)',
                                             alignItems: 'center',
+                                            whiteSpace: 'nowrap',
                                         }}
                                         target='_blank'
                                         rel='noopener noreferrer'

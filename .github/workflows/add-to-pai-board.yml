@@ -2,12 +2,12 @@
 # (open-edge-platform/projects/45), and archives them when closed so Done
 # work does not stay on the board.
 #
-# Uses addProjectV2ItemById (linked issue/PR), not draft issues, and skips
-# when the content is already on the board so reruns do not duplicate cards.
+# Looks up items via the project (not Issue.projectItems), so the same
+# workflow works for same-org and cross-org items. Treats
+# "Content already exists" as success so opened+labeled races are harmless.
 #
-# Requires repository secret PAI_BOARD_TOKEN: a fine-grained PAT or GitHub App
-# token with access to open-edge-platform projects (read/write projects) and
-# read access to this repository's issues and pull requests.
+# Requires repository secret PAI_BOARD_TOKEN with Projects write on
+# open-edge-platform and SAML SSO authorized for that org.
 name: Add to Physical AI board
 
 on:
@@ -57,44 +57,71 @@ jobs:
         run: |
           set -euo pipefail
 
-          ITEMS_JSON="$(gh api graphql -f query='
-            query($content:ID!) {
-              node(id: $content) {
-                ... on Issue {
-                  projectItems(first: 20) {
-                    nodes {
-                      id
-                      isArchived
-                      project { ... on ProjectV2 { id } }
+          find_item() {
+            local want_archived="$1"
+            local cursor=""
+            local page
+            while true; do
+              if [ -n "$cursor" ]; then
+                page="$(gh api graphql -f query='
+                  query($project:ID!, $cursor:String!) {
+                    node(id: $project) {
+                      ... on ProjectV2 {
+                        items(first: 100, after: $cursor) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            isArchived
+                            content { ... on Node { id } }
+                          }
+                        }
+                      }
                     }
-                  }
-                }
-                ... on PullRequest {
-                  projectItems(first: 20) {
-                    nodes {
-                      id
-                      isArchived
-                      project { ... on ProjectV2 { id } }
+                  }' -f project="$PROJECT_ID" -f cursor="$cursor")"
+              else
+                page="$(gh api graphql -f query='
+                  query($project:ID!) {
+                    node(id: $project) {
+                      ... on ProjectV2 {
+                        items(first: 100) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            isArchived
+                            content { ... on Node { id } }
+                          }
+                        }
+                      }
                     }
-                  }
-                }
-              }
-            }' -f content="$CONTENT_ID")"
+                  }' -f project="$PROJECT_ID")"
+              fi
 
-          ACTIVE_ID="$(echo "$ITEMS_JSON" | jq -r --arg p "$PROJECT_ID" '
-            .data.node.projectItems.nodes[]?
-            | select(.project.id == $p and .isArchived == false)
-            | .id' | head -n1)"
-          if [ -n "$ACTIVE_ID" ] && [ "$ACTIVE_ID" != "null" ]; then
+              local id
+              id="$(echo "$page" | jq -r --arg c "$CONTENT_ID" --argjson archived "$want_archived" '
+                .data.node.items.nodes[]?
+                | select(.content.id == $c and .isArchived == $archived)
+                | .id' | head -n1)"
+              if [ -n "$id" ] && [ "$id" != "null" ]; then
+                echo "$id"
+                return 0
+              fi
+
+              local has_next end_cursor
+              has_next="$(echo "$page" | jq -r '.data.node.items.pageInfo.hasNextPage')"
+              end_cursor="$(echo "$page" | jq -r '.data.node.items.pageInfo.endCursor')"
+              if [ "$has_next" != "true" ]; then
+                return 1
+              fi
+              cursor="$end_cursor"
+            done
+          }
+
+          if ACTIVE_ID="$(find_item false)"; then
             echo "Already on board as $ACTIVE_ID; skipping."
             exit 0
           fi
 
-          ARCHIVED_ID="$(echo "$ITEMS_JSON" | jq -r --arg p "$PROJECT_ID" '
-            .data.node.projectItems.nodes[]?
-            | select(.project.id == $p and .isArchived == true)
-            | .id' | head -n1)"
-          if [ -n "$ARCHIVED_ID" ] && [ "$ARCHIVED_ID" != "null" ]; then
+          if ARCHIVED_ID="$(find_item true)"; then
             echo "Unarchiving existing item $ARCHIVED_ID"
             gh api graphql -f query='
               mutation($project:ID!, $item:ID!) {
@@ -107,13 +134,25 @@ jobs:
           fi
 
           echo "Adding content $CONTENT_ID to project $PROJECT_ID"
-          gh api graphql -f query='
+          set +e
+          ADD_OUT="$(gh api graphql -f query='
             mutation($project:ID!, $content:ID!) {
               addProjectV2ItemById(input: {projectId: $project, contentId: $content}) {
                 item { id }
               }
-            }' -f project="$PROJECT_ID" -f content="$CONTENT_ID" \
-            --jq '.data.addProjectV2ItemById.item'
+            }' -f project="$PROJECT_ID" -f content="$CONTENT_ID" 2>&1)"
+          ADD_EC=$?
+          set -e
+          if [ "$ADD_EC" -eq 0 ]; then
+            echo "$ADD_OUT" | jq -r '.data.addProjectV2ItemById.item'
+            exit 0
+          fi
+          if echo "$ADD_OUT" | grep -q 'Content already exists in this project'; then
+            echo "Content already on board (race); treating as success."
+            exit 0
+          fi
+          echo "$ADD_OUT" >&2
+          exit "$ADD_EC"
 
   archive-when-closed:
     if: github.event.action == 'closed'
@@ -134,34 +173,66 @@ jobs:
           CONTENT_ID: ${{ github.event_name == 'issues' && github.event.issue.node_id || github.event.pull_request.node_id }}
         run: |
           set -euo pipefail
-          ITEM_ID="$(gh api graphql -f query='
-            query($content:ID!) {
-              node(id: $content) {
-                ... on Issue {
-                  projectItems(first: 20) {
-                    nodes {
-                      id
-                      isArchived
-                      project { ... on ProjectV2 { id } }
+
+          find_active_item() {
+            local cursor=""
+            local page
+            while true; do
+              if [ -n "$cursor" ]; then
+                page="$(gh api graphql -f query='
+                  query($project:ID!, $cursor:String!) {
+                    node(id: $project) {
+                      ... on ProjectV2 {
+                        items(first: 100, after: $cursor) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            isArchived
+                            content { ... on Node { id } }
+                          }
+                        }
+                      }
                     }
-                  }
-                }
-                ... on PullRequest {
-                  projectItems(first: 20) {
-                    nodes {
-                      id
-                      isArchived
-                      project { ... on ProjectV2 { id } }
+                  }' -f project="$PROJECT_ID" -f cursor="$cursor")"
+              else
+                page="$(gh api graphql -f query='
+                  query($project:ID!) {
+                    node(id: $project) {
+                      ... on ProjectV2 {
+                        items(first: 100) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            isArchived
+                            content { ... on Node { id } }
+                          }
+                        }
+                      }
                     }
-                  }
-                }
-              }
-            }' -f content="$CONTENT_ID" \
-            --jq ".data.node.projectItems.nodes[]
-              | select(.project.id == \"$PROJECT_ID\" and .isArchived == false)
-              | .id" \
-            | head -n1)"
-          if [ -z "$ITEM_ID" ]; then
+                  }' -f project="$PROJECT_ID")"
+              fi
+
+              local id
+              id="$(echo "$page" | jq -r --arg c "$CONTENT_ID" '
+                .data.node.items.nodes[]?
+                | select(.content.id == $c and .isArchived == false)
+                | .id' | head -n1)"
+              if [ -n "$id" ] && [ "$id" != "null" ]; then
+                echo "$id"
+                return 0
+              fi
+
+              local has_next end_cursor
+              has_next="$(echo "$page" | jq -r '.data.node.items.pageInfo.hasNextPage')"
+              end_cursor="$(echo "$page" | jq -r '.data.node.items.pageInfo.endCursor')"
+              if [ "$has_next" != "true" ]; then
+                return 1
+              fi
+              cursor="$end_cursor"
+            done
+          }
+
+          if ! ITEM_ID="$(find_active_item)"; then
             echo "No active project item for $CONTENT_ID; nothing to archive."
             exit 0
           fi
