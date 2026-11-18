@@ -143,7 +143,7 @@ async def describe_environment(
         autopilot=tele_operator.type == "autopilot",
         simulation_url=getattr(robot.payload, "http_url", None),
         simulation_owner=_simulation_owner(definition, robot.payload),
-        autopilot_spec=getattr(definition, "autopilot", None),
+        autopilot_spec=getattr(getattr(definition, "simulation", None), "autopilot", None),
         follower_payload=robot.payload,
     )
 

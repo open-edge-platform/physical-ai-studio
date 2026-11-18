@@ -132,7 +132,8 @@ class RobotSimulationService:
         if not isinstance(http_url, str):
             return RobotSimulation(running=False, owner_name=owner_name)
 
-        autopilot_path = getattr(getattr(self._registry.get_definition(robot.type), "autopilot", None), "path", None)
+        launch = getattr(self._registry.get_definition(robot.type), "simulation", None)
+        autopilot_path = getattr(getattr(launch, "autopilot", None), "path", None)
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S, transport=self._transport) as client:
             root, health, cameras, autopilot_info = await asyncio.gather(
                 _get_json(client, f"{http_url}/"),

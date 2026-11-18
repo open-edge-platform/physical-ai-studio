@@ -106,7 +106,7 @@ def sim_factory(mock_robot_client_factory, tmp_path, rig):
 
     def definition():
         autopilot = AutopilotSpec(leader_for=rig.leader_for) if rig.has_autopilot else None
-        return SimpleNamespace(simulation=SimpleNamespace(owner_name=lambda _payload: "sim-owner"), autopilot=autopilot)
+        return SimpleNamespace(simulation=SimpleNamespace(owner_name=lambda _payload: "sim-owner", autopilot=autopilot))
 
     async def build(robot, _port_finder):
         return FakeRobot(str(tmp_path / f"{robot.id}.jsonl"), JOINTS, [1.0, 2.0]), definition()
