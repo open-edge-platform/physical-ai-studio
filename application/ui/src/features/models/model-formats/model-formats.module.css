@@ -1,0 +1,34 @@
+.addCard {
+    display: flex;
+    min-height: 170px;
+    padding: var(--spectrum-global-dimension-size-300);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spectrum-global-dimension-size-150);
+    border: 1px dashed var(--spectrum-global-color-gray-500);
+    border-radius: var(--spectrum-alias-border-radius-medium);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.addCard:not(:disabled):hover,
+.addCard:focus-visible {
+    border-color: var(--energy-blue);
+    background: var(--spectrum-global-color-gray-100);
+}
+
+.addCard:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.addTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-100);
+    font-size: 18px;
+    font-weight: 600;
+}
