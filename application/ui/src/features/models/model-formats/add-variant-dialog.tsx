@@ -57,9 +57,13 @@ export const AddVariantDialog = ({
                             ))}
                         </Flex>
                     </RadioGroup>
-                    <Text>
-                        Exporting can take several minutes and additional memory. Progress will appear on the variant
-                        card.
+                    <Text
+                        UNSAFE_style={{
+                            fontSize: '12px',
+                            color: 'var(--spectrum-global-color-gray-700)',
+                        }}
+                    >
+                        Exporting can take several minutes and additional memory.
                     </Text>
                     {isSubmitting && <div role='status'>Requesting export…</div>}
                     {hasSubmitted && Boolean(error) && (

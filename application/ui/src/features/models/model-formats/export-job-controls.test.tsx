@@ -9,16 +9,16 @@ import { render } from '../../../test-utils/render';
 import { ExportJobControls } from './export-job-controls';
 
 describe('ExportJobControls', () => {
-    it('shows indeterminate progress while requesting the export', () => {
+    it('announces the request without a progress bar', () => {
         render(<ExportJobControls label='PyTorch' isSubmitting isRetryDisabled />);
         expect(screen.getByRole('status')).toHaveTextContent('Requesting export');
-        expect(screen.getByRole('progressbar', { name: 'PyTorch export progress' })).not.toHaveAttribute(
-            'aria-valuenow'
-        );
+        expect(screen.getByRole('status', { name: 'PyTorch export status' })).toHaveTextContent('Requesting export');
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(screen.getByText('You can keep working while this export finishes.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Cancel export' })).not.toBeInTheDocument();
     });
 
-    it('shows backend-specific progress and allows canceling the job', async () => {
+    it('announces backend-specific activity and allows canceling the job', async () => {
         const canceled = rs.fn();
         server.use(
             http.post('/api/jobs/{job_id}:interrupt', ({ params }) => {
@@ -35,10 +35,8 @@ describe('ExportJobControls', () => {
                 isRetryDisabled
             />
         );
-        expect(screen.getByRole('progressbar', { name: 'PyTorch export progress' })).toHaveAttribute(
-            'aria-valuenow',
-            '35'
-        );
+        expect(screen.getByRole('status', { name: 'PyTorch export status' })).toHaveTextContent('Exporting variant');
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Cancel export' }));
         await waitFor(() => expect(canceled).toHaveBeenCalledWith('export-job-1'));
         expect(await screen.findByText('Canceling export…')).toBeInTheDocument();

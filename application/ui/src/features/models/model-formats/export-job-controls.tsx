@@ -1,9 +1,11 @@
-import { Button, Flex, ProgressBar, Text } from '@geti-ui/ui';
+import { Button, Flex, Text } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
 import { SchemaModelExportJob } from '../../../api/openapi-spec';
 import { JOBS_QUERY_KEY } from '../../jobs/use-job-cache';
+
+import classes from './model-formats.module.css';
 
 interface ExportJobControlsProps {
     label: string;
@@ -54,25 +56,17 @@ export const ExportJobControls = ({
 
     return (
         <Flex direction='column' gap='size-100'>
-            <div role='status'>
+            <div role='status' aria-label={`${label} export status`} className={classes.exportStatus}>
                 <Text>{status}</Text>
                 {!isSubmitting && job?.message && <Text> — {job.message}</Text>}
             </div>
             {(isSubmitting || isActive) && (
-                <>
-                    <ProgressBar
-                        aria-label={`${label} export progress`}
-                        size='S'
-                        width='100%'
-                        isIndeterminate={isSubmitting || job?.status === 'pending' || job?.progress === 0}
-                        value={job?.progress ?? 0}
-                    />
-                    <Text>Exporting the stored checkpoint can take several minutes.</Text>
-                </>
+                <Text UNSAFE_className={classes.exportHint}>You can keep working while this export finishes.</Text>
             )}
             {isActive && job?.id && (
                 <Button
                     variant='secondary'
+                    isQuiet
                     isPending={interrupt.isPending}
                     isDisabled={isCanceling}
                     onPress={() => interrupt.mutate({ params: { path: { job_id: job.id! } } })}
