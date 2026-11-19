@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "physicalai-gr00t-policy-plugin"
+version = "0.1.0"
+description = "NVIDIA Isaac-GR00T N1.7 training, Runtime inference, and Robotics AI Suite OpenVINO export for Physical AI"
+readme = "README.md"
+requires-python = ">=3.12, <3.15"
+license = "Apache-2.0"
+dependencies = [
+    "physicalai~=0.3.0",
+    "numpy>=1.26",
+    "uv>=0.10,<0.11",
+]
+
+[project.optional-dependencies]
+train = ["physicalai-train>=0.3.0"]
+tests = ["pytest>=9.0.3"]
+
+[project.entry-points."physicalai.engines"]
+gr00t = "physicalai_gr00t_policy_plugin.engine:Gr00tEngine"
+
+[project.entry-points."physicalai.inference.adapters"]
+gr00t = "physicalai_gr00t_policy_plugin.inference:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/physicalai_gr00t_policy_plugin"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/README.md",
+    "/pyproject.toml",
+    "/src/physicalai_gr00t_policy_plugin/**",
+]
+
+[tool.uv.sources]
+physicalai = { git = "https://github.com/samet-akcay/physicalai", branch = "feat/physicalai-isolate" }
+# Keep the optional train extra on this checkout's Runtime source.
+physicalai-train = { path = "../../../library", editable = true }
+
+[tool.ruff]
+extend = "../../../pyproject.toml"
+src = ["src", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["undocumented-public-function", "assert", "magic-value-comparison", "import-private-name", "private-member-access"]
+"src/physicalai_gr00t_policy_plugin/_worker/*.py" = ["implicit-namespace-package", "print", "import-outside-top-level"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+show_error_codes = true
+explicit_package_bases = true
