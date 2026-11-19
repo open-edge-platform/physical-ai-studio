@@ -189,6 +189,32 @@ class ACT(Model):
             torch.set_float32_matmul_precision("high")
             self.forward = torch.compile(self.forward, mode="default")  # type: ignore[method-assign]
 
+    @torch.no_grad()
+    def enable_task_conditioning(self, n_tasks: int) -> None:
+        """Add task embeddings to an unconditioned model without replacing its learned weights.
+
+        Args:
+            n_tasks: Number of tasks to condition on.
+
+        Raises:
+            ValueError: If conditioning is already enabled or fewer than two tasks are provided.
+        """
+        if self._config.n_tasks or n_tasks <= 1:
+            msg = "Task conditioning requires an unconditioned model and at least two tasks."
+            raise ValueError(msg)
+        weight = self._model.encoder_1d_feature_pos_embed.weight
+        positions = nn.Embedding(weight.shape[0] + 1, weight.shape[1], device=weight.device, dtype=weight.dtype)
+        positions.weight[:-1].copy_(weight)
+        self._model.encoder_1d_feature_pos_embed = positions
+        self._model.encoder_task_embed = nn.Embedding(
+            n_tasks,
+            weight.shape[1],
+            device=weight.device,
+            dtype=weight.dtype,
+        )
+        self._config = dataclasses.replace(self._config, n_tasks=n_tasks)
+        self._model.config = self._config
+
     @property
     def config(self) -> ACTConfig:
         """The ACT model configuration.

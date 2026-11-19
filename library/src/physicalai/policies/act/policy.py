@@ -79,7 +79,7 @@ class ACT(ExportablePolicyMixin, Policy):
         tasks: Task prompts to condition on, a prompt's position being its task index. With two or
             more, the model learns a task embedding and inference takes one of these prompts as
             ``task``. ``None`` reads them from the training dataset, so a multi-task dataset trains a
-            multi-task policy.
+            multi-task policy. An empty or single-task list keeps ACT unconditioned.
         dataset_stats: Dataset normalization statistics for eager model initialization
             (used when restoring from a checkpoint).
 
@@ -359,7 +359,7 @@ class ACT(ExportablePolicyMixin, Policy):
             dropout=self.config.dropout,
             kl_weight=self.config.kl_weight,
             compile_model=self.config.compile_model,
-            n_tasks=len(self.tasks),
+            n_tasks=len(self.tasks) if weights_file is None else 0,
         )
 
         if weights_file is not None:
@@ -376,13 +376,21 @@ class ACT(ExportablePolicyMixin, Policy):
             if missing:
                 msg = f"Missing keys when loading pretrained ACT weights (kept randomly initialized): {missing}"
                 logger.warning(msg)
+            if self.tasks:
+                self.model.enable_task_conditioning(len(self.tasks))
+
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Keep a restored checkpoint's task mapping, including legacy unconditioned checkpoints."""
+        super().on_load_checkpoint(checkpoint)
+        if self.hparams.get("tasks") is None:
+            self.hparams["tasks"] = list(self.tasks)
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
 
         This method is called by Lightning before fit/validate/test/predict.
-        It extracts features from the datamodule's training dataset and
-        initializes the policy if it wasn't already created in __init__.
+        It resolves tasks from the training dataset and initializes the model
+        or adds task conditioning to an eagerly initialized model.
 
         Args:
             stage: The stage of training ('fit', 'validate', 'test', or 'predict')
@@ -400,6 +408,14 @@ class ACT(ExportablePolicyMixin, Policy):
             msg = f"Expected train_dataset to be physicalai.data.Dataset, got {type(train_dataset)}."
             raise TypeError(msg)
 
+        if self.hparams.get("tasks") is None:
+            tasks = list(train_dataset.tasks)
+            self.tasks = tasks if len(tasks) > 1 else []
+            self.hparams["tasks"] = list(self.tasks)
+            self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
+            if self.model is not None and self.tasks:
+                self.model.enable_task_conditioning(len(self.tasks))
+
         if self.model is not None:
             reformat_dataset_to_match_policy(self, datamodule)
             return
@@ -411,11 +427,6 @@ class ACT(ExportablePolicyMixin, Policy):
         )
 
         self.hparams["dataset_stats"] = stats_dict
-
-        if not self.tasks and len(train_dataset.tasks) > 1:
-            self.tasks = train_dataset.tasks
-            self.hparams["tasks"] = self.tasks
-            self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
 
         self._initialize_model(stats_dict)
 
