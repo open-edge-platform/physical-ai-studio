@@ -113,45 +113,48 @@ describe('ModelFormats', () => {
         ]);
     });
 
-    it('offers deleted exports again instead of showing cards for old completed jobs', async () => {
-        server.use(
-            http.get('/api/models/{model_id}', () =>
-                HttpResponse.json(getMockedModelDetail({ exports: [getMockedBackendExportDetail()] }))
-            ),
-            http.get('/api/jobs', () =>
-                HttpResponse.json([
-                    getMockedModelExportJob({
-                        id: 'old-failed-job',
-                        status: 'failed',
-                        created_at: '2026-11-18T10:00:00Z',
-                        payload: {
-                            model_id: 'model-1',
-                            backend: 'onnx',
-                            operation: 'export',
-                            cancellation_requested: false,
-                        },
-                    }),
-                    getMockedModelExportJob({
-                        status: 'completed',
-                        created_at: '2026-11-19T10:00:00Z',
-                        payload: {
-                            model_id: 'model-1',
-                            backend: 'onnx',
-                            operation: 'export',
-                            cancellation_requested: false,
-                        },
-                    }),
-                ])
-            )
-        );
-        render(<ModelFormats model={model} />);
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled());
-        expect(screen.getByRole('region', { name: 'PyTorch variant' })).toBeInTheDocument();
-        expect(screen.queryByRole('region', { name: 'ONNX variant' })).not.toBeInTheDocument();
-        expect(screen.queryByText(/Refreshing variant/)).not.toBeInTheDocument();
-        await userEvent.setup().click(screen.getByRole('button', { name: 'Add variant' }));
-        expect(screen.getByRole('radio', { name: /ONNX/ })).toBeInTheDocument();
-    });
+    it.each(['completed', 'canceled'] as const)(
+        'offers the backend again after a %s job without reviving older failures',
+        async (status) => {
+            server.use(
+                http.get('/api/models/{model_id}', () =>
+                    HttpResponse.json(getMockedModelDetail({ exports: [getMockedBackendExportDetail()] }))
+                ),
+                http.get('/api/jobs', () =>
+                    HttpResponse.json([
+                        getMockedModelExportJob({
+                            id: 'old-failed-job',
+                            status: 'failed',
+                            created_at: '2026-11-18T10:00:00Z',
+                            payload: {
+                                model_id: 'model-1',
+                                backend: 'onnx',
+                                operation: 'export',
+                                cancellation_requested: false,
+                            },
+                        }),
+                        getMockedModelExportJob({
+                            status,
+                            created_at: '2026-11-19T10:00:00Z',
+                            payload: {
+                                model_id: 'model-1',
+                                backend: 'onnx',
+                                operation: 'export',
+                                cancellation_requested: false,
+                            },
+                        }),
+                    ])
+                )
+            );
+            render(<ModelFormats model={model} />);
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled());
+            expect(screen.getByRole('region', { name: 'PyTorch variant' })).toBeInTheDocument();
+            expect(screen.queryByRole('region', { name: 'ONNX variant' })).not.toBeInTheDocument();
+            expect(screen.queryByText(/Refreshing variant/)).not.toBeInTheDocument();
+            await userEvent.setup().click(screen.getByRole('button', { name: 'Add variant' }));
+            expect(screen.getByRole('radio', { name: /ONNX/ })).toBeInTheDocument();
+        }
+    );
 
     it('can request a new export when a previous job for that backend completed', async () => {
         const oldJob = getMockedModelExportJob({ status: 'completed', message: 'Old export created' });
@@ -223,7 +226,10 @@ describe('ModelFormats', () => {
         act(() => {
             queryClient.setQueryData(JOBS_QUERY_KEY, [getMockedModelExportJob({ status: 'running', progress: 40 })]);
         });
-        await waitFor(() => expect(within(card).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40'));
+        await waitFor(() => expect(within(card).getByRole('status')).toHaveTextContent('Exporting variant'));
+        expect(card).toHaveAttribute('aria-busy', 'true');
+        expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(within(card).queryByText('Size')).not.toBeInTheDocument();
 
         act(() => {
             queryClient.setQueryData(
@@ -236,6 +242,8 @@ describe('ModelFormats', () => {
         });
         expect(await screen.findByRole('button', { name: 'Download PyTorch export' })).toBeInTheDocument();
         expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+        expect(card).toHaveAttribute('aria-busy', 'false');
+        expect(within(card).getByText('Size')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled();
     });
 
@@ -262,6 +270,39 @@ describe('ModelFormats', () => {
         expect(within(card).getByRole('button', { name: 'Cancel export' })).toBeInTheDocument();
         expect(screen.queryByRole('region', { name: 'ONNX variant' })).not.toBeInTheDocument();
         expect(screen.queryByRole('region', { name: 'OpenVINO variant' })).not.toBeInTheDocument();
+    });
+
+    it.each(['pending', 'running', 'failed'] as const)(
+        'shows the background-export treatment only for active jobs (%s)',
+        async (status) => {
+            server.use(http.get('/api/jobs', () => HttpResponse.json([getMockedModelExportJob({ status })])));
+            render(<ModelFormats model={model} />);
+            const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+            const isActive = status === 'pending' || status === 'running';
+            expect(card).toHaveAttribute('aria-busy', String(isActive));
+            expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+            if (isActive) {
+                expect(within(card).queryByText('Size')).not.toBeInTheDocument();
+                expect(within(card).getByRole('button', { name: 'Cancel export' })).toBeEnabled();
+            } else {
+                expect(within(card).getByText('Size')).toBeInTheDocument();
+                expect(within(card).getByRole('button', { name: 'Retry export' })).toBeEnabled();
+            }
+        }
+    );
+
+    it('keeps existing exports visible even when the latest export job was canceled', async () => {
+        server.use(
+            http.get('/api/models/{model_id}', () =>
+                HttpResponse.json(getMockedModelDetail({ exports: [getMockedBackendExportDetail()] }))
+            ),
+            http.get('/api/jobs', () => HttpResponse.json([getMockedModelExportJob({ status: 'canceled' })]))
+        );
+        render(<ModelFormats model={model} />);
+        const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+        expect(within(card).getByRole('button', { name: 'Download PyTorch export' })).toBeEnabled();
+        expect(within(card).queryByRole('button', { name: 'Retry export' })).not.toBeInTheDocument();
+        expect(card).toHaveAttribute('aria-busy', 'false');
     });
 
     it('keeps existing variants usable while another backend exports', async () => {

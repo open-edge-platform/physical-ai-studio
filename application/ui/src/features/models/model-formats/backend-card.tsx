@@ -8,6 +8,8 @@ import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
+import classes from './model-formats.module.css';
+
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
 type ExportBackend = components['schemas']['physicalai__export__backends__ExportBackend'];
 type ModelDetailResponse = components['schemas']['ModelDetailResponse'];
@@ -93,9 +95,10 @@ interface BackendCardProps {
     backendType: ExportBackend;
     model: SchemaModel;
     children?: ReactNode;
+    isExporting?: boolean;
 }
 
-export const BackendCard = ({ modelDetail, backendType, model, children }: BackendCardProps) => {
+export const BackendCard = ({ modelDetail, backendType, model, children, isExporting = false }: BackendCardProps) => {
     const exportDetail = modelDetail.exports.find(({ type }) => type === backendType);
     const isAvailable = exportDetail !== undefined;
     const backend = INFERENCE_BACKENDS[backendType];
@@ -109,14 +112,20 @@ export const BackendCard = ({ modelDetail, backendType, model, children }: Backe
             paddingY='size-200'
             borderRadius={'medium'}
             borderWidth='thin'
-            borderColor={'gray-100'}
+            borderColor={isExporting ? 'transparent' : 'gray-100'}
             height='100%'
+            UNSAFE_className={isExporting ? classes.exportingCard : undefined}
         >
+            {isExporting && (
+                <svg className={classes.exportBorder} aria-hidden='true' focusable='false'>
+                    <rect x='1' y='1' rx='8' />
+                </svg>
+            )}
             <Flex direction='column' gap='size-200' height='100%'>
-                <View paddingX='size-200'>
+                <View paddingX='size-200' UNSAFE_className={isExporting ? classes.exportingIdentity : undefined}>
                     <Flex justifyContent={'space-between'}>
                         <Flex direction='column' gap='size-100' marginEnd='size-200' justifyContent='center'>
-                            <InferenceBackendLogo backend={backend} isAvailable={isAvailable} />
+                            <InferenceBackendLogo backend={backend} isAvailable={isAvailable || isExporting} />
                         </Flex>
                     </Flex>
                 </View>
@@ -124,58 +133,64 @@ export const BackendCard = ({ modelDetail, backendType, model, children }: Backe
                 <Divider size='S' />
                 {children && <View paddingX='size-200'>{children}</View>}
 
-                <View paddingX='size-200' marginTop='auto' UNSAFE_style={isAvailable ? undefined : { opacity: 0.4 }}>
-                    <Flex gap='size-200' wrap='wrap' alignItems='end' marginTop='size-100' width='100%'>
-                        <Flex gap='size-400' flexShrink={0}>
-                            <ModelFormatSize exportDetail={exportDetail} />
-                            <ModelPrecision exportDetail={exportDetail} />
+                {!isExporting && (
+                    <View
+                        paddingX='size-200'
+                        marginTop='auto'
+                        UNSAFE_style={isAvailable ? undefined : { opacity: 0.4 }}
+                    >
+                        <Flex gap='size-200' wrap='wrap' alignItems='end' marginTop='size-100' width='100%'>
+                            <Flex gap='size-400' flexShrink={0}>
+                                <ModelFormatSize exportDetail={exportDetail} />
+                                <ModelPrecision exportDetail={exportDetail} />
+                            </Flex>
+                            {isAvailable && (
+                                <View marginStart='auto' maxWidth='100%' flexShrink={0}>
+                                    <Flex direction='column' gap='size-100'>
+                                        {backendType === 'openvino' && (
+                                            <DialogTrigger>
+                                                <Button
+                                                    aria-label={`Download ${backend.label} runtime export`}
+                                                    variant='secondary'
+                                                    UNSAFE_style={{ whiteSpace: 'nowrap' }}
+                                                >
+                                                    Runtime export
+                                                </Button>
+                                                {(close) => (
+                                                    <RuntimeExportDialog
+                                                        close={close}
+                                                        model={model}
+                                                        backend={backendType}
+                                                    />
+                                                )}
+                                            </DialogTrigger>
+                                        )}
+                                        <Button
+                                            href={downloadUrl}
+                                            aria-label={`Download ${backend.label} export`}
+                                            UNSAFE_style={{
+                                                color: 'inherit',
+                                                display: 'inline-flex',
+                                                textDecoration: 'none',
+                                                paddingInline: 'var(--spectrum-global-dimension-size-200)',
+                                                alignItems: 'center',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                            target='_blank'
+                                            rel='noopener noreferrer'
+                                            variant='secondary'
+                                        >
+                                            <Icon marginEnd='size-100'>
+                                                <DownloadIcon />
+                                            </Icon>
+                                            <span>Download</span>
+                                        </Button>
+                                    </Flex>
+                                </View>
+                            )}
                         </Flex>
-                        {isAvailable && (
-                            <View marginStart='auto' maxWidth='100%' flexShrink={0}>
-                                <Flex direction='column' gap='size-100'>
-                                    {backendType === 'openvino' && (
-                                        <DialogTrigger>
-                                            <Button
-                                                aria-label={`Download ${backend.label} runtime export`}
-                                                variant='secondary'
-                                                UNSAFE_style={{ whiteSpace: 'nowrap' }}
-                                            >
-                                                Runtime export
-                                            </Button>
-                                            {(close) => (
-                                                <RuntimeExportDialog
-                                                    close={close}
-                                                    model={model}
-                                                    backend={backendType}
-                                                />
-                                            )}
-                                        </DialogTrigger>
-                                    )}
-                                    <Button
-                                        href={downloadUrl}
-                                        aria-label={`Download ${backend.label} export`}
-                                        UNSAFE_style={{
-                                            color: 'inherit',
-                                            display: 'inline-flex',
-                                            textDecoration: 'none',
-                                            paddingInline: 'var(--spectrum-global-dimension-size-200)',
-                                            alignItems: 'center',
-                                            whiteSpace: 'nowrap',
-                                        }}
-                                        target='_blank'
-                                        rel='noopener noreferrer'
-                                        variant='secondary'
-                                    >
-                                        <Icon marginEnd='size-100'>
-                                            <DownloadIcon />
-                                        </Icon>
-                                        <span>Download</span>
-                                    </Button>
-                                </Flex>
-                            </View>
-                        )}
-                    </Flex>
-                </View>
+                    </View>
+                )}
             </Flex>
         </View>
     );

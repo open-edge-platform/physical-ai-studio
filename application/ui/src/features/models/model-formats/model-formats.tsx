@@ -42,6 +42,7 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
     const incompleteJobs = modelJobs.filter(
         (job, index) =>
             job.status !== 'completed' &&
+            job.status !== 'canceled' &&
             modelJobs.findIndex(({ payload }) => payload.backend === job.payload.backend) === index
     );
     const backends = [
@@ -93,6 +94,8 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                                 payload.backend === backendType && (status === 'pending' || status === 'running')
                         ) ?? modelJobs.find(({ payload }) => payload.backend === backendType);
                     const isSubmitting = exportModel.isPending && requestedBackend === backendType;
+                    const isExportInProgress =
+                        !isAvailable && (isSubmitting || job?.status === 'pending' || job?.status === 'running');
                     const error = requestedBackend === backendType ? exportModel.error : undefined;
                     const canRetry = modelDetail.available_actions?.some(
                         ({ backend, operation }) => backend === backendType && operation === 'export'
@@ -101,9 +104,14 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                         <section
                             key={backendType}
                             aria-label={`${INFERENCE_BACKENDS[backendType].label} variant`}
-                            aria-busy={isSubmitting || job?.status === 'pending' || job?.status === 'running'}
+                            aria-busy={isExportInProgress}
                         >
-                            <BackendCard backendType={backendType} model={model} modelDetail={modelDetail}>
+                            <BackendCard
+                                backendType={backendType}
+                                model={model}
+                                modelDetail={modelDetail}
+                                isExporting={isExportInProgress}
+                            >
                                 {!isAvailable && (
                                     <ExportJobControls
                                         key={job?.id}

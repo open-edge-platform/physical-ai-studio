@@ -5,6 +5,44 @@ import { getMockedBackendExportDetail, getMockedModelDetail } from '../src/test-
 import { getMockedModelExportJob } from '../src/test-utils/mocks/mock-model-export-job';
 import { expect, http, test } from './fixtures';
 
+test('removes a canceled export card and keeps it hidden after a refresh', async ({ page, network }) => {
+    const model = getMockedModel({ available_backends: ['torch'], dataset_id: null });
+    const detail = getMockedModelDetail({ model, exports: [getMockedBackendExportDetail()] });
+    const payload = {
+        model_id: model.id!,
+        backend: 'onnx',
+        operation: 'export',
+        cancellation_requested: false,
+    } as const;
+    let job = getMockedModelExportJob({ payload, status: 'running' });
+    await page.routeWebSocket('**/api/jobs/ws', () => {});
+    await page.routeWebSocket('**/api/projects/*/runtime/ws', (socket) => socket.close());
+    network.use(
+        http.get('/api/projects/{project_id}/models', () => HttpResponse.json([model])),
+        http.get('/api/models/{model_id}', () => HttpResponse.json(detail)),
+        http.get('/api/jobs', () => HttpResponse.json([job])),
+        http.post('/api/jobs/{job_id}:interrupt', () => {
+            job = { ...job, status: 'canceled' };
+            return HttpResponse.json(job);
+        })
+    );
+    await page.goto(`/projects/${model.project_id}/models`);
+    await page.getByRole('button', { name: `Show details for ${model.name}` }).click();
+    const card = page.getByRole('region', { name: 'ONNX variant' });
+    await card.getByRole('button', { name: 'Cancel export' }).click();
+    await expect(card).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry export' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Download PyTorch export' })).toBeVisible();
+
+    await page.reload();
+    await page.getByRole('button', { name: `Show details for ${model.name}` }).click();
+    await expect(page.getByRole('button', { name: 'Add variant' })).toBeEnabled();
+    await expect(card).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry export' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add variant' }).click();
+    await expect(page.getByRole('dialog').getByRole('radio', { name: /ONNX/ })).toBeEnabled();
+});
+
 test('selects a backend in a dialog and hands export progress over to its card', async ({
     page,
     network,
@@ -30,7 +68,14 @@ test('selects a backend in a dialog and hands export progress over to its card',
                 detail.available_actions = [{ backend: 'openvino', operation: 'export' }];
                 detail.model = { ...model, available_backends: ['torch', 'onnx'] };
             }
-            jobs = [getMockedModelExportJob({ payload, status, progress: status === 'running' ? 50 : 100 })];
+            jobs = [
+                getMockedModelExportJob({
+                    payload,
+                    status,
+                    progress: status === 'running' ? 50 : 100,
+                    message: status === 'running' ? 'Exporting ONNX checkpoint' : 'ONNX export created',
+                }),
+            ];
             socket.send(JSON.stringify({ event: 'JOB_UPDATE', data: jobs[0] }));
         };
     });
@@ -42,7 +87,7 @@ test('selects a backend in a dialog and hands export progress over to its card',
         http.post('/api/models/{model_id}/exports/{backend}', async ({ params }) => {
             expect(params.backend).toBe('onnx');
             await accepted;
-            jobs = [getMockedModelExportJob({ payload })];
+            jobs = [getMockedModelExportJob({ payload, message: 'Waiting to export ONNX' })];
             return HttpResponse.json(jobs[0], { status: 202 });
         })
     );
@@ -76,12 +121,23 @@ test('selects a backend in a dialog and hands export progress over to its card',
     }
     await expect(dialog).toHaveCount(0);
     const card = page.getByRole('region', { name: 'ONNX variant' });
+    const border = card.locator('svg[aria-hidden="true"] > rect');
     await expect(card.getByRole('status')).toContainText('Export queued');
-    await expect(card.getByRole('progressbar')).toBeVisible();
+    await expect(card).toHaveAttribute('aria-busy', 'true');
+    await expect(card.getByRole('progressbar')).toHaveCount(0);
+    await expect(border).toBeVisible();
+    await expect(border).toHaveCSS('stroke-dasharray', '1px, 7px');
+    await expect(border).not.toHaveCSS('animation-name', 'none');
     updateJob('running');
-    await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+    await expect(card.getByRole('status')).toContainText('Exporting variant');
+    await expect(card.getByRole('button', { name: 'Cancel export' })).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath('export-in-background.png'), fullPage: true });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(border).toHaveCSS('animation-name', 'none');
+    await expect(border).toBeVisible();
     updateJob('completed');
     await expect(card.getByRole('button', { name: 'Download ONNX export' })).toBeVisible();
-    await expect(card.getByRole('progressbar')).toHaveCount(0);
+    await expect(border).toHaveCount(0);
+    await expect(card).toHaveAttribute('aria-busy', 'false');
     await expect(addVariant).toBeEnabled();
 });
