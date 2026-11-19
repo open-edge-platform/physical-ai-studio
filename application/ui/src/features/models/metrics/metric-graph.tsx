@@ -160,6 +160,7 @@ export const MetricGraph = ({
                                             name={line.name}
                                             stroke={line.color}
                                             strokeWidth={line.strokeWidth ?? 2}
+                                            strokeDasharray={line.strokeDasharray}
                                             dot={false}
                                             connectNulls
                                         />

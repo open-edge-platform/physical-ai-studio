@@ -12,5 +12,6 @@ export interface MetricLine {
     name: string;
     color: string;
     strokeWidth?: number;
+    strokeDasharray?: string;
     getY: (metricsEntry: MetricsEntry) => number | null | undefined;
 }

@@ -161,7 +161,13 @@ const JOINT_COLORS = [
 const actionErrorLines = (data: MetricsEntry[]): MetricLine[] => {
     const keys = new Set(data.flatMap((entry) => Object.keys(entry).filter((k) => k.startsWith(ACTION_ERROR_PREFIX))));
     return [
-        { name: 'Mean', color: 'var(--energy-blue)', strokeWidth: 4, getY: (entry) => entry.val_action_error },
+        {
+            name: 'Mean',
+            color: 'var(--energy-blue)',
+            strokeWidth: 4,
+            strokeDasharray: '8 5',
+            getY: (entry) => entry.val_action_error,
+        },
         ...[...keys].map((key, index) => ({
             name: key.slice(ACTION_ERROR_PREFIX.length).replace(/\.pos$/, ''),
             color: JOINT_COLORS[index % JOINT_COLORS.length],
