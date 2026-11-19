@@ -89,6 +89,10 @@ xpu = [
     "physicalai-train[executorch]",
 ]
 
+# Simulation is off unless a simulation plugin is installed: without one Studio offers no
+# simulated robot types, so nothing about simulation shows.
+mujoco = ["physicalai-mujoco-plugin~=0.5.0"]
+
 sim-e2e = ["physicalai-mujoco-plugin==0.5.0", "defusedxml>=0.7.1"]
 
 tests = [

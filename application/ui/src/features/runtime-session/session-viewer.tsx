@@ -9,9 +9,12 @@ import {
     IDockviewReactProps,
 } from 'dockview-react';
 
+import { $api } from '../../api/client';
 import { SchemaSessionEnvironment } from '../../api/openapi-spec';
 import { physicalAiTheme } from '../dockview';
+import { useProjectId } from '../projects/use-project';
 import { InlineAlert } from '../robots/setup-wizard/shared/inline-alert';
+import { useRobotSimulationLaunch } from '../simulation/robot-simulation';
 import { CameraCell } from './cells/camera-cell';
 import { RobotCell } from './cells/robot-cell';
 import { failureOf, useRuntimeSession } from './runtime-session-provider';
@@ -119,6 +122,35 @@ const Initializing = ({ cancelHref }: { cancelHref: string }) => {
 };
 
 /**
+ * The dock once shown, and before that only for a simulated follower: its cell offers to start the
+ * simulation and loads the environment again once it runs, so it shows while the environment
+ * connects or has failed, not only once it is up.
+ */
+const UntilSimulatedFollower = ({
+    follower_id,
+    isShown,
+    fallback,
+    children,
+}: {
+    follower_id: string;
+    isShown: boolean;
+    fallback: ReactNode;
+    children: ReactNode;
+}) => {
+    const { project_id } = useProjectId();
+    // Not suspending: a swap to another follower keeps the dock while its robot loads.
+    const { data: robot } = $api.useQuery(
+        'get',
+        '/api/projects/{project_id}/robots/{robot_id}',
+        { params: { path: { project_id, robot_id: follower_id } } },
+        { enabled: !isShown }
+    );
+    const isSimulated = useRobotSimulationLaunch(robot?.type ?? '') !== null;
+
+    return isShown || isSimulated ? children : fallback;
+};
+
+/**
  * A session's robot and cameras in a dock, under an optional toolbar.
  *
  * The middle of the session workspace. Until the environment is loaded it shows what it is
@@ -136,17 +168,26 @@ export const SessionViewer = ({ toolbar, cancelHref }: { toolbar?: ReactNode; ca
         setHasStarted(!hasStarted);
     }
 
-    if (environment == null || !(isReady || hasStarted)) {
+    if (environment == null) {
         return <Initializing cancelHref={cancelHref} />;
     }
 
+    // One tree whether or not it waits for the follower, so the cells are not mounted again once it is up.
     return (
-        <Flex direction={'column'} height={'100%'} gap='size-100'>
-            {toolbar}
-            {/* The cells suspend while they load; this keeps that inside the viewer. */}
-            <Suspense fallback={<Loading mode='inline' />}>
-                <SessionDock environment={environment} />
-            </Suspense>
-        </Flex>
+        <Suspense fallback={<Initializing cancelHref={cancelHref} />}>
+            <UntilSimulatedFollower
+                follower_id={environment.robot_id}
+                isShown={isReady || hasStarted}
+                fallback={<Initializing cancelHref={cancelHref} />}
+            >
+                <Flex direction={'column'} height={'100%'} gap='size-100'>
+                    {toolbar}
+                    {/* The cells suspend while they load; this keeps that inside the viewer. */}
+                    <Suspense fallback={<Loading mode='inline' />}>
+                        <SessionDock environment={environment} />
+                    </Suspense>
+                </Flex>
+            </UntilSimulatedFollower>
+        </Suspense>
     );
 };

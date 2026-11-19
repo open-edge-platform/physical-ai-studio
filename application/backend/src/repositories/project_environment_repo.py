@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from uuid import UUID
 
 from loguru import logger
 from sqlalchemy import or_, select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from db.schema import EnvironmentCameraDB, EnvironmentRobotDB, ProjectEnvironmentDB
@@ -61,6 +62,21 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
         if updated is None:
             raise ValueError(f"{item.__class__} with ID `{item.id}` doesn't exist")
         return updated
+
+    async def link_cameras(self, environment_id: UUID, camera_ids: Sequence[UUID]) -> None:
+        """Link cameras to an environment, keeping its other links; one it has is skipped. The caller commits.
+
+        One ``INSERT``, unlike ``update``, which replaces every link with those of a snapshot: two
+        additions at the same time both stay.
+        """
+        if camera_ids:
+            await self.db.execute(
+                insert(EnvironmentCameraDB)
+                .values(
+                    [{"environment_id": str(environment_id), "camera_id": str(camera_id)} for camera_id in camera_ids]
+                )
+                .on_conflict_do_nothing()
+            )
 
     async def get_by_id_with_relations(self, environment_id: UUID) -> EnvironmentWithRelations | None:
         """Get an environment by ID with eager loaded robots and cameras."""

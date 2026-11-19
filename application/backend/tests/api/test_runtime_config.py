@@ -46,7 +46,9 @@ def _environment(*, with_leader: bool) -> EnvironmentWithRelations:
 
 async def test_runtime_config_download_is_yaml_attachment(mocker) -> None:
     environment = _environment(with_leader=True)
-    environment_service = SimpleNamespace(get_environment_by_id=mocker.AsyncMock(return_value=environment))
+    environment_service = SimpleNamespace(
+        get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
+    )
     document = Config(
         "physicalai.runtime.RobotRuntime",
         {"robot": {"class_path": "physicalai.robot.so101.SO101", "init_args": {}}, "fps": 30.0},
@@ -54,6 +56,7 @@ async def test_runtime_config_download_is_yaml_attachment(mocker) -> None:
     build = mocker.patch("api.environments.build_runtime_config", return_value=document)
 
     response = await get_runtime_config(
+        request=SimpleNamespace(),
         project_id=uuid4(),
         environment_id=environment.id,
         environment_service=environment_service,
@@ -69,10 +72,13 @@ async def test_runtime_config_download_is_yaml_attachment(mocker) -> None:
 
 async def test_runtime_config_download_requires_leader(mocker) -> None:
     environment = _environment(with_leader=False)
-    environment_service = SimpleNamespace(get_environment_by_id=mocker.AsyncMock(return_value=environment))
+    environment_service = SimpleNamespace(
+        get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
+    )
 
     with pytest.raises(HTTPException, match="leader robot"):
         await get_runtime_config(
+            request=SimpleNamespace(),
             project_id=uuid4(),
             environment_id=environment.id,
             environment_service=environment_service,

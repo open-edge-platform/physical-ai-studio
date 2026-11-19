@@ -13,7 +13,7 @@ from api.dependencies import CameraClaimRegistryDep
 from exceptions import DeviceInUseError
 from schemas.camera import SupportedCameraFormat
 from schemas.project_camera import Camera as ProjectCamera
-from schemas.project_camera import CameraAdapter
+from schemas.project_camera import CameraAdapter, streamed_camera
 from schemas.robot_stream import ErrorEvent
 from utils.camera_factory import build_shared_camera
 from workers.rate import Rate
@@ -124,6 +124,7 @@ async def camera_websocket(
     await websocket.accept()
 
     try:
+        camera = streamed_camera(camera)
         if camera.fingerprint is None:
             raise ValueError("Camera must be reselected")
         if (claim := claims.holder_of(camera.fingerprint)) is not None:

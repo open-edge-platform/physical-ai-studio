@@ -3,13 +3,13 @@ import { useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
 import { fetchClient } from '../../api/client';
-import { SchemaProjectCamera } from '../../api/types';
+import { StreamedCamera } from './camera-format';
 import { CameraView, FrameSource } from './camera-view';
 
 const CAMERA_WS_URL = fetchClient.PATH('/api/cameras/ws');
 
 /** A standalone camera socket, for the camera form. Pages with a runtime session use the session's frames. */
-export const useCameraSocket = (camera: SchemaProjectCamera) => {
+export const useCameraSocket = (camera: StreamedCamera) => {
     const listeners = useRef(new Set<(jpeg: Blob) => void>()).current;
     const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +54,7 @@ export const useCameraSocket = (camera: SchemaProjectCamera) => {
     return { source, error };
 };
 
-export const WebsocketCamera = ({ camera }: { camera: SchemaProjectCamera }) => {
+export const WebsocketCamera = ({ camera }: { camera: StreamedCamera }) => {
     const { source, error } = useCameraSocket(camera);
 
     return (

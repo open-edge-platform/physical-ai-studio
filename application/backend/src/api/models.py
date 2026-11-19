@@ -25,6 +25,7 @@ from api.dependencies import (
     get_robot_client_factory,
     get_robot_manager_service,
 )
+from api.robot_simulation import resolve_export_cameras
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
@@ -44,7 +45,7 @@ from services.runtime_export import (
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
 
-async def _runtime_recipe_texts(
+async def _runtime_recipe_texts(  # noqa: PLR0913 - the download endpoint's dependencies
     *,
     model: Model,
     environment_id: UUID,
@@ -53,6 +54,7 @@ async def _runtime_recipe_texts(
     task: str | None,
     environment_service: EnvironmentService,
     robot_client_factory: RobotClientFactory,
+    request: Request,
 ) -> tuple[str, str]:
     """Build runtime.yaml and README for a model download that includes a recipe."""
     if backend.value not in model.available_backends:
@@ -78,7 +80,9 @@ async def _runtime_recipe_texts(
         document = await build_runtime_config(
             follower=environment.robots[0].robot,
             leader=None,
-            cameras=environment.cameras,
+            cameras=await resolve_export_cameras(
+                request, environment_service.session, model.project_id, environment.cameras
+            ),
             robot_factory=robot_client_factory,
             fps=RUNTIME_FPS,
             allow_stored_port=True,
@@ -238,6 +242,7 @@ async def download_model_backend(  # noqa: PLR0913
             task=task,
             environment_service=environment_service,
             robot_client_factory=robot_client_factory,
+            request=request,
         )
         archive_path = await asyncio.to_thread(
             model_download_service.create_runtime_export,
