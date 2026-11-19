@@ -8,10 +8,10 @@
 """Lazy registration of ``physicalai-train`` inference adapters.
 
 This module is discovered through the ``physicalai.inference.adapters``
-entry-point group and registers Torch and ExecuTorch as **lazy** backends
-on the shared :data:`backend_registry`.  Importing this module is cheap —
-it does not import torch or executorch.  The heavy adapter modules are
-loaded only when a user actually requests one of those backends.
+entry-point group and registers Torch and ExecuTorch as **lazy** backends on
+the shared :data:`backend_registry`. Importing this module is cheap — it does
+not import their heavy model dependencies. Adapter modules load only when a
+user requests the corresponding backend.
 """
 
 from __future__ import annotations
