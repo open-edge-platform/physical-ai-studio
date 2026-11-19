@@ -56,6 +56,8 @@ export const CloudProviderForm = ({ remoteTrainer, close }: CloudProviderFormPro
             return (
                 value.length >= (field.minLength ?? 1) &&
                 (field.maxLength == null || value.length <= field.maxLength) &&
+                // Pattern comes from the backend's static provider schema, not user input.
+                // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
                 (field.pattern == null || new RegExp(field.pattern).test(value))
             );
         });
