@@ -3738,6 +3738,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "physicalai-gr00t-policy-plugin"
+version = "0.1.0"
+source = { editable = "../plugins/policies/gr00t" }
+dependencies = [
+    { name = "numpy" },
+    { name = "physicalai" },
+    { name = "uv" },
+]
+
+[package.optional-dependencies]
+train = [
+    { name = "physicalai-train" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "physicalai", git = "https://github.com/n3puiol/physicalai.git?rev=8056bb084be9e09b952d22a45e1391882a871058" },
+    { name = "physicalai-train", marker = "extra == 'train'", editable = "." },
+    { name = "pytest", marker = "extra == 'tests'", specifier = ">=9.0.3" },
+    { name = "uv", specifier = ">=0.13.4,<0.14" },
+]
+provides-extras = ["train", "tests"]
+
+[[package]]
 name = "physicalai-lerobot-policy-plugin"
 version = "0.1.0"
 source = { editable = "../plugins/policies/lerobot" }
@@ -3850,6 +3875,9 @@ executorch-openvino = [
     { name = "torch", version = "2.15.0+cu132", source = { registry = "https://download.pytorch.org/whl/cu132" }, marker = "extra == 'extra-16-physicalai-train-cu132' or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-xpu')" },
     { name = "torch", version = "2.15.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "(platform_machine != 'aarch64' and platform_machine != 'arm64' and extra != 'extra-16-physicalai-train-cpu' and extra != 'extra-16-physicalai-train-cu132') or (platform_machine == 'aarch64' and sys_platform == 'darwin' and extra != 'extra-16-physicalai-train-cpu' and extra != 'extra-16-physicalai-train-cu132') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-16-physicalai-train-cpu' and extra != 'extra-16-physicalai-train-cu132') or extra == 'extra-16-physicalai-train-xpu' or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-cu132')" },
 ]
+gr00t = [
+    { name = "physicalai-gr00t-policy-plugin", extra = ["train"] },
+]
 lerobot = [
     { name = "physicalai-lerobot-policy-plugin", extra = ["train"] },
 ]
@@ -3956,6 +3984,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
     { name = "physicalai", git = "https://github.com/n3puiol/physicalai.git?rev=8056bb084be9e09b952d22a45e1391882a871058" },
+    { name = "physicalai-gr00t-policy-plugin", extras = ["train"], marker = "extra == 'gr00t'", editable = "../plugins/policies/gr00t" },
     { name = "physicalai-lerobot-policy-plugin", extras = ["train"], marker = "extra == 'lerobot'", editable = "../plugins/policies/lerobot" },
     { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
@@ -4012,7 +4041,7 @@ requires-dist = [
     { name = "uv", specifier = ">=0.13.4,<0.14" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu132", "xpu", "tests", "loggers", "libero", "lerobot", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
+provides-extras = ["cpu", "cu132", "xpu", "tests", "loggers", "libero", "lerobot", "gr00t", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [

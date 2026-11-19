@@ -15,11 +15,11 @@ import contextlib
 import hashlib
 import logging
 import os
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fixed worker argv; shell is disabled.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fixed worker argv; shell is disabled.  # nosec B404
 import threading
 import weakref
 from collections.abc import Mapping, Sequence
-from importlib import resources
+from importlib import resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -403,7 +403,7 @@ class _Worker:
             "PHYSICALAI_GR00T_RESPONSE_FD": str(response_write),
         }
         try:
-            self.process = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # argv list; shell disabled.
+            self.process = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # argv list; shell disabled.  # nosec B603
                 [str(python), str(_infer_worker())],
                 stdin=subprocess.DEVNULL,
                 env=env,

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Native CLI passthrough; shell is disabled.
-from importlib import resources
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Native CLI passthrough; shell is disabled.  # nosec B404
+from importlib import resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -140,7 +140,7 @@ class Gr00tEngine(TrainingEngine):
         """
         python, project, _ = environments.resolve(environments.NATIVE, interpreter=interpreter)
         with resources.as_file(environments.TRAIN_WORKER) as worker:
-            return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # argv list; shell disabled.
+            return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # argv list; shell disabled.  # nosec B603
                 [str(python), str(worker), *argv],
                 env={**os.environ, environments.PROJECT_ENV: str(project)},
                 shell=False,
