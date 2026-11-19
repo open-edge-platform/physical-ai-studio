@@ -456,14 +456,13 @@ def prune_prepared(current: Iterable[WorkerEnv]) -> list[Path]:
             continue
         try:
             marker = _read_marker(root)
-            current_format = marker.get("format_version") == _MARKER_VERSION
-            if current_format:
+            if marker.get("format_version") == _MARKER_VERSION:
                 identity = (_marker_string(marker, "framework"), _marker_string(marker, "name"))
-                key = _marker_string(marker, "key")
+                stale = current_keys.get(identity) != _marker_string(marker, "key")
+            else:
+                stale = True
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             stale = True
-        else:
-            stale = current_keys.get(identity) != key if current_format else True
         if stale:
             shutil.rmtree(root)
             removed.append(root)
