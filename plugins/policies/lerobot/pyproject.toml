@@ -10,8 +10,8 @@ readme = "README.md"
 requires-python = ">=3.12, <3.15"
 license = "Apache-2.0"
 dependencies = [
-    "physicalai~=0.3.0",
-    "lerobot[dataset]>=0.6.1,<0.7",
+    "physicalai>=0.4.1.dev0,<0.5",
+    "lerobot[dataset]>=0.7,<0.8",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +47,7 @@ include = [
 "src/physicalai_lerobot_policy_plugin/env/uv.lock" = "src/physicalai_lerobot_policy_plugin/env/uv.lock"
 
 [tool.uv.sources]
-physicalai = { git = "https://github.com/samet-akcay/physicalai", branch = "feat/physicalai-isolate" }
+physicalai = { git = "https://github.com/n3puiol/physicalai.git", rev = "8056bb084be9e09b952d22a45e1391882a871058" }
 # Keep the optional train extra on this checkout's Runtime source.
 physicalai-train = { path = "../../../library", editable = true }
 
