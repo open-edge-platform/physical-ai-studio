@@ -380,10 +380,21 @@ class ACT(ExportablePolicyMixin, Policy):
                 self.model.enable_task_conditioning(len(self.tasks))
 
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        """Keep a restored checkpoint's task mapping, including legacy unconditioned checkpoints."""
+        """Keep a restored checkpoint's task mapping, including legacy unconditioned checkpoints.
+
+        Raises:
+            ValueError: If the checkpoint was trained on different tasks than the policy resolved.
+        """
         super().on_load_checkpoint(checkpoint)
-        if self.hparams.get("tasks") is None:
-            self.hparams["tasks"] = list(self.tasks)
+        saved = list(checkpoint.get("hyper_parameters", {}).get("tasks") or [])
+        tasks = saved if len(saved) > 1 else []
+        if sorted(tasks) != sorted(self.tasks):
+            msg = f"Checkpoint was trained on tasks {tasks}, but this policy uses {self.tasks}."
+            raise ValueError(msg)
+        # Task embeddings follow the checkpoint's order, e.g. when resuming on a dataset that lists tasks differently.
+        self.tasks = tasks
+        self.hparams["tasks"] = saved
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
@@ -697,17 +708,6 @@ class ACT(ExportablePolicyMixin, Policy):
             )
 
         return schema
-
-    def create_manifest(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
-        """Create ``manifest.json``, listing a multi-task policy's ``tasks`` for callers that offer a choice of task.
-
-        Args:
-            *args: Forwarded to ``ExportablePolicyMixin.create_manifest``.
-            **kwargs: Forwarded to ``ExportablePolicyMixin.create_manifest``.
-        """
-        if self.tasks:
-            kwargs.setdefault("tasks", list(self.tasks))
-        super().create_manifest(*args, **kwargs)
 
     @property
     def outputs_schema(self) -> list[InferenceFeature] | None:

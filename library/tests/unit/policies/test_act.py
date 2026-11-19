@@ -568,6 +568,24 @@ class TestACTMultiTask:
         policy.eval()
         assert torch.allclose(loaded.predict_action_chunk(self._obs("place")), policy.predict_action_chunk(self._obs("place")))
 
+    def test_resuming_with_reordered_dataset_tasks_keeps_checkpoint_mapping(self, policy):
+        # Trainer.fit(ckpt_path=...) runs setup() on the new dataset before restoring the checkpoint.
+        checkpoint = {"hyper_parameters": dict(policy.hparams), "state_dict": policy.state_dict()}
+        resumed = ACT(pretrained_backbone_weights=None)
+        self._setup(resumed, list(reversed(self.TASKS)))
+        resumed.on_load_checkpoint(checkpoint)
+        resumed.load_state_dict(checkpoint["state_dict"])
+        assert resumed.tasks == resumed.hparams["tasks"] == self.TASKS
+        resumed.eval()
+        policy.eval()
+        assert torch.equal(resumed.predict_action_chunk(self._obs("place")), policy.predict_action_chunk(self._obs("place")))
+
+    def test_resuming_with_different_dataset_tasks_raises(self, policy):
+        resumed = ACT(pretrained_backbone_weights=None)
+        self._setup(resumed, ["pick", "stack"])
+        with pytest.raises(ValueError, match="Checkpoint was trained on tasks"):
+            resumed.on_load_checkpoint({"hyper_parameters": dict(policy.hparams)})
+
     @pytest.mark.parametrize("backend", ["onnx", "openvino", "torch"])
     def test_exported_model_takes_the_task_prompt(self, policy, tmp_path, backend):
         import json
@@ -577,7 +595,8 @@ class TestACTMultiTask:
         policy.eval()
         policy.export(tmp_path, backend)
         manifest = json.loads((tmp_path / "manifest.json").read_text())
-        assert manifest["tasks"] == self.TASKS
+        task_specs = [spec for spec in manifest["model"]["preprocessors"] if spec["type"] == "task_index"]
+        assert [spec["tasks"] for spec in task_specs] == [self.TASKS]
 
         obs = self._obs("place")
         model = InferenceModel(tmp_path, backend=backend)
