@@ -25,7 +25,6 @@ env:
   SIM_E2E_CONTROLS_FILE: ${{ github.workspace }}/.simulation-results/full-act/controls.json
   STORAGE_DIR: ${{ github.workspace }}/.simulation-results/full-act/studio
   SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/full-act/studio/settings.json
-  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
   simulation:
@@ -48,8 +47,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: $/.github/actions/simulation-environment
-      - uses: $/.github/actions/start-simulator
+      - uses: $/.github/actions/simulation-environment # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - uses: $/.github/actions/start-simulator # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
       - name: Verify seeded expert and no-action episodes
         id: controls
         timeout-minutes: 30
