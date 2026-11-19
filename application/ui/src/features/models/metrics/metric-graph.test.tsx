@@ -11,9 +11,7 @@ import { MetricGraph } from './metric-graph';
 import { MetricTooltipContent } from './metric-tooltip';
 import type { MetricLine, MetricsEntry } from './types';
 
-const data: MetricsEntry[] = [
-    { step: 65, epoch: 0, train_loss: null, val_loss: null, 'lr-AdamW': null, mean: 4, joint: 2 },
-];
+const data: MetricsEntry[] = [{ step: 65, epoch: 0, train_loss: null, val_loss: null, mean: 4, joint: 2 }];
 const lines: MetricLine[] = [
     { name: 'Mean', color: 'blue', primary: true, getY: (row) => row.mean },
     { name: 'Joint', color: 'orange', getY: (row) => row.joint },

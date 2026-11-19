@@ -76,4 +76,15 @@ describe('MetricsView', () => {
         expect(screen.getByText('Training loss')).toBeInTheDocument();
         expect(screen.queryByText('Validation loss')).not.toBeInTheDocument();
     });
+
+    it('renders a multi-line chart when only a secondary line has data', () => {
+        const data = [entry({ 'lr-AdamW_pg2': 0.001 })];
+        const series = buildSeries('Learning rate', () => null, data);
+        series.lines = [{ name: 'AdamW_pg2', color: 'blue', getY: (row) => row['lr-AdamW_pg2'] }];
+
+        render(<MetricsView series={[series]} isLoading={false} />);
+
+        expect(screen.getByText('Learning rate')).toBeInTheDocument();
+        expect(screen.queryByText('No metrics available yet')).not.toBeInTheDocument();
+    });
 });

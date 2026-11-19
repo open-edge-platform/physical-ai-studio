@@ -101,6 +101,18 @@ test('emphasizes the mean, highlights joints, and toggles lines with tooltip val
     await expect(wrist).toHaveCount(1);
 });
 
+test('renders non-AdamW learning rates and supports hiding and restoring the only line', async ({ page }) => {
+    const graph = page.getByRole('region', { name: 'Learning rate graph' });
+    const legend = graph.getByRole('button', { name: 'AdamWBF16Kahan', exact: true });
+    const line = curve(graph, 'var(--energy-blue)');
+
+    await expect(line).toHaveCount(1);
+    await legend.click();
+    await expect(line).toHaveCount(0);
+    await legend.click();
+    await expect(line).toHaveCount(1);
+});
+
 test('expands plots to fill a multi-column row when only one graph has a legend', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1400 });
     const training = page.getByRole('region', { name: 'Training loss graph' });
@@ -122,7 +134,7 @@ test('expands plots to fill a multi-column row when only one graph has a legend'
     }).toPass();
 });
 
-for (const title of ['Validation action error']) {
+for (const title of ['Learning rate', 'Validation action error']) {
     test(`${title} tooltip follows the selected step across the plot`, async ({ page }) => {
         const graph = page.getByRole('region', { name: `${title} graph` });
         const line = curve(graph, 'var(--energy-blue)');

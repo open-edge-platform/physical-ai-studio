@@ -146,7 +146,7 @@ const learningRateFormatter = new Intl.NumberFormat('en-US', {
 });
 
 const ACTION_ERROR_PREFIX = 'val_action_error_';
-const JOINT_COLORS = [
+const SERIES_COLORS = [
     'orange',
     'magenta',
     'seafoam',
@@ -173,53 +173,70 @@ const actionErrorLines = (data: MetricsEntry[]): MetricLine[] => {
         },
         ...[...keys].map((key, index) => ({
             name: key.slice(ACTION_ERROR_PREFIX.length).replace(/\.pos$/, ''),
-            color: JOINT_COLORS[index % JOINT_COLORS.length],
+            color: SERIES_COLORS[index % SERIES_COLORS.length],
             getY: (entry: MetricsEntry) => entry[key],
         })),
     ];
 };
 
-const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => [
-    {
-        title: 'Training loss',
-        xLabel: 'Step',
-        yLabel: 'Loss',
-        data,
-        color: 'var(--moss-tint-1)',
-        getX: (entry) => entry.step,
-        getY: (entry) => entry.train_loss,
-        formatY: (y) => lossFormatter.format(y),
-    },
-    {
-        title: 'Validation loss',
-        xLabel: 'Step',
-        yLabel: 'Loss',
-        data,
-        color: 'var(--coral)',
-        getX: (entry) => entry.step,
-        getY: (entry) => entry.val_loss,
-        formatY: (y) => lossFormatter.format(y),
-    },
-    {
-        title: 'Validation action error',
-        xLabel: 'Step',
-        yLabel: 'Mean absolute error',
-        data,
-        getX: (entry) => entry.step,
-        getY: (entry) => entry.val_action_error,
-        lines: actionErrorLines(data),
-        formatY: (y) => lossFormatter.format(y),
-    },
-    {
-        title: 'Learning rate',
-        xLabel: 'Step',
-        yLabel: 'Learning rate',
-        data,
-        getX: (entry) => entry.step,
-        getY: (entry) => entry['lr-AdamW'],
-        formatY: (y) => learningRateFormatter.format(y),
-    },
-];
+const learningRateLines = (data: MetricsEntry[]): MetricLine[] => {
+    const keys = new Set(
+        data.flatMap((entry) => Object.keys(entry).filter((key) => key.startsWith('lr-') && entry[key] != null))
+    );
+
+    return [...keys].sort().map((key, index) => ({
+        name: key.slice('lr-'.length),
+        color: index === 0 ? 'var(--energy-blue)' : SERIES_COLORS[(index - 1) % SERIES_COLORS.length],
+        getY: (entry) => entry[key],
+    }));
+};
+
+export const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => {
+    const learningRates = learningRateLines(data);
+
+    return [
+        {
+            title: 'Training loss',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data,
+            color: 'var(--moss-tint-1)',
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.train_loss,
+            formatY: (y) => lossFormatter.format(y),
+        },
+        {
+            title: 'Validation loss',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data,
+            color: 'var(--coral)',
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.val_loss,
+            formatY: (y) => lossFormatter.format(y),
+        },
+        {
+            title: 'Validation action error',
+            xLabel: 'Step',
+            yLabel: 'Mean absolute error',
+            data,
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.val_action_error,
+            lines: actionErrorLines(data),
+            formatY: (y) => lossFormatter.format(y),
+        },
+        {
+            title: 'Learning rate',
+            xLabel: 'Step',
+            yLabel: 'Learning rate',
+            data,
+            getX: (entry) => entry.step,
+            getY: (entry) => learningRates[0]?.getY(entry),
+            lines: learningRates,
+            formatY: (y) => learningRateFormatter.format(y),
+        },
+    ];
+};
 
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     const query = useJobMetrics(jobId);
