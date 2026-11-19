@@ -6,6 +6,10 @@
 import logging
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 
@@ -64,3 +68,34 @@ def compress_weights_openvino_int8_sym(model_path: str) -> None:
         tmp_bin.replace(bin_path)
 
     logger.info("INT8_SYM weight compression complete: %s", model_path)
+
+
+def compress_weights_executorch_openvino_int8_sym(
+    exported_program: "ExportedProgram",
+    example_args: tuple[Any, ...],
+    **export_kwargs: Any,  # noqa: ANN401
+) -> "ExportedProgram":
+    """Compress weights before lowering an ExecuTorch program to OpenVINO.
+
+    Args:
+        exported_program: ATen-dialect program to compress.
+        example_args: Positional inputs used to re-export the compressed module.
+        **export_kwargs: Keyword arguments for ``torch.export.export`` (e.g. ``dynamic_shapes``,
+            ``strict``). Pass the same values used for the original export so they are preserved.
+
+    Returns:
+        Exported program with INT8 symmetric compressed weights.
+
+    Raises:
+        ImportError: If ``nncf`` is not installed.
+    """
+    try:
+        import nncf  # noqa: PLC0415  # pyrefly: ignore[missing-import]
+    except ImportError as e:
+        msg = "nncf is required for weight compression. Install with: pip install physicalai-train[nncf]"
+        raise ImportError(msg) from e
+
+    import torch  # noqa: PLC0415
+
+    compressed_module = nncf.compress_weights(exported_program.module(), mode=nncf.CompressWeightsMode.INT8_SYM)
+    return torch.export.export(compressed_module, example_args, **export_kwargs)
