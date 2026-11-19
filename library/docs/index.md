@@ -69,6 +69,10 @@ graph LR
 Additional policies (Pi0, Pi0-FAST, GR00T, X-VLA) are also available
 through the LeRobot wrapper via `get_policy(..., source="lerobot")`.
 
+## Native Framework Engines
+
+Use [`physicalai.engine`](explanation/policy/engine-and-frameworks.md) to run a framework's own trainer instead of wrapping its model in Lightning. The first-party `physicalai.train.Trainer` remains the Lightning API; the optional LeRobot plugin provides `LeRobotEngine`, native `physicalai train lerobot` argument passthrough, and a locked worker environment. Studio owns labels and forms separately through its policy catalog.
+
 ## Need Help?
 
 - **Bug reports**: [GitHub Issues](https://github.com/open-edge-platform/physical-ai-studio/issues)

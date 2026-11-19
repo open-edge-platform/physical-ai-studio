@@ -54,6 +54,30 @@ physicalai fit \
     --trainer.max_epochs=100
 ```
 
+## Native Framework Training
+
+`physicalai train <framework>` delegates directly to an installed native engine. The Studio options must precede the framework name; every argument after the name is passed through unchanged, including native `--help` and native flags:
+
+```bash
+physicalai train lerobot --policy.type=act --policy.device=cuda --dataset.repo_id=lerobot/pusht --steps=20000
+physicalai train lerobot --policy.type=act --policy.device=xpu --dataset.repo_id=lerobot/pusht
+physicalai train --interpreter /opt/lerobot/bin/python lerobot --help
+```
+
+`pai train` accepts Studio execution options such as `--interpreter` before the framework name; every argument after the name is passed through unchanged. LeRobot's native `--policy.device` chooses both the training device and the matching managed worker torch extra (`cuda` → `cu128`, `xpu` → `xpu`, `cpu` → `cpu`). When no device is set, the engine auto-detects XPU, then CUDA, then CPU from available hardware, even if the host has a CPU-only torch build. `pai engine prepare --accelerator` below only pre-provisions an environment; it does not override the native training device.
+
+The native command keeps its standard streams and exit status. `--interpreter` skips managed-environment preparation, so the supplied Python must already have the torch build required by the native device. `physicalai train physicalai` aliases `physicalai fit`; first-party Lightning options remain on `fit` (`--trainer.*`, `--model.*`, and `--data.*`), including `--trainer.accelerator`.
+
+Managed worker environments are provisioned by the shared engine manager:
+
+```bash
+physicalai engine prepare lerobot --accelerator xpu
+physicalai engine list
+physicalai engine prune
+```
+
+Each framework plugin supplies its own locked worker project. `--interpreter` skips managed-environment provisioning and uses a pre-installed framework environment.
+
 ## Configuration Patterns
 
 ### Pattern 1: class_path (Dynamic)
@@ -111,12 +135,14 @@ physicalai fit \
 
 ## Commands
 
-| Command    | Description         |
-| ---------- | ------------------- |
-| `fit`      | Train a model       |
-| `validate` | Run validation      |
-| `test`     | Run test evaluation |
-| `predict`  | Run inference       |
+| Command    | Description                                    |
+| ---------- | ---------------------------------------------- |
+| `fit`      | Train a model                                  |
+| `validate` | Run validation                                 |
+| `test`     | Run test evaluation                            |
+| `predict`  | Run inference                                  |
+| `train`    | Run a native framework trainer                 |
+| `engine`   | Prepare, inspect, or prune worker environments |
 
 ```bash
 physicalai fit --config CONFIG_PATH
