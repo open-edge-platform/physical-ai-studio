@@ -105,6 +105,9 @@ export const MetricGraph = ({
     color = 'var(--energy-blue)',
 }: MetricGraphProps) => {
     const gradientId = useId();
+    // Train and validation rows are logged at different steps; keep only this chart's rows so the
+    // tooltip snaps to a point that has values, and sync the charts by step instead of row index.
+    const points = data?.filter((entry) => getY(entry) != null);
 
     return (
         <Flex
@@ -122,8 +125,9 @@ export const MetricGraph = ({
                         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
                             <ComposedChart
                                 syncId={syncId}
+                                syncMethod='value'
                                 style={{ aspectRatio: 1.6 }}
-                                data={data}
+                                data={points}
                                 margin={{ top: 35, bottom: 35, left: 35, right: 35 }}
                             >
                                 <defs>
