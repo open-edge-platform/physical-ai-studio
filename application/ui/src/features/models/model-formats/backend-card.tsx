@@ -1,22 +1,11 @@
-import {
-    Badge,
-    Button,
-    Content,
-    ContextualHelp,
-    DialogTrigger,
-    Divider,
-    Flex,
-    Heading,
-    Icon,
-    Text,
-    View,
-} from '@geti-ui/ui';
+import { type ReactNode } from 'react';
+
+import { Button, DialogTrigger, Divider, Flex, Heading, Icon, Text, View } from '@geti-ui/ui';
 import { DownloadIcon } from '@geti-ui/ui/icons';
 
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
-import { ExportJobControls } from './export-job-controls';
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
@@ -50,25 +39,6 @@ export const InferenceBackendLogo = ({
                     {backend.description}
                 </Text>
             </Flex>
-        </Flex>
-    );
-};
-
-export const Unavailable = ({ backend }: { backend: InferenceBackendConfig }) => {
-    return (
-        <Flex direction='column' gap='size-100' alignItems={'end'}>
-            <Badge variant={'negative'} UNSAFE_style={{ padding: 0, opacity: 0.9 }}>
-                Unavailable
-            </Badge>
-            <ContextualHelp variant='help'>
-                <Heading>Export missing</Heading>
-                <Content>
-                    <Text>
-                        This model does not include an export for {backend.label}. Export the stored checkpoint when
-                        this backend is supported and installed.
-                    </Text>
-                </Content>
-            </ContextualHelp>
         </Flex>
     );
 };
@@ -122,13 +92,13 @@ interface BackendCardProps {
     modelDetail: ModelDetailResponse;
     backendType: ExportBackend;
     model: SchemaModel;
+    children?: ReactNode;
 }
 
-export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProps) => {
+export const BackendCard = ({ modelDetail, backendType, model, children }: BackendCardProps) => {
     const exportDetail = modelDetail.exports.find(({ type }) => type === backendType);
     const isAvailable = exportDetail !== undefined;
     const backend = INFERENCE_BACKENDS[backendType];
-    const exportAction = modelDetail.available_actions?.find((action) => action.backend === backendType);
     const downloadUrl = fetchClient.PATH('/api/models/{model_id}/exports/{backend}/download', {
         params: { path: { model_id: model.id!, backend: backendType } },
     });
@@ -140,33 +110,28 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
             borderRadius={'medium'}
             borderWidth='thin'
             borderColor={'gray-100'}
+            height='100%'
         >
-            <Flex direction='column' justifyContent='space-between' gap='size-200'>
+            <Flex direction='column' gap='size-200' height='100%'>
                 <View paddingX='size-200'>
                     <Flex justifyContent={'space-between'}>
                         <Flex direction='column' gap='size-100' marginEnd='size-200' justifyContent='center'>
                             <InferenceBackendLogo backend={backend} isAvailable={isAvailable} />
                         </Flex>
-
-                        {isAvailable === false && <Unavailable backend={backend} />}
                     </Flex>
                 </View>
 
                 <Divider size='S' />
-                {exportAction && (
-                    <View paddingX='size-200'>
-                        <ExportJobControls modelId={model.id!} action={exportAction} />
-                    </View>
-                )}
+                {children && <View paddingX='size-200'>{children}</View>}
 
-                <View paddingX='size-200'>
-                    <Flex gap='size-200' wrap='wrap' marginTop='size-100' width='100%'>
+                <View paddingX='size-200' marginTop='auto' UNSAFE_style={isAvailable ? undefined : { opacity: 0.4 }}>
+                    <Flex gap='size-200' wrap='wrap' alignItems='end' marginTop='size-100' width='100%'>
                         <Flex gap='size-400' flexShrink={0}>
                             <ModelFormatSize exportDetail={exportDetail} />
                             <ModelPrecision exportDetail={exportDetail} />
                         </Flex>
                         {isAvailable && (
-                            <View marginStart='auto' alignSelf={'center'} maxWidth='100%' flexShrink={0}>
+                            <View marginStart='auto' maxWidth='100%' flexShrink={0}>
                                 <Flex direction='column' gap='size-100'>
                                     {backendType === 'openvino' && (
                                         <DialogTrigger>
