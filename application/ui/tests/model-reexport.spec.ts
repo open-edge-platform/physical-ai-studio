@@ -28,7 +28,7 @@ test('removes a canceled export card and keeps it hidden after a refresh', async
     );
     await page.goto(`/projects/${model.project_id}/models`);
     await page.getByRole('button', { name: `Show details for ${model.name}` }).click();
-    const card = page.getByRole('region', { name: 'ONNX variant' });
+    const card = page.getByRole('region', { name: 'ONNX model format' });
     await card.getByRole('button', { name: 'Cancel export' }).click();
     await expect(card).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Retry export' })).toHaveCount(0);
@@ -36,14 +36,14 @@ test('removes a canceled export card and keeps it hidden after a refresh', async
 
     await page.reload();
     await page.getByRole('button', { name: `Show details for ${model.name}` }).click();
-    await expect(page.getByRole('button', { name: 'Add variant' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Add model format' })).toBeEnabled();
     await expect(card).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Retry export' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Add variant' }).click();
+    await page.getByRole('button', { name: 'Add model format' }).click();
     await expect(page.getByRole('dialog').getByRole('radio', { name: /ONNX/ })).toBeEnabled();
 });
 
-test('selects a backend in a dialog and hands export progress over to its card', async ({
+test('selects a model format in a dialog and hands export progress over to its card', async ({
     page,
     network,
 }, testInfo) => {
@@ -93,25 +93,27 @@ test('selects a backend in a dialog and hands export progress over to its card',
     );
     await page.goto(`/projects/${model.project_id}/models`);
     await page.getByRole('button', { name: `Show details for ${model.name}` }).click();
-    const addVariant = page.getByRole('button', { name: 'Add variant' });
-    await expect(addVariant).toBeEnabled();
-    const icon = await addVariant.locator('svg').boundingBox();
-    const title = await addVariant.getByText('Add variant', { exact: true }).boundingBox();
+    const addModelFormat = page.getByRole('button', { name: 'Add model format' });
+    await expect(addModelFormat).toBeEnabled();
+    await expect(addModelFormat.getByText('Export to another inference backend')).toBeVisible();
+    const icon = await addModelFormat.locator('svg').boundingBox();
+    const title = await addModelFormat.getByText('Add model format', { exact: true }).boundingBox();
     expect(icon).not.toBeNull();
     expect(title).not.toBeNull();
     expect(Math.abs(icon!.y + icon!.height / 2 - title!.y - title!.height / 2)).toBeLessThan(2);
     expect(icon!.x + icon!.width).toBeLessThan(title!.x);
 
-    await addVariant.click();
-    const dialog = page.getByRole('dialog', { name: 'Add variant' });
+    await addModelFormat.click();
+    const dialog = page.getByRole('dialog', { name: 'Add model format' });
+    await expect(dialog.getByRole('radiogroup', { name: 'Model format' })).toBeVisible();
     await expect(dialog.getByRole('radio', { name: /PyTorch/ })).toHaveCount(0);
     await dialog.getByRole('radio', { name: /ONNX/ }).check();
     expect(jobs).toHaveLength(0);
-    await page.screenshot({ path: testInfo.outputPath('add-variant-dialog.png'), fullPage: true });
-    await dialog.getByRole('button', { name: 'Export variant', exact: true }).click();
+    await page.screenshot({ path: testInfo.outputPath('add-model-format-dialog.png'), fullPage: true });
+    await dialog.getByRole('button', { name: 'Export model', exact: true }).click();
     try {
         await expect(dialog.getByRole('status')).toContainText('Requesting export');
-        await expect(dialog.getByRole('button', { name: /Export variant/ })).toBeDisabled();
+        await expect(dialog.getByRole('button', { name: /Export model/ })).toBeDisabled();
         await expect(dialog.getByRole('radio', { name: /OpenVINO/ })).toBeDisabled();
         await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
         await page.keyboard.press('Escape');
@@ -120,7 +122,7 @@ test('selects a backend in a dialog and hands export progress over to its card',
         accept();
     }
     await expect(dialog).toHaveCount(0);
-    const card = page.getByRole('region', { name: 'ONNX variant' });
+    const card = page.getByRole('region', { name: 'ONNX model format' });
     const border = card.locator('svg[aria-hidden="true"] > rect');
     await expect(card.getByRole('status')).toContainText('Export queued');
     await expect(card).toHaveAttribute('aria-busy', 'true');
@@ -129,7 +131,7 @@ test('selects a backend in a dialog and hands export progress over to its card',
     await expect(border).toHaveCSS('stroke-dasharray', '1px, 7px');
     await expect(border).not.toHaveCSS('animation-name', 'none');
     updateJob('running');
-    await expect(card.getByRole('status')).toContainText('Exporting variant');
+    await expect(card.getByRole('status')).toContainText('Exporting model');
     await expect(card.getByRole('button', { name: 'Cancel export' })).toBeEnabled();
     await page.screenshot({ path: testInfo.outputPath('export-in-background.png'), fullPage: true });
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -139,5 +141,5 @@ test('selects a backend in a dialog and hands export progress over to its card',
     await expect(card.getByRole('button', { name: 'Download ONNX export' })).toBeVisible();
     await expect(border).toHaveCount(0);
     await expect(card).toHaveAttribute('aria-busy', 'false');
-    await expect(addVariant).toBeEnabled();
+    await expect(addModelFormat).toBeEnabled();
 });

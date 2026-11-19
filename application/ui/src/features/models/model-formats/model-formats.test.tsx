@@ -23,12 +23,17 @@ describe('ModelFormats', () => {
         );
     });
 
-    it('hides missing variants and offers only available export actions', async () => {
+    it('hides missing model formats and offers only available export actions', async () => {
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        await user.click(await screen.findByRole('button', { name: 'Add variant' }));
-        expect(screen.getByRole('dialog', { name: 'Add variant' })).toBeInTheDocument();
-        expect(screen.getByRole('radiogroup', { name: 'Export backend' })).toBeInTheDocument();
+        await user.click(await screen.findByRole('button', { name: 'Add model format' }));
+        expect(screen.getByRole('dialog', { name: 'Add model format' })).toBeInTheDocument();
+        expect(screen.getByRole('radiogroup', { name: 'Model format' })).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                'Select a model format to export the stored training checkpoint. Existing model formats stay unchanged.'
+            )
+        ).toBeInTheDocument();
         expect(screen.getByRole('radio', { name: /PyTorch/ })).toBeChecked();
         expect(screen.getByRole('radio', { name: /ONNX/ })).toBeInTheDocument();
         expect(screen.getAllByRole('radio').map((item) => item.getAttribute('value'))).toEqual([
@@ -41,19 +46,19 @@ describe('ModelFormats', () => {
         expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
     });
 
-    it('opens the add-variant dialog with the keyboard and restores focus on dismissal', async () => {
+    it('opens the add-model-format dialog with the keyboard and restores focus on dismissal', async () => {
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        const addVariant = await screen.findByRole('button', { name: 'Add variant' });
-        await waitFor(() => expect(addVariant).toBeEnabled());
-        expect(within(addVariant).getByText('Export to another backend')).toBeInTheDocument();
+        const addModelFormat = await screen.findByRole('button', { name: 'Add model format' });
+        await waitFor(() => expect(addModelFormat).toBeEnabled());
+        expect(within(addModelFormat).getByText('Export to another inference backend')).toBeInTheDocument();
         await user.tab();
-        expect(addVariant).toHaveFocus();
+        expect(addModelFormat).toHaveFocus();
         await user.keyboard('{Enter}');
         expect(screen.getByRole('radio', { name: /ONNX/ })).toBeInTheDocument();
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-        await waitFor(() => expect(addVariant).toHaveFocus());
+        await waitFor(() => expect(addModelFormat).toHaveFocus());
     });
 
     it('does not request an export until confirmed and allows canceling the selection', async () => {
@@ -66,10 +71,10 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        await user.click(await screen.findByRole('button', { name: 'Add variant' }));
+        await user.click(await screen.findByRole('button', { name: 'Add model format' }));
         await user.click(screen.getByRole('radio', { name: /ONNX/ }));
         expect(screen.getByRole('radio', { name: /ONNX/ })).toBeChecked();
-        expect(screen.queryByLabelText('ONNX variant')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('ONNX model format')).not.toBeInTheDocument();
         expect(submitted).not.toHaveBeenCalled();
         await user.click(screen.getByRole('button', { name: 'Cancel' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -84,13 +89,13 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        await user.click(await screen.findByRole('button', { name: 'Add variant' }));
+        await user.click(await screen.findByRole('button', { name: 'Add model format' }));
         expect(screen.queryByRole('radio', { name: /PyTorch/ })).not.toBeInTheDocument();
         expect(screen.getByRole('radio', { name: /OpenVINO/ })).toBeChecked();
         expect(screen.getByRole('radio', { name: /ONNX/ })).toBeInTheDocument();
     });
 
-    it('sorts variant cards by backend rather than API response order', async () => {
+    it('sorts model format cards by backend rather than API response order', async () => {
         server.use(
             http.get('/api/models/{model_id}', () =>
                 HttpResponse.json(
@@ -104,12 +109,12 @@ describe('ModelFormats', () => {
             )
         );
         render(<ModelFormats model={model} />);
-        await screen.findByRole('region', { name: 'PyTorch variant' });
+        await screen.findByRole('region', { name: 'PyTorch model format' });
         expect(screen.getAllByRole('region').map((card) => card.getAttribute('aria-label'))).toEqual([
-            'PyTorch variant',
-            'OpenVINO variant',
-            'ONNX variant',
-            'ExecuTorch variant',
+            'PyTorch model format',
+            'OpenVINO model format',
+            'ONNX model format',
+            'ExecuTorch model format',
         ]);
     });
 
@@ -147,11 +152,11 @@ describe('ModelFormats', () => {
                 )
             );
             render(<ModelFormats model={model} />);
-            await waitFor(() => expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled());
-            expect(screen.getByRole('region', { name: 'PyTorch variant' })).toBeInTheDocument();
-            expect(screen.queryByRole('region', { name: 'ONNX variant' })).not.toBeInTheDocument();
-            expect(screen.queryByText(/Refreshing variant/)).not.toBeInTheDocument();
-            await userEvent.setup().click(screen.getByRole('button', { name: 'Add variant' }));
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Add model format' })).toBeEnabled());
+            expect(screen.getByRole('region', { name: 'PyTorch model format' })).toBeInTheDocument();
+            expect(screen.queryByRole('region', { name: 'ONNX model format' })).not.toBeInTheDocument();
+            expect(screen.queryByText(/Refreshing model format/)).not.toBeInTheDocument();
+            await userEvent.setup().click(screen.getByRole('button', { name: 'Add model format' }));
             expect(screen.getByRole('radio', { name: /ONNX/ })).toBeInTheDocument();
         }
     );
@@ -173,19 +178,19 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled());
-        await user.click(screen.getByRole('button', { name: 'Add variant' }));
-        await user.click(screen.getByRole('button', { name: 'Export variant' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Add model format' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Add model format' }));
+        await user.click(screen.getByRole('button', { name: 'Export model' }));
         expect(within(screen.getByRole('dialog')).getByRole('status')).toHaveTextContent('Requesting export');
         await act(async () => {
             accept();
         });
-        const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+        const card = await screen.findByRole('region', { name: 'PyTorch model format' });
         expect(await within(card).findByText('Export queued')).toBeInTheDocument();
         expect(within(card).queryByText(/Old export created/)).not.toBeInTheDocument();
     });
 
-    it('immediately shows only the requested variant, then follows its job to completion', async () => {
+    it('immediately shows only the requested model format, then follows its job to completion', async () => {
         let accept: () => void = () => undefined;
         const accepted = new Promise<void>((resolve) => {
             accept = resolve;
@@ -204,19 +209,19 @@ describe('ModelFormats', () => {
         const queryClient = createQueryClient();
         render(<ModelFormats model={model} />, { queryClient });
         const user = userEvent.setup();
-        await user.click(await screen.findByRole('button', { name: 'Add variant' }));
-        await user.click(screen.getByRole('button', { name: 'Export variant' }));
-        const dialog = screen.getByRole('dialog', { name: 'Add variant' });
+        await user.click(await screen.findByRole('button', { name: 'Add model format' }));
+        await user.click(screen.getByRole('button', { name: 'Export model' }));
+        const dialog = screen.getByRole('dialog', { name: 'Add model format' });
         expect(within(dialog).getByRole('status')).toHaveTextContent('Requesting export');
-        expect(within(dialog).getByRole('button', { name: /Export variant/ })).toBeDisabled();
+        expect(within(dialog).getByRole('button', { name: /Export model/ })).toBeDisabled();
         expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
         expect(within(dialog).getByRole('radio', { name: /ONNX/ })).toBeDisabled();
         await user.keyboard('{Escape}');
         expect(dialog).toBeInTheDocument();
-        const card = await screen.findByLabelText('PyTorch variant');
+        const card = await screen.findByLabelText('PyTorch model format');
         expect(card).toHaveAttribute('aria-busy', 'true');
-        expect(screen.queryByLabelText('ONNX variant')).not.toBeInTheDocument();
-        expect(screen.getByLabelText('Add variant', { selector: 'button' })).toBeDisabled();
+        expect(screen.queryByLabelText('ONNX model format')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Add model format', { selector: 'button' })).toBeDisabled();
         expect(submitted).toHaveBeenCalledWith({ model_id: 'model-1', backend: 'torch' });
         await act(async () => {
             accept();
@@ -226,7 +231,7 @@ describe('ModelFormats', () => {
         act(() => {
             queryClient.setQueryData(JOBS_QUERY_KEY, [getMockedModelExportJob({ status: 'running', progress: 40 })]);
         });
-        await waitFor(() => expect(within(card).getByRole('status')).toHaveTextContent('Exporting variant'));
+        await waitFor(() => expect(within(card).getByRole('status')).toHaveTextContent('Exporting model'));
         expect(card).toHaveAttribute('aria-busy', 'true');
         expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
         expect(within(card).queryByText('Size')).not.toBeInTheDocument();
@@ -244,7 +249,7 @@ describe('ModelFormats', () => {
         expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
         expect(card).toHaveAttribute('aria-busy', 'false');
         expect(within(card).getByText('Size')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Add model format' })).toBeEnabled();
     });
 
     it('scopes an existing export to its backend and model', async () => {
@@ -266,10 +271,10 @@ describe('ModelFormats', () => {
             )
         );
         render(<ModelFormats model={model} />);
-        const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+        const card = await screen.findByRole('region', { name: 'PyTorch model format' });
         expect(within(card).getByRole('button', { name: 'Cancel export' })).toBeInTheDocument();
-        expect(screen.queryByRole('region', { name: 'ONNX variant' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('region', { name: 'OpenVINO variant' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'ONNX model format' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'OpenVINO model format' })).not.toBeInTheDocument();
     });
 
     it.each(['pending', 'running', 'failed'] as const)(
@@ -277,7 +282,7 @@ describe('ModelFormats', () => {
         async (status) => {
             server.use(http.get('/api/jobs', () => HttpResponse.json([getMockedModelExportJob({ status })])));
             render(<ModelFormats model={model} />);
-            const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+            const card = await screen.findByRole('region', { name: 'PyTorch model format' });
             const isActive = status === 'pending' || status === 'running';
             expect(card).toHaveAttribute('aria-busy', String(isActive));
             expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
@@ -299,13 +304,13 @@ describe('ModelFormats', () => {
             http.get('/api/jobs', () => HttpResponse.json([getMockedModelExportJob({ status: 'canceled' })]))
         );
         render(<ModelFormats model={model} />);
-        const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+        const card = await screen.findByRole('region', { name: 'PyTorch model format' });
         expect(within(card).getByRole('button', { name: 'Download PyTorch export' })).toBeEnabled();
         expect(within(card).queryByRole('button', { name: 'Retry export' })).not.toBeInTheDocument();
         expect(card).toHaveAttribute('aria-busy', 'false');
     });
 
-    it('keeps existing variants usable while another backend exports', async () => {
+    it('keeps existing model formats usable while another backend exports', async () => {
         server.use(
             http.get('/api/models/{model_id}', () =>
                 HttpResponse.json(
@@ -317,11 +322,14 @@ describe('ModelFormats', () => {
             http.get('/api/jobs', () => HttpResponse.json([getMockedModelExportJob({ status: 'running' })]))
         );
         render(<ModelFormats model={model} />);
-        const card = await screen.findByRole('region', { name: 'ONNX variant' });
+        const card = await screen.findByRole('region', { name: 'ONNX model format' });
         expect(within(card).getByRole('button', { name: 'Download ONNX export' })).toBeEnabled();
         expect(within(card).queryByRole('status')).not.toBeInTheDocument();
         expect(card).toHaveAttribute('aria-busy', 'false');
-        expect(await screen.findByRole('region', { name: 'PyTorch variant' })).toHaveAttribute('aria-busy', 'true');
+        expect(await screen.findByRole('region', { name: 'PyTorch model format' })).toHaveAttribute(
+            'aria-busy',
+            'true'
+        );
     });
 
     it('does not offer an export when no backend is available', async () => {
@@ -329,18 +337,18 @@ describe('ModelFormats', () => {
             http.get('/api/models/{model_id}', () => HttpResponse.json(getMockedModelDetail({ available_actions: [] })))
         );
         render(<ModelFormats model={model} />);
-        expect(await screen.findByText('No exported variants are available for this model.')).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Add variant' })).not.toBeInTheDocument();
+        expect(await screen.findByText('No exported model formats are available for this model.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Add model format' })).not.toBeInTheDocument();
     });
 
     it('blocks new exports and offers recovery if job status cannot be loaded', async () => {
         server.use(http.get('/api/jobs', () => HttpResponse.error()));
         render(<ModelFormats model={model} />);
         expect(await screen.findByText('Unable to load export status.')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Add variant' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Add model format' })).toBeDisabled();
         server.use(http.get('/api/jobs', () => HttpResponse.json([])));
         await userEvent.setup().click(screen.getByRole('button', { name: 'Retry job status' }));
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Add model format' })).toBeEnabled());
     });
 
     it('keeps a failed request in the dialog and on its own card and allows retrying', async () => {
@@ -354,20 +362,20 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        await user.click(await screen.findByRole('button', { name: 'Add variant' }));
+        await user.click(await screen.findByRole('button', { name: 'Add model format' }));
         await user.click(screen.getByRole('radio', { name: /ONNX/ }));
-        await user.click(screen.getByRole('button', { name: 'Export variant' }));
-        const dialog = screen.getByRole('dialog', { name: 'Add variant' });
+        await user.click(screen.getByRole('button', { name: 'Export model' }));
+        const dialog = screen.getByRole('dialog', { name: 'Add model format' });
         expect(await within(dialog).findByRole('alert')).toHaveTextContent('Checkpoint unavailable');
-        expect(within(dialog).getByRole('button', { name: 'Export variant' })).toBeEnabled();
+        expect(within(dialog).getByRole('button', { name: 'Export model' })).toBeEnabled();
         expect(within(dialog).getByRole('radio', { name: /ONNX/ })).toBeChecked();
         await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-        const card = await screen.findByRole('region', { name: 'ONNX variant' });
+        const card = await screen.findByRole('region', { name: 'ONNX model format' });
         expect(await within(card).findByRole('alert')).toHaveTextContent('Checkpoint unavailable');
         expect(within(card).getByRole('button', { name: 'Retry export' })).toBeEnabled();
         expect(card).toHaveAttribute('aria-busy', 'false');
-        expect(screen.queryByRole('region', { name: 'PyTorch variant' })).not.toBeInTheDocument();
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled());
+        expect(screen.queryByRole('region', { name: 'PyTorch model format' })).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Add model format' })).toBeEnabled());
     });
 
     it('retries the selected backend in the dialog and closes only after the request succeeds', async () => {
@@ -389,15 +397,15 @@ describe('ModelFormats', () => {
         );
         render(<ModelFormats model={model} />);
         const user = userEvent.setup();
-        await user.click(await screen.findByRole('button', { name: 'Add variant' }));
-        await user.click(screen.getByRole('button', { name: 'Export variant' }));
+        await user.click(await screen.findByRole('button', { name: 'Add model format' }));
+        await user.click(screen.getByRole('button', { name: 'Export model' }));
         const dialog = screen.getByRole('dialog');
         expect(await within(dialog).findByRole('alert')).toHaveTextContent('Please try again');
         expect(within(dialog).getByRole('radio', { name: /PyTorch/ })).toBeChecked();
-        await user.click(within(dialog).getByRole('button', { name: 'Export variant' }));
+        await user.click(within(dialog).getByRole('button', { name: 'Export model' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(submitted.mock.calls).toEqual([['torch'], ['torch']]);
-        const card = await screen.findByRole('region', { name: 'PyTorch variant' });
+        const card = await screen.findByRole('region', { name: 'PyTorch model format' });
         expect(within(card).getByRole('status')).toHaveTextContent('Export queued');
     });
 });

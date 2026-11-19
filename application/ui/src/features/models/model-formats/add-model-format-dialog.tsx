@@ -8,7 +8,7 @@ import { BackendOption } from '../backend-selection/backend-option';
 
 type ExportBackend = SchemaModelExportAction['backend'];
 
-interface AddVariantDialogProps {
+interface AddModelFormatDialogProps {
     backends: ExportBackend[];
     isSubmitting: boolean;
     isExportDisabled: boolean;
@@ -17,28 +17,29 @@ interface AddVariantDialogProps {
     close: () => void;
 }
 
-export const AddVariantDialog = ({
+export const AddModelFormatDialog = ({
     backends,
     isSubmitting,
     isExportDisabled,
     error,
     onExport,
     close,
-}: AddVariantDialogProps) => {
+}: AddModelFormatDialogProps) => {
     const [selectedBackend, setSelectedBackend] = useState(backends[0]);
     const [hasSubmitted, setHasSubmitted] = useState(false);
 
     return (
         <Dialog>
-            <Heading>Add variant</Heading>
+            <Heading>Add model format</Heading>
             <Divider />
             <Content>
                 <Flex direction='column' gap='size-200'>
                     <Text>
-                        Select a backend to export the stored training checkpoint. Existing variants stay unchanged.
+                        Select a model format to export the stored training checkpoint. Existing model formats stay
+                        unchanged.
                     </Text>
                     <RadioGroup
-                        label='Export backend'
+                        label='Model format'
                         value={selectedBackend}
                         onChange={(value) => {
                             const backend = backends.find((option) => option === value);
@@ -86,7 +87,7 @@ export const AddVariantDialog = ({
                         }
                     }}
                 >
-                    Export variant
+                    Export model
                 </Button>
             </ButtonGroup>
         </Dialog>

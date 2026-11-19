@@ -28,9 +28,9 @@ const getExportStatus = (
         case 'pending':
             return 'Export queued';
         case 'running':
-            return 'Exporting variant…';
+            return 'Exporting model…';
         case 'completed':
-            return 'The exported variant is no longer available.';
+            return 'The exported model format is no longer available.';
         case 'canceled':
             return 'Export canceled';
         default:
@@ -55,10 +55,10 @@ export const ExportJobControls = ({
     const status = getExportStatus(job, isSubmitting, isCanceling);
 
     return (
-        <Flex direction='column' gap='size-100'>
+        <Flex direction='column' gap='size-50'>
             <div role='status' aria-label={`${label} export status`} className={classes.exportStatus}>
                 <Text>{status}</Text>
-                {!isSubmitting && job?.message && <Text> — {job.message}</Text>}
+                {!isSubmitting && job?.message && <Text>&nbsp;{job.message}</Text>}
             </div>
             {(isSubmitting || isActive) && (
                 <Text UNSAFE_className={classes.exportHint}>You can keep working while this export finishes.</Text>

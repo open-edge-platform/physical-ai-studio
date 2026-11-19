@@ -8,7 +8,7 @@ import { $api } from '../../../api/client';
 import type { SchemaModel, SchemaModelExportAction, SchemaModelExportJob } from '../../../api/openapi-spec';
 import { JOBS_QUERY_KEY, useJobCache } from '../../jobs/use-job-cache';
 import { INFERENCE_BACKENDS, isExportBackend } from '../inference-backends';
-import { AddVariantDialog } from './add-variant-dialog';
+import { AddModelFormatDialog } from './add-model-format-dialog';
 import { BackendCard } from './backend-card';
 import { ExportJobControls } from './export-job-controls';
 
@@ -76,8 +76,8 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
             {backends.length === 0 && (
                 <Text>
                     {actions.length > 0
-                        ? 'No variants yet. Add a variant to export the stored checkpoint.'
-                        : 'No exported variants are available for this model.'}
+                        ? 'No model formats yet. Add a model format to export the stored checkpoint.'
+                        : 'No exported model formats are available for this model.'}
                 </Text>
             )}
             <Grid
@@ -103,7 +103,7 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                     return (
                         <section
                             key={backendType}
-                            aria-label={`${INFERENCE_BACKENDS[backendType].label} variant`}
+                            aria-label={`${INFERENCE_BACKENDS[backendType].label} model format`}
                             aria-busy={isExportInProgress}
                         >
                             <BackendCard
@@ -129,16 +129,16 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                 })}
                 {actions.length > 0 && (
                     <AriaButton
-                        aria-label='Add variant'
+                        aria-label='Add model format'
                         className={classes.addCard}
                         isDisabled={isExportDisabled}
                         onPress={() => setCreationBackends(actions.map(({ backend }) => backend))}
                     >
                         <span className={classes.addTitle}>
                             <Add aria-hidden='true' />
-                            <span>Add variant</span>
+                            <span>Add model format</span>
                         </span>
-                        <span>Export to another backend</span>
+                        <span>Export to another inference backend</span>
                     </AriaButton>
                 )}
             </Grid>
@@ -149,7 +149,7 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
                 }}
             >
                 {creationBackends !== null && (
-                    <AddVariantDialog
+                    <AddModelFormatDialog
                         backends={creationBackends}
                         isSubmitting={exportModel.isPending}
                         isExportDisabled={isExportDisabled}
