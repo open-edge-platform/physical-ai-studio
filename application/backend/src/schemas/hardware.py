@@ -23,6 +23,7 @@ class InferenceBackend(StrEnum):
 
     OPENVINO = auto()
     TORCH = auto()
+    EXECUTORCH = auto()
 
 
 class DeviceInfo(BaseModel):

@@ -50,6 +50,7 @@ const model: SchemaModel = {
     lora_enabled: false,
     lora_use_dora: false,
     snapflow_enabled: false,
+    executorch_target: null,
 };
 
 const trainingJob: SchemaTrainJob = {

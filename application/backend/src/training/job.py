@@ -145,6 +145,14 @@ class TrainingJobSpec(BaseModel):
         default=None,
         description="Export formats to produce. None exports every backend the policy supports.",
     )
+    executorch_delegate: Literal["openvino", "xnnpack", "portable"] = Field(
+        default="openvino",
+        description="ExecuTorch delegate used when exporting to ExecuTorch.",
+    )
+    executorch_device: str = Field(
+        default="CPU",
+        description="OpenVINO device compiled into the ExecuTorch program. Ignored for other delegates.",
+    )
     snapflow_start_epoch: int | None = Field(
         default=None,
         ge=1,
@@ -437,7 +445,7 @@ def run_training_job(
         del trainer, datamodule, policy
         _release_memory()
         export_policy = _export_policy(spec, output_dir)
-        _export(export_policy, output_dir, report, spec.export_backends)
+        _export(export_policy, output_dir, report, spec.export_backends, spec=spec)
 
 
 def _build_snapflow_callback(spec: TrainingJobSpec) -> Any:
@@ -628,7 +636,14 @@ def _backend_name(backend: Any) -> str:
     return backend.value if hasattr(backend, "value") else str(backend)
 
 
-def _export(policy: Policy, output_dir: Path, report: ReportFn, requested: list[str] | None = None) -> None:
+def _export(
+    policy: Policy,
+    output_dir: Path,
+    report: ReportFn,
+    requested: list[str] | None = None,
+    *,
+    spec: TrainingJobSpec | None = None,
+) -> None:
     """Export the policy to the requested backends, or to every one it supports.
 
     A requested backend the policy cannot produce is skipped rather than
@@ -657,7 +672,12 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn, requested: list[
         try:
             logger.info("Exporting model to %s format", name)
             report(99, f"Exporting to {name} format", {})
-            policy.export(output_dir / EXPORTS_DIRNAME / name, backend=backend)
+            kwargs: dict[str, Any] = {}
+            if name == "executorch" and spec is not None:
+                kwargs["delegate"] = spec.executorch_delegate
+                if spec.executorch_delegate == "openvino":
+                    kwargs["delegate_config"] = {"device": spec.executorch_device}
+            policy.export(output_dir / EXPORTS_DIRNAME / name, backend=backend, **kwargs)
         except ImportError as exc:
             # An optional backend dependency is missing (e.g. executorch on xpu
             # builds). Skip it without a traceback so the run isn't mistaken

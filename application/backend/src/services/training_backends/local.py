@@ -134,6 +134,8 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
         export_backends=(
             [str(backend) for backend in payload.export_backends] if payload.export_backends is not None else None
         ),
+        executorch_delegate=payload.executorch_delegate,
+        executorch_device=payload.executorch_device,
     )
 
 

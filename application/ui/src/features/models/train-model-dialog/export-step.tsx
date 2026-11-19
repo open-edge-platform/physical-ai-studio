@@ -1,9 +1,20 @@
-import { Checkbox, CheckboxGroup, Flex, ProgressCircle, Text } from '@geti-ui/ui';
+import {
+    Checkbox,
+    CheckboxGroup,
+    Flex,
+    Item,
+    Picker,
+    ProgressCircle,
+    Radio,
+    RadioGroup,
+    Text,
+    View,
+} from '@geti-ui/ui';
 
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { isExportBackend } from '../inference-backends';
 import { InferenceBackendLogo } from '../model-formats/backend-card';
-import { ExportSelection } from './use-export-backends';
+import { ExecuTorchDelegate, ExportSelection } from './use-export-backends';
 
 import classes from './train-model-dialog.module.css';
 
@@ -63,7 +74,44 @@ export const ExportStep = ({ policyName, selection }: ExportStepProps) => {
                 ))}
             </CheckboxGroup>
 
+            {selectedBackends.includes('executorch') && <ExecuTorchOptions selection={selection} />}
+
             {error !== null && <InlineAlert variant='warning'>{error}</InlineAlert>}
         </Flex>
+    );
+};
+
+const ExecuTorchOptions = ({ selection }: { selection: ExportSelection }) => {
+    const { executorchDelegate, setExecutorchDelegate, executorchDevice, setExecutorchDevice, executorchDevices } =
+        selection;
+
+    return (
+        <View paddingStart='size-300'>
+            <RadioGroup
+                label='ExecuTorch delegate'
+                orientation='horizontal'
+                isEmphasized
+                value={executorchDelegate}
+                onChange={(value) => setExecutorchDelegate(value as ExecuTorchDelegate)}
+            >
+                <Radio value='openvino'>OpenVINO</Radio>
+                <Radio value='xnnpack'>XNNPACK</Radio>
+                <Radio value='portable'>Portable</Radio>
+            </RadioGroup>
+            {executorchDelegate === 'openvino' && (
+                <Picker
+                    label='OpenVINO device'
+                    selectedKey={executorchDevice}
+                    onSelectionChange={(key) => key !== null && setExecutorchDevice(String(key))}
+                    description="Compiled into the model, can't be changed later. Must exist on the training machine."
+                >
+                    {executorchDevices.map(({ device, name }) => (
+                        <Item key={device} textValue={name}>
+                            {name}
+                        </Item>
+                    ))}
+                </Picker>
+            )}
+        </View>
     );
 };

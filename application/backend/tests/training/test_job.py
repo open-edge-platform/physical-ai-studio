@@ -252,6 +252,7 @@ class _ExportablePolicy(ExportablePolicyMixin):
         self._backends = backends
         self._failing = failing or set()
         self.exported: list[tuple[str, ExportBackend]] = []
+        self.export_kwargs: dict[ExportBackend, dict[str, Any]] = {}
 
     def get_supported_export_backends(self) -> list[ExportBackend]:  # type: ignore[override]
         return self._backends
@@ -261,6 +262,7 @@ class _ExportablePolicy(ExportablePolicyMixin):
             msg = f"{backend} unavailable"
             raise RuntimeError(msg)
         self.exported.append((str(output_path), backend))
+        self.export_kwargs[backend] = export_kwargs
 
 
 def _wire_mocked_fit(trainer: Any, checkpoint: Path, *, model: Any, datamodule: Any) -> None:
@@ -563,6 +565,17 @@ class TestRunTrainingJob:
         _run(TrainingJobSpec(policy="act", export_backends=["openvino"]), tmp_path, policy=policy)
 
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+    def test_executorch_export_uses_the_requested_delegate_and_device(self, tmp_path: Path) -> None:
+        policy = _ExportablePolicy([ExportBackend.TORCH, ExportBackend.EXECUTORCH])
+
+        _run(TrainingJobSpec(policy="act", executorch_device="GPU"), tmp_path, policy=policy)
+
+        assert policy.export_kwargs[ExportBackend.TORCH] == {}
+        assert policy.export_kwargs[ExportBackend.EXECUTORCH] == {
+            "delegate": "openvino",
+            "delegate_config": {"device": "GPU"},
+        }
 
     def test_a_requested_backend_the_policy_cannot_produce_is_skipped(self, tmp_path: Path) -> None:
         """Which formats a policy can trace is the policy's to say, not the caller's."""
