@@ -8,10 +8,10 @@ from __future__ import annotations
 import json
 import math
 import os
-import random
 import sys
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,7 +19,6 @@ from tests.integration import _device
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
-    from pathlib import Path
 
     from lerobot.configs.train import TrainPipelineConfig
 
@@ -27,6 +26,7 @@ _DEFAULT_STEPS = 1
 _STEP_ENV = "PHYSICALAI_LEROBOT_TEST_STEPS"
 _DEVICE_ENV = "PHYSICALAI_LEROBOT_DEVICE"
 _ALLOWED_DEVICES = {"auto", "cpu", "cuda", "xpu"}
+_NATIVE_TRAINER = Path(__file__).with_name("_native_lerobot_train.py")
 
 _DATASETS = [
     pytest.param(
@@ -338,18 +338,23 @@ def test_engine_trains_public_lerobot_dataset_and_packages_checkpoint(
 @pytest.mark.integration
 @pytest.mark.requires_download
 def test_native_lerobot_training_matches_engine_on_pinned_pusht(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     record_property: Callable[[str, object], None],
 ) -> None:
-    """Compare native and Engine training traces/configs/weights on the same data."""
+    """Compare native and Engine training traces/configs/weights on the same data.
+
+    Both runs use the LeRobot worker environment, so the comparison checks the Engine path
+    (config serialization, worker protocol, progress events, cancellation listener) rather than
+    differences between the host's and the worker's PyTorch builds. The native run starts
+    LeRobot's trainer directly in that environment, the way the worker does.
+    """
     if os.environ.get("PHYSICALAI_RUN_LEROBOT_INTEGRATION") != "1":
         pytest.skip("Set PHYSICALAI_RUN_LEROBOT_INTEGRATION=1 to run training parity tests.")
 
     import numpy as np
     import torch
-    from lerobot.scripts import lerobot_train
-    from lerobot.utils.import_utils import register_third_party_plugins
+    from physicalai import isolate
+    from physicalai.engine import prepare_environment, resolve_accelerator
     from safetensors.torch import load_file
     from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
@@ -358,7 +363,7 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     dataset_revision = "b1c3ecbae7f244acc039a3dbc255a00dad1372b9"
     native_output = tmp_path / "native-output"
     engine_output = tmp_path / "engine-output"
-    # Separate host/worker processes can select different cuDNN benchmark kernels unless this native flag is set.
+    # Separate processes can select different cuDNN benchmark kernels unless this native flag is set.
     deterministic_cuda = device == "cuda"
     native_config = _make_training_config(
         "act",
@@ -381,31 +386,21 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     assert native_config is not engine_config
     assert native_output != engine_output
 
-    native_losses: list[float] = []
-    phase = "native"
-    original_update = cast("Callable[..., tuple[object, object]]", lerobot_train.update_policy)
+    environment = prepare_environment(LeRobotEngine.environment_for_policy("act"), resolve_accelerator(device))
+    native_config_dir = tmp_path / "native-config"
+    native_config.save_pretrained(native_config_dir)
+    native_losses_path = tmp_path / "native-losses.json"
+    native = isolate.run(
+        environment.isolate,
+        _NATIVE_TRAINER,
+        [str(native_config_dir / "train_config.json"), str(native_losses_path)],
+        check=False,
+        capture_output=True,
+    )
+    assert native.returncode == 0, native.stderr.decode(errors="replace")[-4000:]
+    native_losses = [float(loss) for loss in json.loads(native_losses_path.read_text(encoding="utf-8"))]
 
-    def record_native_update(*args: object, **kwargs: object) -> tuple[object, object]:
-        result = original_update(*args, **kwargs)
-        if phase == "native":
-            tracker = result[0]
-            to_dict = getattr(tracker, "to_dict")
-            native_losses.append(float(to_dict(use_avg=False)["loss"]))
-        return result
-
-    monkeypatch.setattr(lerobot_train, "update_policy", record_native_update)
-    _reset_training_seed(42, device)
-    original_argv = sys.argv
-    try:
-        sys.argv = ["lerobot-train"]
-        register_third_party_plugins()
-        lerobot_train.train(native_config)
-    finally:
-        sys.argv = original_argv
-
-    phase = "engine"
     hooks = _RecordingHooks()
-    _reset_training_seed(42, device)
     run = LeRobotEngine().train(engine_config, hooks=hooks)
 
     native_checkpoint = native_output / "checkpoints" / "last" / "pretrained_model"
@@ -458,20 +453,6 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     assert losses_match and not weight_mismatches, trajectory
     (tmp_path / "native-engine-training-parity.json").write_text(trajectory + "\n", encoding="utf-8")
     print(f"Native/Engine training parity ({requested_steps} steps, {device}): {trajectory}")
-
-
-def _reset_training_seed(seed: int, device: str) -> None:
-    """Reset host and requested accelerator RNGs before a comparison run."""
-    import numpy as np
-    import torch
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if device == "cuda":
-        torch.cuda.manual_seed_all(seed)
-    elif device == "xpu":
-        torch.xpu.manual_seed_all(seed)
 
 
 def _training_parity_tolerances(device: str) -> tuple[float, float]:
