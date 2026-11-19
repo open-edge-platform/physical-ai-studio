@@ -134,6 +134,52 @@ test('expands plots to fill a multi-column row when only one graph has a legend'
     }).toPass();
 });
 
+test('snaps synchronized cursors and tooltip values to each graph’s nearest recorded step', async ({ page }) => {
+    const training = page.getByRole('region', { name: 'Training loss graph' });
+    const validation = page.getByRole('region', { name: 'Validation loss graph' });
+    const action = page.getByRole('region', { name: 'Validation action error graph' });
+    const learningRate = page.getByRole('region', { name: 'Learning rate graph' });
+    // The training curve's midpoint is the sample at step 99.
+    await expect(training.locator('.recharts-area-curve')).toHaveCount(1);
+    const point = await pointOnPath(training.locator('.recharts-area-curve'), 0.5);
+    await page.mouse.move(point.x, point.y);
+
+    await expect(training.getByRole('tooltip')).toContainText('Step: 99');
+    await expect(training.getByRole('tooltip')).toContainText('Loss: 0.6');
+    await expect(validation.getByRole('tooltip')).toContainText('Step: 131');
+    await expect(validation.getByRole('tooltip')).toContainText('Loss: 0.7');
+    await expect(action.getByRole('tooltip')).toContainText('Step: 131');
+    await expect(action.getByRole('tooltip')).toContainText('Mean: 3.8');
+    await expect(learningRate.getByRole('tooltip')).toContainText('Step: 99');
+    await expect(learningRate.getByRole('tooltip')).toContainText('AdamWBF16Kahan: 0.00002');
+
+    for (const graph of [training, validation, action, learningRate]) {
+        const cursor = graph.locator('.recharts-tooltip-cursor');
+        await expect(cursor).toHaveCount(1);
+        // A synchronized cursor must sit on its own selected data point, not at the source's x position.
+        const cursorBounds = await cursor.boundingBox();
+        const dotBounds = await graph.locator('.recharts-active-dot circle').first().boundingBox();
+        expect(cursorBounds).not.toBeNull();
+        expect(dotBounds).not.toBeNull();
+        expect(Math.abs((cursorBounds?.x ?? 0) - ((dotBounds?.x ?? 0) + (dotBounds?.width ?? 0) / 2))).toBeLessThan(1);
+    }
+
+    // Sync also works in reverse, clamping shorter series to their last sample.
+    const lastValidationPoint = await pointOnPath(validation.locator('.recharts-area-curve'), 1);
+    await page.mouse.move(lastValidationPoint.x - 1, lastValidationPoint.y);
+    await expect(validation.getByRole('tooltip')).toContainText('Step: 197');
+    await expect(training.getByRole('tooltip')).toContainText('Step: 149');
+    await expect(training.getByRole('tooltip')).toContainText('Loss: 0.4');
+    await expect(action.getByRole('tooltip')).toContainText('Step: 197');
+    await expect(learningRate.getByRole('tooltip')).toContainText('Step: 149');
+
+    await page.mouse.move(0, 0);
+    for (const graph of [training, validation, action, learningRate]) {
+        await expect(graph.getByRole('tooltip')).toBeHidden();
+        await expect(graph.locator('.recharts-tooltip-cursor')).toHaveCount(0);
+    }
+});
+
 for (const title of ['Learning rate', 'Validation action error']) {
     test(`${title} tooltip follows the selected step across the plot`, async ({ page }) => {
         const graph = page.getByRole('region', { name: `${title} graph` });

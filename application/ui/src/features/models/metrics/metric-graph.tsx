@@ -16,6 +16,7 @@ import {
 
 import { Box } from '../shared/box';
 import { MetricTooltip } from './metric-tooltip';
+import { syncNearestStep } from './sync-nearest-step';
 import { hasMetricValue, type MetricLine, type MetricsEntry } from './types';
 
 import classes from './metric-graph.module.css';
@@ -160,7 +161,7 @@ export const MetricGraph = ({
                             >
                                 <ComposedChart
                                     syncId={syncId}
-                                    syncMethod='value'
+                                    syncMethod={syncNearestStep}
                                     style={{ aspectRatio: 1.6 }}
                                     data={points}
                                     margin={{ top: 35, bottom: 35, left: 35, right: 35 }}
@@ -241,6 +242,8 @@ export const MetricGraph = ({
                                     )}
                                     <MetricTooltip
                                         title={title}
+                                        data={points}
+                                        getX={getX}
                                         xAxisLabel={xAxisLabel}
                                         formatY={formatY}
                                         lines={visibleLines}

@@ -110,4 +110,23 @@ describe('metric series controls', () => {
         expect(screen.getByRole('tooltip')).toHaveTextContent('Mean: Not available');
         expect(screen.queryByRole('button', { name: 'Highlight Joint' })).not.toBeInTheDocument();
     });
+
+    it('labels synchronized values with the selected sample step rather than the source label', () => {
+        render(
+            <MetricTooltipContent
+                title='Action error'
+                active
+                label={99}
+                activeIndex='0'
+                data={data}
+                getX={graphProps.getX}
+                lines={lines}
+                payload={[{ name: 'Mean', value: 4, graphicalItemId: 'mean' }]}
+                onHighlight={() => {}}
+            />
+        );
+
+        expect(screen.getByRole('tooltip')).toHaveTextContent('Step: 65');
+        expect(screen.getByRole('tooltip')).not.toHaveTextContent('Step: 99');
+    });
 });
