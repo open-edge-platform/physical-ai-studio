@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "pillow",
+    "imageio",
     "lightning>=2.6.6",
     "lightning-utilities",
     "lerobot[dataset]==0.7",
@@ -219,8 +220,6 @@ override-dependencies = [
 
 conflicts = [
     [{ extra = "cpu" }, { extra = "cu132" }, { extra = "xpu" }],
-    [{ extra = "executorch" }, { extra = "xpu" }],
-    [{ extra = "executorch-openvino" }, { extra = "xpu" }],
 ]
 
 # PyTorch index configuration
