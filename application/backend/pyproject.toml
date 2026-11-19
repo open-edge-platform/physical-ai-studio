@@ -135,8 +135,8 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-# Runtime with the task_index preprocessor (openvinotoolkit/physicalai#477); move to main once it merges.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "41cca4ee3c1879a6f99f303856c2f7c277ba28a3" }
+# Runtime main with the task_index preprocessor (openvinotoolkit/physicalai#477); move to the next release.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "e089a021ab527da1f119bbf3fe888dd14705b1fc" }
 physicalai-train = { path = "../../library", editable = true }
 torchao = [
     { index = "pytorch-cpu", extra = "cpu" },
