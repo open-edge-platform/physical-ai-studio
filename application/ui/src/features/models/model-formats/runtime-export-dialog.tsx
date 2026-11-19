@@ -17,12 +17,6 @@ export const RuntimeExportDialog = ({ close, model, backend }: RuntimeExportDial
     const { data: environments = [] } = $api.useQuery('get', '/api/projects/{project_id}/environments', {
         params: { path: { project_id: model.project_id } },
     });
-    const { data: dataset } = $api.useQuery(
-        'get',
-        '/api/dataset/{dataset_id}',
-        { params: { path: { dataset_id: model.dataset_id! } } },
-        { enabled: model.dataset_id != null }
-    );
     const { data: tasks = [] } = $api.useQuery(
         'get',
         '/api/models/{model_id}/tasks',
@@ -31,7 +25,7 @@ export const RuntimeExportDialog = ({ close, model, backend }: RuntimeExportDial
     );
     const { data: inferenceDevices = [] } = $api.useQuery('get', '/api/system/devices/inference');
 
-    const defaultEnvironmentId = dataset?.environment_id ?? environments[0]?.id;
+    const defaultEnvironmentId = environments[0]?.id;
     const [environmentId, setEnvironmentId] = useState<string | undefined>(defaultEnvironmentId);
     const selectedEnvironmentId = environmentId ?? defaultEnvironmentId;
 

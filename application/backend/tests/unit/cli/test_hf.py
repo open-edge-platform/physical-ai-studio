@@ -19,7 +19,7 @@ from cli.hf import hf, inspection, storage, transfer
 from cli.hf.inspection import token as resolve_token
 from cli.hf.schemas import AssetMetadata, Inspection
 from cli.hf.state import ExportSource, ExportState, ImportState
-from db.schema import Base, DatasetDB, ModelDB, ProjectDB, ProjectEnvironmentDB
+from db.schema import Base, DatasetDB, DatasetRecordingEnvironmentDB, ModelDB, ProjectDB, ProjectEnvironmentDB
 from settings import Settings
 
 
@@ -159,7 +159,7 @@ def environment(tmp_path, monkeypatch):
                 raise
 
     monkeypatch.setattr("db.get_async_db_session_ctx", session_context)
-    project_id, dataset_id, environment_id = (str(uuid4()) for _ in range(3))
+    project_id, dataset_id = (str(uuid4()) for _ in range(2))
 
     async def setup():
         async with engine.begin() as conn:
@@ -167,13 +167,10 @@ def environment(tmp_path, monkeypatch):
         async with session_factory() as session:
             session.add(ProjectDB(id=project_id, name="Test project"))
             await session.flush()
-            session.add(ProjectEnvironmentDB(id=environment_id, project_id=project_id, name="Existing environment"))
-            await session.flush()
             session.add(
                 DatasetDB(
                     id=dataset_id,
                     project_id=project_id,
-                    environment_id=environment_id,
                     name="Existing dataset",
                     path=str(settings.datasets_dir / dataset_id),
                     default_task="",
@@ -383,7 +380,7 @@ def test_import_download_resume_and_duplicate_safe_registration(environment):
     asyncio.run(check())
 
 
-def test_dataset_import_creates_empty_environment_and_round_trips(environment):
+def test_dataset_import_without_environment_and_round_trips(environment):
     env = environment
     env.hub.repos["owner/dataset"] = dataset_files(env.tmp / "input")
     result = invoke("dataset", "import", "owner/dataset", "--project-id", env.project_id, "--json")
@@ -392,11 +389,12 @@ def test_dataset_import_creates_empty_environment_and_round_trips(environment):
 
     async def check():
         async with env.sessions() as session:
-            environment = await session.get(ProjectEnvironmentDB, report["environment_id"])
-            assert environment.project_id == env.project_id
-            assert not environment.robot_links
-            assert not environment.camera_links
+            dataset = await session.get(DatasetDB, report["id"])
+            assert dataset.project_id == env.project_id
+            assert not (await session.scalars(select(ProjectEnvironmentDB))).all()
+            assert not (await session.scalars(select(DatasetRecordingEnvironmentDB))).all()
 
+    assert "environment_id" not in report
     asyncio.run(check())
     exported = invoke("dataset", "export", "owner/copy", "--dataset-id", report["id"], "--json")
     assert exported.exit_code == 0, exported.output
@@ -738,7 +736,8 @@ def test_exports_normalization_recovers_after_moving_files(tmp_path, monkeypatch
     assert inspection.inspect_local_model(tmp_path).importable
 
 
-def test_placeholder_environment_rolls_back_on_registration_failure(environment, monkeypatch):
+@pytest.mark.parametrize("legacy_environment_id", [None, str(uuid4())])
+def test_dataset_registration_rolls_back_and_resumes(environment, monkeypatch, legacy_environment_id):
     from sqlalchemy.ext.asyncio import AsyncSession
 
     env = environment
@@ -754,14 +753,27 @@ def test_placeholder_environment_rolls_back_on_registration_failure(environment,
 
     async def check():
         async with env.sessions() as session:
-            assert len((await session.scalars(select(ProjectEnvironmentDB))).all()) == 1
+            assert not (await session.scalars(select(ProjectEnvironmentDB))).all()
+            assert not (await session.scalars(select(DatasetRecordingEnvironmentDB))).all()
             assert len((await session.scalars(select(DatasetDB))).all()) == 1
 
     asyncio.run(check())
     monkeypatch.setattr(AsyncSession, "commit", commit)
     state = transfer_state(env)
+    saved = ImportState.load(UUID(state["transfer_id"]), "dataset")
+    saved.environment_id = legacy_environment_id
+    saved.save()
     resumed = invoke("dataset", "import", "--resume", state["transfer_id"], "--json")
     assert resumed.exit_code == 0, resumed.output
+    assert "environment_id" not in json.loads(resumed.stdout)
+
+    async def check_resumed():
+        async with env.sessions() as session:
+            assert len((await session.scalars(select(DatasetDB))).all()) == 2
+            assert not (await session.scalars(select(ProjectEnvironmentDB))).all()
+            assert not (await session.scalars(select(DatasetRecordingEnvironmentDB))).all()
+
+    asyncio.run(check_resumed())
 
 
 def test_resume_is_locked(environment):

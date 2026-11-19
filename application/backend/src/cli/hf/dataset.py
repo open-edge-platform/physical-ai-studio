@@ -17,9 +17,8 @@ from cli.hf.state import ExportState, ImportState
 def dataset() -> None:
     """Inspect, import, and publish LeRobot v3 datasets on the Hub.
 
-    REPO_ID is OWNER/REPO. Import needs an existing local project, not an environment
-    UUID: it creates a temporary empty environment. For local folders, use the
-    separate datasets import-dir command, which has different requirements.
+    REPO_ID is OWNER/REPO. Import needs an existing local project, but no recording
+    environment. For local folders, use the separate datasets import-dir command.
     """
 
 
@@ -66,8 +65,8 @@ def import_dataset(  # noqa: PLR0913, PLR0917
 ) -> None:
     """Download a LeRobot v3.0 dataset from OWNER/REPO into local Studio storage.
 
-    A new import requires REPO_ID and --project-id. Creates a new dataset and
-    temporary empty environment atomically; no robots or cameras are configured.
+    A new import requires REPO_ID and --project-id. Creates a new dataset without
+    a recording environment; no robots or cameras are configured.
     No environment or existing dataset UUID is needed. LeRobot v2 conversion is not
     supported. Inspect first and pin its returned commit with --revision.
 
@@ -151,7 +150,7 @@ def _import_dataset(
     resume: UUID | None,
     dry_run: bool,
 ) -> JsonObject:
-    """Import a LeRobot dataset, creating its temporary environment at registration."""
+    """Import a LeRobot dataset without a recording environment."""
     from cli.hf import transfer
     from cli.hf.inspection import inspect_remote_dataset
     from cli.hf.storage import validate_target
@@ -183,7 +182,6 @@ def _import_dataset(
             revision=inspection.pinned_revision,
             inspection=inspection,
             asset_id=str(uuid4()),
-            environment_id=str(uuid4()),
         )
         state.save()
     with transfer.locked_transfer(state) as state:

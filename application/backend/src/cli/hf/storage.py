@@ -144,9 +144,9 @@ async def register_dataset_import(
     destination: Path,
     inspection: Inspection,
 ) -> TransferResult:
-    """Register a dataset and temporary empty environment in one transaction."""
+    """Register a dataset without creating a recording environment."""
     from db import get_async_db_session_ctx
-    from db.schema import DatasetDB, ProjectEnvironmentDB
+    from db.schema import DatasetDB
 
     asset_id, project_id = state.asset_id, state.project_id
     await validate_target(project_id)
@@ -158,18 +158,10 @@ async def register_dataset_import(
             if existing.project_id != project_id or Path(existing.path).resolve() != destination.resolve():
                 raise ValueError("Saved import ID conflicts with an existing resource")
         else:
-            # TODO: Remove this placeholder environment creation once datasets can
-            # be registered without an environment. Keep it in the same transaction.
-            environment = ProjectEnvironmentDB(
-                id=state.environment_id, project_id=project_id, name=f"Imported dataset {asset_id}"
-            )
-            session.add(environment)
-            await session.flush()
             session.add(
                 DatasetDB(
                     id=asset_id,
                     project_id=project_id,
-                    environment_id=environment.id,
                     name=name,
                     path=str(destination),
                     default_task=metadata.default_task,
@@ -183,7 +175,6 @@ async def register_dataset_import(
         path=str(destination),
         repo_id=state.repo_id,
         revision=state.revision,
-        environment_id=state.environment_id,
     )
 
 

@@ -20,7 +20,7 @@ import classes from './episode-viewer.module.css';
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
     dataset: SchemaDatasetOutput;
-    environment: SchemaEnvironmentWithRelations;
+    environment?: SchemaEnvironmentWithRelations;
     /** The previous episode, shown while the selected one loads: not editable. */
     isPlaceholder?: boolean;
 }
