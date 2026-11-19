@@ -635,16 +635,17 @@ class Rldx1(Rldx1ExportMixin, Policy):
             batch: Input observation batch.
 
         Returns:
-            Tuple of ``(loss, loss_dict)``.
+            Tuple of ``(loss, loss_dict)``, with the denormalized prediction under ``"action_pred"``.
 
         Raises:
             RuntimeError: If model or preprocessor has not been initialized.
         """
-        if self.model is None or self._preprocessor is None:
+        if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model not initialized. Call trainer.fit() or pass env_action_dim."
             raise RuntimeError(msg)
-        preprocessed = self._preprocessor(batch)
-        return self.model.compute_val_loss(preprocessed)
+        loss, loss_dict = self.model.compute_val_loss(self._preprocessor(batch))
+        loss_dict["action_pred"] = self._postprocessor(loss_dict["action_pred"])
+        return loss, loss_dict
 
     def configure_optimizers(self) -> OptimizerLRScheduler:  # type: ignore[override]
         """Create the configured optimizer and a cosine-decay-with-warmup scheduler.

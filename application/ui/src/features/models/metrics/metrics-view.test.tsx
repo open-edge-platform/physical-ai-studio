@@ -56,6 +56,14 @@ describe('MetricsView', () => {
         expect(screen.getByText('Training loss')).toBeInTheDocument();
     });
 
+    it('warns that validation metrics do not measure task success', () => {
+        const data = [entry({ step: 1, val_loss: 0.5 })];
+
+        render(<MetricsView series={[buildSeries('Validation loss', (e) => e.val_loss, data)]} isLoading={false} />);
+
+        expect(screen.getByText('Validation metrics are a sanity check')).toBeInTheDocument();
+    });
+
     it('hides a chart whose values are all null while still rendering charts that have data', () => {
         const data = [entry({ step: 1, train_loss: 0.5, val_loss: null })];
         const series = [

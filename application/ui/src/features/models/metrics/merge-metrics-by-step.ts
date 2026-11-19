@@ -3,17 +3,24 @@
 
 import { MetricsEntry } from './types';
 
-type MergedFields = Required<Omit<MetricsEntry, 'step'>>;
-
 const coalesce = <T>(current: T | null | undefined, incoming: T | null | undefined): T | null =>
     incoming ?? current ?? null;
 
-const mergeFields = (current: MetricsEntry, incoming: MetricsEntry): MergedFields => ({
-    epoch: coalesce(current.epoch, incoming.epoch),
-    train_loss: coalesce(current.train_loss, incoming.train_loss),
-    val_loss: coalesce(current.val_loss, incoming.val_loss),
-    'lr-AdamW': coalesce(current['lr-AdamW'], incoming['lr-AdamW']),
-});
+const mergeEntries = (current: MetricsEntry, incoming: MetricsEntry): MetricsEntry => {
+    const merged: MetricsEntry = {
+        step: incoming.step,
+        epoch: null,
+        train_loss: null,
+        val_loss: null,
+        'lr-AdamW': null,
+    };
+    for (const key of new Set([...Object.keys(current), ...Object.keys(incoming)])) {
+        if (key !== 'step') {
+            merged[key] = coalesce(current[key], incoming[key]);
+        }
+    }
+    return merged;
+};
 
 /**
  * Folds a batch of raw metric entries into an existing step -> entry map,
@@ -31,10 +38,7 @@ export const foldMetricsBatch = (
     for (const entry of batch) {
         const current = next.get(entry.step);
 
-        next.set(entry.step, {
-            step: entry.step,
-            ...mergeFields(current ?? entry, entry),
-        });
+        next.set(entry.step, mergeEntries(current ?? entry, entry));
     }
 
     return next;

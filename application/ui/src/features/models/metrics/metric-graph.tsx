@@ -3,8 +3,10 @@ import { useId } from 'react';
 import { Flex, Text, View } from '@geti-ui/ui';
 import {
     Area,
-    AreaChart,
     CartesianGrid,
+    ComposedChart,
+    Legend,
+    Line,
     ResponsiveContainer,
     Tooltip,
     TooltipContentProps,
@@ -13,28 +15,17 @@ import {
 } from 'recharts';
 
 import { Box } from '../shared/box';
-import type { MetricsEntry } from './types';
+import type { MetricLine, MetricsEntry } from './types';
 
 type CustomTooltipContentProps = Partial<TooltipContentProps> & {
     xAxisLabel?: string;
-    yAxisLabel?: string;
     formatY?: (y: number) => string;
 };
 
-const CustomTooltipContent = ({
-    active,
-    payload,
-    label,
-    xAxisLabel,
-    yAxisLabel,
-    formatY,
-}: CustomTooltipContentProps) => {
+const CustomTooltipContent = ({ active, payload, label, xAxisLabel, formatY }: CustomTooltipContentProps) => {
     if (!active || !payload?.length) {
         return null;
     }
-
-    const value = payload[0].value;
-    const formattedValue = formatY && value ? formatY(Number(value)) : value;
 
     return (
         <View
@@ -52,9 +43,14 @@ const CustomTooltipContent = ({
             <div>
                 {xAxisLabel}: {label}
             </div>
-            <Text UNSAFE_style={{ color: 'var(--metric-graph-color)' }}>
-                {yAxisLabel}: {formattedValue ?? 'Not available'}
-            </Text>
+            {payload.map(({ name, value, color }) => (
+                <Text
+                    key={String(name)}
+                    UNSAFE_style={{ color: color ?? 'var(--metric-graph-color)', display: 'block' }}
+                >
+                    {name}: {value == null ? 'Not available' : formatY ? formatY(Number(value)) : value}
+                </Text>
+            ))}
         </View>
     );
 };
@@ -68,6 +64,8 @@ type MetricGraphProps = {
     color?: string;
     getX: (metricsEntry: MetricsEntry) => number;
     getY: (metricsEntry: MetricsEntry) => number | null | undefined;
+    // Draws one line per entry, with a legend, instead of the single `getY` area.
+    lines?: MetricLine[];
     formatY?: (y: number) => string;
 };
 
@@ -102,6 +100,7 @@ export const MetricGraph = ({
     yAxisLabel,
     getY,
     getX,
+    lines,
     formatY,
     color = 'var(--energy-blue)',
 }: MetricGraphProps) => {
@@ -121,7 +120,7 @@ export const MetricGraph = ({
                 content={
                     <View backgroundColor={'gray-50'} minHeight={'size-3000'}>
                         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
-                            <AreaChart
+                            <ComposedChart
                                 syncId={syncId}
                                 style={{ aspectRatio: 1.6 }}
                                 data={data}
@@ -148,30 +147,40 @@ export const MetricGraph = ({
                                     tickMargin={12}
                                     tickFormatter={(value) => formatYAxisTick(Number(value))}
                                 />
-                                <Area
-                                    type='linear'
-                                    dataKey={getY}
-                                    name={yAxisLabel}
-                                    stroke='var(--metric-graph-color)'
-                                    strokeWidth={2}
-                                    fill={`url(#${gradientId})`}
-                                    dot={false}
-                                    connectNulls
-                                />
+                                {lines ? (
+                                    lines.map((line) => (
+                                        <Line
+                                            key={line.name}
+                                            type='linear'
+                                            dataKey={line.getY}
+                                            name={line.name}
+                                            stroke={line.color}
+                                            strokeWidth={line.strokeWidth ?? 2}
+                                            dot={false}
+                                            connectNulls
+                                        />
+                                    ))
+                                ) : (
+                                    <Area
+                                        type='linear'
+                                        dataKey={getY}
+                                        name={yAxisLabel}
+                                        stroke='var(--metric-graph-color)'
+                                        strokeWidth={2}
+                                        fill={`url(#${gradientId})`}
+                                        dot={false}
+                                        connectNulls
+                                    />
+                                )}
+                                {lines && <Legend verticalAlign='top' />}
                                 <Tooltip
                                     filterNull={false}
-                                    content={
-                                        <CustomTooltipContent
-                                            xAxisLabel={xAxisLabel}
-                                            yAxisLabel={yAxisLabel}
-                                            formatY={formatY}
-                                        />
-                                    }
+                                    content={<CustomTooltipContent xAxisLabel={xAxisLabel} formatY={formatY} />}
                                     cursor={{
                                         stroke: 'var(--metric-graph-color)',
                                     }}
                                 />
-                            </AreaChart>
+                            </ComposedChart>
                         </ResponsiveContainer>
                     </View>
                 }

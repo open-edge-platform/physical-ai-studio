@@ -653,16 +653,17 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             batch: Observation batch (must contain ground-truth actions).
 
         Returns:
-            Tuple of (loss tensor, loss dict).
+            Tuple of (loss tensor, loss dict), with the denormalized prediction under ``"action_pred"``.
 
         Raises:
             ValueError: If the model is not initialized.
         """
-        if self.model is None or self._preprocessor is None:
+        if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
             raise ValueError(msg)
-        processed_batch = self._preprocessor(batch.to_dict())
-        return self.model.compute_val_loss(processed_batch)
+        loss, loss_dict = self.model.compute_val_loss(self._preprocessor(batch.to_dict()))
+        loss_dict["action_pred"] = self._postprocessor({ACTION: loss_dict["action_pred"]})[ACTION]
+        return loss, loss_dict
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.

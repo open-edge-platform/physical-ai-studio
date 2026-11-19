@@ -1173,7 +1173,8 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
                 optionally ``extra.action_is_pad``.
 
         Returns:
-            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` key).
+            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` and the
+            normalized predicted chunk under ``"action_pred"``).
         """
         gt_actions = batch[ACTION]
         predicted = self.predict_action_chunk(batch)
@@ -1191,7 +1192,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         if bound is not None:
             bound = bound[:, :min_len]
         loss = reduce_losses(losses, bound)
-        return loss, {"loss": loss.item()}
+        return loss, {"loss": loss.item(), "action_pred": predicted}
 
     def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:
         """Predict a chunk of actions from a preprocessed batch.

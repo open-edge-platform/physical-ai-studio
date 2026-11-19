@@ -269,7 +269,8 @@ class SmolVLAModel(RTCModelMixin, Model):
             batch: Raw batch dict containing ground-truth ACTION.
 
         Returns:
-            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` key).
+            Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` and the
+            normalized predicted chunk under ``"action_pred"``).
         """
         processed = self._preprocess_batch(batch)
         gt_actions = self._prepare_action(processed)
@@ -288,7 +289,7 @@ class SmolVLAModel(RTCModelMixin, Model):
         if bound is not None:
             bound = bound[:, :min_len]
         loss = reduce_losses(losses, bound)
-        return loss, {"loss": loss.item()}
+        return loss, {"loss": loss.item(), "action_pred": predicted}
 
     def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Predict a chunk of actions from input batch.
