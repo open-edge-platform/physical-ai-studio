@@ -11,7 +11,7 @@ import logging
 import os
 import re
 import shutil
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # GPU probes use argv lists with shell disabled.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # GPU probes use argv lists with shell disabled.  # nosec B404
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -224,7 +224,7 @@ def _command_reports_gpu(command: str, arguments: tuple[str, ...], pattern: str)
     if executable is None:
         return False
     try:
-        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # nosec B603
             [executable, *arguments],
             check=False,
             capture_output=True,

@@ -9,10 +9,10 @@ import json
 import logging
 import os
 import re
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Executes the framework's installed native script with shell=False.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Executes the framework's installed native script with shell=False.  # nosec B404
 import tempfile
 from collections.abc import Mapping, Sequence
-from importlib import import_module, metadata, resources
+from importlib import import_module, metadata, resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -163,7 +163,7 @@ class LeRobotEngine(TrainingEngine):
         python = interpreter_for(env, accelerator=accelerator, interpreter=interpreter)
         script_name = "lerobot-train.exe" if os.name == "nt" else "lerobot-train"
         executable = scripts_dir(python) / script_name
-        return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.
+        return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.  # nosec B603
             [str(executable), *argv],
             shell=False,
         )

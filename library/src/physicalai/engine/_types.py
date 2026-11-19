@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from importlib.resources.abc import Traversable
+    from importlib.resources.abc import Traversable  # nosemgrep  # Python 3.10+ only.
     from pathlib import Path
 
     from packaging.specifiers import SpecifierSet

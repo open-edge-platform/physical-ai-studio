@@ -10,11 +10,11 @@ import logging
 import os
 import queue
 import selectors
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Unmanaged workers use argv lists with shell=False.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Unmanaged workers use argv lists with shell=False.  # nosec B404
 import threading
 import time
 from dataclasses import dataclass, field
-from importlib import resources
+from importlib import resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,7 +27,7 @@ from ._types import Run, TrainHooks, TrainingCancelledError, WorkerEnv
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
-    from importlib.resources.abc import Traversable
+    from importlib.resources.abc import Traversable  # nosemgrep  # Python 3.10+ only.
     from typing import BinaryIO
 
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def run_worker(
     with resources.as_file(entrypoint) as entrypoint_path:
 
         def launch_unmanaged(child_env: Mapping[str, str]) -> subprocess.Popen[bytes]:
-            return subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # Explicit argv, no shell.
+            return subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # Explicit argv, no shell.  # nosec B603
                 [str(python), str(entrypoint_path), *arguments],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
