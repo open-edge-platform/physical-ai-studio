@@ -17,7 +17,7 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass
-from importlib import resources
+from importlib import resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,7 +34,7 @@ from physicalai.isolate import (
 )
 
 if TYPE_CHECKING:
-    from importlib.resources.abc import Traversable
+    from importlib.resources.abc import Traversable  # nosemgrep  # Python 3.10+ only.
 
 from .package import BACKEND as FRAMEWORK
 from .package import FORMAT_NATIVE, FORMAT_OPENVINO

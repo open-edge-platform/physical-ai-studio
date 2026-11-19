@@ -143,7 +143,7 @@ def disable_remote_code() -> None:
     original = dynamic.__dict__.get("get_class_from_dynamic_module")
     for name in _AUTO_MODULES:
         try:
-            importlib.import_module(name)
+            importlib.import_module(name)  # nosemgrep  # Fixed Transformers module names.
         except ImportError:
             continue
 

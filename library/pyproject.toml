@@ -84,6 +84,8 @@ loggers = ["wandb>=0.22", "tensorboard>=2.20"]
 libero = ["hf-libero>=0.1.3,<0.2.0"]
 # LeRobot policies train through the engine in locked worker environments.
 lerobot = ["physicalai-lerobot-policy-plugin[train]"]
+# NVIDIA Isaac-GR00T N1.7: training and inference run in pinned worker environments.
+gr00t = ["physicalai-gr00t-policy-plugin[train]"]
 diffusion = ["diffusers>=0.38.0"]
 
 # VLA policy dependencies - these are heavy models with specific requirements.
@@ -257,6 +259,7 @@ explicit = false
 # move to the PyPI release once one includes them.
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "c2535de38a38950f4ad0f4b73178ba53429efa16" }
 physicalai-lerobot-policy-plugin = { path = "../plugins/policies/lerobot", editable = true }
+physicalai-gr00t-policy-plugin = { path = "../plugins/policies/gr00t", editable = true }
 torchcodec = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu132", extra = "cu132" },
