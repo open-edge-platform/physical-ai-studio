@@ -8,8 +8,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import lightning as L  # noqa: N812
 import pytest
 import torch
+from torch.utils.data import DataLoader
 
 from physicalai.data.observation import Observation
 from physicalai.policies.base.policy import Policy
@@ -35,7 +37,7 @@ class _FixedPolicy(Policy):
         loss = torch.tensor(0.0)
         loss_dict: dict[str, torch.Tensor | float] = {"loss": loss}
         if self.return_pred:
-            loss_dict["action_pred"] = self.prediction
+            loss_dict["action_pred"] = batch.state if isinstance(batch.state, torch.Tensor) else self.prediction
         return loss, loss_dict
 
 
@@ -99,3 +101,42 @@ def test_skipped_without_chunked_actions() -> None:
 
     assert _run(policy, Observation(state=torch.zeros(2, 4))) == {}
     assert policy.predict_calls == 0
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
+@pytest.mark.parametrize("include_fully_padded", [False, True])
+def test_epoch_error_is_independent_of_batching(batch_size: int, include_fully_padded: bool) -> None:
+    prediction = torch.tensor([
+        [[0.0, 0.0], [0.0, 0.0]],
+        [[0.0, 0.0], [0.0, 0.0]],
+        [[10.0, 20.0], [1000.0, 1000.0]],
+        [[10.0, 20.0], [1000.0, 1000.0]],
+        [[1000.0, 1000.0], [1000.0, 1000.0]],
+    ])
+    is_pad = torch.tensor([[False, False], [False, False], [False, True], [False, True], [True, True]])
+    size = 5 if include_fully_padded else 4
+    prediction, is_pad = prediction[:size], is_pad[:size]
+    batches = [
+        Observation(
+            action=torch.zeros_like(prediction[i : i + batch_size]),
+            state=prediction[i : i + batch_size],
+            extra={"action_is_pad": is_pad[i : i + batch_size]},
+        )
+        for i in range(0, size, batch_size)
+    ]
+    policy = _FixedPolicy(_PRED, return_pred=True, n_action_steps=2)
+    trainer = L.Trainer(
+        accelerator="cpu",
+        devices=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+
+    metrics = trainer.validate(policy, dataloaders=DataLoader(batches, batch_size=None), verbose=False)[0]
+
+    # Six real steps: four at zero error, two at errors (10, 20).
+    assert metrics["val/action_error/joint_0"] == pytest.approx(20 / 6)
+    assert metrics["val/action_error/joint_1"] == pytest.approx(40 / 6)
+    assert metrics["val/action_error"] == pytest.approx(5.0)

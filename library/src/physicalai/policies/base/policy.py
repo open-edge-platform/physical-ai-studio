@@ -268,12 +268,14 @@ class Policy(L.LightningModule, ABC):
 
         is_pad = (batch.extra or {}).get("action_is_pad")
         valid = torch.ones(error.shape[:2], device=error.device) if is_pad is None else (~is_pad[:, :steps]).float()
-        per_dim = (error * valid.unsqueeze(-1)).sum(dim=(0, 1)) / valid.sum().clamp_min(1)
+        num_valid = valid.sum()
+        per_dim = (error * valid.unsqueeze(-1)).sum(dim=(0, 1)) / num_valid.clamp_min(1)
 
         names = self._action_names(dims)
         metrics = {f"val/action_error/{name}": value for name, value in zip(names, per_dim, strict=True)}
         metrics["val/action_error"] = per_dim.mean()
-        self.log_dict(metrics, on_step=False, on_epoch=True, sync_dist=True, batch_size=target.shape[0])
+        # Weight epoch means by scored steps, since examples can have different amounts of padding.
+        self.log_dict(metrics, on_step=False, on_epoch=True, sync_dist=True, batch_size=int(num_valid))
 
     def _action_names(self, dims: int) -> list[str]:
         """Per-dimension action names from the training dataset, or ``joint_<i>`` if unavailable.
