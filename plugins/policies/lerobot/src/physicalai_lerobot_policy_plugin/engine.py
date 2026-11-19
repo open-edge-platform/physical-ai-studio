@@ -269,12 +269,46 @@ class LeRobotEngine(TrainingEngine):
 
         from lerobot.configs.policies import PreTrainedConfig  # ruff: ignore[import-outside-top-level]
         from lerobot.configs.train import TrainPipelineConfig  # ruff: ignore[import-outside-top-level]
-        from pydantic import TypeAdapter  # ruff: ignore[import-outside-top-level]
 
         policy_config = PreTrainedConfig.get_choice_class(policy)
-        schema = TypeAdapter(TrainPipelineConfig).json_schema()
-        schema["properties"]["policy"] = TypeAdapter(policy_config).json_schema()
+        schema = _dataclass_json_schema(TrainPipelineConfig)
+        schema["properties"]["policy"] = _dataclass_json_schema(policy_config)
         return schema
+
+
+def _dataclass_json_schema(config_type: type) -> dict[str, Any]:
+    """Return the JSON schema of a native LeRobot config dataclass.
+
+    LeRobot configs have ``torch.dtype`` fields (``policy.dtype`` and the FSDP mixed-precision
+    dtypes), which pydantic cannot describe. The CLI takes them as dtype names such as
+    ``bfloat16``, so the schema describes them as strings. Arbitrary types are allowed only while
+    this schema is built: the config is set on the class and removed again, and nested
+    dataclasses inherit it.
+
+    Returns:
+        The JSON schema of *config_type*.
+    """
+    import torch  # ruff: ignore[import-outside-top-level]  # Already loaded by LeRobot's config modules.
+    from pydantic import ConfigDict, TypeAdapter  # ruff: ignore[import-outside-top-level]
+    from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue  # ruff: ignore[import-outside-top-level]
+    from pydantic_core import core_schema  # ruff: ignore[import-outside-top-level]
+
+    class _NativeConfigSchema(GenerateJsonSchema):
+        def is_instance_schema(self, schema: core_schema.IsInstanceSchema) -> JsonSchemaValue:
+            if schema.get("cls") is torch.dtype:
+                return {"type": "string", "description": "Torch dtype name, for example `bfloat16`."}
+            return super().is_instance_schema(schema)
+
+    had_config = "__pydantic_config__" in vars(config_type)
+    previous = vars(config_type).get("__pydantic_config__")
+    config_type.__pydantic_config__ = ConfigDict(arbitrary_types_allowed=True)  # type: ignore[attr-defined]
+    try:
+        return TypeAdapter(config_type).json_schema(schema_generator=_NativeConfigSchema)
+    finally:
+        if had_config:
+            config_type.__pydantic_config__ = previous  # type: ignore[attr-defined]
+        else:
+            delattr(config_type, "__pydantic_config__")
 
 
 def settings_to_flags(settings: Mapping[str, Any]) -> list[str]:

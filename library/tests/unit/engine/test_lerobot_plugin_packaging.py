@@ -76,7 +76,7 @@ def test_each_policy_family_has_its_own_locked_worker_project(family: str, marke
 
     assert env.name == family
     assert locked_version(env) in supported_versions(env)
-    assert pyproject["project"]["dependencies"] == [f"lerobot[training,{family}]>=0.6.1,<0.7"]
+    assert pyproject["project"]["dependencies"] == [f"lerobot[training,{family}]>=0.7,<0.8"]
     assert {"cpu", "cu128", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
     assert marker_package in lock_packages
     assert "physicalai" not in lock_packages

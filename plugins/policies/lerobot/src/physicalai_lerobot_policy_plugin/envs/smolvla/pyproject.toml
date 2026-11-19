@@ -3,7 +3,7 @@ name = "physicalai-lerobot-worker-smolvla"
 version = "0.0.0"
 requires-python = ">=3.12,<3.15"
 dependencies = [
-    "lerobot[training,smolvla]>=0.6.1,<0.7",
+    "lerobot[training,smolvla]>=0.7,<0.8",
 ]
 
 [project.optional-dependencies]
