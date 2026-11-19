@@ -387,7 +387,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 // Empty without a mapping step (no fixed camera order, or retraining),
                 // which the training side reads as "keep the order it already has".
                 image_key_reorder_map: hasFeatureMapping ? featureMapping.imageKeyReorderMap : {},
-                num_cameras: hasFeatureMapping ? featureMapping.numCameras : 0,
+                // Not a camera count: it pads the slots with masked blank images, which only
+                // cost memory and compute. 0 means no padding; the map above sets the order.
+                num_cameras: 0,
                 // With no formats on offer, there was nothing to choose from,
                 // so fall back to exporting every supported
                 // format rather than sending [] and exporting none.

@@ -34,7 +34,7 @@ export const FeatureMappingStep = ({ policyName, mapping }: FeatureMappingStepPr
         <Flex direction='column' gap='size-200' width='100%'>
             <Text>
                 {policyName} is pretrained on a fixed camera order. Pick the dataset camera that fills each slot; a slot
-                left empty is trained on a masked empty image.
+                left empty is skipped.
             </Text>
 
             {isDatasetEmpty && (
