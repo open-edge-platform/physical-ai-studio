@@ -7,10 +7,10 @@ This plugin connects LeRobot's native trainer and policy format to Physical AI. 
 For library development, install the host torch variant that matches the machine and the LeRobot engine extra from `library/`:
 
 ```bash
-uv sync --extra cu128 --extra lerobot
+uv sync --extra cu132 --extra lerobot
 ```
 
-Use `--extra cpu` or `--extra xpu` instead when appropriate. This host extra controls host-side PyTorch and first-party training; it does not select LeRobot's managed worker. The worker has its own locked CPU, CUDA (`cu128`), and XPU torch variants and follows LeRobot's native device selection.
+Use `--extra cpu` or `--extra xpu` instead when appropriate. This host extra controls host-side PyTorch and first-party training; it does not select LeRobot's managed worker. The worker has its own locked CPU, CUDA 13.2 (`cu132`), and XPU torch variants and follows LeRobot's native device selection.
 
 ## Native CLI
 
@@ -22,7 +22,7 @@ pai train lerobot --policy.type=act --policy.device=xpu --dataset.repo_id=lerobo
 pai train --interpreter /opt/lerobot/bin/python lerobot --help
 ```
 
-LeRobot's native `--policy.device` selects the policy device and matching worker torch extra (`cuda` → `cu128`, `xpu` → `xpu`, `cpu` → `cpu`). If the native config does not specify a device, the engine detects available XPU, then CUDA, then CPU without relying on the host torch build. Native arguments pass through unchanged. `--interpreter` skips managed provisioning; the supplied Python must already have the torch build required by the native device.
+LeRobot's native `--policy.device` selects the policy device and matching worker torch extra (`cuda` → `cu132`, `xpu` → `xpu`, `cpu` → `cpu`). If the native config does not specify a device, the engine detects available XPU, then CUDA, then CPU without relying on the host torch build. Native arguments pass through unchanged. `--interpreter` skips managed provisioning; the supplied Python must already have the torch build required by the native device.
 
 Prepare a managed environment ahead of time (or while building an image), inspect its lock and size, and remove stale environments with:
 
@@ -81,6 +81,6 @@ PHYSICALAI_RUN_LEROBOT_INTEGRATION=1 \
 PHYSICALAI_LEROBOT_DEVICE=auto \
 PHYSICALAI_LEROBOT_TEST_STEPS=5 \
 HF_LEROBOT_HOME=/path/to/lerobot-cache \
-uv run --project library --extra cu128 --extra tests --extra lerobot \
+uv run --project library --extra cu132 --extra tests --extra lerobot \
     pytest library/tests/integration/test_engine_lerobot_hf_training.py::test_native_lerobot_training_matches_engine_on_pinned_pusht -s
 ```

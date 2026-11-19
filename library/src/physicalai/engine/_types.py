@@ -98,7 +98,8 @@ class WorkerEnv:
         accelerators: Accelerator profiles the environment supports.
         name: Environment name, unique within its framework. Enablements use their own names.
         python: Python version requested from uv, or ``None`` to follow the project.
-        extras: uv extras per accelerator profile. Defaults to the profile's own name.
+        extras: uv extras per accelerator profile, for example ``{"cuda": ("cu132",)}``. Without it,
+            a profile installs the extra named like the declared profile.
     """
 
     framework: str
@@ -106,7 +107,7 @@ class WorkerEnv:
     worker: Path | Traversable
     distribution: str
     package: str
-    accelerators: tuple[str, ...] = ("cpu", "cu128", "xpu")
+    accelerators: tuple[str, ...] = ("cpu", "cuda", "xpu")
     name: str = "default"
     python: str | None = None
     extras: Mapping[str, tuple[str, ...]] | None = field(default=None, hash=False)
@@ -123,12 +124,21 @@ class WorkerEnv:
     def extras_for(self, accelerator: str) -> tuple[str, ...]:
         """Return the uv extras that select *accelerator*.
 
+        Profiles match by canonical name, so ``cuda`` and ``cu128`` name the same CUDA profile.
+
         Returns:
             Extra names passed to ``uv sync``.
         """
+        from ._environment import _canonical_accelerator  # ruff: ignore[import-outside-top-level]  # Lazy to avoid an import cycle.
+
+        wanted = _canonical_accelerator(accelerator)
         if self.extras is None:
-            return (accelerator,)
-        return tuple(self.extras.get(accelerator, ()))
+            declared = (name for name in self.accelerators if _canonical_accelerator(name) == wanted)
+            return (next(declared, accelerator),)
+        for name, extras in self.extras.items():
+            if _canonical_accelerator(name) == wanted:
+                return tuple(extras)
+        return ()
 
     def key(self) -> str:
         """Hash every input that determines the environment's contents.

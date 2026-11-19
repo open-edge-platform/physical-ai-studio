@@ -63,6 +63,7 @@ def _worker_env(name: str = "default") -> WorkerEnv:
         distribution=_PLUGIN_DISTRIBUTION,
         package="lerobot",
         name=name,
+        extras={"cpu": ("cpu",), "cuda": ("cu132",), "xpu": ("xpu",)},
     )
 
 
@@ -370,13 +371,13 @@ def _accelerator_for_device(device: str) -> str:
     if normalized == "xpu" or normalized.startswith("xpu:"):
         return "xpu"
     if normalized == "cuda" or normalized.startswith("cuda:"):
-        return "cu128"
+        return "cuda"
     msg = f"Unsupported LeRobot device {device!r}; choose cpu, cuda, xpu, or auto."
     raise ValueError(msg)
 
 
 def _device_for_accelerator(accelerator: str) -> str:
-    return "cuda" if accelerator == "cu128" else accelerator
+    return accelerator
 
 
 def _settings_device(settings: Mapping[str, Any]) -> str | None:

@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 _MARKER = ".physicalai-engine.json"
 _MARKER_VERSION = 3
 _COMPONENT_RE = re.compile(r"[a-zA-Z0-9_.-]{1,128}")
-_ACCELERATOR_ALIASES = {"cpu": "cpu", "cuda": "cu128", "cu128": "cu128", "xpu": "xpu"}
+# One CUDA profile; each environment maps it to its own extra (for example ``cu128`` or ``cu132``).
+_ACCELERATOR_ALIASES = {"cpu": "cpu", "cuda": "cuda", "cu128": "cuda", "cu132": "cuda", "xpu": "xpu"}
 _PCI_DISPLAY_CLASS = 0x03
 _PCI_VENDOR_INTEL = "0x8086"
 _PCI_VENDOR_NVIDIA = "0x10de"
@@ -110,7 +111,8 @@ def resolve_accelerator(accelerator: str, *, allowed: tuple[str, ...] | None = N
     hardware, so a CPU-only host build does not hide an available GPU.
 
     Returns:
-        Canonical uv extra name: ``cpu``, ``cu128``, or ``xpu``.
+        Canonical accelerator profile: ``cpu``, ``cuda``, or ``xpu``. ``WorkerEnv.extras_for``
+        maps it to the environment's uv extras.
 
     Raises:
         ValueError: If the requested extra is unknown, unsupported, or conflicts with detected GPU hardware.
@@ -140,7 +142,7 @@ def _automatic_accelerator(allowed: set[str] | None) -> str:
         return next(iter(allowed))
     runtime = _torch_accelerators()
     hardware = _hardware_accelerators()
-    order = (("xpu", "xpu"), ("cuda", "cu128"))
+    order = (("xpu", "xpu"), ("cuda", "cuda"))
     candidates = [extra for device, extra in order if runtime.get(device, False)]
     if not candidates:
         candidates = [extra for device, extra in order if device in hardware]
@@ -154,7 +156,7 @@ def _automatic_accelerator(allowed: set[str] | None) -> str:
         supported = ", ".join(sorted(allowed))
         msg = f"Detected {detected} hardware, but this engine environment supports only {supported}."
         raise ValueError(msg)
-    for fallback in ("cpu", "xpu", "cu128"):
+    for fallback in ("cpu", "xpu", "cuda"):
         if fallback in allowed:
             return fallback
     msg = "The worker environment does not declare a supported accelerator extra."

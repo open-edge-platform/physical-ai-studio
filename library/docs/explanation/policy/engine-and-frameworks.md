@@ -246,14 +246,14 @@ A `WorkerEnv` names its uv project source and how to synchronize it:
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `project`          | `BundledProject` (a project and lock shipped in the plugin, as for LeRobot) or `GitProject` (a framework's own project at a commit, optionally with `PublishedPatches` or `BundledPatches` layers). A plain directory means `BundledProject`. |
 | `name`             | Distinguishes the engine's own environment (`default`) from enablement environments.                                                                                                                                                          |
-| `python`, `extras` | uv `--python` version and the uv extras for each accelerator profile; a single-profile environment needs no hardware selection.                                                                                                               |
+| `python`, `extras` | uv `--python` version and the uv extras for each accelerator profile (`cpu`, `cuda`, `xpu`), for example `{"cuda": ("cu132",)}`; a single-profile environment needs no hardware selection.                                                    |
 | `worker`           | Default worker script; `run_worker(..., worker=...)` selects another script, for example an export worker.                                                                                                                                    |
 
 Runtime isolate caches environments by the source and selected `SyncProfile` (Python version and extras) at `~/.cache/physicalai/isolate/<key>`; `PHYSICALAI_ISOLATE_CACHE` overrides the root. Engine preparation uses this same cache and records framework-specific metadata for `physicalai engine list` and `prune`. The `PHYSICALAI_ENGINE_CACHE` override remains available to Engine-only deployments. Engine passes `PHYSICALAI_WORKER_PROJECT` to workers so scripts in a framework checkout are reachable.
 
 The worker handshake checks the framework package against the environment's exact lock. A plugin that depends on a PyPI framework also declares its supported range, which the handshake checks as before; frameworks pinned by Git commit declare no range.
 
-The LeRobot plugin declares its supported LeRobot range in its main `pyproject.toml`. Its worker `env/pyproject.toml` describes training dependencies and CPU, CUDA (`cu128`), and XPU PyTorch indexes; `env/uv.lock` pins exact transitive versions. Policy families with their own extras (`smolvla`, the `pi` family, `molmoact2`) train in their own projects under `envs/`; every other policy uses `env/`. Engine verifies that each locked LeRobot version satisfies the plugin's declared range.
+The LeRobot plugin declares its supported LeRobot range in its main `pyproject.toml`. Its worker `env/pyproject.toml` describes training dependencies and CPU, CUDA 13.2 (`cu132`), and XPU PyTorch indexes, matching Studio's host build; `env/uv.lock` pins exact transitive versions. Policy families with their own extras (`smolvla`, the `pi` family, `molmoact2`) train in their own projects under `envs/`; every other policy uses `env/`. Engine verifies that each locked LeRobot version satisfies the plugin's declared range.
 
 ```text
 physicalai-lerobot-policy-plugin/
@@ -270,7 +270,7 @@ physicalai-lerobot-policy-plugin/
 The environment lifecycle is explicit and inspectable:
 
 ```bash
-pai engine prepare lerobot --accelerator cu128                       # pre-provision; device still comes from LeRobot config
+pai engine prepare lerobot --accelerator cuda                        # pre-provision; device still comes from LeRobot config
 pai engine prepare lerobot --policy smolvla                          # a policy family's own environment
 pai engine list                                                      # show cached environments
 pai engine prune                                                     # remove environments no engine or enablement declares
@@ -308,7 +308,7 @@ Enablements are upstream-first. A plugin may declare validated per-policy capabi
 | First-party export/inference | **Pass**       | ACT OpenVINO export-to-Runtime + numerical consistency: 2 passed; OpenVINO selected CPU for inference. `Trainer.export()` → Runtime is not yet E2E-tested.                                     |
 | LeRobot GPU training parity  | **Pass**       | Native vs Engine ACT/PushT, 20 steps on RTX 3090, both in the LeRobot worker environment; config, losses, and final weights match exactly (`rtol=1e-6`, `atol=1e-7`) with deterministic cuDNN. |
 | LeRobot Runtime inference    | **Pass**       | Pinned pretrained ACT (ALOHA transfer cube) and Diffusion (PushT) on RTX 3090: Runtime actions match native LeRobot before and after reset.                                                    |
-| Managed CUDA environment     | **Pass**       | Native `policy.device=cuda` selected cu128; worker project prepared with `uv sync --locked`; LeRobot 0.7.0 / PyTorch 2.11.0+cu128.                                                             |
+| Managed CUDA environment     | **Pass**       | Native `policy.device=cuda` selected the `cuda` profile (`cu132` extra); worker project prepared with `uv sync --locked`; LeRobot 0.7.0 / PyTorch 2.15.0+cu132 on a CUDA 13.0 driver.          |
 | LeRobot policy environments  | **Pass**       | SmolVLA (from `lerobot/smolvla_base`) and Pi0.5 fine-tune for 20 steps on RTX 3090 in their own worker environments and package. MolmoAct2 is not trained.                                     |
 | CLI passthrough              | **Pass**       | Native `--help`: exit 0, 704 stdout lines; invalid native flag: exit 2.                                                                                                                        |
 | Engine core and plugins      | **Pass**       | 120 Engine unit tests and 12 LeRobot plugin tests.                                                                                                                                             |

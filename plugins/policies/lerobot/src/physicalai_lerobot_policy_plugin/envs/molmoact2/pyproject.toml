@@ -8,16 +8,16 @@ dependencies = [
 
 [project.optional-dependencies]
 cpu = ["torch", "torchvision"]
-cu128 = ["torch", "torchvision"]
+cu132 = ["torch", "torchvision"]
 xpu = ["torch", "torchvision"]
 
 [tool.uv]
 package = false
 index-strategy = "unsafe-best-match"
 conflicts = [
-    [{ extra = "cpu" }, { extra = "cu128" }],
+    [{ extra = "cpu" }, { extra = "cu132" }],
     [{ extra = "cpu" }, { extra = "xpu" }],
-    [{ extra = "cu128" }, { extra = "xpu" }],
+    [{ extra = "cu132" }, { extra = "xpu" }],
 ]
 
 [[tool.uv.index]]
@@ -30,8 +30,8 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [[tool.uv.index]]
@@ -42,12 +42,12 @@ explicit = false
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu132", extra = "cu132" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 triton-xpu = { index = "pytorch-xpu" }
