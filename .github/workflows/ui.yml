@@ -109,7 +109,8 @@ jobs:
         working-directory: application/backend
         run: |
           uv lock --check
-          uv sync --frozen --extra cpu
+          # The spec carries every installed plugin's robot types, MuJoCo's included.
+          uv sync --frozen --extra cpu --extra mujoco
 
       - name: Get OpenAPI spec
         working-directory: application/backend

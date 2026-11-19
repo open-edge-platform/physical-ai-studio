@@ -19,6 +19,7 @@ export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
 
     return (
         <View
+            elementType='footer'
             gridArea={gridArea}
             borderTopColor={'gray-300'}
             borderTopWidth={'thin'}

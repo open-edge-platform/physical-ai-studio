@@ -74,6 +74,13 @@ uv sync --extra cpu     # CPU only
 
 This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
 
+Simulation is optional. Add `--extra mujoco` to install the MuJoCo plugin; without it Studio offers no
+simulated robots and shows nothing about simulation:
+
+```bash
+uv sync --extra cpu --extra mujoco
+```
+
 ### (Optional) Enable hardware acceleration for video encoding
 Using hardware acceleration for video encoding can improve the speed of recording significantly.
 Please check out [this document](docs/video_hardware_acceleration_intel.md) for more information.

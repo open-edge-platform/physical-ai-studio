@@ -665,6 +665,30 @@ class TestToExecutorch:
 
             assert result == tmp_path / "model.pte"
 
+    def test_to_executorch_manifest_records_processors_and_input_names(self, tmp_path):
+        """Manifest stores pre/postprocessor specs and the tensor-only input_names."""
+        import json
+
+        from physicalai.export.backends import ExecuTorchExportParameters
+
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        wrapper._extra_export_args[ExportBackend.EXECUTORCH] = ExecuTorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            postprocessors_specs=[ComponentSpec(type="action_chunk_trimmer", n_action_steps=5)],
+        )
+
+        mocks = self._mock_executorch_modules()
+        with patch.dict("sys.modules", mocks["modules"]), patch("torch.export.export", return_value=MagicMock()):
+            wrapper.to_executorch(tmp_path / "model.pte")
+
+        manifest = Manifest.load(tmp_path / "manifest.json")
+        assert [spec.type for spec in manifest.model.preprocessors] == ["to_float_tensor"]
+        assert [spec.type for spec in manifest.model.postprocessors] == ["action_chunk_trimmer"]
+
+        raw = json.loads((tmp_path / "manifest.json").read_text())
+        assert raw["input_names"] == ["input_tensor"]
+
     def test_to_executorch_no_sample_input(self, tmp_path):
         """Test that RuntimeError is raised when model has no sample_input."""
         model = SimpleModel(SimpleConfig())
@@ -672,6 +696,17 @@ class TestToExecutorch:
 
         with pytest.raises(RuntimeError, match="input sample"):
             wrapper.to_executorch(tmp_path / "model.pte")
+
+    def test_to_executorch_rejects_non_tensor_input_sample(self, tmp_path):
+        """Test that ValueError lists non-tensor entries in a user-provided input_sample."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        input_sample = {"x": torch.randn(1, 10), "task": "pick up the cube"}
+
+        with pytest.raises(ValueError, match=r"non-tensor: \['task'\]"):
+            wrapper.to_executorch(tmp_path / "model.pte", input_sample=input_sample)
+
+        assert not (tmp_path / "model.pte").exists()
 
     def test_to_executorch_import_error(self, tmp_path):
         """Test that ImportError is raised when executorch is not installed."""
@@ -727,6 +762,43 @@ class TestToExecutorch:
 
             # Assert CompileSpec was called with ("device", b"GPU")
             mock_compile_spec.assert_called_once_with("device", b"GPU")
+
+    @pytest.mark.parametrize(
+        ("delegate", "delegate_config", "expect_compress"),
+        [
+            ("openvino", {"compress_weights": True}, True),
+            ("openvino", None, False),
+            ("xnnpack", {"compress_weights": True}, False),
+        ],
+    )
+    def test_to_executorch_compress_weights(self, tmp_path, delegate, delegate_config, expect_compress):
+        """Test that weights are compressed only for the OpenVINO delegate when requested."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mocks = self._mock_executorch_modules()
+        mocks["modules"].update({
+            "executorch.backends.xnnpack": MagicMock(),
+            "executorch.backends.xnnpack.partition": MagicMock(),
+            "executorch.backends.xnnpack.partition.xnnpack_partitioner": MagicMock(),
+        })
+        aten_dialect = MagicMock()
+
+        with (
+            patch.dict("sys.modules", mocks["modules"]),
+            patch("torch.export.export", return_value=aten_dialect),
+            patch("physicalai.export.mixin_policy.compress_weights_executorch_openvino_int8_sym") as mock_compress,
+        ):
+            wrapper.to_executorch(tmp_path / "model.pte", delegate=delegate, delegate_config=delegate_config)
+
+        lowered_program = mocks["mock_to_edge"].call_args.args[0]
+        if expect_compress:
+            mock_compress.assert_called_once()
+            assert mock_compress.call_args.args[0] is aten_dialect
+            assert lowered_program is mock_compress.return_value
+        else:
+            mock_compress.assert_not_called()
+            assert lowered_program is aten_dialect
 
     def test_export_dispatches_to_executorch(self, tmp_path):
         """Test that export() dispatcher calls to_executorch()."""
@@ -955,6 +1027,65 @@ class TestPostExportHooks:
         assert Path(saved_path) != Path(model_path)
         assert (tmp_path / "model.xml").exists()
         assert (tmp_path / "model.bin").exists()
+
+    def test_executorch_hook_raises_import_error_without_nncf(self):
+        """Test that ExecuTorch hook raises ImportError with install hint when nncf is missing."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "nncf":
+                raise ImportError("No module named 'nncf'")
+            return real_import(name, *args, **kwargs)
+
+        from physicalai.export.hooks import compress_weights_executorch_openvino_int8_sym
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            with pytest.raises(ImportError, match="physicalai-train\\[nncf\\]"):
+                compress_weights_executorch_openvino_int8_sym(MagicMock(), ())
+
+    def test_executorch_hook_compresses_and_reexports(self):
+        """Test that ExecuTorch hook compresses the program module with INT8_SYM and re-exports it."""
+        from physicalai.export.hooks import compress_weights_executorch_openvino_int8_sym
+
+        mock_nncf = MagicMock()
+        mock_nncf.CompressWeightsMode.INT8_SYM = "int8_sym"
+        mock_compressed = MagicMock()
+        mock_nncf.compress_weights.return_value = mock_compressed
+
+        exported_program = MagicMock()
+        example_args = ({"x": torch.zeros(1)},)
+
+        with (
+            patch.dict("sys.modules", {"nncf": mock_nncf}),
+            patch("torch.export.export") as mock_export,
+        ):
+            result = compress_weights_executorch_openvino_int8_sym(
+                exported_program, example_args, dynamic_shapes="shapes", strict=False
+            )
+
+        mock_nncf.compress_weights.assert_called_once_with(exported_program.module.return_value, mode="int8_sym")
+        mock_export.assert_called_once_with(mock_compressed, example_args, dynamic_shapes="shapes", strict=False)
+        assert result is mock_export.return_value
+
+    def test_executorch_hook_preserves_dynamic_shapes(self):
+        """Test that re-exporting the compressed module keeps the dynamic batch dimension."""
+        from physicalai.export.hooks import compress_weights_executorch_openvino_int8_sym
+
+        mock_nncf = MagicMock()
+        mock_nncf.compress_weights.side_effect = lambda module, mode: module  # noqa: ARG005
+
+        model = torch.nn.Linear(4, 2).eval()
+        args = (torch.randn(2, 4),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=1, max=8)},)
+        exported = torch.export.export(model, args, dynamic_shapes=dynamic_shapes)
+
+        with patch.dict("sys.modules", {"nncf": mock_nncf}):
+            result = compress_weights_executorch_openvino_int8_sym(exported, args, dynamic_shapes=dynamic_shapes)
+
+        for batch in (1, 4):
+            assert result.module()(torch.randn(batch, 4)).shape == (batch, 2)
 
     def test_export_invokes_post_export_hooks(self, tmp_path):
         """Test that export() calls post_export_hooks after backend dispatch."""
