@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { Item, Picker, TextField } from '@geti-ui/ui';
+import { TextField } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { FormHeading } from '../../../components/form-heading/form-heading';
@@ -11,39 +11,6 @@ import { SchemaRobotType } from '../robot-types';
 import { BimanualSO101FormFields } from './catalog/bimanual-so101';
 import { useRobotForm } from './provider';
 import { SchemaForm } from './robot-schema/schema-form';
-
-export const RobotType = () => {
-    const { activeType, name, setName } = useRobotForm();
-    const { setActiveType } = useRobotForm();
-    const catalogQuery = useRobotCatalogQuery();
-
-    return (
-        <Picker
-            isRequired
-            label='Robot type'
-            width='100%'
-            selectedKey={activeType}
-            onSelectionChange={(selected) => {
-                if (selected === null) {
-                    return;
-                }
-                const entry = catalogQuery.data.find(({ type }) => type === selected);
-                setActiveType(selected.toString());
-                if (entry === undefined) {
-                    return;
-                }
-                const previousSuggestedName = catalogQuery.data.find(({ type }) => type === activeType)?.display_name;
-                if (name === '' || name === previousSuggestedName) {
-                    setName(entry.display_name);
-                }
-            }}
-        >
-            {catalogQuery.data.map((entry) => (
-                <Item key={entry.type}>{entry.display_name}</Item>
-            ))}
-        </Picker>
-    );
-};
 
 export const FormFields = () => {
     const { activeType, name, setName, nameFieldRef } = useRobotForm();

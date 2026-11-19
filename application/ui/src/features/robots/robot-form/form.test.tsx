@@ -6,7 +6,8 @@ import { HttpResponse } from 'msw';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { render } from '../../../test-utils/render';
-import { FormFields, RobotType } from './form';
+import { useSelectRobotType } from './create-wizard/use-select-robot-type';
+import { FormFields } from './form';
 import { RobotFormProvider } from './provider';
 
 const so101FollowerDefinition = {
@@ -36,20 +37,33 @@ const useCatalogMock = () => {
     );
 };
 
+const TypeButtons = () => {
+    const selectType = useSelectRobotType();
+
+    return (
+        <>
+            {[so101FollowerDefinition, so101LeaderDefinition].map(({ type, display_name }) => (
+                <button key={type} type='button' onClick={() => selectType(type)}>
+                    {display_name}
+                </button>
+            ))}
+        </>
+    );
+};
+
 const renderRobotTypeAndFields = () =>
     render(
         <RobotFormProvider>
-            <RobotType />
+            <TypeButtons />
             <FormFields />
         </RobotFormProvider>
     );
 
 const selectType = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-    await user.click(await screen.findByRole('button', { name: /Robot type/ }));
-    await user.click(await screen.findByRole('option', { name }));
+    await user.click(await screen.findByRole('button', { name }));
 };
 
-describe('RobotType and FormFields', () => {
+describe('useSelectRobotType and FormFields', () => {
     it('auto-focuses the name field on mount', async () => {
         useCatalogMock();
 
@@ -112,7 +126,7 @@ describe('RobotType and FormFields', () => {
 
         render(
             <RobotFormProvider robot={{ type: 'SO101_Follower', name: 'My arm', payload: {} }}>
-                <RobotType />
+                <TypeButtons />
                 <FormFields />
             </RobotFormProvider>
         );

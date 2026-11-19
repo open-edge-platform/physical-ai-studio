@@ -1,0 +1,23 @@
+.stepNumber {
+    display: grid;
+    width: var(--spectrum-global-dimension-size-300);
+    height: var(--spectrum-global-dimension-size-300);
+    border: var(--spectrum-alias-border-size-thick) solid currentcolor;
+    border-radius: 50%;
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    place-items: center;
+}
+
+.stepLabel {
+    padding-inline-end: 0 !important;
+}
+
+.stepCurrent {
+    font-weight: 700;
+}
+
+.stepCurrent .stepNumber {
+    border-color: var(--energy-blue);
+    background: var(--energy-blue);
+    color: #000;
+}
