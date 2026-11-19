@@ -182,6 +182,29 @@ def test_get_robot_catalog_asset_returns_plugin_file() -> None:
     assert response.content == asset_path.read_bytes()
 
 
+def test_get_robot_catalog_files_must_be_revalidated() -> None:
+    """URDFs and meshes are revalidated by etag, so a file changed on disk is never served stale from a cache."""
+    client = TestClient(app)
+
+    for url in (
+        "/api/robots/catalog/SO101_Follower/urdf",
+        "/api/robots/catalog/SO101_Follower/assets/base_so101_v2.stl",
+    ):
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-cache"
+        etag = response.headers["etag"]
+
+        unchanged = client.get(url, headers={"If-None-Match": etag})
+        assert unchanged.status_code == 304
+        assert unchanged.content == b""
+        assert unchanged.headers["etag"] == etag
+
+        changed = client.get(url, headers={"If-None-Match": '"stale"'})
+        assert changed.status_code == 200
+        assert changed.content == response.content
+
+
 def test_get_robot_catalog_asset_rejects_traversal() -> None:
     client = TestClient(app)
 

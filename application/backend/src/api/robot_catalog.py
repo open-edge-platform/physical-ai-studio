@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Body, Depends
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Body, Depends, Request
+from fastapi.responses import FileResponse, Response
 from physicalai_studio_plugin import RobotCatalogDefinition
 from pydantic import BaseModel, Field
 
@@ -173,13 +173,28 @@ async def check_robot_online(
     return await definition.probe.is_online(payload)
 
 
+def _revalidated_file(request: Request, path: Path) -> Response:
+    """Serve a URDF or mesh that the browser must check before reusing: ``no-cache`` plus its etag.
+
+    Without ``Cache-Control`` browsers keep these for hours by their own heuristic, so a mesh that changed on disk
+    (a plugin update, or an LFS pointer replaced by the real file) kept showing the old one. A 304 answers a matching
+    ``If-None-Match``, so the check costs a round trip, not the file.
+    """
+    # The stat sets the etag now (FileResponse otherwise adds it only when sending).
+    response = FileResponse(path, headers={"Cache-Control": "no-cache"}, stat_result=path.stat())
+    etag = response.headers["etag"]
+    if etag in {tag.strip() for tag in request.headers.get("if-none-match", "").split(",")}:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+    return response
+
+
 @router.get("/{robot_type}/urdf")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
 async def get_robot_catalog_urdf(
+    request: Request,
     definition: RobotDefinitionDep,
-) -> FileResponse:
+) -> Response:
     """Return the URDF file for a catalog robot type."""
-    resolved_path = resolve_robot_urdf_path(definition)
-    return FileResponse(resolved_path)
+    return _revalidated_file(request, resolve_robot_urdf_path(definition))
 
 
 @router.get("/{robot_type}/schema")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
@@ -197,9 +212,9 @@ async def get_robot_catalog_schema(
 
 @router.get("/{robot_type}/{asset_path:path}")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
 async def get_robot_catalog_asset(
+    request: Request,
     definition: RobotDefinitionDep,
     asset_path: Path,
-) -> FileResponse:
+) -> Response:
     """Return an asset referenced by a relative URDF URI."""
-    resolved_path = resolve_robot_relative_asset_path(definition, asset_path=asset_path)
-    return FileResponse(resolved_path)
+    return _revalidated_file(request, resolve_robot_relative_asset_path(definition, asset_path=asset_path))
