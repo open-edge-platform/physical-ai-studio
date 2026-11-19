@@ -35,7 +35,6 @@ dependencies = [
   "huggingface-hub>=0.27",
   "psutil~=7.2",
   "physicalai-studio-plugin~=0.5.0",
-  "physicalai-mujoco-plugin~=0.5.0",
   "physicalai-so101-plugin~=0.3.0",
   'physicalai-trossen-plugin~=0.3.0; sys_platform == "darwin" or sys_platform == "linux"',
   "asyncssh~=2.24",
@@ -64,8 +63,7 @@ exclude = [
 path = "scripts/hatch_build.py"
 
 [project.optional-dependencies]
-# executorch enables the ExecuTorch export backend. It conflicts with the xpu
-# torch build (see library conflicts), so it ships only with cpu/cuda.
+# executorch enables the ExecuTorch export backend.
 # torch/torchvision caps follow lerobot (torch<2.16, torchvision<0.30): torchvision
 # 0.26-0.29.1 hard-pin torch 2.11-2.14, while 0.29.2 accepts torch>=2.14 (incl. 2.15).
 # TorchCodec 0.12+ supports the current Torch range, including the Torch 2.15 lock.
@@ -88,7 +86,12 @@ xpu = [
     "torchvision>=0.26,<0.30",
     "torchcodec>=0.12",
     "torchao>=0.18.0,<0.19; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "physicalai-train[executorch]",
 ]
+
+# Simulation is off unless a simulation plugin is installed: without one Studio offers no
+# simulated robot types, so nothing about simulation shows.
+mujoco = ["physicalai-mujoco-plugin~=0.5.0"]
 
 sim-e2e = ["physicalai-mujoco-plugin==0.5.0", "defusedxml>=0.7.1"]
 
@@ -201,6 +204,9 @@ exclude-newer-package = {physicalai = false, pyrealsense2 = "1 days", markupsafe
 # common packages (e.g. markupsafe cp314-only, see uv #9647), PyPI
 # is listed as a named index with higher priority above.
 index-strategy = "unsafe-best-match"
+# executorch pulls hydra-core; <1.3.8 has GHSA-2cp2-2r3c-7p7r / GHSA-c3wx-c55w-pxjq.
+# <1.4 keeps uv off 1.4.0rc1 (it otherwise prefers omegaconf 2.4 + the hydra prerelease).
+constraint-dependencies = ["hydra-core>=1.3.8,<1.4"]
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
     # Safe to override because executorch

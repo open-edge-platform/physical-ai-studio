@@ -43,6 +43,35 @@ test.describe('Jobs footer entry point', () => {
         await expect(jobsDialogPage.dialog.getByText('project-b-model')).toBeHidden();
     });
 
+    test('keeps wrapped status text inside the badge', async ({ jobsDialogPage, network }) => {
+        const message = 'Modal: waiting for GPU or building the trainer image';
+        network.use(http.get('/api/jobs', () => HttpResponse.json([{ ...jobA, message }])));
+        await jobsDialogPage.gotoGlobal();
+        await jobsDialogPage.openJobs();
+
+        const label = jobsDialogPage.row('job-a').getByText(message, { exact: true });
+        await expect(label).toBeVisible();
+        const bounds = await label.evaluate((element) => {
+            const badge = element.closest('[role="presentation"]')!;
+            const wrapper = badge.parentElement!;
+            wrapper.style.width = '260px';
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            return {
+                text: range.getBoundingClientRect().toJSON(),
+                badge: badge.getBoundingClientRect().toJSON(),
+                first: wrapper.firstElementChild!.getBoundingClientRect().toJSON(),
+            };
+        });
+
+        expect(bounds.badge.height).toBeGreaterThan(20);
+        expect(bounds.text.top).toBeGreaterThanOrEqual(bounds.badge.top);
+        expect(bounds.text.bottom).toBeLessThanOrEqual(bounds.badge.bottom);
+        expect(bounds.text.left).toBeGreaterThanOrEqual(bounds.badge.left);
+        expect(bounds.text.right).toBeLessThanOrEqual(bounds.badge.right);
+        expect(bounds.first.height).toBe(bounds.badge.height);
+    });
+
     test("shows every project's jobs on the global Projects page", async ({ jobsDialogPage }) => {
         await jobsDialogPage.gotoGlobal();
         await jobsDialogPage.openJobs();

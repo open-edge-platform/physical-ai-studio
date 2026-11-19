@@ -36,7 +36,7 @@ const SMOLVLA_CAMERA_SLOTS: PolicyCameraSlot[] = [
         description:
             'The wrist or gripper view: a camera mounted on the arm that sees what the gripper is ' +
             'about to grasp. Leave it empty when the robot has no wrist camera — the slot is then ' +
-            'filled with a masked empty image.',
+            'skipped.',
         isRequired: false,
     },
     {

@@ -120,7 +120,7 @@ jobs:
         working-directory: application/backend
         run: |
           uv lock --check
-          uv sync --frozen --extra cpu --extra tests
+          uv sync --frozen --extra cpu --extra tests --extra mujoco
 
       - name: Check source code with mypy
         working-directory: application/backend
@@ -151,7 +151,7 @@ jobs:
         working-directory: application/backend
         run: |
           uv lock --check
-          uv sync --frozen --extra cpu --extra tests
+          uv sync --frozen --extra cpu --extra tests --extra mujoco
 
       - name: Run e2e integration tests
         working-directory: application/backend
