@@ -23,9 +23,13 @@ import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
+# Isolated workers run without their folder on sys.path; the sibling modules live there.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import gr00t_worker_common as common
 import gr00t_worker_protocol as protocol
-import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

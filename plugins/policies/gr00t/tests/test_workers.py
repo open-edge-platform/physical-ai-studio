@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fixed interpreter and worker path.
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -183,3 +184,17 @@ def test_worker_identity_and_checkout_come_from_core_variables(
         common.source_dir()
     monkeypatch.setenv("PHYSICALAI_WORKER_PROJECT", "/cache/gr00t/project")
     assert common.source_dir() == Path("/cache/gr00t/project")
+
+
+@pytest.mark.parametrize("worker", ["gr00t_train_worker", "gr00t_export_worker", "gr00t_infer_worker"])
+def test_worker_finds_its_sibling_modules_without_its_folder_on_sys_path(worker: str, tmp_path: Path) -> None:
+    """Isolated launches keep the worker's folder off ``sys.path``; its own imports must still resolve."""
+    load = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='worker_import_check')"
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # No untrusted arguments.
+        [sys.executable, "-I", "-c", load, str(_WORKER_DIR / f"{worker}.py")],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
