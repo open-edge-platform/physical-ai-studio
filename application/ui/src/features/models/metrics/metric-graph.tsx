@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 
-import { Flex, View } from '@geti-ui/ui';
+import { Content, ContextualHelp, Flex, Heading, Text, View } from '@geti-ui/ui';
 import {
     Area,
     CartesianGrid,
@@ -44,6 +44,7 @@ const HighlightableLine = ({
 type MetricGraphProps = {
     syncId?: string;
     title: string;
+    helpText?: string;
     data?: MetricsEntry[];
     xAxisLabel?: string;
     yAxisLabel: string;
@@ -81,6 +82,7 @@ const formatYAxisTick = (value: number): string => {
 export const MetricGraph = ({
     syncId,
     title,
+    helpText,
     data,
     xAxisLabel,
     yAxisLabel,
@@ -119,7 +121,19 @@ export const MetricGraph = ({
             }}
         >
             <Box
-                title={title}
+                title={
+                    <span className={classes.heading}>
+                        <span>{title}</span>
+                        {helpText && (
+                            <ContextualHelp variant='info' aria-label={`${title} information`}>
+                                <Heading>{title}</Heading>
+                                <Content>
+                                    <Text>{helpText}</Text>
+                                </Content>
+                            </ContextualHelp>
+                        )}
+                    </span>
+                }
                 contentClassName={classes.content}
                 content={
                     <View backgroundColor={'gray-50'} UNSAFE_className={classes.content}>

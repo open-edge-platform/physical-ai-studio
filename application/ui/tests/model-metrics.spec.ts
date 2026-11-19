@@ -202,3 +202,27 @@ for (const title of ['Learning rate', 'Validation action error']) {
         }).toPass();
     });
 }
+
+test('opens chart-specific header help with the keyboard without shifting the plots', async ({ page }) => {
+    await expect(page.getByText('Validation metrics are a sanity check')).toHaveCount(0);
+    for (const [title, description] of [
+        ['Training loss', 'optimization loss on training demonstrations'],
+        ['Validation loss', 'Loss on held-out demonstrations, not task success'],
+        ['Validation action error', 'in dataset units'],
+        ['Learning rate', 'Separate lines represent optimizers or parameter groups'],
+    ]) {
+        const plot = page.getByRole('region', { name: `${title} graph` }).locator('.recharts-responsive-container');
+        const before = await plot.boundingBox();
+        const button = page.getByRole('button', { name: `${title} information` });
+        await button.focus();
+        await button.press('Enter');
+
+        const dialog = page.getByRole('dialog', { name: title, exact: true });
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText(description);
+        expect(await plot.boundingBox()).toEqual(before);
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await expect(button).toBeFocused();
+    }
+});

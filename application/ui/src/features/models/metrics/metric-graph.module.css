@@ -1,3 +1,10 @@
+.heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spectrum-global-dimension-size-100);
+}
+
 .content {
     display: flex;
     flex-direction: column;

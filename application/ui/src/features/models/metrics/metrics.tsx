@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 
-import { Content, Flex, Grid, Heading, IllustratedMessage, InlineAlert, Loading, StatusLight } from '@geti-ui/ui';
+import { Grid, Heading, IllustratedMessage, Loading, StatusLight } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
 import { batchAsyncIterable } from '../../../api/batch-async-iterable';
@@ -23,20 +23,9 @@ const NoMetricsAvailable = () => {
     );
 };
 
-const ValidationMetricsNote = () => (
-    <InlineAlert variant='info'>
-        <Heading>Validation metrics are a sanity check</Heading>
-        <Content>
-            They don&apos;t tell you how well the robot will do the task. Validation loss can go up while the policy
-            keeps improving, especially for flow-matching policies such as SmolVLA and Pi0.5. Action error is the
-            average gap between predicted and recorded actions, in the units the dataset stores (for SO-101: -100 to 100
-            per joint, 0 to 100 for the gripper). Test the model on your robot or in simulation to judge it.
-        </Content>
-    </InlineAlert>
-);
-
 export interface MetricSeries {
     title: string;
+    helpText?: string;
     xLabel: string;
     yLabel: string;
     data: MetricsEntry[];
@@ -68,29 +57,27 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
     }
 
     return (
-        <Flex direction='column' gap='size-200'>
-            <ValidationMetricsNote />
-            <Grid
-                columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
-                gap='size-200'
-            >
-                {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY, lines, formatY }) => (
-                    <MetricGraph
-                        key={title}
-                        syncId={syncId}
-                        title={title}
-                        yAxisLabel={yLabel}
-                        xAxisLabel={xLabel}
-                        data={data}
-                        color={color}
-                        getX={getX}
-                        getY={getY}
-                        lines={lines}
-                        formatY={formatY}
-                    />
-                ))}
-            </Grid>
-        </Flex>
+        <Grid
+            columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
+            gap='size-200'
+        >
+            {seriesReadyToRender.map(({ title, helpText, xLabel, yLabel, data, color, getX, getY, lines, formatY }) => (
+                <MetricGraph
+                    key={title}
+                    syncId={syncId}
+                    title={title}
+                    helpText={helpText}
+                    yAxisLabel={yLabel}
+                    xAxisLabel={xLabel}
+                    data={data}
+                    color={color}
+                    getX={getX}
+                    getY={getY}
+                    lines={lines}
+                    formatY={formatY}
+                />
+            ))}
+        </Grid>
     );
 };
 
@@ -197,6 +184,9 @@ export const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => {
     return [
         {
             title: 'Training loss',
+            helpText:
+                "The policy's optimization loss on training demonstrations. Use the trend to track fitting; " +
+                'the scale depends on the policy, so values are not directly comparable across policy types.',
             xLabel: 'Step',
             yLabel: 'Loss',
             data,
@@ -207,6 +197,10 @@ export const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => {
         },
         {
             title: 'Validation loss',
+            helpText:
+                'Loss on held-out demonstrations, not task success. It can rise while the policy improves, ' +
+                'especially for flow-matching policies such as SmolVLA and Pi0.5. ' +
+                'Evaluate task success on your robot or in simulation.',
             xLabel: 'Step',
             yLabel: 'Loss',
             data,
@@ -217,6 +211,10 @@ export const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => {
         },
         {
             title: 'Validation action error',
+            helpText:
+                'Mean absolute difference between predicted and recorded actions, in dataset units. ' +
+                'The dashed Mean line averages across joints. For SO-101, joint positions range from -100 to 100 ' +
+                'and the gripper from 0 to 100. Lower error does not guarantee task success.',
             xLabel: 'Step',
             yLabel: 'Mean absolute error',
             data,
@@ -227,6 +225,9 @@ export const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => {
         },
         {
             title: 'Learning rate',
+            helpText:
+                'Learning rate used by the optimizer at each recorded training step. ' +
+                'Separate lines represent optimizers or parameter groups, which can use different rates and schedules.',
             xLabel: 'Step',
             yLabel: 'Learning rate',
             data,
