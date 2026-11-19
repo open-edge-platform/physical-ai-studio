@@ -379,7 +379,7 @@ class Trainer(TrainingEngine, lightning.Trainer):
         if not module_name.startswith("physicalai.policies."):
             msg = f"Policy {policy!r} resolved outside the first-party policy package."
             raise ValueError(msg)
-        config_module = import_module(f"{module_name}.config")
+        config_module = import_module(f"{module_name}.config")  # nosemgrep  # Checked to be first-party above.
         config_class_name = f"{policy_class.__name__}Config"
         try:
             config_class = getattr(config_module, config_class_name)
