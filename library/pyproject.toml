@@ -44,7 +44,7 @@ dependencies = [
     "jsonargparse[signatures]>=4.50,<5", # This could be extra
     "packaging>=24.0",
     "pydantic",                         # This could be extra
-    "uv>=0.10,<0.11",
+    "uv>=0.13.4,<0.14",
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
