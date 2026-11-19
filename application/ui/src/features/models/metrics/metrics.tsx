@@ -107,7 +107,9 @@ const useJobMetrics = (jobId: string) => {
             initialValue: new Map<number, MetricsEntry>(),
         }),
         select: sortMetricsByStep,
-        staleTime: Infinity,
+        staleTime: 0,
+        // Retry ended/empty streams without interrupting an active SSE connection.
+        refetchInterval: ({ state }) => (state.fetchStatus === 'fetching' ? false : 5000),
     });
     return { ...query, issues };
 };

@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import triton
-import triton.language as tl
+# Triton is unavailable on macOS; this module is loaded only for CUDA/XPU tensors.
+import triton  # pyrefly: ignore[missing-import]
+import triton.language as tl  # pyrefly: ignore[missing-import]
 
 if TYPE_CHECKING:
     import torch
