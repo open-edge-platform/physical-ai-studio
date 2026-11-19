@@ -12,7 +12,7 @@ import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
 import { MetricGraph } from './metric-graph';
-import type { MetricLine, MetricsEntry } from './types';
+import { hasMetricValue, type MetricLine, type MetricsEntry } from './types';
 
 const NoMetricsAvailable = () => {
     return (
@@ -59,7 +59,9 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
         return <Loading mode='inline' />;
     }
 
-    const seriesReadyToRender = series.filter((metric) => metric.data.some((entry) => metric.getY(entry) != null));
+    const seriesReadyToRender = series.filter((metric) =>
+        metric.data.some((entry) => hasMetricValue(entry, metric.getY, metric.lines))
+    );
 
     if (seriesReadyToRender.length === 0) {
         return <NoMetricsAvailable />;
@@ -166,6 +168,7 @@ const actionErrorLines = (data: MetricsEntry[]): MetricLine[] => {
             color: 'var(--energy-blue)',
             strokeWidth: 4,
             strokeDasharray: '8 5',
+            primary: true,
             getY: (entry) => entry.val_action_error,
         },
         ...[...keys].map((key, index) => ({
