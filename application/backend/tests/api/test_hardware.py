@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -72,6 +73,22 @@ class TestGetCameras:
         assert len(cameras) == 1
         assert cameras[0].driver == "realsense"
         assert cameras[0].fingerprint == {"serial": "123456789"}
+
+    def test_discovers_off_the_event_loop(self, event_loop, no_v4l2_fixup):
+        # Discovery blocks for ~300ms; on the event loop it stalls live camera previews.
+        loop_thread = threading.get_ident()
+        discovery_threads: list[int] = []
+
+        def discover(**_kwargs):
+            discovery_threads.append(threading.get_ident())
+            return {}
+
+        no_v4l2_fixup.side_effect = lambda: discovery_threads.append(threading.get_ident()) or []
+        with patch("api.hardware.discover_all", side_effect=discover):
+            event_loop.run_until_complete(get_cameras())
+
+        assert len(discovery_threads) == 2
+        assert loop_thread not in discovery_threads
 
     def test_skips_devices_without_hardware_payload(self, event_loop):
         devices = {"uvc": [_make_device()]}
