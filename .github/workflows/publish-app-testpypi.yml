@@ -33,7 +33,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          cache: false
           enable-cache: false
           version: "0.12.17"
 
@@ -79,7 +78,6 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          cache: false
           enable-cache: false
 
       - name: Download distributions
