@@ -94,8 +94,7 @@ def print_help(prog: str) -> None:
         f"{HELP}\n\n"
         "Examples:\n"
         "  physicalai engine prepare lerobot --accelerator xpu\n"
-        "  physicalai engine prepare lerobot --policy smolvla --accelerator cuda\n"
-        "  physicalai engine prepare gr00t --enablement robotics-ai-suite-openvino",
+        "  physicalai engine prepare lerobot --policy smolvla --accelerator cuda",
     )
 
 
