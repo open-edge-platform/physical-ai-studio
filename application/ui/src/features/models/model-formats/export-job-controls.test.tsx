@@ -35,7 +35,7 @@ describe('ExportJobControls', () => {
                 isRetryDisabled
             />
         );
-        expect(screen.getByRole('status', { name: 'PyTorch export status' })).toHaveTextContent('Exporting variant');
+        expect(screen.getByRole('status', { name: 'PyTorch export status' })).toHaveTextContent('Exporting model');
         expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Cancel export' }));
         await waitFor(() => expect(canceled).toHaveBeenCalledWith('export-job-1'));
