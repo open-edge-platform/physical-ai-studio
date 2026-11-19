@@ -77,7 +77,10 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
             images[name] = camera
     if reasons:
         raise ValueError("The model does not fit this environment: " + "; ".join(reasons))
-    return ModelInputs(state_size, images, tuple(manifest.get("tasks", ())))
+    tasks = next(
+        (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
+    )
+    return ModelInputs(state_size, images, tuple(tasks))
 
 
 class ProcessModel:

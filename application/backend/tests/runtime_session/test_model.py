@@ -34,9 +34,9 @@ def _export(
     features += [{"init_args": {"ftype": "VISUAL", "shape": [3, 120, 160], "name": name}} for name in cameras]
     features.append({"init_args": {"ftype": "LANGUAGE", "shape": [48], "name": "task"}})
     path.mkdir(parents=True)
-    manifest: dict = {"model": {"input_features": features}}
+    manifest: dict = {"model": {"input_features": features, "preprocessors": [{"type": "to_float_tensor"}]}}
     if tasks is not None:
-        manifest["tasks"] = tasks
+        manifest["model"]["preprocessors"].append({"type": "task_index", "tasks": tasks})
     (path / "manifest.json").write_text(json.dumps(manifest))
     return path
 
