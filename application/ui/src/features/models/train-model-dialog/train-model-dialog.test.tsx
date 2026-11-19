@@ -459,7 +459,14 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
         await goToSmolVlaTrainingParameters(user);
-        await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        expect(screen.getByRole('region', { name: 'Additional options' })).toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        const snapflowCheckbox = await screen.findByRole('checkbox', { name: /snapflow distillation/i });
+        await user.click(snapflowCheckbox);
+        expect(screen.getByRole('textbox', { name: 'Distillation epochs' })).toBeEnabled();
+        await user.click(snapflowCheckbox);
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        await user.click(snapflowCheckbox);
         await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
@@ -1065,7 +1072,8 @@ describe('TrainModelDialog', () => {
             // Keyed by camera name: the policy reads its images as `images.<name>`,
             // so the dataset's `observation.images.` prefix must not ride along.
             image_key_reorder_map: { top: 0, wrist: 1 },
-            num_cameras: 3,
+            // Unfilled slots are skipped rather than trained on masked empty images.
+            num_cameras: 0,
             export_backends: ['openvino'],
         });
     });

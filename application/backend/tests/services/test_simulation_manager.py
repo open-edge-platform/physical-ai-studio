@@ -1097,6 +1097,7 @@ async def test_a_failed_leader_store_starts_the_session_with_the_robots_as_given
 
 async def test_a_session_stores_the_simulations_port_on_a_virtual_leader_in_the_database(tmp_path: Path) -> None:
     """The reported case: a virtual leader added after the follower's simulation started keeps 8080."""
+    pytest.importorskip("physicalai_mujoco_plugin")  # real MuJoCo robot types
     import services.simulation_manager as module
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'studio.db'}")
@@ -1144,6 +1145,7 @@ async def test_a_session_stores_the_simulations_port_on_a_virtual_leader_in_the_
 async def test_a_failed_address_write_keeps_nothing_and_the_next_start_moves_every_leader(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    pytest.importorskip("physicalai_mujoco_plugin")  # real MuJoCo robot types
     import services.simulation_manager as module
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'studio.db'}")
