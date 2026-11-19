@@ -59,7 +59,7 @@ def test_lerobot_cli_uses_native_device_for_worker_extra_and_passes_args_unchang
     result = LeRobotEngine.cli(argv)
 
     assert result == 2
-    assert prepared == ["cu128"]
+    assert prepared == ["cuda"]
     assert calls == [(["/env/bin/lerobot-train", *argv], False)]
 
 
@@ -70,12 +70,12 @@ def test_lerobot_cli_auto_selects_worker_extra_when_device_is_unspecified(
 
     def fake_resolve(accelerator: str, *, allowed: tuple[str, ...]) -> str:
         selected.append(accelerator)
-        assert "cu128" in allowed
-        return "cu128"
+        assert "cuda" in allowed
+        return "cuda"
 
     def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
         del env, interpreter
-        assert accelerator == "cu128"
+        assert accelerator == "cuda"
         return Path("/env/bin/python")
 
     monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
@@ -150,7 +150,7 @@ def test_lerobot_cli_native_flag_overrides_device_in_config_without_rewriting_ar
     argv = [f"--config_path={config}", "--policy.device=cuda"]
 
     assert LeRobotEngine.cli(argv) == 0
-    assert prepared == ["cu128"]
+    assert prepared == ["cuda"]
     assert calls == [["/env/bin/lerobot-train", *argv]]
 
 
@@ -236,8 +236,8 @@ def test_lerobot_train_auto_selects_a_matching_worker_for_unspecified_policy_dev
 
     def fake_resolve(requested: str, *, allowed: tuple[str, ...]) -> str:
         assert requested == "auto"
-        assert "cu128" in allowed
-        return "cu128"
+        assert "cuda" in allowed
+        return "cuda"
 
     monkeypatch.setattr(lerobot_engine_module, "_host_lerobot_version", lambda env: Version("0.6.1"))
     monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
@@ -245,7 +245,7 @@ def test_lerobot_train_auto_selects_a_matching_worker_for_unspecified_policy_dev
 
     LeRobotEngine().train(_Config())  # type: ignore[arg-type]
 
-    assert events == [("cuda", "cu128")]
+    assert events == [("cuda", "cuda")]
 
 
 def test_lerobot_run_overrides_dataset_output_and_device_settings(
@@ -300,7 +300,7 @@ def test_lerobot_run_auto_selects_device_and_matching_worker_extra(
         calls.append((args, kwargs))
         return expected_run
 
-    monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", lambda *_args, **_kwargs: "cu128")
+    monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", lambda *_args, **_kwargs: "cuda")
     monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
 
     result = LeRobotEngine.run(
@@ -313,7 +313,7 @@ def test_lerobot_run_auto_selects_device_and_matching_worker_extra(
     assert result is expected_run
     assert "--policy.device=cuda" in calls[0][0]
     assert calls[0][1]["device"] == "cuda"
-    assert calls[0][1]["accelerator"] == "cu128"
+    assert calls[0][1]["accelerator"] == "cuda"
 
 
 def test_lerobot_run_auto_uses_native_settings_device_when_present(
@@ -328,9 +328,9 @@ def test_lerobot_run_auto_uses_native_settings_device_when_present(
         return Run(framework="lerobot", output_dir=tmp_path / "run", checkpoint=None)
 
     def fake_resolve(requested: str, *, allowed: tuple[str, ...]) -> str:
-        assert requested == "cu128"
-        assert "cu128" in allowed
-        return "cu128"
+        assert requested == "cuda"
+        assert "cuda" in allowed
+        return "cuda"
 
     monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
     monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
@@ -343,7 +343,7 @@ def test_lerobot_run_auto_uses_native_settings_device_when_present(
     )
 
     assert calls[0]["device"] == "cuda"
-    assert calls[0]["accelerator"] == "cu128"
+    assert calls[0]["accelerator"] == "cuda"
 
 
 def test_native_settings_are_flattened_without_shell_interpretation() -> None:

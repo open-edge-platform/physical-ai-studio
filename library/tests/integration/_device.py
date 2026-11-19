@@ -29,7 +29,7 @@ def select_lerobot_test_device(requested: str | None = None, *, torch_module: ob
         raise ValueError(msg)
 
     accelerator = resolve_accelerator(value)
-    device = "cuda" if accelerator == "cu128" else accelerator
+    device = accelerator
     if device == "cpu":
         return device
 

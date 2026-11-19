@@ -33,13 +33,13 @@ def test_auto_uses_core_selected_xpu_when_host_torch_can_use_it(monkeypatch: pyt
 
 
 def test_auto_maps_cuda_extra_to_native_device(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_device, "resolve_accelerator", lambda requested: "cu128")
+    monkeypatch.setattr(_device, "resolve_accelerator", lambda requested: "cuda")
 
     assert _device.select_lerobot_test_device("auto", torch_module=_torch(cuda=True, xpu=False)) == "cuda"
 
 
 def test_gpu_hardware_selection_fails_when_host_torch_cannot_use_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_device, "resolve_accelerator", lambda requested: "cu128")
+    monkeypatch.setattr(_device, "resolve_accelerator", lambda requested: "cuda")
 
     with pytest.raises(RuntimeError, match="selected cuda.*PHYSICALAI_LEROBOT_DEVICE=cpu"):
         _device.select_lerobot_test_device("auto", torch_module=_torch(cuda=False, xpu=False))
@@ -59,7 +59,7 @@ def test_explicit_cpu_override_is_honored(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_explicit_cuda_requires_a_usable_host_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_device, "resolve_accelerator", lambda requested: "cu128")
+    monkeypatch.setattr(_device, "resolve_accelerator", lambda requested: "cuda")
 
     with pytest.raises(RuntimeError, match="explicitly requested cuda"):
         _device.select_lerobot_test_device("cuda", torch_module=_torch(cuda=False, xpu=False))

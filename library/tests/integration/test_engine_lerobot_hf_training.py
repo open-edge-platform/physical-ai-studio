@@ -209,7 +209,7 @@ def _mock_host_accelerators(
     xpu: bool,
 ) -> None:
     def resolve_accelerator(requested: str) -> str:
-        return auto_accelerator if requested == "auto" else {"cpu": "cpu", "cuda": "cu128", "xpu": "xpu"}[requested]
+        return auto_accelerator if requested == "auto" else {"cpu": "cpu", "cuda": "cuda", "xpu": "xpu"}[requested]
 
     fake_torch = SimpleNamespace(
         cuda=SimpleNamespace(is_available=lambda: cuda),
@@ -223,7 +223,7 @@ def test_training_options_come_from_environment(monkeypatch: pytest.MonkeyPatch)
     """Allow developers to extend the smoke run and select its training device."""
     monkeypatch.setenv(_STEP_ENV, "25")
     monkeypatch.setenv(_DEVICE_ENV, "cuda")
-    _mock_host_accelerators(monkeypatch, auto_accelerator="cu128", cuda=True, xpu=False)
+    _mock_host_accelerators(monkeypatch, auto_accelerator="cuda", cuda=True, xpu=False)
 
     assert _training_options() == (25, "cuda")
 
@@ -232,7 +232,7 @@ def test_training_options_honor_explicit_cpu_override(monkeypatch: pytest.Monkey
     """Allow developers to keep a GPU-equipped host on CPU intentionally."""
     monkeypatch.delenv(_STEP_ENV, raising=False)
     monkeypatch.setenv(_DEVICE_ENV, "cpu")
-    _mock_host_accelerators(monkeypatch, auto_accelerator="cu128", cuda=False, xpu=False)
+    _mock_host_accelerators(monkeypatch, auto_accelerator="cuda", cuda=False, xpu=False)
 
     assert _training_options() == (1, "cpu")
 
@@ -269,7 +269,7 @@ def test_unavailable_accelerator_request_fails_with_setup_guidance(
     monkeypatch.setenv(_DEVICE_ENV, device)
     _mock_host_accelerators(
         monkeypatch,
-        auto_accelerator="xpu" if device == "xpu" else "cu128",
+        auto_accelerator="xpu" if device == "xpu" else "cuda",
         cuda=False,
         xpu=False,
     )

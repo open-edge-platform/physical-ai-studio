@@ -48,6 +48,26 @@ def test_to_isolate_environment_maps_worker_python_and_accelerator_extras(tmp_pa
     assert environment.profile == isolate.SyncProfile(python="3.12", extras=("cuda",))
 
 
+def test_each_environment_chooses_the_extra_for_its_cuda_profile(tmp_path: Path) -> None:
+    assert _environment.resolve_accelerator("cu128") == "cuda"
+    assert _environment.resolve_accelerator("cu132") == "cuda"
+    assert _environment.resolve_accelerator("cu132", allowed=("cpu", "cu128")) == "cuda"
+
+    mapped = _generated_env(
+        tmp_path / "mapped",
+        accelerators=("cpu", "cuda"),
+        extras={"cpu": ("cpu",), "cuda": ("cu132",)},
+    )
+    legacy = _generated_env(tmp_path / "legacy", accelerators=("cu128",), extras=None)
+    default = _generated_env(tmp_path / "default", accelerators=("cpu", "cuda", "xpu"), extras=None)
+
+    assert mapped.extras_for("cuda") == ("cu132",)
+    assert mapped.extras_for("cu128") == ("cu132",)
+    assert legacy.extras_for("cuda") == ("cu128",)
+    assert default.extras_for("cuda") == ("cuda",)
+    assert to_isolate_environment(mapped, "cuda").profile.extras == ("cu132",)
+
+
 def test_prepare_delegates_to_runtime_isolate_and_keeps_engine_metadata(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -105,14 +125,14 @@ def test_accelerator_auto_prefers_xpu_then_cuda_then_cpu_independent_of_host_tor
 ) -> None:
     monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": False})
     monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"cuda"})
-    assert _environment.resolve_accelerator("auto") == "cu128"
+    assert _environment.resolve_accelerator("auto") == "cuda"
 
     monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"xpu", "cuda"})
     assert _environment.resolve_accelerator("auto") == "xpu"
 
     monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": True})
     monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"xpu"})
-    assert _environment.resolve_accelerator("auto") == "cu128"
+    assert _environment.resolve_accelerator("auto") == "cuda"
 
     monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": False})
     monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: set())

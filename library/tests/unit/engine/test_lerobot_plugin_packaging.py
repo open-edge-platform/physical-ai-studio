@@ -53,13 +53,13 @@ def test_worker_project_has_only_locked_framework_dependencies() -> None:
     project_dependencies = {item.split("[", maxsplit=1)[0].split(">", maxsplit=1)[0] for item in pyproject["project"]["dependencies"]}
     lock_packages = {package["name"] for package in lock["package"]}
 
-    assert {"cpu", "cu128", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
+    assert {"cpu", "cu132", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
     assert "physicalai" not in project_dependencies
     assert "physicalai-train" not in project_dependencies
     assert "physicalai" not in lock_packages
     assert "physicalai-train" not in lock_packages
     assert "https://download.pytorch.org/whl/cpu" in lock_text
-    assert "https://download.pytorch.org/whl/cu128" in lock_text
+    assert "https://download.pytorch.org/whl/cu132" in lock_text
     assert "https://download.pytorch.org/whl/xpu" in lock_text
 
 
@@ -77,11 +77,11 @@ def test_each_policy_family_has_its_own_locked_worker_project(family: str, marke
     assert env.name == family
     assert locked_version(env) in supported_versions(env)
     assert pyproject["project"]["dependencies"] == [f"lerobot[training,{family}]>=0.7,<0.8"]
-    assert {"cpu", "cu128", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
+    assert {"cpu", "cu132", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
     assert marker_package in lock_packages
     assert "physicalai" not in lock_packages
     assert "physicalai-train" not in lock_packages
-    for index in ("cpu", "cu128", "xpu"):
+    for index in ("cpu", "cu132", "xpu"):
         assert f"https://download.pytorch.org/whl/{index}" in lock_text
 
 

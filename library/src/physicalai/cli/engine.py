@@ -31,7 +31,7 @@ def build_parser() -> ArgumentParser:
     )
     parser.add_argument(
         "--accelerator",
-        choices=("auto", "cpu", "cuda", "cu128", "xpu"),
+        choices=("auto", "cpu", "cuda", "cu128", "cu132", "xpu"),
         default="auto",
         help="Worker environment accelerator for 'prepare'.",
     )
