@@ -23,15 +23,33 @@ class TestTrainer:
         """Verify TF32 matmuls are enabled unless disabled explicitly."""
         import torch
 
-        monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
+        previous = torch.get_float32_matmul_precision()
         monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
-        Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
-        assert torch.backends.cuda.matmul.allow_tf32
-        assert torch.backends.cudnn.allow_tf32
+        try:
+            torch.set_float32_matmul_precision("highest")
+            Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
+            assert torch.get_float32_matmul_precision() == "high"
+            assert torch.backends.cudnn.allow_tf32
 
-        Trainer(accelerator="cpu", logger=False, enable_checkpointing=False, allow_tf32=False)
-        assert not torch.backends.cuda.matmul.allow_tf32
-        assert not torch.backends.cudnn.allow_tf32
+            Trainer(accelerator="cpu", logger=False, enable_checkpointing=False, allow_tf32=False)
+            assert torch.get_float32_matmul_precision() == "highest"
+            assert not torch.backends.cudnn.allow_tf32
+        finally:
+            torch.set_float32_matmul_precision(previous)
+
+    def test_tf32_opt_out_after_compiled_policy(self, monkeypatch):
+        """Keep matmul precision readable after a compiled policy enables TF32."""
+        import torch
+
+        previous = torch.get_float32_matmul_precision()
+        monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", True)
+        try:
+            torch.set_float32_matmul_precision("high")  # Used by compile_model=True policies.
+            Trainer(accelerator="cpu", logger=False, enable_checkpointing=False, allow_tf32=False)
+            assert torch.get_float32_matmul_precision() == "highest"
+            assert not torch.backends.cudnn.allow_tf32
+        finally:
+            torch.set_float32_matmul_precision(previous)
 
     def test_policy_dataset_interaction_callback_injected(self):
         """Verify PolicyDatasetInteraction callback is automatically added."""
