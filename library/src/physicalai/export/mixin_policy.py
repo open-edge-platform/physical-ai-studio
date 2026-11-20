@@ -595,7 +595,10 @@ class ExportablePolicyMixin:
             delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
                 supports ``{"device": "CPU"}`` (or other supported target device) and
                 ``{"compress_weights": True}`` to compress weights to INT8 symmetric with
-                ``nncf`` before lowering.
+                ``nncf`` before lowering. The OpenVINO device is compiled into the ``.pte``
+                and cannot be changed at inference time; it must be available on the
+                exporting machine. The delegate and device are recorded in the manifest
+                as ``delegate`` and ``delegate_device``.
             **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
 
         Returns:
@@ -683,6 +686,8 @@ class ExportablePolicyMixin:
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
+            delegate=delegate,
+            delegate_device=(delegate_config or {}).get("device", "CPU") if delegate == "openvino" else "CPU",
         )
 
         return model_path

@@ -1099,6 +1099,7 @@ describe('TrainModelDialog', () => {
         await waitFor(() => expect(submitted).not.toBeNull());
         expect(submitted).toMatchObject({ image_key_reorder_map: {}, num_cameras: 0 });
         expect(submitted).toHaveProperty('export_backends', ['torch', 'openvino', 'onnx', 'executorch']);
+        expect(submitted).toMatchObject({ executorch_delegate: 'openvino', executorch_device: 'CPU' });
     });
 
     it('skips the camera mapping when retraining, since the checkpoint keeps its own', async () => {

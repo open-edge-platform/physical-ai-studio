@@ -28,6 +28,8 @@ const basePayload = {
     snapflow_enabled: false,
     snapflow_distill_epochs: 3,
     augment_images: false,
+    executorch_delegate: 'openvino' as const,
+    executorch_device: 'CPU',
 };
 
 type BaseKeys = keyof typeof basePayload;

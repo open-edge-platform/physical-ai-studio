@@ -56,6 +56,30 @@ export const getDefaultInferenceDevice = (devices: SchemaInferenceDeviceInfo[], 
     return supportedDevices.find((device) => device.type !== 'cpu') ?? supportedDevices.at(0);
 };
 
+/**
+ * ExecuTorch compiles its device into the program at export, so the model's
+ * export is the only device it can run on.
+ */
+export const withExecuTorchDevice = (
+    devices: SchemaInferenceDeviceInfo[],
+    model: SchemaModel | undefined
+): SchemaInferenceDeviceInfo[] => {
+    const target = model?.executorch_target;
+    if (!target) {
+        return devices;
+    }
+
+    return [
+        ...devices,
+        {
+            backend: 'executorch',
+            device: target.device,
+            type: target.device === 'CPU' ? 'cpu' : 'xpu',
+            name: `${target.delegate} · ${target.device} (set at export)`,
+        },
+    ];
+};
+
 interface BackendSelectionProps {
     model: SchemaModel;
     inferenceDevice: InferenceDevice | undefined;
@@ -74,7 +98,9 @@ export const BackendSelection = ({
     const device = inferenceDevice?.device;
 
     const backends: Array<string> =
-        policyBackends?.[model.policy].filter((modelBackend) => ['openvino', 'torch'].includes(modelBackend)) ?? [];
+        policyBackends?.[model.policy].filter((modelBackend) =>
+            ['openvino', 'torch', 'executorch'].includes(modelBackend)
+        ) ?? [];
     const devices = getSupportedInferenceDevices(inferenceDevices, backend);
     const selectedDevice =
         devices.find((availableDevice) => availableDevice.device === device) ??

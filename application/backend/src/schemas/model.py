@@ -13,6 +13,11 @@ DORA_PROPERTY = "lora_use_dora"
 SNAPFLOW_PROPERTY = "snapflow_enabled"
 
 
+class ExecuTorchTarget(BaseModel):
+    delegate: str
+    device: str
+
+
 class Model(BaseIDModel):
     name: str
     path: str
@@ -45,6 +50,24 @@ class Model(BaseIDModel):
             backends.append(backend_dir.name)
 
         return sorted(backends)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def executorch_target(self) -> ExecuTorchTarget | None:
+        """Delegate and device compiled into the ExecuTorch export, if there is one.
+
+        The device is fixed at export time, so the run dialog shows it instead of a picker.
+        Exports predating these manifest fields were portable (CPU).
+        """
+        manifest_path = Path(self.path) / "exports" / "executorch" / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            return None
+        return ExecuTorchTarget(
+            delegate=str(manifest.get("delegate", "portable")),
+            device=str(manifest.get("delegate_device", "CPU")),
+        )
 
     @computed_field  # type: ignore[prop-decorator]
     @computed_field  # type: ignore[prop-decorator]

@@ -394,6 +394,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 // so fall back to exporting every supported
                 // format rather than sending [] and exporting none.
                 export_backends: exportSelection.backends.length > 0 ? exportSelection.selectedBackends : null,
+                executorch_delegate: exportSelection.executorchDelegate,
+                executorch_device: exportSelection.executorchDevice,
                 lora_enabled: isLoraRequested,
                 lora_rank: loraRank,
                 lora_alpha: loraAlpha,
