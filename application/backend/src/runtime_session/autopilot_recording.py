@@ -115,25 +115,31 @@ class Freshness:
     """When each stream last sent a new sample: the leader, the follower's state and every camera.
 
     A sample is new when its timestamp changes; when is measured on this process's clock, so it holds for
-    any device's clock. The control's thread writes, the loop reads: each write replaces one dict entry.
+    any device's clock. The first timestamp seen is only a baseline: the store may still hold a sample of
+    the devices before (a swap or reload keeps the frames). Cameras are kept apart from the leader and the
+    follower, so a camera named ``leader`` is its own stream. The control's thread writes, the loop reads:
+    each write replaces one dict entry.
     """
 
     def __init__(self, cameras: Iterable[str], clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self.cameras = tuple(cameras)
         self.started = clock()
-        self._stamps: dict[str, float] = {}
-        self._new_at: dict[str, float] = {}
+        self._stamps: dict[tuple[bool, str], float] = {}
+        self._new_at: dict[tuple[bool, str], float] = {}
 
     def restart(self) -> None:
         self.started = self._clock()
 
-    def observe(self, stream: str, stamp: float | None) -> None:
-        if stamp is not None and stamp != self._stamps.get(stream):
-            self._stamps[stream] = stamp
-            self._new_at[stream] = self._clock()
+    def observe(self, stream: str, stamp: float | None, *, camera: bool = False) -> None:
+        key = (camera, stream)
+        if stamp is None or stamp == (seen := self._stamps.get(key)):
+            return
+        self._stamps[key] = stamp
+        if seen is not None:
+            self._new_at[key] = self._clock()
 
-    def stale(self, streams: Iterable[str], *, grace_s: float = 0.0) -> list[str]:
+    def stale(self, streams: Iterable[str], *, camera: bool = False, grace_s: float = 0.0) -> list[str]:
         """The streams without a new sample for longer than :data:`STALE_AFTER_S`, each with its gap.
 
         A stream never seen counts once *grace_s* passed since the control started.
@@ -141,7 +147,7 @@ class Freshness:
         now = self._clock()
         stale = []
         for stream in streams:
-            new_at = self._new_at.get(stream)
+            new_at = self._new_at.get((camera, stream))
             if new_at is None:
                 if now - self.started > grace_s:
                     stale.append(f"{stream} (never)")
@@ -187,13 +193,17 @@ class AutopilotControl(Control):
         self._episode_id = episode_id
 
     def halt(self) -> None:
-        """Hold the follower at the last action written, and write no target after; safe from any thread."""
+        """Hold the follower where it is, and write no target after; safe from any thread.
+
+        Where it is: its last state, as the session's hold, since a follower behind its last target would
+        go on moving to it. The last action written when it has no state yet.
+        """
         with self._write:
             if self._halted.is_set():
                 return
             self._halted.set()
-            if (last := self.store.read(ACTION)) is not None:
-                self.store.write(ACTION, last.value, timestamp=time.monotonic())
+            if (held := self.store.read(STATE) or self.store.read(ACTION)) is not None:
+                self.store.write(ACTION, held.value, timestamp=time.monotonic())
 
     @property
     def halted(self) -> bool:
@@ -220,7 +230,8 @@ class AutopilotControl(Control):
         freshness.observe(LEADER, observation.timestamp)
         freshness.observe(FOLLOWER, self.store.stamp(STATE))
         for camera in freshness.cameras:
-            freshness.observe(camera, self.store.observation_stamp(camera))  # the stamp only: frames are big
+            # The stamp only: frames are big.
+            freshness.observe(camera, self.store.observation_stamp(camera), camera=True)
         expected = self._episode_id
         sample_episode = getattr(self.leader, "episode_id", _NO_EPISODE_ID)  # the sample's ``episode_id``
         if expected is not None and sample_episode is not _NO_EPISODE_ID and sample_episode != expected:
@@ -365,6 +376,9 @@ class AutopilotRecording:
                 self._update(phase="stopping", message=message)
                 task.cancel()
         await asyncio.wait({task})
+        if not self._finishing:  # cancelled before its first step: ``_run`` never ran, nor its cleanup
+            self._finishing = True
+            await self._finish("failed" if failed else "stopped", message)
 
     async def _run(self) -> None:
         phase: Phase = "done"
@@ -425,7 +439,7 @@ class AutopilotRecording:
         """Wait until every camera sent a new frame lately; the stale ones if they do not within the bound."""
         deadline = time.monotonic() + FRESH_TIMEOUT_S
         freshness = self._control().freshness
-        while (stale := freshness.stale(freshness.cameras)) and time.monotonic() < deadline:
+        while (stale := freshness.stale(freshness.cameras, camera=True)) and time.monotonic() < deadline:
             await self._sleep()
         return stale
 
@@ -434,13 +448,15 @@ class AutopilotRecording:
         episode_id = current.episode.id
         dataset_episode = uuid4().hex
         task = current.episode.task or self.state.scene or "autopilot"
+        # Before the start goes out: a stop while it does discards it (``_discard_dataset`` tells a start
+        # that never opened it).
+        current.dataset_episode = dataset_episode
         await self._dataset(
             command_key("start_episode"),
             StartEpisodeCommand(
                 request_id=uuid4().hex, task=task, dataset_id=self.dataset_id, episode_id=dataset_episode
             ),
         )
-        current.dataset_episode = dataset_episode
         current.episode = await self._call(lambda: self.client.abegin(episode_id))
         control = self._control()
         control.watch(episode_id)
@@ -448,18 +464,7 @@ class AutopilotRecording:
         unanswered_since: float | None = None
         while current.episode.phase != "ended":
             await self._sleep()
-            if stale := control.freshness.stale(control.freshness.cameras):
-                await self._discard(current, "stale_stream", _no_samples(stale))
-                return
-            if (mismatch := control.mismatch) is not None and mismatch[0] == episode_id:
-                published = f"episode {mismatch[1]!r}" if mismatch[1] else "no episode"
-                reason = f"The simulation's leader published {published}, not episode {episode_id!r}."
-                await self._discard(current, "aborted", reason)
-                return
-            status = await self._dataset_status()
-            if not status.is_recording or status.episode_id != dataset_episode:  # a camera was lost, say
-                current.dataset_episode = None
-                await self._discard(current, "dataset", status.error or "The dataset discarded the episode.")
+            if await self._discarded(current, control, dataset_episode):
                 return
             try:
                 current.episode = await self.client.aepisode(episode_id)
@@ -470,8 +475,33 @@ class AutopilotRecording:
                     raise _Ended(f"Lost the simulation: {error}") from error
             except AutopilotRefusedError as error:
                 raise _Ended(f"The simulation refused ({error.code}): {error.message}") from error
+        # The samples since the last check went into the episode too.
+        if await self._discarded(current, control, dataset_episode):
+            return
         control.watch(None)
         await self._conclude(current)
+
+    async def _discarded(self, current: _Open, control: AutopilotControl, dataset_episode: str) -> bool:
+        """Discard the episode if a camera went stale, the leader led another one, or the dataset dropped it.
+
+        Returns:
+            Whether it was discarded.
+        """
+        episode_id = current.episode.id
+        if stale := control.freshness.stale(control.freshness.cameras, camera=True):
+            await self._discard(current, "stale_stream", _no_samples(stale))
+            return True
+        if (mismatch := control.mismatch) is not None and mismatch[0] == episode_id:
+            published = f"episode {mismatch[1]!r}" if mismatch[1] else "no episode"
+            reason = f"The simulation's leader published {published}, not episode {episode_id!r}."
+            await self._discard(current, "aborted", reason)
+            return True
+        status = await self._dataset_status()
+        if not status.is_recording or status.episode_id != dataset_episode:  # a camera was lost, say
+            current.dataset_episode = None
+            await self._discard(current, "dataset", status.error or "The dataset discarded the episode.")
+            return True
+        return False
 
     async def _conclude(self, current: _Open) -> None:
         """Keep an ended episode, or discard it."""

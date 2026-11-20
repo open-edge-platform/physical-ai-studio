@@ -38,7 +38,6 @@ class TeleopControl(Control):
         self.started_at = 0.0
 
     def on_start(self) -> None:
-        self.started_at = time.monotonic()
         # A leader that reads over a connection idle since it connected (a simulation's virtual
         # leader keeps an HTTP connection, which the simulation closes after a few idle seconds)
         # fails its first read, and connects again for the next one.
@@ -47,6 +46,8 @@ class TeleopControl(Control):
         except ConnectionError as error:
             logger.info("The leader's first reading failed ({}); reading it again", error)
             self.leader.get_observation()
+        # The grace period starts once the leader reads: a slow first read must not use it up.
+        self.started_at = time.monotonic()
 
     def on_tick(self) -> None:
         observation = self.leader.get_observation()

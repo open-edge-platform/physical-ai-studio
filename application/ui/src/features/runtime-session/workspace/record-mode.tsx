@@ -82,7 +82,7 @@ const useDefaultTask = (dataset_id: string | undefined) => {
 };
 
 /** The rate a dataset with nothing recorded yet is recorded at; changing it loads the dataset again at that rate. */
-const RecordingRate = ({ dataset }: { dataset: SchemaSessionDataset }) => {
+const RecordingRate = ({ dataset, isLocked = false }: { dataset: SchemaSessionDataset; isLocked?: boolean }) => {
     const [fps, setFps] = useState(dataset.fps);
     const { run, isPending } = useRecordingCommand();
 
@@ -106,7 +106,7 @@ const RecordingRate = ({ dataset }: { dataset: SchemaSessionDataset }) => {
             maxValue={100}
             step={5}
             getValueLabel={(value) => `${value} fps`}
-            isDisabled={isFixed || isPending}
+            isDisabled={isFixed || isPending || isLocked}
             width='100%'
         />
     );
@@ -262,7 +262,10 @@ export const RecordMode = () => {
             <Flex direction='column' gap='size-200'>
                 <TeleoperatorChoice environment={environment} />
                 <AutopilotStatus recording={state?.autopilot_recording} />
-                {dataset !== undefined && <RecordingRate dataset={dataset} />}
+                {/* Loading the dataset at another rate would stop an automatic recording. */}
+                {dataset !== undefined && (
+                    <RecordingRate dataset={dataset} isLocked={isAutopilotRecording(state?.autopilot_recording)} />
+                )}
                 <AutopilotRecording robot_id={environment.robot_id} canRecord={canRecord} />
             </Flex>
         );
