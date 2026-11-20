@@ -12,7 +12,7 @@ import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
 import { MetricGraph } from './metric-graph';
-import type { MetricsEntry } from './types';
+import { hasMetricValue, type MetricLine, type MetricsEntry } from './types';
 
 const NoMetricsAvailable = () => {
     return (
@@ -25,12 +25,14 @@ const NoMetricsAvailable = () => {
 
 export interface MetricSeries {
     title: string;
+    helpText?: string;
     xLabel: string;
     yLabel: string;
     data: MetricsEntry[];
     color?: string;
     getX: (metricsEntry: MetricsEntry) => number;
     getY: (metricsEntry: MetricsEntry) => number | null | undefined;
+    lines?: MetricLine[];
     formatY?: (y: number) => string;
 }
 
@@ -46,7 +48,9 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
         return <Loading mode='inline' />;
     }
 
-    const seriesReadyToRender = series.filter((metric) => metric.data.some((entry) => metric.getY(entry) != null));
+    const seriesReadyToRender = series.filter((metric) =>
+        metric.data.some((entry) => hasMetricValue(entry, metric.getY, metric.lines))
+    );
 
     if (seriesReadyToRender.length === 0) {
         return <NoMetricsAvailable />;
@@ -57,17 +61,19 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
             columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
             gap='size-200'
         >
-            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY, formatY }) => (
+            {seriesReadyToRender.map(({ title, helpText, xLabel, yLabel, data, color, getX, getY, lines, formatY }) => (
                 <MetricGraph
                     key={title}
                     syncId={syncId}
                     title={title}
+                    helpText={helpText}
                     yAxisLabel={yLabel}
                     xAxisLabel={xLabel}
                     data={data}
                     color={color}
                     getX={getX}
                     getY={getY}
+                    lines={lines}
                     formatY={formatY}
                 />
             ))}
@@ -126,49 +132,120 @@ const learningRateFormatter = new Intl.NumberFormat('en-US', {
     roundingPriority: 'morePrecision',
 });
 
+const ACTION_ERROR_PREFIX = 'val_action_error_';
+const SERIES_COLORS = [
+    'orange',
+    'magenta',
+    'seafoam',
+    'yellow',
+    'purple',
+    'red',
+    'celery',
+    'indigo',
+    'fuchsia',
+    'green',
+].map((color) => `var(--spectrum-global-color-${color}-500)`);
+
+// One line per joint (the `val/action_error/<joint>` columns), plus the mean across joints.
+const actionErrorLines = (data: MetricsEntry[]): MetricLine[] => {
+    const keys = new Set(data.flatMap((entry) => Object.keys(entry).filter((k) => k.startsWith(ACTION_ERROR_PREFIX))));
+    return [
+        {
+            name: 'Mean',
+            color: 'var(--energy-blue)',
+            strokeWidth: 4,
+            strokeDasharray: '8 5',
+            primary: true,
+            getY: (entry) => entry.val_action_error,
+        },
+        ...[...keys].map((key, index) => ({
+            name: key.slice(ACTION_ERROR_PREFIX.length).replace(/\.pos$/, ''),
+            color: SERIES_COLORS[index % SERIES_COLORS.length],
+            getY: (entry: MetricsEntry) => entry[key],
+        })),
+    ];
+};
+
+const learningRateLines = (data: MetricsEntry[]): MetricLine[] => {
+    const keys = new Set(
+        data.flatMap((entry) => Object.keys(entry).filter((key) => key.startsWith('lr-') && entry[key] != null))
+    );
+
+    return [...keys].sort().map((key, index) => ({
+        name: key.slice('lr-'.length),
+        color: index === 0 ? 'var(--energy-blue)' : SERIES_COLORS[(index - 1) % SERIES_COLORS.length],
+        getY: (entry) => entry[key],
+    }));
+};
+
+export const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => {
+    const learningRates = learningRateLines(data);
+
+    return [
+        {
+            title: 'Training loss',
+            helpText:
+                "The policy's optimization loss on training demonstrations. Use the trend to track fitting; " +
+                'the scale depends on the policy, so values are not directly comparable across policy types.',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data,
+            color: 'var(--moss-tint-1)',
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.train_loss,
+            formatY: (y) => lossFormatter.format(y),
+        },
+        {
+            title: 'Validation loss',
+            helpText:
+                'Loss on held-out demonstrations, not task success. It can rise while the policy improves, ' +
+                'especially for flow-matching policies such as SmolVLA and Pi0.5. ' +
+                'Evaluate task success on your robot or in simulation.',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data,
+            color: 'var(--coral)',
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.val_loss,
+            formatY: (y) => lossFormatter.format(y),
+        },
+        {
+            title: 'Validation action error',
+            helpText:
+                'Mean absolute difference between predicted and recorded actions, in dataset units. ' +
+                'The dashed Mean line averages across joints. For SO-101, joint positions range from -100 to 100 ' +
+                'and the gripper from 0 to 100. Lower error does not guarantee task success.',
+            xLabel: 'Step',
+            yLabel: 'Mean absolute error',
+            data,
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.val_action_error,
+            lines: actionErrorLines(data),
+            formatY: (y) => lossFormatter.format(y),
+        },
+        {
+            title: 'Learning rate',
+            helpText:
+                'Learning rate used by the optimizer at each recorded training step. ' +
+                'Separate lines represent optimizers or parameter groups, which can use different rates and schedules.',
+            xLabel: 'Step',
+            yLabel: 'Learning rate',
+            data,
+            getX: (entry) => entry.step,
+            getY: (entry) => learningRates[0]?.getY(entry),
+            lines: learningRates,
+            formatY: (y) => learningRateFormatter.format(y),
+        },
+    ];
+};
+
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     const query = useJobMetrics(jobId);
     const metricsData = useMemo(() => {
         return query.data ?? [];
     }, [query.data]);
 
-    const metrics: MetricSeries[] = [
-        {
-            title: 'Training loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.train_loss,
-            color: 'var(--moss-tint-1)',
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Validation loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.val_loss,
-            color: 'var(--coral)',
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Learning rate',
-            xLabel: 'Step',
-            yLabel: 'Learning rate',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry['lr-AdamW'],
-            formatY: (y) => {
-                return learningRateFormatter.format(y);
-            },
-        },
-    ];
+    const metrics = buildMetricSeries(metricsData);
 
     return (
         <>
@@ -211,43 +288,7 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
         return query.data ?? [];
     }, [query.data]);
 
-    const metrics: MetricSeries[] = [
-        {
-            title: 'Training loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            color: 'var(--moss-tint-1)',
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.train_loss,
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Validation loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            color: 'var(--coral)',
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.val_loss,
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Learning rate',
-            xLabel: 'Step',
-            yLabel: 'Learning rate',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry['lr-AdamW'],
-            formatY: (y) => {
-                return learningRateFormatter.format(y);
-            },
-        },
-    ];
+    const metrics = buildMetricSeries(metricsData);
 
     return <MetricsView series={metrics} isLoading={query.isLoading} />;
 };

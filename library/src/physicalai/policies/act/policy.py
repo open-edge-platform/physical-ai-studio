@@ -16,7 +16,7 @@ from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
 from physicalai.data import Dataset, Feature, FeatureType, NormalizationParameters, Observation
-from physicalai.data.observation import ACTION, IMAGES, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK_INDEX
 from physicalai.export.backends import (
     ExecuTorchExportParameters,
     ExportParameters,
@@ -76,6 +76,10 @@ class ACT(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping.
         use_imagenet_stats: Whether to normalize 3-channel visual observations using ImageNet
             mean and std instead of empirical dataset statistics.
+        tasks: Task prompts to condition on, a prompt's position being its task index. With two or
+            more, the model learns a task embedding and inference takes one of these prompts as
+            ``task``. ``None`` reads them from the training dataset, so a multi-task dataset trains a
+            multi-task policy. An empty or single-task list keeps ACT unconditioned.
         dataset_stats: Dataset normalization statistics for eager model initialization
             (used when restoring from a checkpoint).
 
@@ -130,6 +134,7 @@ class ACT(ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 10.0,
         compile_model: bool = False,
         use_imagenet_stats: bool = True,
+        tasks: list[str] | None = None,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, Any] | None = None,
     ) -> None:
@@ -197,7 +202,9 @@ class ACT(ExportablePolicyMixin, Policy):
         # Model will be built in setup() or immediately if env_action_dim provided
         self.model: ACTModel | None = None
 
-        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size)
+        # A single task needs no conditioning.
+        self.tasks: list[str] = list(tasks) if tasks and len(tasks) > 1 else []
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
         self._postprocessor = None
 
         # Eager initialization if dataset_stats is provided
@@ -352,6 +359,7 @@ class ACT(ExportablePolicyMixin, Policy):
             dropout=self.config.dropout,
             kl_weight=self.config.kl_weight,
             compile_model=self.config.compile_model,
+            n_tasks=len(self.tasks) if weights_file is None else 0,
         )
 
         if weights_file is not None:
@@ -368,13 +376,32 @@ class ACT(ExportablePolicyMixin, Policy):
             if missing:
                 msg = f"Missing keys when loading pretrained ACT weights (kept randomly initialized): {missing}"
                 logger.warning(msg)
+            if self.tasks:
+                self.model.enable_task_conditioning(len(self.tasks))
+
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Keep a restored checkpoint's task mapping, including legacy unconditioned checkpoints.
+
+        Raises:
+            ValueError: If the checkpoint was trained on different tasks than the policy resolved.
+        """
+        super().on_load_checkpoint(checkpoint)
+        saved = list(checkpoint.get("hyper_parameters", {}).get("tasks") or [])
+        tasks = saved if len(saved) > 1 else []
+        if sorted(tasks) != sorted(self.tasks):
+            msg = f"Checkpoint was trained on tasks {tasks}, but this policy uses {self.tasks}."
+            raise ValueError(msg)
+        # Task embeddings follow the checkpoint's order, e.g. when resuming on a dataset that lists tasks differently.
+        self.tasks = tasks
+        self.hparams["tasks"] = saved
+        self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
 
     def setup(self, stage: str) -> None:
         """Set up the policy from datamodule if not already initialized.
 
         This method is called by Lightning before fit/validate/test/predict.
-        It extracts features from the datamodule's training dataset and
-        initializes the policy if it wasn't already created in __init__.
+        It resolves tasks from the training dataset and initializes the model
+        or adds task conditioning to an eagerly initialized model.
 
         Args:
             stage: The stage of training ('fit', 'validate', 'test', or 'predict')
@@ -391,6 +418,14 @@ class ACT(ExportablePolicyMixin, Policy):
         if not isinstance(train_dataset, Dataset):
             msg = f"Expected train_dataset to be physicalai.data.Dataset, got {type(train_dataset)}."
             raise TypeError(msg)
+
+        if self.hparams.get("tasks") is None:
+            tasks = list(train_dataset.tasks)
+            self.tasks = tasks if len(tasks) > 1 else []
+            self.hparams["tasks"] = list(self.tasks)
+            self._preprocessor = ACTPreprocessor(image_resolution=self.config.image_size, tasks=self.tasks)
+            if self.model is not None and self.tasks:
+                self.model.enable_task_conditioning(len(self.tasks))
 
         if self.model is not None:
             reformat_dataset_to_match_policy(self, datamodule)
@@ -609,8 +644,9 @@ class ACT(ExportablePolicyMixin, Policy):
         """Describe the policy's expected model inputs for export tracing.
 
         Returns:
-            A list with a ``state`` feature and one or more image features keyed by
-            ``images`` (single camera) or ``images.<name>`` (multi-camera). Returns
+            A list with a ``state`` feature, one or more image features keyed by
+            ``images`` (single camera) or ``images.<name>`` (multi-camera), and a
+            ``task_index`` feature for a multi-task policy. Returns
             ``None`` if the underlying model has not been initialized yet.
 
         Raises:
@@ -660,6 +696,16 @@ class ACT(ExportablePolicyMixin, Policy):
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                 )
+
+        if self.tasks:
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.COMMON,
+                    shape=(1,),
+                    name=TASK_INDEX,
+                    dtype=InferenceFeatureDtype.INT64,
+                ),
+            )
 
         return schema
 
@@ -717,6 +763,11 @@ class ACT(ExportablePolicyMixin, Policy):
                 mode="letterbox",
             ),
         ]
+        torch_preproc_specs = [ComponentSpec(type="to_float_tensor")]
+        if self.tasks:
+            task_spec = ComponentSpec(type="task_index", tasks=list(self.tasks))
+            preproc_specs.append(task_spec)
+            torch_preproc_specs.append(task_spec)
 
         extra_args: dict[str, ExportParameters] = {}
         output_names = [feature.name for feature in (self.outputs_schema or [])]
@@ -740,7 +791,7 @@ class ACT(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
-            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            preprocessors_specs=torch_preproc_specs,
             postprocessors_specs=postproc_specs,
         )
 

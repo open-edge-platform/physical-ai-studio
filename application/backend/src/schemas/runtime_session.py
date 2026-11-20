@@ -298,6 +298,8 @@ class SessionModel(BaseModel):
     name: str
     backend: str
     device: str
+    tasks: list[str] = []
+    """The tasks the model takes, when it only knows a fixed set; empty if it takes any text."""
 
 
 AutopilotRecordingPhase = Literal[

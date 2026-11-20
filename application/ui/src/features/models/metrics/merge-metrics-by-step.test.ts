@@ -70,6 +70,15 @@ describe('foldMetricsBatch + sortMetricsByStep (merging a full list at once)', (
         expect(result[0]).toEqual({ step: 1, epoch: null, train_loss: null, val_loss: null, 'lr-AdamW': null });
     });
 
+    it('merges extra policy-specific columns such as per-joint action error', () => {
+        const result = mergeAllAtOnce([
+            entry({ step: 1, val_action_error_gripper: 3 }),
+            entry({ step: 1, val_loss: 0.3 }),
+        ]);
+
+        expect(result[0]).toMatchObject({ val_loss: 0.3, val_action_error_gripper: 3 });
+    });
+
     it('keeps distinct steps as separate entries', () => {
         const result = mergeAllAtOnce([entry({ step: 1, train_loss: 0.5 }), entry({ step: 2, train_loss: 0.4 })]);
 

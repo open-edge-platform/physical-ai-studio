@@ -27,7 +27,7 @@ from torchvision.models._utils import IntermediateLayerGetter  # noqa: PLC2701
 from torchvision.ops.misc import FrozenBatchNorm2d
 
 from physicalai.data import Feature, FeatureType
-from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
+from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK_INDEX, Observation
 from physicalai.policies.base import Model
 from physicalai.policies.utils import in_episode_bound, reduce_losses
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
@@ -71,6 +71,7 @@ class ACT(Model):
         kl_weight: float = 10.0,
         n_obs_steps: int = 1,
         compile_model: bool = False,
+        n_tasks: int = 0,
     ) -> None:
         """Initialize the ACT model.
 
@@ -102,6 +103,8 @@ class ACT(Model):
             kl_weight (float, optional): Weight for KL divergence loss in VAE. Defaults to 10.0.
             n_obs_steps (int, optional): Number of observation steps. Defaults to 1.
             compile_model (bool, optional): Whether to apply torch.compile to the model. Defaults to False.
+            n_tasks (int, optional): Number of tasks to condition on via a learned task embedding read from
+                the ``task_index`` input. ``0`` disables task conditioning. Defaults to 0.
 
         Raises:
             ValueError: If the number of state observation features is not exactly one.
@@ -165,6 +168,7 @@ class ACT(Model):
             dropout=dropout,
             kl_weight=kl_weight,
             n_obs_steps=n_obs_steps,
+            n_tasks=n_tasks,
         )
 
         # on training, action feature is also an input -> it should be normalized
@@ -184,6 +188,32 @@ class ACT(Model):
         if compile_model:
             torch.set_float32_matmul_precision("high")
             self.forward = torch.compile(self.forward, mode="default")  # type: ignore[method-assign]
+
+    @torch.no_grad()
+    def enable_task_conditioning(self, n_tasks: int) -> None:
+        """Add task embeddings to an unconditioned model without replacing its learned weights.
+
+        Args:
+            n_tasks: Number of tasks to condition on.
+
+        Raises:
+            ValueError: If conditioning is already enabled or fewer than two tasks are provided.
+        """
+        if self._config.n_tasks or n_tasks <= 1:
+            msg = "Task conditioning requires an unconditioned model and at least two tasks."
+            raise ValueError(msg)
+        weight = self._model.encoder_1d_feature_pos_embed.weight
+        positions = nn.Embedding(weight.shape[0] + 1, weight.shape[1], device=weight.device, dtype=weight.dtype)
+        positions.weight[:-1].copy_(weight)
+        self._model.encoder_1d_feature_pos_embed = positions
+        self._model.encoder_task_embed = nn.Embedding(
+            n_tasks,
+            weight.shape[1],
+            device=weight.device,
+            dtype=weight.dtype,
+        )
+        self._config = dataclasses.replace(self._config, n_tasks=n_tasks)
+        self._model.config = self._config
 
     @property
     def config(self) -> ACTConfig:
@@ -393,6 +423,7 @@ class _ACTConfig(ACTConfig):
             FeatureType.ACTION: NormalizationType.MEAN_STD,
         },
     )
+    n_tasks: int = 0
 
     def __post_init__(self) -> None:
         """Post-initialization validation for ACT model configuration.
@@ -577,7 +608,7 @@ class _ACT(nn.Module):
         self.attention_weights_capture: list[torch.Tensor] = []
 
         # Transformer encoder input projections. The tokens will be structured like
-        # [latent, (robot_state), (env_state), (image_feature_map_pixels)].
+        # [latent, (robot_state), (env_state), (task), (image_feature_map_pixels)].
         if self.config.robot_state_feature:
             self.encoder_robot_state_input_proj = nn.Linear(
                 cast("tuple", self.config.robot_state_feature.shape)[0],
@@ -600,6 +631,9 @@ class _ACT(nn.Module):
         if self.config.robot_state_feature:
             n_1d_tokens += 1
         if self.config.env_state_feature:
+            n_1d_tokens += 1
+        if self.config.n_tasks:
+            self.encoder_task_embed = nn.Embedding(config.n_tasks, config.dim_model)
             n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
         if self.config.image_features:
@@ -653,6 +687,8 @@ class _ACT(nn.Module):
             [image_features]: (B, n_cameras, C, H, W) batch of images.
                 AND/OR
             [env_state_feature]: (B, env_dim) batch of environment states.
+
+            [task_index] (only if n_tasks > 0): (B,) or (B, 1) batch of integer task indices.
 
             [action_feature] (optional, only if training with VAE): (B, chunk_size, action dim) batch of actions.
         }
@@ -738,6 +774,9 @@ class _ACT(nn.Module):
             encoder_in_tokens.append(
                 self.encoder_env_state_input_proj(batch["environment_state"]),
             )
+        # Task token.
+        if self.config.n_tasks:
+            encoder_in_tokens.append(self.encoder_task_embed(batch[TASK_INDEX].reshape(-1).long()))
 
         if self.config.image_features:
             # For a list of images, the H and W may vary but H*W is constant.
@@ -839,13 +878,15 @@ class _ACT(nn.Module):
             msg = f"Unexpected attention dimension: {attention.shape}. Expected 3 or 4."
             raise ValueError(msg)
 
-        # Token structure: [latent, (robot_state), (env_state), (image_tokens)]
+        # Token structure: [latent, (robot_state), (env_state), (task), (image_tokens)]
         n_prefix_tokens = 1  # latent token
         proprio_token_idx = None
         if self.config.robot_state_feature:
             proprio_token_idx = n_prefix_tokens  # proprioception is the next token
             n_prefix_tokens += 1
         if self.config.env_state_feature:
+            n_prefix_tokens += 1
+        if self.config.n_tasks:
             n_prefix_tokens += 1
 
         # --- Step 1: Extract proprioception attention ---

@@ -52,6 +52,8 @@ class ModelControl(Control):
     ) -> None:
         if model.inputs.state_size != len(store.spec.joint_names):
             raise ValueError("The loaded model does not fit the follower")
+        if model.inputs.tasks and config.task not in model.inputs.tasks:
+            raise ValueError(f"Pick one of the model's tasks: {', '.join(model.inputs.tasks)}")
         super().__init__(store, config, name="ModelControl", hz=config.hz)
         execution = (
             AsyncExecution(request_threshold=config.execution.request_threshold)

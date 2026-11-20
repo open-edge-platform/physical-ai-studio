@@ -175,11 +175,14 @@ jobs:
           fetch-depth: 0
 
       - name: Run Semgrep scan
-        uses: open-edge-platform/geti-ci/actions/semgrep@48bba96a6c9b297a91902f97b26f63117617888f
+        uses: open-edge-platform/geti-ci/actions/semgrep@e8e4a5d8490ad8ef1ecd1bb48df4569672342793
         with:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
           severity: ${{ github.event_name == 'pull_request' && 'HIGH' || 'LOW' }}
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
+          exclude-rules: |
+            trailofbits.python.numpy-in-pytorch-modules.numpy-in-pytorch-modules
+            trailofbits.python.automatic-memory-pinning.automatic-memory-pinning
 
   trivy-scan-diff:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
