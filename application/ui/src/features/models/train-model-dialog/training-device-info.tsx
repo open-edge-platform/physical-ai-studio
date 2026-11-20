@@ -30,7 +30,8 @@ export const TrainingDeviceInfo = ({
                     <StatusLight variant='neutral'>Starting trainer container…</StatusLight>
                 ) : remoteDevice ? (
                     <StatusLight variant={isRemoteDeviceBusy ? 'yellow' : 'positive'}>
-                        {remoteDevice.name}, {formatBytes(remoteDevice.memory!)} VRAM
+                        {remoteDevice.type.toUpperCase()} {remoteDevice.index} — {remoteDevice.name},{' '}
+                        {formatBytes(remoteDevice.memory!)} VRAM
                     </StatusLight>
                 ) : isCheckingRemote && remoteHealth === null ? (
                     <StatusLight variant='neutral'>Checking remote trainer…</StatusLight>
@@ -39,7 +40,8 @@ export const TrainingDeviceInfo = ({
                 )
             ) : localDevice ? (
                 <StatusLight variant='positive'>
-                    {localDevice.name}, {formatBytes(localDevice.memory!)} VRAM
+                    {localDevice.type.toUpperCase()} {localDevice.index} — {localDevice.name},{' '}
+                    {formatBytes(localDevice.memory!)} VRAM
                 </StatusLight>
             ) : (
                 <StatusLight variant='neutral'>CPU only (no GPU detected)</StatusLight>

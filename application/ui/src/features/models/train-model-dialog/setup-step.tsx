@@ -14,8 +14,8 @@ interface SetupStepProps {
     trainingTargetOptions: TrainingTargetOption[];
     targetId: Key | null;
     onTargetIdChange: (value: Key | null) => void;
-    remoteDevices: SchemaDeviceInfo[];
-    busyGpuKeys: Set<string>;
+    trainingDevices: SchemaDeviceInfo[];
+    busyGpuKeys?: Set<string>;
     selectedGpuKey: Key | null;
     onSelectedGpuKeyChange: (value: Key | null) => void;
     selectedGpuUnavailable: boolean;
@@ -36,7 +36,7 @@ export const SetupStep = ({
     trainingTargetOptions,
     targetId,
     onTargetIdChange,
-    remoteDevices,
+    trainingDevices,
     busyGpuKeys,
     selectedGpuKey,
     onSelectedGpuKeyChange,
@@ -86,31 +86,33 @@ export const SetupStep = ({
             )}
         </Picker>
 
-        {(remoteDevices.length > 1 || selectedGpuKey !== null) && (
+        {(trainingDevices.length > 1 || selectedGpuKey !== null) && (
             <Picker
                 label='GPU'
                 selectedKey={selectedGpuKey ?? (activeDevice ? `${activeDevice.type}:${activeDevice.index}` : null)}
                 onSelectionChange={onSelectedGpuKeyChange}
                 width='100%'
-                items={remoteDevices.map((device) => ({
+                items={trainingDevices.map((device) => ({
                     key: `${device.type}:${device.index}`,
                     label: `${device.type.toUpperCase()} ${device.index} — ${device.name}${
                         device.memory ? ` (${formatBytes(device.memory)})` : ''
                     }`,
-                    busy: busyGpuKeys.has(`${device.type}:${device.index}`),
+                    busy: busyGpuKeys?.has(`${device.type}:${device.index}`),
                 }))}
             >
                 {(device) => (
                     <Item key={device.key} textValue={device.label}>
                         <Text>{device.label}</Text>
-                        <Text slot='icon'>
-                            <StatusLight
-                                variant={device.busy ? 'yellow' : 'positive'}
-                                role='status'
-                                aria-label={device.busy ? 'GPU busy; new jobs will wait' : 'GPU free'}
-                                marginBottom={0}
-                            />
-                        </Text>
+                        {device.busy !== undefined && (
+                            <Text slot='icon'>
+                                <StatusLight
+                                    variant={device.busy ? 'yellow' : 'positive'}
+                                    role='status'
+                                    aria-label={device.busy ? 'GPU busy; new jobs will wait' : 'GPU free'}
+                                    marginBottom={0}
+                                />
+                            </Text>
+                        )}
                     </Item>
                 )}
             </Picker>
