@@ -245,6 +245,7 @@ export const MetricGraph = ({
                                     ) : (
                                         <Area
                                             type='linear'
+                                            isAnimationActive={false}
                                             dataKey={getY}
                                             name={yAxisLabel}
                                             stroke='var(--metric-graph-color)'
