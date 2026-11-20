@@ -359,6 +359,40 @@ class TestSplitColumnCombining:
         assert torch.equal(res["observation.state"][:, -1], torch.ones(32))
 
 
+def test_iter_action_state_batches_matches_getitem(tmp_path):
+    """Parquet-only chunks match __getitem__ chunks, including episode-end clamping."""
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset  # noqa: PLC0415
+
+    features = {
+        "observation.state": {"dtype": "float32", "shape": (2,), "names": ["x", "y"]},
+        "action": {"dtype": "float32", "shape": (2,), "names": ["x", "y"]},
+    }
+    raw = LeRobotDataset.create(repo_id="test/chunks", fps=10, features=features, root=tmp_path / "ds")
+    rng = np.random.default_rng(0)
+    for length in (5, 3):
+        for _ in range(length):
+            raw.add_frame({
+                "observation.state": rng.random(2).astype(np.float32),
+                "action": rng.random(2).astype(np.float32),
+                "task": "t",
+            })
+        raw.save_episode()
+    raw.finalize()
+
+    adapter = _LeRobotDatasetAdapter.from_lerobot(LeRobotDataset("test/chunks", root=tmp_path / "ds"))
+    adapter.delta_indices = {"action": [0, 1, 2, 3]}
+    batches = list(adapter.iter_action_state_batches(batch_size=3))
+
+    actions = torch.cat([b["action"] for b in batches])
+    states = torch.cat([b["state"] for b in batches])
+    expected = [adapter[i] for i in range(len(adapter))]
+    # Batches are shuffled, so match samples by their (unique) current state.
+    order = [next(i for i, e in enumerate(expected) if torch.equal(e.state, s)) for s in states]
+    assert sorted(order) == list(range(8))
+    for row, i in enumerate(order):
+        assert torch.equal(actions[row], expected[i].action)
+
+
 def test_import_does_not_load_lerobot_policy_factory():
     """Importing physicalai.data.lerobot must not eagerly import lerobot.policies.factory.
 
