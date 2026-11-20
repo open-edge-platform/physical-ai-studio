@@ -27,10 +27,10 @@ import asyncio
 import datetime
 import time
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import anyio
 from loguru import logger
@@ -155,6 +155,14 @@ class RuntimeSession:
         """Records the store, so it is unloaded before the store is replaced."""
         self._model: Slot[ProcessModel] = Slot("model")
         """Reads the store's frames, so it is unloaded before the store is replaced; a model control borrows it."""
+        self._draft: EnvironmentDraft | None = None
+        """What the loaded environment was loaded from, to look it up again on a reload; ``None`` for rows."""
+        self._generation = 0
+        """Counts the loads and unloads of environments, so work for one never touches the next."""
+        self._simulations: dict[UUID, tuple[str, str]] = {}
+        """Where each robot's simulation was last reported running, and which run (``follow_simulation``)."""
+        self._followed: tuple[int, str, str] | None = None
+        """The generation, run and address the environment last followed a simulation to, once each."""
         self._store: Store | None = None
         """Joints and frames, for the environment's devices and the dataset. Outlives a reloaded
         environment while the spec stays the same, so the dataset recording from it stays loaded."""
@@ -237,7 +245,10 @@ class RuntimeSession:
         bus.listen(dataset_rpc.EVENTS, RecordingStatus, self._on_recording)
 
     async def _load_draft(self, draft: EnvironmentDraft, *, unload_incompatible: bool) -> None:
-        await self.load_environment(await self._resolve.environment(draft), unload_incompatible=unload_incompatible)
+        environment = await self._resolve.environment(draft)
+        await self.load_environment(environment, unload_incompatible=unload_incompatible, draft=draft)
+        # The simulation may have started elsewhere while the draft was being looked up.
+        await self._follow()
 
     async def _load_dataset_by_id(self, dataset_id: UUID, fps: int | None) -> None:
         await self.load_dataset(await self._resolve.dataset(dataset_id), fps)
@@ -300,7 +311,11 @@ class RuntimeSession:
         )
 
     async def load_environment(
-        self, environment: EnvironmentWithRelations, *, unload_incompatible: bool = False
+        self,
+        environment: EnvironmentWithRelations,
+        *,
+        unload_incompatible: bool = False,
+        draft: EnvironmentDraft | None = None,
     ) -> None:
         """Connect the environment's robot, leader and cameras, replacing a loaded one.
 
@@ -348,6 +363,8 @@ class RuntimeSession:
                 self._store = Store.create(description.spec, self.id)
                 if self._observer is not None:
                     self._observer.set_store(self._store)
+            self._draft = draft
+            self._generation += 1
             try:
                 await self._environment.load(self._loaded_environment(environment, description))
                 logger.info("Session {} loaded environment {!r}", self.id, environment.name)
@@ -512,12 +529,41 @@ class RuntimeSession:
     async def reload_environment(self) -> None:
         """Ask the environment to connect its devices again; the store and the dataset stay.
 
+        An environment loaded from a draft is looked up again first, so that its devices connect
+        to where they are now: a simulation that started again serves on another address.
+
         Raises:
             RuntimeSessionCommandError: No environment is loaded, or a device failed to connect;
-                the environment stays loaded then, failed, to try again.
+                the environment stays loaded then, failed, to try again. Or the environment no
+                longer has the robots and spec it was loaded with: load it again instead.
+        """
+        await self._reload(expected=None)
+
+    async def _reload(self, *, expected: int | None, lookup_failed: Callable[[Exception], None] | None = None) -> bool:
+        """Reload the environment; with *expected*, only the one of that generation, else nothing.
+
+        The draft is looked up under the lock, unlike a load's: reloads run one at a time, each
+        connecting to where the devices are when it runs, so an older one cannot undo a newer one.
+        With *lookup_failed*, a failed lookup is handed to it, still under the lock, instead of
+        raised: what it reports then comes before whatever the next reload reports.
+
+        Returns:
+            Whether it reloaded: ``False`` when *expected* is no longer loaded, the session closed,
+            or the lookup failed and went to *lookup_failed*.
         """
         async with self._lock:
-            self._environment.require("Load an environment first.")
+            if expected is not None and (self.closed.is_set() or self._generation != expected):
+                return False
+            loaded = self._environment.require("Load an environment first.")
+            if self._draft is not None:
+                try:
+                    current = await self._resolve.environment(self._draft)
+                    self._describe_again(loaded, await describe_environment(current, self._robot_factory))
+                except Exception as error:
+                    if lookup_failed is None:
+                        raise
+                    lookup_failed(error)
+                    return False
             # The control borrows the leader, and the episode records the devices being replaced.
             await self._control.unload()
             await self._stop_recording()
@@ -527,6 +573,70 @@ class RuntimeSession:
                 raise RuntimeSessionCommandError(error.message, error_code=error.error_code) from error
             finally:
                 self._emit(StateMessage(data=self.state()))
+        return True
+
+    def _describe_again(self, loaded: LoadedEnvironment, description: EnvironmentDescription) -> None:
+        """Have the loaded environment connect as *description* says from its next reload; hold the lock.
+
+        Raises:
+            RuntimeSessionCommandError: It has other robots or another spec than the store and
+                the claims were made for.
+        """
+        held = loaded.environment.description
+        if description.spec != held.spec or description.robot_names.keys() != held.robot_names.keys():
+            raise RuntimeSessionCommandError(
+                f"Environment {held.name!r} changed since it was loaded; load it again.",
+                error_code="environment_changed",
+            )
+        loaded.environment.description = description
+        self._environment.value = replace(loaded, state=description.session_environment())
+
+    async def follow_simulation(self, robot_id: UUID, http_url: str, run: str) -> None:
+        """The simulation of *robot_id* runs at *http_url*: follow it there if the environment drives that robot.
+
+        A simulation that starts again may serve on another address, where the loaded
+        environment's cameras and leader do not look; the environment is reloaded on the new one,
+        once per *run* of the simulation (a new start may reuse an address a failed follow tried).
+        It runs to the end even if the caller is cancelled: a reload left halfway would outlive the
+        session's teardown.
+        """
+        self._simulations[robot_id] = (http_url, run)
+        with anyio.CancelScope(shield=True):
+            await self._follow()
+
+    async def _follow(self) -> None:
+        """Reload the environment where its follower's simulation was last reported, if elsewhere.
+
+        A failure before the devices reload (the simulation stopped again, serves other cameras
+        now) fails the environment, saying why, as nothing else would; it can be reloaded.
+        """
+        async with self._lock:  # a load in progress finishes first
+            loaded = self._environment.value
+            if self.closed.is_set() or loaded is None:
+                return
+            description = loaded.environment.description
+            reported = self._simulations.get(description.follower.robot_id)
+            generation = self._generation
+            if description.simulation_url is None or reported is None or reported[0] == description.simulation_url:
+                return
+            target, run = reported
+            if self._followed == (generation, run, target):
+                return
+            self._followed = (generation, run, target)
+        name = description.robot_names.get(description.follower.robot_id)
+        logger.info("Session {}: the simulation of {!r} moved to {}; reloading the environment", self.id, name, target)
+
+        def lookup_failed(error: Exception) -> None:
+            message = f"The simulation of {name!r} started again at {target}: {_command_error(error).message}"
+            logger.warning("Session {} could not follow: {}", self.id, message)
+            if not self.closed.is_set():  # a stop waits for this lookup; the closing session reports nothing
+                publish_status(self.bus, ENVIRONMENT, "failed", message)
+
+        try:
+            await self._reload(expected=generation, lookup_failed=lookup_failed)
+        except Exception as error:
+            # The devices did not reconnect: the environment reported that itself, failed.
+            logger.warning("Session {} could not follow: {}", self.id, _command_error(error).message)
 
     async def unload_environment(self) -> None:
         """Stop the control and disconnect the environment. A no-op when none is loaded.
@@ -538,6 +648,8 @@ class RuntimeSession:
                 return
             await self._control.unload()
             await self._environment.unload()
+            self._draft = None
+            self._generation += 1
             logger.info("Session {} unloaded environment {!r}", self.id, environment.name)
         self._emit(StateMessage(data=self.state()))
 

@@ -62,6 +62,8 @@ class EnvironmentDescription:
     """Connected as a plain driver by the session, for controls to borrow."""
     cameras: Mapping[str, Camera]
     """Camera rows by store key, the key a dataset records them under."""
+    simulation_url: str | None = None
+    """For a simulated follower: where its simulation served when this was described."""
 
     def session_environment(self) -> SessionEnvironment:
         """What the session's ``state`` message says about this environment."""
@@ -123,6 +125,7 @@ async def describe_environment(
         follower=follower,
         leader=leader,
         cameras=cameras,
+        simulation_url=getattr(robot.payload, "http_url", None),
     )
 
 
