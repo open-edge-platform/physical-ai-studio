@@ -27,12 +27,17 @@ from .fixtures import make_environment
 SPEC = FeatureSpec(("shoulder_pan.pos", "gripper.pos"), {"cam 0": ImageSpec(120, 160, 3)})
 
 
-def _export(path: Path, *, joints: int = 2, cameras: tuple[str, ...] = ("images.cam 0",)) -> Path:
+def _export(
+    path: Path, *, joints: int = 2, cameras: tuple[str, ...] = ("images.cam 0",), tasks: list[str] | None = None
+) -> Path:
     features = [{"init_args": {"ftype": "STATE", "shape": [joints], "name": "state"}}]
     features += [{"init_args": {"ftype": "VISUAL", "shape": [3, 120, 160], "name": name}} for name in cameras]
     features.append({"init_args": {"ftype": "LANGUAGE", "shape": [48], "name": "task"}})
     path.mkdir(parents=True)
-    (path / "manifest.json").write_text(json.dumps({"model": {"input_features": features}}))
+    manifest: dict = {"model": {"input_features": features, "preprocessors": [{"type": "to_float_tensor"}]}}
+    if tasks is not None:
+        manifest["model"]["preprocessors"].append({"type": "task_index", "tasks": tasks})
+    (path / "manifest.json").write_text(json.dumps(manifest))
     return path
 
 
@@ -59,6 +64,23 @@ def test_an_export_reads_its_cameras_from_the_store(tmp_path: Path) -> None:
     assert model_inputs(_export(tmp_path / "a"), SPEC).images == {"images.cam 0": "cam 0"}
     # A single-camera export takes its one camera as plain "images".
     assert model_inputs(_export(tmp_path / "b", cameras=("images",)), SPEC).images == {"images": "cam 0"}
+
+
+def test_an_export_trained_on_a_fixed_set_of_tasks_lists_them(tmp_path: Path) -> None:
+    assert model_inputs(_export(tmp_path / "a"), SPEC).tasks == ()
+    assert model_inputs(_export(tmp_path / "b", tasks=["pick", "place"]), SPEC).tasks == ("pick", "place")
+
+
+def test_a_multi_task_model_only_runs_one_of_its_tasks() -> None:
+    store = Store.create(FeatureSpec(("shoulder_pan.pos", "gripper.pos")), uuid4().hex)
+    try:
+        model = _FarModel()
+        model.inputs = ModelInputs(state_size=2, images={}, tasks=("pick", "place"))
+        with pytest.raises(ValueError, match="pick, place"):
+            ModelControl(store, model, ModelControlConfig(task="dance"))  # type: ignore[arg-type]
+        ModelControl(store, model, ModelControlConfig(task="place"))  # type: ignore[arg-type]
+    finally:
+        store.unlink()
 
 
 def test_an_export_for_other_joints_or_cameras_does_not_fit(tmp_path: Path) -> None:
