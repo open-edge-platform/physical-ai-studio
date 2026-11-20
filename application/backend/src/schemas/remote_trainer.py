@@ -293,6 +293,13 @@ class RemoteTrainerHealth(BaseModel):
         description="Available storage on the trainer, when reported. Absence does not affect health status.",
     )
     reason_code: str | None = None
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional features the trainer image reports in /health, e.g. 'all_devices' for training one job "
+            "on every CUDA device. Empty for trainers that predate capability reporting or are not reachable."
+        ),
+    )
     issues: list[OperationalIssue] | None = Field(
         default=None, description="Current issues; [] confirms recovery, null means the check was inconclusive."
     )

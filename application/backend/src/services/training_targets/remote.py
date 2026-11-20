@@ -6,15 +6,19 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from exceptions import InvalidResourceError, RemoteResumeUnsupportedError
+from exceptions import InvalidResourceError, RemoteAllDevicesUnsupportedError, RemoteResumeUnsupportedError
 from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJobPayload
 from schemas.remote_trainer import AwsBatchConnection
 from services.aws_auth_service import AwsAuthenticationRequiredError, get_credential_provider
 from services.aws_batch import _make_session, aws_batch_trainer_url
 from services.remote_trainer_service import RemoteTrainerService
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class RemoteTrainingTargetHandler:
@@ -39,6 +43,8 @@ class RemoteTrainingTargetHandler:
             raise RemoteResumeUnsupportedError
         remote_trainer = await self.remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
         is_batch = isinstance(remote_trainer.connection, AwsBatchConnection)
+        if payload.device is not None and payload.device.all_devices:
+            await self._require_all_devices_support(payload.remote_trainer_id, is_batch=is_batch)
         if isinstance(remote_trainer.connection, AwsBatchConnection):
             try:
                 await asyncio.to_thread(_make_session, remote_trainer.connection)
@@ -65,6 +71,29 @@ class RemoteTrainingTargetHandler:
             }
         )
 
+    async def _require_all_devices_support(self, remote_trainer_id: UUID, *, is_batch: bool) -> None:
+        """Reject an all-GPU job the trainer cannot run, before it is queued.
+
+        Raises:
+            RemoteAllDevicesUnsupportedError: On AWS Batch (which drops the
+                device and would train on one GPU), when the trainer's image does
+                not list the ``all_devices`` capability, or when its health
+                cannot be confirmed right now.
+        """
+        if is_batch:
+            raise RemoteAllDevicesUnsupportedError("Training on all GPUs is not available on AWS Batch trainers.")
+        health = await self.remote_trainer_service.check_remote_trainer(remote_trainer_id)
+        if health.status not in {"healthy", "degraded"}:
+            raise RemoteAllDevicesUnsupportedError(
+                "Can't confirm that this trainer supports training on all GPUs because it isn't ready."
+            )
+        if "all_devices" not in health.capabilities:
+            raise RemoteAllDevicesUnsupportedError(
+                "This trainer's image doesn't support training on all GPUs yet; update the trainer image."
+            )
+        if sum(1 for device in health.devices if device.type == "cuda") < 2:
+            raise RemoteAllDevicesUnsupportedError("This trainer doesn't have several CUDA GPUs.")
+
     @staticmethod
     def target_key(payload: TrainJobPayload) -> str:
         if not isinstance(payload, RemoteTrainJobPayload):
@@ -72,4 +101,8 @@ class RemoteTrainingTargetHandler:
         trainer_key = f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
         if payload.remote_trainer_url and payload.remote_trainer_url.startswith("aws-batch://"):
             return f"batch:{payload.remote_trainer_id}:{payload.policy}"
-        return f"{trainer_key}:{payload.device.type}:{payload.device.index}" if payload.device else trainer_key
+        # The bare trainer key conflicts with every device key on that trainer (see
+        # `TrainingJobHandler.resource_is_busy`), so an all-device job takes the whole trainer.
+        if payload.device is None or payload.device.all_devices:
+            return trainer_key
+        return f"{trainer_key}:{payload.device.type}:{payload.device.index}"

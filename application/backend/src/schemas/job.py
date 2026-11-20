@@ -55,6 +55,13 @@ class TrainingDevice(BaseModel):
 
     type: DeviceType = Field(..., description="Device type, e.g. 'cpu', 'xpu', 'cuda'")
     index: int | None = Field(default=None, ge=0, description="Device index (null for CPU/NPU)")
+    all_devices: bool = Field(
+        default=False,
+        description=(
+            "Train on every CUDA device of a remote trainer with DDP. Requires type 'cuda' and no index; "
+            "batch size then applies per device."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_index_for_device_type(self) -> "TrainingDevice":
@@ -62,8 +69,15 @@ class TrainingDevice(BaseModel):
 
         Indexed types (cuda, xpu) default to index 0 when omitted.
         Non-indexed types (cpu, npu) ignore a supplied index with a warning.
+        ``all_devices`` requires CUDA and no index.
         """
         device_type_str = str(self.type).lower()
+        if self.all_devices:
+            if device_type_str != "cuda":
+                raise ValueError(f"all_devices requires device type 'cuda', got {device_type_str!r}")
+            if self.index is not None:
+                raise ValueError("all_devices trains on every device; it cannot be combined with an index")
+            return self
         indexed_types = {"cuda", "xpu"}
         non_indexed_types = {"cpu", "npu"}
 
@@ -361,6 +375,13 @@ class LocalTrainJobPayload(TrainJobPayloadBase):
     """Trains in the Studio process on a local device."""
 
     training_target: Literal[TrainingTarget.LOCAL] = TrainingTarget.LOCAL
+
+    @model_validator(mode="after")
+    def reject_all_devices(self) -> "LocalTrainJobPayload":
+        """Multi-device training needs a launcher Studio's own process does not provide."""
+        if self.device is not None and self.device.all_devices:
+            raise ValueError("Training on all GPUs is only available on a remote trainer")
+        return self
 
 
 class RemoteTrainJobPayload(TrainJobPayloadBase):
