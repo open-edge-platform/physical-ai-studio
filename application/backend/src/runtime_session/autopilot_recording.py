@@ -514,7 +514,7 @@ class AutopilotRecording:
                 await asyncio.shield(request)
             except asyncio.CancelledError:
                 cancelled = True  # stopped: the save goes on, and is counted
-            except Exception:  # noqa: S110 - read below
+            except Exception:  # noqa: S110  # nosec B110 - read below
                 pass
         failure = request.exception()
         error = None if failure is None else _message(failure)
