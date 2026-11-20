@@ -56,12 +56,12 @@ describe('CreateRobotForm', () => {
         renderCreateForm('Plain_Follower');
 
         expect(await screen.findByRole('button', { name: 'Add robot' })).toBeInTheDocument();
-        expect(screen.queryByText(/simulation of its own/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/runs its own simulation/)).not.toBeInTheDocument();
     });
 
-    it('says that a simulated robot gets a simulation of its own', async () => {
+    it('says that a simulated robot runs its own simulation', async () => {
         renderCreateForm('MuJoCo_Follower');
 
-        expect(await screen.findByText(/simulation of its own/)).toBeInTheDocument();
+        expect(await screen.findByText(/runs its own simulation/)).toBeInTheDocument();
     });
 });
