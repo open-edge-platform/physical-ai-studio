@@ -1,12 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import Response
 from physicalai.config import Config
 
 from api.dependencies import RobotClientFactoryDep, get_environment_service
+from api.robot_simulation import resolve_export_cameras
 from schemas.environment import Environment, EnvironmentWithRelations, TeleoperatorRobotWithRobot
 from services.environment_service import EnvironmentService
 from services.runtime_export import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
@@ -47,6 +48,7 @@ async def get_project_environment(
 
 @router.get("/{environment_id}/runtime-config")
 async def get_runtime_config(
+    request: Request,
     project_id: ProjectID,
     environment_id: UUID,
     environment_service: Annotated[EnvironmentService, Depends(get_environment_service)],
@@ -64,7 +66,7 @@ async def get_runtime_config(
         document = await build_runtime_config(
             follower=relation.robot,
             leader=relation.tele_operator.robot,
-            cameras=environment.cameras,
+            cameras=await resolve_export_cameras(request, environment_service.session, project_id, environment.cameras),
             robot_factory=robot_client_factory,
             fps=RUNTIME_FPS,
             # The rig this describes does not have to be attached to export it.

@@ -3,6 +3,7 @@ import {
     SchemaGenicamCameraInput,
     SchemaIpCameraInput,
     SchemaRealsenseCameraInput,
+    SchemaSimulationCameraInput,
     SchemaUsbCameraInput,
 } from './openapi-spec';
 
@@ -13,4 +14,5 @@ export type SchemaProjectCamera =
     | SchemaGenicamCameraInput
     | SchemaIpCameraInput
     | SchemaRealsenseCameraInput
+    | SchemaSimulationCameraInput
     | SchemaUsbCameraInput;

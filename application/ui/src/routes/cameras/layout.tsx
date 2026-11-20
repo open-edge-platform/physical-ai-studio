@@ -26,6 +26,7 @@ import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from
 import { SchemaProjectCamera } from '../../api/types';
 import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { CollapsibleSidebarLayout } from '../../components/collapsible-sidebar-layout/collapsible-sidebar-layout';
+import { formatCameraMode } from '../../features/cameras/camera-format';
 import { fingerprintKey, formatFingerprint } from '../../features/cameras/fingerprint';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
@@ -176,7 +177,7 @@ const CameraListItem = ({
                             {camera.name}
                         </Heading>
                         <View UNSAFE_style={{ fontSize: '14px' }}>
-                            {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
+                            {formatCameraMode(camera) ?? 'Streams while its simulation runs'}
                         </View>
                     </View>
                     <View gridArea='status'>
