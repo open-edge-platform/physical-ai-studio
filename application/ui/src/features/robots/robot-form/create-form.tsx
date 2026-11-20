@@ -87,9 +87,8 @@ export const CreateRobotForm = () => {
                         <FormFields />
                         {isSimulated && (
                             <Text>
-                                Studio gives the robot a simulation of its own: a name and port left on their defaults
-                                become unique when it is added. To use a simulation that already runs on the defaults,
-                                edit the robot after adding it.
+                                Each simulated robot runs its own simulation. To connect to one you started yourself,
+                                change the robot&apos;s name and port after adding it.
                             </Text>
                         )}
                     </Flex>
