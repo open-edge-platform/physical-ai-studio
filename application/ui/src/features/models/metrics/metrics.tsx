@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 
-import { Grid, Heading, IllustratedMessage, Loading, StatusLight } from '@geti-ui/ui';
+import { Content, Flex, Grid, Heading, IllustratedMessage, InlineAlert, Loading, StatusLight } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
 import { batchAsyncIterable } from '../../../api/batch-async-iterable';
@@ -12,7 +12,7 @@ import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
 import { MetricGraph } from './metric-graph';
-import type { MetricsEntry } from './types';
+import type { MetricLine, MetricsEntry } from './types';
 
 const NoMetricsAvailable = () => {
     return (
@@ -23,6 +23,18 @@ const NoMetricsAvailable = () => {
     );
 };
 
+const ValidationMetricsNote = () => (
+    <InlineAlert variant='info'>
+        <Heading>Validation metrics are a sanity check</Heading>
+        <Content>
+            They don&apos;t tell you how well the robot will do the task. Validation loss can go up while the policy
+            keeps improving, especially for flow-matching policies such as SmolVLA and Pi0.5. Action error is the
+            average gap between predicted and recorded actions, in the units the dataset stores (for SO-101: -100 to 100
+            per joint, 0 to 100 for the gripper). Test the model on your robot or in simulation to judge it.
+        </Content>
+    </InlineAlert>
+);
+
 export interface MetricSeries {
     title: string;
     xLabel: string;
@@ -31,6 +43,7 @@ export interface MetricSeries {
     color?: string;
     getX: (metricsEntry: MetricsEntry) => number;
     getY: (metricsEntry: MetricsEntry) => number | null | undefined;
+    lines?: MetricLine[];
     formatY?: (y: number) => string;
 }
 
@@ -53,25 +66,29 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
     }
 
     return (
-        <Grid
-            columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
-            gap='size-200'
-        >
-            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY, formatY }) => (
-                <MetricGraph
-                    key={title}
-                    syncId={syncId}
-                    title={title}
-                    yAxisLabel={yLabel}
-                    xAxisLabel={xLabel}
-                    data={data}
-                    color={color}
-                    getX={getX}
-                    getY={getY}
-                    formatY={formatY}
-                />
-            ))}
-        </Grid>
+        <Flex direction='column' gap='size-200'>
+            <ValidationMetricsNote />
+            <Grid
+                columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
+                gap='size-200'
+            >
+                {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY, lines, formatY }) => (
+                    <MetricGraph
+                        key={title}
+                        syncId={syncId}
+                        title={title}
+                        yAxisLabel={yLabel}
+                        xAxisLabel={xLabel}
+                        data={data}
+                        color={color}
+                        getX={getX}
+                        getY={getY}
+                        lines={lines}
+                        formatY={formatY}
+                    />
+                ))}
+            </Grid>
+        </Flex>
     );
 };
 
@@ -126,49 +143,88 @@ const learningRateFormatter = new Intl.NumberFormat('en-US', {
     roundingPriority: 'morePrecision',
 });
 
+const ACTION_ERROR_PREFIX = 'val_action_error_';
+const JOINT_COLORS = [
+    'orange',
+    'magenta',
+    'seafoam',
+    'yellow',
+    'purple',
+    'red',
+    'celery',
+    'indigo',
+    'fuchsia',
+    'green',
+].map((color) => `var(--spectrum-global-color-${color}-500)`);
+
+// One line per joint (the `val/action_error/<joint>` columns), plus the mean across joints.
+const actionErrorLines = (data: MetricsEntry[]): MetricLine[] => {
+    const keys = new Set(data.flatMap((entry) => Object.keys(entry).filter((k) => k.startsWith(ACTION_ERROR_PREFIX))));
+    return [
+        {
+            name: 'Mean',
+            color: 'var(--energy-blue)',
+            strokeWidth: 4,
+            strokeDasharray: '8 5',
+            getY: (entry) => entry.val_action_error,
+        },
+        ...[...keys].map((key, index) => ({
+            name: key.slice(ACTION_ERROR_PREFIX.length).replace(/\.pos$/, ''),
+            color: JOINT_COLORS[index % JOINT_COLORS.length],
+            getY: (entry: MetricsEntry) => entry[key],
+        })),
+    ];
+};
+
+const buildMetricSeries = (data: MetricsEntry[]): MetricSeries[] => [
+    {
+        title: 'Training loss',
+        xLabel: 'Step',
+        yLabel: 'Loss',
+        data,
+        color: 'var(--moss-tint-1)',
+        getX: (entry) => entry.step,
+        getY: (entry) => entry.train_loss,
+        formatY: (y) => lossFormatter.format(y),
+    },
+    {
+        title: 'Validation loss',
+        xLabel: 'Step',
+        yLabel: 'Loss',
+        data,
+        color: 'var(--coral)',
+        getX: (entry) => entry.step,
+        getY: (entry) => entry.val_loss,
+        formatY: (y) => lossFormatter.format(y),
+    },
+    {
+        title: 'Validation action error',
+        xLabel: 'Step',
+        yLabel: 'Mean absolute error',
+        data,
+        getX: (entry) => entry.step,
+        getY: (entry) => entry.val_action_error,
+        lines: actionErrorLines(data),
+        formatY: (y) => lossFormatter.format(y),
+    },
+    {
+        title: 'Learning rate',
+        xLabel: 'Step',
+        yLabel: 'Learning rate',
+        data,
+        getX: (entry) => entry.step,
+        getY: (entry) => entry['lr-AdamW'],
+        formatY: (y) => learningRateFormatter.format(y),
+    },
+];
+
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     const query = useJobMetrics(jobId);
     const metricsData = useMemo(() => {
         return query.data ?? [];
     }, [query.data]);
 
-    const metrics: MetricSeries[] = [
-        {
-            title: 'Training loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.train_loss,
-            color: 'var(--moss-tint-1)',
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Validation loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.val_loss,
-            color: 'var(--coral)',
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Learning rate',
-            xLabel: 'Step',
-            yLabel: 'Learning rate',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry['lr-AdamW'],
-            formatY: (y) => {
-                return learningRateFormatter.format(y);
-            },
-        },
-    ];
+    const metrics = buildMetricSeries(metricsData);
 
     return (
         <>
@@ -211,43 +267,7 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
         return query.data ?? [];
     }, [query.data]);
 
-    const metrics: MetricSeries[] = [
-        {
-            title: 'Training loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            color: 'var(--moss-tint-1)',
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.train_loss,
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Validation loss',
-            xLabel: 'Step',
-            yLabel: 'Loss',
-            data: metricsData,
-            color: 'var(--coral)',
-            getX: (entry) => entry.step,
-            getY: (entry) => entry.val_loss,
-            formatY: (y) => {
-                return lossFormatter.format(y);
-            },
-        },
-        {
-            title: 'Learning rate',
-            xLabel: 'Step',
-            yLabel: 'Learning rate',
-            data: metricsData,
-            getX: (entry) => entry.step,
-            getY: (entry) => entry['lr-AdamW'],
-            formatY: (y) => {
-                return learningRateFormatter.format(y);
-            },
-        },
-    ];
+    const metrics = buildMetricSeries(metricsData);
 
     return <MetricsView series={metrics} isLoading={query.isLoading} />;
 };

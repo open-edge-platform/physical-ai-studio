@@ -854,16 +854,19 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         """Compute denoised action MSE and flow-matching validation loss.
 
         Returns:
-            The primary action MSE and detached validation metrics.
+            The primary action MSE and detached validation metrics, with the
+            denormalized prediction under ``"action_pred"``.
 
         Raises:
             RuntimeError: If the model or preprocessor is not initialized.
         """
         model = self._require_model()
-        if self._preprocessor is None:
-            msg = "Policy preprocessor is not initialized"
+        if self._preprocessor is None or self._postprocessor is None:
+            msg = "Policy processors are not initialized"
             raise RuntimeError(msg)
-        return model.compute_val_loss(self._preprocessor(batch.to_dict()))
+        loss, loss_dict = model.compute_val_loss(self._preprocessor(batch.to_dict()))
+        loss_dict["action_pred"] = self._postprocessor({ACTION: loss_dict["action_pred"]})[ACTION]
+        return loss, loss_dict
 
     @override
     def validation_step(self, batch: Gym | Observation, batch_idx: int) -> dict[str, float] | Tensor:
@@ -884,6 +887,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
                 on_epoch=True,
                 sync_dist=True,
             )
+        self.log_action_error(batch, metrics.get("action_pred"))
         return loss
 
     def get_optim_params(self) -> list[dict[str, Any]]:
