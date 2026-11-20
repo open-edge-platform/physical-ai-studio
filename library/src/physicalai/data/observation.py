@@ -312,6 +312,25 @@ class Observation:
         new_dict = {k: _move_to_device(v) for k, v in self.items()}
         return Observation.from_dict(new_dict)
 
+    def pin_memory(self) -> Observation:
+        """Return a copy with CPU tensors in pinned memory.
+
+        ``DataLoader(pin_memory=True)`` calls this on custom batch types; without it
+        Observation batches stay in pageable memory.
+
+        Returns:
+            Observation: New Observation instance with pinned tensors.
+        """
+
+        def _pin(value: object) -> object:
+            if isinstance(value, dict):
+                return {k: _pin(v) for k, v in value.items()}
+            if isinstance(value, torch.Tensor):
+                return value.pin_memory()
+            return value
+
+        return Observation.from_dict({k: _pin(v) for k, v in self.items()})
+
     def to_numpy(self) -> Observation:
         """Convert all torch tensors to numpy arrays.
 
