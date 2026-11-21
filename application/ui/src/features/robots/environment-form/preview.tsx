@@ -161,10 +161,7 @@ const toDraft = (environment: EnvironmentForm): SchemaEnvironmentDraft => ({
     name: 'Environment preview',
     robots: environment.robots.map((robot) => ({
         robot_id: robot.robot_id,
-        tele_operator:
-            robot.teleoperator.type === 'robot'
-                ? { type: 'robot', robot_id: robot.teleoperator.robot_id }
-                : { type: 'none' },
+        tele_operator: robot.teleoperator,
     })),
     cameras: environment.cameras.map(({ camera_id }) => ({ camera_id })),
 });

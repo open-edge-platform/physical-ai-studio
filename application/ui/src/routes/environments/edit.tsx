@@ -4,6 +4,7 @@ import {
     EnvironmentFormProvider,
     EnvironmentFormState,
     RobotConfiguration,
+    toTeleoperator,
 } from '../../features/robots/environment-form/provider';
 import { UpdateEnvironmentForm } from '../../features/robots/environment-form/update-form';
 import { useEnvironment } from '../../features/robots/use-environment';
@@ -18,13 +19,7 @@ export const Edit = () => {
             environment.robots?.map((robot): RobotConfiguration => {
                 return {
                     robot_id: robot.robot.id,
-                    teleoperator:
-                        robot.tele_operator.type === 'robot'
-                            ? {
-                                  type: 'robot',
-                                  robot_id: robot.tele_operator.robot_id,
-                              }
-                            : { type: 'none' },
+                    teleoperator: toTeleoperator(robot.tele_operator),
                 };
             }) ?? [],
     };

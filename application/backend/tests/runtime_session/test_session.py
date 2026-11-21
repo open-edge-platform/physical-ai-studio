@@ -557,8 +557,8 @@ async def test_a_failing_control_reports_and_falls_back_to_hold(new_session) -> 
         def unplugged():
             raise ConnectionError("leader unplugged")
 
-        session.leader.get_observation = unplugged
         await session.set_control(TeleopControlConfig())
+        session.leader.get_observation = unplugged  # while it runs
         status = await next_status(statuses, "control", within=5)
         assert status.state == "failed" and "leader unplugged" in status.error
         await _until(lambda: session.state().control is None)
@@ -573,3 +573,30 @@ async def test_a_stopped_session_loads_nothing(new_session, registry) -> None:
     assert registry.get(session.id) is None
     with pytest.raises(RuntimeSessionCommandError, match="closed"):
         await session.load_environment(make_environment(cameras=0))
+
+
+SIMULATION = "http://127.0.0.1:50488"
+
+
+async def test_teleop_is_refused_where_the_autopilot_leads(new_session) -> None:
+    from schemas.runtime_session import TeleopControlConfig
+
+    session = await new_session()
+    await session.load_environment(make_environment(cameras=0, autopilot_url=SIMULATION))
+    assert session.state().environment.autopilot
+    assert session.leader is None  # autopilot recording builds the leader it follows
+
+    with pytest.raises(ValueError, match="only while it records automatically"):
+        await session.set_control(TeleopControlConfig())
+    assert session.state().control is None
+    await session.stop()
+
+
+async def test_set_control_refuses_the_autopilot_recording_control(new_session) -> None:
+    from schemas.runtime_session import AutopilotControlConfig
+
+    session = await new_session()
+    await session.load_environment(make_environment(cameras=0))
+    with pytest.raises(RuntimeSessionCommandError, match="start_autopilot_recording"):
+        await session.set_control(AutopilotControlConfig())
+    await session.stop()

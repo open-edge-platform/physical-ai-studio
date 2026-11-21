@@ -1,13 +1,19 @@
 import { FormEvent, useEffect, useState } from 'react';
 
-import { Button, Flex, Form, Keyboard, Slider, Text, TextArea, toast } from '@geti-ui/ui';
+import { Button, Flex, Form, Item, Keyboard, Picker, Slider, Text, TextArea, toast } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
-import { SchemaSessionDataset } from '../../../api/openapi-spec';
+import { SchemaRobotSimulation, SchemaSessionDataset, SchemaSessionEnvironment } from '../../../api/openapi-spec';
 import { formatKeyCombo, getEffectiveBindings } from '../../hotkeys/key-combo';
 import { useHotkey } from '../../hotkeys/use-hotkey';
+import { useProjectId } from '../../projects/use-project';
+import { AUTOPILOT_LABEL } from '../../robots/environment-form/robot-form';
+import { AutomaticRecording, isAutopilotRecording } from '../../simulation/automatic-recording';
+import { AutopilotStatus } from '../../simulation/autopilot-status';
+import { useRobotSimulationLaunch } from '../../simulation/robot-simulation';
+import { useRobotSimulation } from '../../simulation/use-robot-simulation';
 import { TeleopSwitch } from '../cells/robot-cell';
-import { ERROR_TOAST, failureOf, useRuntimeSession } from '../runtime-session-provider';
+import { ERROR_TOAST, failureOf, savedEnvironmentDraft, useRuntimeSession } from '../runtime-session-provider';
 
 import classes from './record-mode.module.css';
 
@@ -76,7 +82,7 @@ const useDefaultTask = (dataset_id: string | undefined) => {
 };
 
 /** The rate a dataset with nothing recorded yet is recorded at; changing it loads the dataset again at that rate. */
-const RecordingRate = ({ dataset }: { dataset: SchemaSessionDataset }) => {
+const RecordingRate = ({ dataset, isLocked = false }: { dataset: SchemaSessionDataset; isLocked?: boolean }) => {
     const [fps, setFps] = useState(dataset.fps);
     const { run, isPending } = useRecordingCommand();
 
@@ -100,8 +106,113 @@ const RecordingRate = ({ dataset }: { dataset: SchemaSessionDataset }) => {
             maxValue={100}
             step={5}
             getValueLabel={(value) => `${value} fps`}
-            isDisabled={isFixed || isPending}
+            isDisabled={isFixed || isPending || isLocked}
             width='100%'
+        />
+    );
+};
+
+/**
+ * Who leads a simulated follower in this session: the saved environment's teleoperator, or the
+ * simulation's autopilot, without editing the saved environment. Choosing loads the environment again.
+ */
+const TeleoperatorChoice = ({ environment }: { environment: SchemaSessionEnvironment }) => {
+    const { project_id } = useProjectId();
+    const { state, send } = useRuntimeSession();
+    const [isPending, setIsPending] = useState(false);
+    const { data: robots } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
+        params: { path: { project_id } },
+    });
+    const { data: environments = [] } = $api.useQuery('get', '/api/projects/{project_id}/environments', {
+        params: { path: { project_id } },
+    });
+    const follower = robots.find(({ id }) => id === environment.robot_id);
+    const isSimulated = useRobotSimulationLaunch(follower?.type ?? '') !== null;
+    const saved = environments.find(({ id }) => id === environment.environment_id);
+    const savedTeleoperator = saved?.robots?.find(({ robot_id }) => robot_id === environment.robot_id)?.tele_operator;
+
+    // An environment saved with the autopilot has nothing else to offer.
+    if (
+        !isSimulated ||
+        saved === undefined ||
+        savedTeleoperator === undefined ||
+        savedTeleoperator.type === 'autopilot'
+    ) {
+        return null;
+    }
+    const savedLabel =
+        savedTeleoperator.type === 'robot'
+            ? (robots.find(({ id }) => id === savedTeleoperator.robot_id)?.name ?? 'Leader arm')
+            : 'None';
+
+    const choose = async (autopilot: boolean) => {
+        setIsPending(true);
+        try {
+            const ack = await send({
+                command: 'load_environment',
+                environment: savedEnvironmentDraft(saved, autopilot),
+                unload_incompatible: false,
+            });
+            if (!ack.ok) {
+                toast.negative(ack.error?.message ?? 'Could not change the teleoperator.', ERROR_TOAST);
+            }
+        } finally {
+            setIsPending(false);
+        }
+    };
+
+    return (
+        <Picker
+            label='Teleoperator'
+            width='100%'
+            selectedKey={environment.autopilot ? 'autopilot' : 'saved'}
+            onSelectionChange={(key) => {
+                if (key !== null && (key === 'autopilot') !== environment.autopilot) {
+                    void choose(key === 'autopilot');
+                }
+            }}
+            // Loading the environment again stops teleop and automatic recording, and would discard the
+            // episode being recorded.
+            isDisabled={isPending || state?.dataset?.is_recording || isAutopilotRecording(state?.autopilot_recording)}
+        >
+            <Item key='saved'>{savedLabel}</Item>
+            <Item key='autopilot'>{AUTOPILOT_LABEL}</Item>
+        </Picker>
+    );
+};
+
+/** Why the follower's simulation cannot record automatically now, as it last reported; '' while unknown. */
+export const autopilotRecordingUnavailable = (simulation: SchemaRobotSimulation | undefined): string | null => {
+    if (simulation === undefined) {
+        return '';
+    }
+    if (!simulation.running) {
+        return 'Start the simulation from Studio to record automatically.';
+    }
+    if (simulation.started_by !== 'studio') {
+        return 'Automatic recording records only a simulation Studio started: start it from Studio.';
+    }
+    if (simulation.autopilot_support == null) {
+        return 'This simulation cannot record automatically: update its plugin.';
+    }
+    if (!simulation.autopilot_support.supported) {
+        return simulation.autopilot_support.reason ?? 'This scene cannot record automatically.';
+    }
+    return null;
+};
+
+/** With the autopilot leading, recording is automatic: the session asks the simulation for each episode. */
+const AutopilotRecording = ({ robot_id, canRecord }: { robot_id: string; canRecord: boolean }) => {
+    const { state, send } = useRuntimeSession();
+    const { project_id } = useProjectId();
+    const { data: simulation } = useRobotSimulation(project_id, robot_id);
+    return (
+        <AutomaticRecording
+            state={state}
+            send={send}
+            canRecord={canRecord}
+            options={simulation?.autopilot_support?.options ?? null}
+            unavailable={autopilotRecordingUnavailable(simulation)}
         />
     );
 };
@@ -120,6 +231,9 @@ export const RecordMode = () => {
     const bindings = getEffectiveBindings(settings.hotkeys.bindings);
 
     const isRecording = dataset?.is_recording ?? false;
+    const environment = state?.environment ?? null;
+    // With the autopilot leading, the simulation starts and ends the episodes: no manual ones.
+    const autopilot = environment?.autopilot === true;
     // The dataset stays loaded without a working environment, with nothing to record from.
     const canRecord =
         dataset !== undefined &&
@@ -131,9 +245,10 @@ export const RecordMode = () => {
     const save = () => void run({ command: 'save_episode' });
     const discard = () => void run({ command: 'discard_episode' });
 
-    useHotkey(bindings['recording.start_episode'], start, canRecord && !isRecording && task !== '');
-    useHotkey(bindings['recording.accept_episode'], save, canRecord && isRecording);
-    useHotkey(bindings['recording.discard_episode'], discard, canRecord && isRecording);
+    const manual = canRecord && !autopilot;
+    useHotkey(bindings['recording.start_episode'], start, manual && !isRecording && task !== '');
+    useHotkey(bindings['recording.accept_episode'], save, manual && isRecording);
+    useHotkey(bindings['recording.discard_episode'], discard, manual && isRecording);
 
     const onStart = (event: FormEvent) => {
         event.preventDefault();
@@ -142,9 +257,24 @@ export const RecordMode = () => {
         }
     };
 
+    if (environment !== null && autopilot) {
+        return (
+            <Flex direction='column' gap='size-200'>
+                <TeleoperatorChoice environment={environment} />
+                <AutopilotStatus recording={state?.autopilot_recording} />
+                {/* Loading the dataset at another rate would stop an automatic recording. */}
+                {dataset !== undefined && (
+                    <RecordingRate dataset={dataset} isLocked={isAutopilotRecording(state?.autopilot_recording)} />
+                )}
+                <AutopilotRecording robot_id={environment.robot_id} canRecord={canRecord} />
+            </Flex>
+        );
+    }
+
     return (
         <Flex direction='column' gap='size-200'>
-            {state?.environment?.leader_id != null && <TeleopSwitch />}
+            {environment !== null && <TeleoperatorChoice environment={environment} />}
+            {environment?.leader_id != null && <TeleopSwitch />}
             <Form validationBehavior='native' onSubmit={onStart}>
                 <Flex direction='column' gap='size-150'>
                     <TextArea

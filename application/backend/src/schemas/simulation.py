@@ -62,6 +62,12 @@ class Simulation(BaseModel):
     error: SimulationError | None = None
 
 
+def simulation_run(state: Simulation) -> str:
+    """Which start of a simulation *state* is: its process and when it started. A new start is a new run,
+    even on an address used before."""
+    return f"{state.pid}@{state.started_at.isoformat() if state.started_at else '-'}"
+
+
 class StartSimulationRequest(BaseModel):
     project_id: UUID
     robot_id: UUID
@@ -95,6 +101,36 @@ class SimulationCameraInfo(BaseModel):
     )
 
 
+class SimulationAutopilot(BaseModel):
+    """The simulation's autopilot, a scripted demonstrator, as the simulation's ``/health`` reports it.
+
+    ``mode`` is ``off``, ``drive`` (it moves the arm itself) or ``leader`` (it publishes targets
+    that a teleoperating client sends back). The rest is set while it runs, as far as the scene
+    reports it: what it works on, and for an episode its attempt and how it went (``running``,
+    ``success``, ``failed`` or ``stalled``, with why it failed).
+    """
+
+    available: bool
+    unavailable_reason: str | None = None
+    mode: str = "off"
+    phase: str | None = None
+    target: str | None = None
+    attempt: int | None = None
+    max_attempts: int | None = None
+    outcome: str | None = None
+    failure: str | None = None
+
+
+class SimulationAutopilotSupport(BaseModel):
+    """Whether the running scene's autopilot can be recorded, and which episode options it takes."""
+
+    supported: bool
+    reason: str | None = Field(None, description="Why not, when it cannot")
+    options: list[str] = Field(
+        default_factory=list, description="Episode options it takes: max_attempts, recovery_fraction"
+    )
+
+
 class RobotSimulation(BaseModel):
     """Whether a simulated robot's simulation runs, who started it, and what it serves."""
 
@@ -108,6 +144,10 @@ class RobotSimulation(BaseModel):
     )
     scene: str | None = None
     cameras: list[SimulationCameraInfo] = Field(default_factory=list)
+    autopilot: SimulationAutopilot | None = Field(None, description="None when the simulation reports no autopilot")
+    autopilot_support: SimulationAutopilotSupport | None = Field(
+        None, description="Autopilot recording in the running scene; None when the simulation has none"
+    )
 
 
 class ProjectRobotSimulation(RobotSimulation):

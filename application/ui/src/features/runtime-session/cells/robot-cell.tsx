@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../../api/client';
 import { getRobotConnectionErrorTitle } from '../../../api/errors';
-import { SchemaEnvironmentDraft, SchemaErrorMessage, SchemaTeleopControlConfig } from '../../../api/openapi-spec';
+import { SchemaErrorMessage, SchemaTeleopControlConfig } from '../../../api/openapi-spec';
 import { useProjectId } from '../../projects/use-project';
 import { RobotViewer, UnavailableRobotViewer } from '../../robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
@@ -15,7 +15,13 @@ import { useSynchronizeModelJoints } from '../../robots/use-synchronize-model-jo
 import { useRobotSimulationLaunch } from '../../simulation/robot-simulation';
 import { SimulationViewer } from '../../simulation/simulation-viewer';
 import { useRobotSimulation } from '../../simulation/use-robot-simulation';
-import { ERROR_TOAST, failureOf, useRuntimeSession, useSessionJoints } from '../runtime-session-provider';
+import {
+    ERROR_TOAST,
+    failureOf,
+    savedEnvironmentDraft,
+    useRuntimeSession,
+    useSessionJoints,
+} from '../runtime-session-provider';
 
 /**
  * Teleoperation as the UI starts it. The leader is read at 100 Hz, each reading one command, and on every
@@ -81,6 +87,7 @@ const useLoadEnvironmentAgain = (isFailed: boolean) => {
     const queryClient = useQueryClient();
     const { state, send, retry } = useRuntimeSession();
     const environment_id = state?.environment?.environment_id ?? null;
+    const autopilot = state?.environment?.autopilot ?? false;
     const latest = useRef({ environment_id, isFailed, isMounted: true });
     latest.current = { ...latest.current, environment_id, isFailed };
     useEffect(() => {
@@ -105,14 +112,13 @@ const useLoadEnvironmentAgain = (isFailed: boolean) => {
         if (saved === undefined || !now.isMounted || now.environment_id !== environment_id || !now.isFailed) {
             return;
         }
-        const draft: SchemaEnvironmentDraft = {
-            id: saved.id,
-            name: saved.name,
-            robots: saved.robots ?? [],
-            cameras: saved.cameras ?? [],
-        };
-        await send({ command: 'load_environment', environment: draft, unload_incompatible: false });
-    }, [environment_id, project_id, queryClient, retry, send]);
+        // An autopilot chosen for this session only stays: the simulation's autopilot leads through the new port.
+        await send({
+            command: 'load_environment',
+            environment: savedEnvironmentDraft(saved, autopilot),
+            unload_incompatible: false,
+        });
+    }, [environment_id, autopilot, project_id, queryClient, retry, send]);
 };
 
 /**

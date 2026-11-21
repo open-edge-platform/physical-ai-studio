@@ -33,6 +33,7 @@ from workers.rate import Rate
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
+    from uuid import UUID
 
     from internal_datasets.mutations.recording_mutation import RecordingMutation
     from schemas.dataset import Dataset
@@ -53,6 +54,10 @@ class RecordingStatus(BaseModel):
     """Episodes saved by this worker, not yet copied back into the dataset."""
     error: str | None = None
     """Why an episode was automatically discarded, on the event announcing that discard."""
+    episode_id: str | None = None
+    """The open episode's id, as its client named it."""
+    frames: int = 0
+    """Frames in the open episode."""
 
 
 @dataclass
@@ -63,6 +68,10 @@ class Recorder:
     store: Store
     publish: Callable[[RecordingStatus], None]
     """Announces every change on ``evt/dataset``."""
+    dataset_id: UUID | None = None
+    """The dataset recorded into; a command that expects another one is refused."""
+    episode_id: str | None = None
+    """What the client that started the open episode calls it; ending another one by name is refused."""
     task: str | None = None
     episodes_recorded: int = 0
     skipped: int = 0
@@ -71,17 +80,38 @@ class Recorder:
     _open: bool = field(default=False, repr=False)
 
     def status(self, _request: Empty | None = None) -> RecordingStatus:
-        return RecordingStatus(is_recording=self._open, episodes_recorded=self.episodes_recorded)
+        return RecordingStatus(
+            is_recording=self._open,
+            episodes_recorded=self.episodes_recorded,
+            episode_id=self.episode_id if self._open else None,
+            frames=self.frames if self._open else 0,
+        )
+
+    def _check_dataset(self, request: StartEpisodeCommand | SaveEpisodeCommand | DiscardEpisodeCommand) -> None:
+        if request.dataset_id is not None and request.dataset_id != self.dataset_id:
+            raise RuntimeSessionCommandError(
+                "Another dataset is loaded than the one this command was for.", error_code="dataset_changed"
+            )
+
+    def _check_episode(self, request: SaveEpisodeCommand | DiscardEpisodeCommand) -> None:
+        self._check_dataset(request)
+        if request.episode_id is not None and (not self._open or request.episode_id != self.episode_id):
+            raise RuntimeSessionCommandError(
+                "The episode this command was for is no longer being recorded.", error_code="episode_changed"
+            )
 
     def start(self, request: StartEpisodeCommand) -> RecordingStatus:
+        self._check_dataset(request)
         if self._open:
             raise RuntimeSessionCommandError("An episode is already being recorded.", error_code="episode_open")
         if not request.task:
             raise RuntimeSessionCommandError("A task is required to record an episode.", error_code="task_required")
         self.task, self._open, self.frames = request.task, True, 0
+        self.episode_id = request.episode_id
         return self._changed()
 
-    def save(self, _request: SaveEpisodeCommand) -> RecordingStatus:
+    def save(self, request: SaveEpisodeCommand) -> RecordingStatus:
+        self._check_episode(request)
         if not self._open:
             raise RuntimeSessionCommandError("No episode is being recorded.", error_code="no_episode")
         self._open = False
@@ -103,8 +133,10 @@ class Recorder:
         self.episodes_recorded += 1
         return self._changed()
 
-    def discard(self, _request: DiscardEpisodeCommand | None = None, *, error: str | None = None) -> RecordingStatus:
+    def discard(self, request: DiscardEpisodeCommand | None = None, *, error: str | None = None) -> RecordingStatus:
         # Does not require an open episode: also how a too-short one is thrown away.
+        if request is not None:
+            self._check_episode(request)
         self._open = False
         self.mutation.discard_buffer()
         return self._changed(error)
@@ -203,7 +235,12 @@ class DatasetWorker(ProcessWorker[Recorder]):
         store = Store.attach(self.spec, self.store_name)
         try:
             with Bus.join(self.session_id) as bus:
-                recorder = Recorder(self.open_mutation(), store, publish=lambda status: bus.publish(EVENTS, status))
+                recorder = Recorder(
+                    self.open_mutation(),
+                    store,
+                    publish=lambda status: bus.publish(EVENTS, status),
+                    dataset_id=self.dataset.id,
+                )
                 try:
                     bus.listen(status_key("environment/*"), StatusMessage, recorder.camera_status)
                     bus.serve(STATUS, Empty, recorder.status)

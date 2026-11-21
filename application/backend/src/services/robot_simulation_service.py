@@ -9,6 +9,8 @@ from uuid import UUID, uuid5
 
 import httpx
 from loguru import logger
+from physicalai_studio_plugin.autopilot import AutopilotInfo
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import (
@@ -28,6 +30,8 @@ from schemas.robot import UnavailableRobot
 from schemas.simulation import (
     ProjectRobotSimulation,
     RobotSimulation,
+    SimulationAutopilot,
+    SimulationAutopilotSupport,
     SimulationCameraInfo,
     SimulationStatus,
     simulation_proxy_path,
@@ -128,11 +132,14 @@ class RobotSimulationService:
         if not isinstance(http_url, str):
             return RobotSimulation(running=False, owner_name=owner_name)
 
+        launch = getattr(self._registry.get_definition(robot.type), "simulation", None)
+        autopilot_path = getattr(getattr(launch, "autopilot", None), "path", None)
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_S, transport=self._transport) as client:
-            root, health, cameras = await asyncio.gather(
+            root, health, cameras, autopilot_info = await asyncio.gather(
                 _get_json(client, f"{http_url}/"),
                 _get_json(client, f"{http_url}/health"),
                 _get_json(client, f"{http_url}/cameras"),
+                _get_json(client, f"{http_url}{autopilot_path}") if isinstance(autopilot_path, str) else _none(),
             )
         answers = isinstance(root, dict) and root.get("service") == owner_name
         if not answers and not studio:
@@ -149,6 +156,8 @@ class RobotSimulationService:
             viewer_url=viewer_url if isinstance(viewer_url, str) else None,
             scene=_str_or_none(health.get("scene")) or _str_or_none(root.get("scene")),
             cameras=_cameras(http_url, cameras),
+            autopilot=_autopilot(health.get("autopilot")),
+            autopilot_support=_autopilot_support(autopilot_info),
         )
 
     async def add_cameras(
@@ -321,6 +330,32 @@ def _with_proxy_urls(project_id: UUID, robot_id: UUID, simulation: RobotSimulati
             "cameras": cameras,
         }
     )
+
+
+def _autopilot(status: object) -> SimulationAutopilot | None:
+    if not isinstance(status, dict):
+        return None
+    try:
+        return SimulationAutopilot.model_validate(status)
+    except ValidationError as error:
+        logger.debug("Ignoring a malformed autopilot status {}: {}", status, error)
+        return None
+
+
+async def _none() -> None:
+    return None
+
+
+def _autopilot_support(info: object) -> SimulationAutopilotSupport | None:
+    """What the running scene says about recording its autopilot (``GET`` of the protocol's path)."""
+    if not isinstance(info, dict):
+        return None
+    try:
+        parsed = AutopilotInfo.model_validate(info)
+    except ValidationError as error:
+        logger.debug("Ignoring a malformed autopilot answer {}: {}", info, error)
+        return None
+    return SimulationAutopilotSupport(supported=parsed.supported, reason=parsed.reason, options=parsed.options)
 
 
 def _str_or_none(value: object) -> str | None:

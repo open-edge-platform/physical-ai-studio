@@ -14,6 +14,7 @@ from schemas.environment import (
     Environment,
     EnvironmentWithRelations,
     RobotWithTeleoperator,
+    TeleoperatorAutopilotWithRobot,
     TeleoperatorNoneWithRobot,
     TeleoperatorRobotWithRobot,
 )
@@ -127,7 +128,10 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
 
             robot = ProjectRobotMapper.from_schema(link.robot, self.catalog_registry)
 
-            if link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None:
+            tele_operator: TeleoperatorRobotWithRobot | TeleoperatorNoneWithRobot | TeleoperatorAutopilotWithRobot
+            if link.tele_operator_type == "autopilot":
+                tele_operator = TeleoperatorAutopilotWithRobot()
+            elif link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None:
                 if link.tele_operator_robot is None:
                     logger.warning(
                         "Environment {} references missing teleoperator robot {} for robot {}. "

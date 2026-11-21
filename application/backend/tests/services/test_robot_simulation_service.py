@@ -649,3 +649,62 @@ def test_a_camera_without_a_source_is_a_scene_camera_and_one_with_an_unknown_sou
     )
 
     assert [(camera.name, camera.source) for camera in cameras] == [("overview", "scene")]
+
+
+async def test_the_simulation_reports_its_autopilot(robot: SimpleNamespace) -> None:
+    responses = sim_api(EXTERNAL)
+    responses[f"{EXTERNAL}/health"] = {
+        "scene": "bucket_sort",
+        "autopilot": {
+            "available": True,
+            "unavailable_reason": None,
+            "mode": "leader",
+            "phase": "picking",
+            "target": "cpu",
+            "attempt": 1,
+            "max_attempts": 2,
+            "outcome": "running",
+            "failure": None,
+            "instruction": "Put the cpu in the bucket",
+        },
+    }
+
+    result = await service(responses).get(PROJECT_ID, ROBOT_ID)
+
+    assert result.autopilot is not None
+    assert (result.autopilot.mode, result.autopilot.phase, result.autopilot.target) == ("leader", "picking", "cpu")
+    assert (result.autopilot.attempt, result.autopilot.max_attempts) == (1, 2)
+
+
+async def test_a_simulation_without_an_autopilot_status_reports_none(robot: SimpleNamespace) -> None:
+    responses = sim_api(EXTERNAL)
+    responses[f"{EXTERNAL}/health"] = {"scene": "yahtzee", "autopilot": {"mode": 3}}
+
+    assert (await service(responses).get(PROJECT_ID, ROBOT_ID)).autopilot is None
+
+
+async def test_the_simulation_reports_which_options_its_scene_takes(robot: SimpleNamespace) -> None:
+    """The recording page shows only the options the running scene takes, from the protocol's GET."""
+    from physicalai_studio_plugin.autopilot import AUTOPILOT_PATH
+
+    responses = sim_api(EXTERNAL)
+    responses[f"{EXTERNAL}{AUTOPILOT_PATH}"] = {
+        "protocol": 1,
+        "scene": "bucket_sort",
+        "supported": True,
+        "reason": None,
+        "options": ["max_attempts"],
+        "joint_names": ["joint_0", "gripper"],
+        "episode": None,
+    }
+    launch = SimpleNamespace(owner_name=lambda payload: payload.name, autopilot=SimpleNamespace(path=AUTOPILOT_PATH))
+    registry = SimpleNamespace(get_definition=lambda _type: SimpleNamespace(simulation=launch))
+    manager = fake_manager(Simulation)
+    session = SimpleNamespace(rollback=AsyncMock(), commit=AsyncMock(), expire_all=lambda: None)
+    simulations = RobotSimulationService(session, registry, manager, transport=transport(responses))  # type: ignore[arg-type]
+
+    result = await simulations.get(PROJECT_ID, ROBOT_ID)
+
+    assert result.autopilot_support is not None
+    assert (result.autopilot_support.supported, result.autopilot_support.options) == (True, ["max_attempts"])
+    assert (await service(sim_api(EXTERNAL)).get(PROJECT_ID, ROBOT_ID)).autopilot_support is None  # no AutopilotSpec

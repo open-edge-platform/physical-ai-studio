@@ -6,7 +6,7 @@ import pytest
 
 from exceptions import RuntimeSessionCommandError
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
-from schemas.runtime_session import SaveEpisodeCommand, StartEpisodeCommand, StatusMessage
+from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand, StatusMessage
 from workers.dataset_worker import Recorder
 
 
@@ -77,3 +77,58 @@ def test_camera_loss_while_idle_does_not_discard_or_notify(recorder):
 
     recorder.publish.assert_not_called()
     recorder.mutation.discard_buffer.assert_not_called()
+
+
+def test_a_command_for_another_dataset_is_refused(recorder):
+    recorder.dataset_id = uuid4()
+    other = uuid4()
+
+    # A relayed command that waited behind a dataset swap must not act on the new dataset.
+    for command in (
+        SaveEpisodeCommand(request_id="save", dataset_id=other),
+        DiscardEpisodeCommand(request_id="discard", dataset_id=other),
+        StartEpisodeCommand(request_id="start", task="pick", dataset_id=other),
+    ):
+        handle = {"save_episode": recorder.save, "discard_episode": recorder.discard, "start_episode": recorder.start}
+        with pytest.raises(RuntimeSessionCommandError) as refused:
+            handle[command.command](command)
+        assert refused.value.error_code == "dataset_changed"
+    assert recorder.status().is_recording
+    recorder.mutation.discard_buffer.assert_not_called()
+
+    recorder.discard(DiscardEpisodeCommand(request_id="discard", dataset_id=recorder.dataset_id))
+    assert not recorder.status().is_recording
+
+
+def test_a_command_for_an_episode_that_ended_does_not_end_the_next_one(recorder):
+    recorder.discard(DiscardEpisodeCommand(request_id="end"))
+    recorder.start(StartEpisodeCommand(request_id="start", task="pick", episode_id="e1"))
+    recorder.discard(DiscardEpisodeCommand(request_id="user"))  # the user discards it
+    recorder.start(StartEpisodeCommand(request_id="again", task="pick", episode_id="e2"))
+    recorder.mutation.reset_mock()
+
+    # The simulation's late save and discard of e1 must leave e2 alone.
+    for stale in (
+        SaveEpisodeCommand(request_id="save", episode_id="e1"),
+        DiscardEpisodeCommand(request_id="discard", episode_id="e1"),
+    ):
+        with pytest.raises(RuntimeSessionCommandError) as refused:
+            (recorder.save if stale.command == "save_episode" else recorder.discard)(stale)
+        assert refused.value.error_code == "episode_changed"
+    assert recorder.status().is_recording
+    recorder.mutation.discard_buffer.assert_not_called()
+    recorder.mutation.save_episode.assert_not_called()
+
+    recorder.discard(DiscardEpisodeCommand(request_id="discard", episode_id="e2"))
+    assert not recorder.status().is_recording
+
+
+def test_the_status_names_the_open_episode_and_counts_its_frames(recorder):
+    recorder.discard(DiscardEpisodeCommand(request_id="end-manual"))
+    recorder.start(StartEpisodeCommand(request_id="s", task="t", episode_id="e1"))
+    recorder.record_frame()
+    recorder.record_frame()
+
+    assert (recorder.status().episode_id, recorder.status().frames) == ("e1", 2)
+    recorder.save(SaveEpisodeCommand(request_id="r", episode_id="e1"))
+    assert (recorder.status().episode_id, recorder.status().frames) == (None, 0)
