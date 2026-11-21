@@ -1,0 +1,84 @@
+.exportingCard {
+    position: relative;
+}
+
+.exportBorder {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--spectrum-global-color-gray-600);
+    pointer-events: none;
+}
+
+.exportBorder rect {
+    width: calc(100% - 2px);
+    height: calc(100% - 2px);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-dasharray: 1 7;
+    animation: export-border-march 1.5s linear infinite;
+}
+
+.exportingIdentity {
+    opacity: 0.6;
+    filter: grayscale(0.7);
+}
+
+.exportStatus {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.exportHint {
+    color: var(--spectrum-global-color-gray-600);
+    font-size: 12px;
+}
+
+@keyframes export-border-march {
+    to {
+        stroke-dashoffset: -8;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .exportBorder rect {
+        animation: none;
+    }
+}
+
+.addCard {
+    display: flex;
+    min-height: 170px;
+    padding: var(--spectrum-global-dimension-size-300);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spectrum-global-dimension-size-150);
+    border: 1px dashed var(--spectrum-global-color-gray-500);
+    border-radius: var(--spectrum-alias-border-radius-medium);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.addCard:not(:disabled):hover,
+.addCard:focus-visible {
+    border-color: var(--energy-blue);
+    background: var(--spectrum-global-color-gray-100);
+}
+
+.addCard:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.addTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-100);
+    font-size: 18px;
+    font-weight: 600;
+}

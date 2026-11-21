@@ -15,6 +15,7 @@ from starlette import status
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
+    AsyncSessionDep,
     EnvironmentServiceDep,
     get_dataset_service,
     get_job_service,
@@ -31,9 +32,12 @@ from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Model, ModelDetailResponse
-from schemas.job import TrainJob
+from schemas.job import ModelExportJob, TrainJob
+from schemas.job_response import JobResponse
+from schemas.model import ModelExportAction
 from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
 from services.environment_service import EnvironmentService
+from services.model_export_service import ModelExportService
 from services.runtime_export import (
     RUNTIME_FPS,
     build_runtime_config,
@@ -119,6 +123,15 @@ async def get_model_by_id(
         exports=exports,
         training_summary=training_summary,
         hparams=hparams,
+        available_actions=ModelService.get_export_actions(model),
+    )
+
+
+@router.post("/{model_id}/exports/{backend}", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
+async def export_model_backend(model_id: UUID, backend: ExportBackend, session: AsyncSessionDep) -> ModelExportJob:
+    """Export the stored checkpoint to a missing supported backend."""
+    return await ModelExportService(session).submit(
+        model_id, ModelExportAction.model_validate({"backend": backend.value})
     )
 
 

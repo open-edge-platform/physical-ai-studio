@@ -1,12 +1,13 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from schemas.base import BaseIDModel, Field, UTCDatetime
+from schemas.job import ExportBackend
 
 LORA_PROPERTY = "lora_enabled"
 DORA_PROPERTY = "lora_use_dora"
@@ -223,8 +224,16 @@ class TrainingSummary(BaseModel):
     snapflow_distill_epochs: int | None = None
 
 
+class ModelExportAction(BaseModel):
+    """An export operation currently available for a model."""
+
+    backend: ExportBackend
+    operation: Literal["export"] = "export"
+
+
 class ModelDetailResponse(BaseModel):
     model: Model
     exports: list[BackendExportDetail]
     training_summary: TrainingSummary | None = None
     hparams: dict | None = None
+    available_actions: list[ModelExportAction] = Field(default_factory=list)

@@ -12,10 +12,10 @@ from sqlalchemy import func, or_
 
 from core.security import require_aws_feature_active
 from db.schema import JobDB
-from exceptions import InvalidJobStateError
+from exceptions import InvalidJobStateError, ResourceNotFoundError
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import ImportStep
-from schemas.job import DatasetImportJob, RemoteTrainJobPayload, TrainingTarget, TrainJobPayloadAdapter
+from schemas.job import DatasetImportJob, ModelExportJob, RemoteTrainJobPayload, TrainingTarget, TrainJobPayloadAdapter
 from services.training_targets import target_key
 
 if TYPE_CHECKING:
@@ -204,8 +204,76 @@ class DatasetImportJobHandler(JobHandler):
         return DatasetImportWorker(job_id, stop_event, queue)
 
 
+class ModelExportJobHandler(JobHandler):
+    job_type = JobType.MODEL_EXPORT
+    label = "Model export"
+    supports_running_cancel = True
+
+    def resource_key(self, job: Job) -> str:  # noqa: ARG002
+        return "local"
+
+    def create_worker(
+        self, job_id: UUID, stop_event: EventClass, cancel_event: EventClass | None, queue: mp.Queue
+    ) -> ProcessWorker:
+        if cancel_event is None:
+            raise ValueError("Model export jobs require a cancellation event")
+        from workers.model_export_worker import ModelExportWorker
+
+        return ModelExportWorker(job_id, stop_event, cancel_event, queue)
+
+    async def interrupt(self, job: Job, service: JobService, signal_cancel: Callable[[UUID], None]) -> Job | None:
+        canceled = await service.cancel_pending_job(job.id, self.job_type)
+        if canceled is not None:
+            from services.model_export_service import ModelExportService
+
+            await ModelExportService(service.session).cleanup(canceled)
+            return canceled
+        requested = await service.repo.update_job_if_status(
+            job.id,
+            self.job_type,
+            JobStatus.RUNNING,
+            {
+                "payload": func.json_set(JobDB.payload, "$.cancellation_requested", func.json("true")),
+                "message": "Canceling model export",
+            },
+        )
+        if requested is None:
+            current = await service.get_job_by_id(job.id)
+            if current.status == JobStatus.CANCELED:
+                return current
+            raise InvalidJobStateError("Cannot stop a finished job")
+        signal_cancel(job.id)
+        # The worker owns terminal updates; an API RUNNING snapshot could arrive after them.
+        return None
+
+    async def recover(self, job: Job, service: JobService) -> Job:
+        from services.model_export_service import ModelExportService
+
+        if not isinstance(job, ModelExportJob):
+            raise TypeError("Model export recovery requires a model export job")
+        if job.status == JobStatus.COMPLETED:
+            from services.model_service import ModelService
+
+            try:
+                model = await ModelService(service.session).get_model_by_id(job.payload.model_id)
+            except ResourceNotFoundError:
+                await ModelExportService(service.session).cleanup(job)
+            else:
+                ModelExportService.publish(model, job.id, job.payload.backend)
+            return job
+        await ModelExportService(service.session).cleanup(job)
+        return await super().recover(job, service)
+
+    def needs_exit_recovery(self, assigned: Job, current: Job) -> bool:
+        from services.model_export_service import ModelExportService
+
+        return super().needs_exit_recovery(assigned, current) or (
+            current.status == JobStatus.COMPLETED and ModelExportService.staging(current.id).exists()
+        )
+
+
 _HANDLERS: dict[JobType, JobHandler] = {
-    handler.job_type: handler for handler in (TrainingJobHandler(), DatasetImportJobHandler())
+    handler.job_type: handler for handler in (TrainingJobHandler(), DatasetImportJobHandler(), ModelExportJobHandler())
 }
 
 

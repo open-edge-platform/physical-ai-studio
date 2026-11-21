@@ -1,14 +1,19 @@
 import shutil
+from importlib.util import find_spec
 from pathlib import Path
 from uuid import UUID
 
 import yaml
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions import ResourceNotFoundError, ResourceType
+from db.schema import JobDB
+from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
-from schemas.job import TrainJob
-from schemas.model import BackendExportDetail, Model, TrainingSummary
+from schemas.job import ExportBackend, TrainJob
+from schemas.model import BackendExportDetail, Model, ModelExportAction, TrainingSummary
+from schemas.model_export import ExportPackage
+from utils.filesystem import FileTree
 
 
 class ModelService:
@@ -33,6 +38,17 @@ class ModelService:
         return await self.repo.update(model, update)
 
     async def delete_model(self, model: Model) -> None:
+        active = await self.session.scalar(
+            select(JobDB.id)
+            .where(
+                JobDB.type == "model_export",
+                JobDB.status.in_(("pending", "running")),
+                func.json_extract(JobDB.payload, "$.model_id") == str(model.id),
+            )
+            .limit(1)
+        )
+        if active is not None:
+            raise ResourceInUseError(ResourceType.MODEL, str(model.id))
         snapshot_repo = SnapshotRepository(self.session)
         await self.repo.delete_by_id(model.id)
 
@@ -59,6 +75,34 @@ class ModelService:
                 details.append(detail)
 
         return details
+
+    @staticmethod
+    def get_export_actions(model: Model) -> list[ModelExportAction]:
+        """Offer only missing formats supported by the policy and installed backends."""
+        try:
+            checkpoint = FileTree(Path(model.path)).resolve(Path("model.ckpt"))
+            if not checkpoint.is_file():
+                return []
+            from physicalai.export import ExportablePolicyMixin
+            from physicalai.policies import get_physicalai_policy_class
+
+            from training.policy_catalog import missing_policy_dependencies
+
+            if missing_policy_dependencies(model.policy):
+                return []
+            policy = get_physicalai_policy_class(model.policy)
+            if not issubclass(policy, ExportablePolicyMixin):
+                return []
+            supported = policy.get_supported_export_backends()
+        except (ImportError, ValueError, OSError):
+            return []
+        return [
+            ModelExportAction(backend=backend)
+            for backend in ExportBackend
+            if backend in supported
+            and not ExportPackage.for_model(Path(model.path), backend).directory.exists()
+            and find_spec(backend.value) is not None
+        ]
 
     @staticmethod
     def get_hparams(model: Model) -> dict | None:

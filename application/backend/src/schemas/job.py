@@ -407,10 +407,28 @@ class DatasetImportJob(BaseJob):
     payload: DatasetImportJobPayload
 
 
-JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload
+class ModelExportJobPayload(BaseModel):
+    """Create an export package without changing model identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: UUID
+    operation: Literal["export"] = "export"
+    backend: ExportBackend
+    cancellation_requested: bool = Field(
+        default=False, description="Persisted interruption request, checked atomically during model publication"
+    )
+
+
+class ModelExportJob(BaseJob):
+    type: Literal[JobType.MODEL_EXPORT] = JobType.MODEL_EXPORT  # type: ignore[valid-type]
+    payload: ModelExportJobPayload
+
+
+JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload | ModelExportJobPayload
 
 Job = Annotated[
-    TrainJob | DatasetImportJob,
+    TrainJob | DatasetImportJob | ModelExportJob,
     Field(discriminator="type"),
 ]
 
