@@ -5,7 +5,7 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from exceptions import CameraSettingsConflictError
+from exceptions import CameraExclusiveUseError, CameraSettingsConflictError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,6 +21,7 @@ class CameraClaim:
     holder: str
     project_id: UUID
     project_name: str
+    exclusive: bool = False
 
 
 def settings_from_camera(camera: Camera) -> tuple[int, int, int]:
@@ -63,6 +64,8 @@ class CameraClaimRegistry:
                 if not holders:
                     continue
                 pinned = next(iter(holders.values()))
+                if (pinned.exclusive or incoming.exclusive) and incoming.holder not in holders:
+                    raise CameraExclusiveUseError(project_name=pinned.project_name)
                 if pinned.settings != incoming.settings:
                     raise CameraSettingsConflictError(
                         project_name=pinned.project_name,
