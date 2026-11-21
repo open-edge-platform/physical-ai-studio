@@ -56,12 +56,21 @@ export const DeleteRemoteTrainerDialog = ({ remoteTrainer, onDeleted, onCancel }
         >
             <Flex direction='column' gap='size-150'>
                 <Text>Remove {remoteTrainer.name}?</Text>
+                {remoteTrainer.connection_mode === 'modal' && (
+                    <Text>
+                        Studio will try to cancel training, stop the Modal app, and permanently delete its Volume,
+                        including datasets, metrics, and artifacts. Results not yet imported into Studio will be lost.
+                        The target will still be removed if cleanup fails; check Modal for remaining resources and
+                        charges.
+                    </Text>
+                )}
                 {deleteMutation.isPending && (
                     <Text>
                         Removing training target…{' '}
                         {remoteTrainer.connection_mode === 'ssh' &&
                             !forgetLocally &&
                             'SSH cleanup may take a while if the host is unreachable.'}
+                        {remoteTrainer.connection_mode === 'modal' && 'Attempting to stop compute and delete storage…'}
                     </Text>
                 )}
                 {error && <Text UNSAFE_className={classes.errorMessage}>{error}</Text>}

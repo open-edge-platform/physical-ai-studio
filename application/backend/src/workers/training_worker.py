@@ -15,7 +15,7 @@ from db import get_async_db_session_ctx
 from schemas import Job, Model, Snapshot
 from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import JobStatus
-from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
+from schemas.job import RemoteJobId, RemoteTrainJobPayload, TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
 from schemas.model import DORA_PROPERTY, LORA_PROPERTY, SNAPFLOW_PROPERTY
 from services import DatasetService, ModelService
 from services.event_processor import EventType
@@ -229,7 +229,7 @@ class TrainingWorker(ProcessWorker[None]):
 
         self.queue.put((EventType.JOB_UPDATE, job))
 
-    async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: UUID) -> None:
+    async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: RemoteJobId) -> None:
         """Persist the remote job id for restart recovery."""
         payload.remote_job_id = remote_job_id
         async with get_async_db_session_ctx() as session:
@@ -237,7 +237,7 @@ class TrainingWorker(ProcessWorker[None]):
             if (
                 isinstance(payload, RemoteTrainJobPayload)
                 and payload.remote_trainer_url
-                and payload.remote_trainer_url.startswith("aws-batch://")
+                and payload.remote_trainer_url.startswith(("aws-batch://", "modal://"))
             ):
                 await service.update_remote_job_state(
                     job.id, remote_job_id=remote_job_id, snapshot_id=payload.snapshot_id
