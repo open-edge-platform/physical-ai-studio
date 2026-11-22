@@ -71,6 +71,13 @@ EXPORTS_DIRNAME = "exports"
 _DATASET_REPO_ID = "snapshot"
 """Placeholder repo id: datasets are always loaded from a local root here."""
 
+DDP_VAL_SPLIT_SEED = 0
+"""Train/val episode split seed for multi-device runs.
+
+Each DDP rank builds its own datamodule. Left unseeded, every rank draws a
+different validation set, so episodes one rank holds out are trained on by
+another. A shared seed makes all ranks agree. Single-device runs stay unseeded."""
+
 PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
     "molmoact2": "allenai/MolmoAct2",
     "pi05": "lerobot/pi05_base",
@@ -159,6 +166,13 @@ class TrainingJobSpec(BaseModel):
         ge=0,
         description="Zero-based index of the accelerator to train on. None lets Lightning pick one.",
     )
+    all_devices: bool = Field(
+        default=False,
+        description=(
+            "Train with DDP across every visible CUDA device instead of one. Requires device_type='cuda' "
+            "and no device_index; batch_size then applies per device."
+        ),
+    )
     lora_enabled: bool = Field(
         default=False,
         description=(
@@ -198,6 +212,30 @@ class TrainingJobSpec(BaseModel):
                 f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
                 f"supported policies are {sorted(PEFT_POLICIES)}."
             )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def validate_all_devices(self) -> TrainingJobSpec:
+        """Reject a multi-device request the run cannot honour.
+
+        Returns:
+            The validated spec.
+
+        Raises:
+            ValueError: If ``all_devices`` is combined with a non-CUDA
+                accelerator, a single device index, or batch size search.
+        """
+        if not self.all_devices:
+            return self
+        if self.device_type != "cuda":
+            msg = f"all_devices requires device_type='cuda', got {self.device_type!r}."
+            raise ValueError(msg)
+        if self.device_index is not None:
+            msg = "all_devices trains on every device; it cannot be combined with device_index."
+            raise ValueError(msg)
+        if self.auto_scale_batch_size:
+            msg = "auto_scale_batch_size is not supported with all_devices: Lightning cannot tune distributed runs."
             raise ValueError(msg)
         return self
 
@@ -365,6 +403,11 @@ def run_training_job(
     export, and export conversion (OpenVINO in particular) can need several GB
     on top of that.
 
+    Under DDP (``spec.all_devices``) every rank calls this function. All ranks
+    train and finalize checkpoints together; only global rank 0 reports
+    progress, publishes ``output_dir``, and exports. The other ranks return
+    once checkpoints are final, leaving ``output_dir`` untouched.
+
     Args:
         spec: What to train.
         dataset_root: Local root of the LeRobot dataset to train on.
@@ -376,12 +419,17 @@ def run_training_job(
     """
     from lightning.pytorch.callbacks import ModelCheckpoint
     from lightning.pytorch.loggers import CSVLogger
+    from lightning.pytorch.utilities import rank_zero_only
     from physicalai.data import LeRobotDataModule
     from physicalai.train.callbacks import ProgressReportingCallback
     from physicalai.train.trainer import Trainer
     from physicalai.transforms import DefaultImageAugmentations
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
+
+    # Under DDP every rank runs this function; only global rank 0 may report,
+    # otherwise each rank's progress interleaves into the same job.
+    report = rank_zero_only(report)
 
     with _hf_token_env(spec.run_options.hf_token):
         accelerator = resolve_accelerator(spec.device_type)
@@ -394,6 +442,7 @@ def run_training_job(
             train_batch_size=spec.batch_size,
             num_workers=spec.num_workers,
             val_split=spec.val_split,
+            val_split_seed=DDP_VAL_SPLIT_SEED if spec.all_devices else None,
             # Applied to the train split only; the datamodule leaves validation
             # images untouched so eval loss stays comparable across runs.
             image_transforms=DefaultImageAugmentations() if spec.augment_images else None,
@@ -416,8 +465,8 @@ def run_training_job(
             logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
             callbacks=callbacks,
             accelerator=accelerator,
-            strategy=resolve_strategy(spec.device_type),
-            devices=resolve_devices(spec.device_index),
+            strategy=resolve_strategy(spec.device_type, all_devices=spec.all_devices),
+            devices=resolve_devices(spec.device_index, all_devices=spec.all_devices),
             max_epochs=spec.max_epochs,
             auto_scale_batch_size=spec.auto_scale_batch_size,
             precision=spec.precision,
@@ -430,7 +479,16 @@ def run_training_job(
             logger.info("Training canceled; skipping checkpoint and export")
             return
 
+        # Every rank finalizes: the fallback `trainer.save_checkpoint` is a
+        # collective call (rank 0 writes, all ranks meet at a barrier). The
+        # barrier below then keeps rank 0 from moving the cache away while
+        # another rank is still checking it for checkpoints.
         _finalize_checkpoints(trainer, cache_dir, snapflow_callback=snapflow_callback)
+        trainer.strategy.barrier("finalize_checkpoints")
+        if not trainer.is_global_zero:
+            logger.info("Rank %d finished training; rank 0 publishes and exports", trainer.global_rank)
+            return
+
         _publish(cache_dir, output_dir)
 
         _detach_trainer(policy, trainer)

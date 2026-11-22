@@ -61,11 +61,18 @@ const TrainerCell = ({ job }: { job: SchemaTrainJob }) => {
     );
     const device = selected ?? (devices.length > 1 ? gpu : undefined);
     const showDevice = remoteId && device && (devices.length > 1 || !gpu);
+    const allGpuCount = selected ? devices.filter((candidate) => candidate.type === selected.type).length : 0;
 
     return (
         <Flex direction='column' data-testid='trainer-cell'>
             <Text>{remoteId && trainer !== 'Remote' ? `Remote · ${trainer}` : trainer || '-'}</Text>
-            {showDevice && <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>}
+            {remoteId && selected?.all_devices ? (
+                <Text>{`All ${allGpuCount > 1 ? `${allGpuCount} ` : ''}${selected.type.toUpperCase()} GPUs`}</Text>
+            ) : (
+                showDevice && (
+                    <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>
+                )
+            )}
             {image && <Text UNSAFE_className={classes.rowInfo}>Trainer image: {image}</Text>}
         </Flex>
     );
@@ -131,6 +138,12 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
                 </Flex>
+                {/* The badge already says "failed"; the message says why, so users needn't open the logs. */}
+                {job.status === 'failed' && job.message && (
+                    <Text UNSAFE_className={classes.rowInfo} data-testid='failure-reason'>
+                        {job.message.replace(/^Training failed:\s*/, '')}
+                    </Text>
+                )}
                 {job.start_time && job.end_time && (
                     <Text UNSAFE_className={classes.rowInfo}>
                         Elapsed: {durationBetween(job.start_time, job.end_time)}

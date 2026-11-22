@@ -147,6 +147,21 @@ class RemoteResumeUnsupportedError(BaseException):
         )
 
 
+class RemoteAllDevicesUnsupportedError(BaseException):
+    """Raised when a job asks for every GPU of a remote trainer that cannot provide it.
+
+    Rejected at submission so the training dialog shows why, instead of the job
+    failing later on the trainer.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(
+            message=f"{reason} Choose a single GPU instead.",
+            error_code="remote_all_devices_unsupported",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
 class InvalidJobStateError(BaseException):
     """Raised when a job action is not valid in the current state."""
 

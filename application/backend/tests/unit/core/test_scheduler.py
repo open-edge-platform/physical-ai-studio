@@ -357,6 +357,22 @@ def test_training_target_keys_still_use_shared_registry(job):
     assert target_key(job.payload) == expected
 
 
+def test_an_all_devices_job_reserves_the_whole_remote_trainer():
+    from services.job_handlers import TrainingJobHandler
+
+    trainer_id = uuid4()
+    job = _training_job(trainer_id=trainer_id)
+    job.payload.device = TrainingDevice(type="cuda", all_devices=True)
+    key = target_key(job.payload)
+    single_gpu_key = target_key(_training_job(trainer_id=trainer_id, gpu=1).payload)
+
+    assert key == f"remote:{trainer_id}"
+    handler = TrainingJobHandler()
+    assert handler.resource_is_busy(key, {single_gpu_key: object()})
+    assert handler.resource_is_busy(single_gpu_key, {key: object()})
+    assert not handler.resource_is_busy(key, {target_key(_training_job(trainer_id=uuid4(), gpu=1).payload): object()})
+
+
 @pytest.mark.parametrize("job_type", list(JobType))
 def test_worker_registry_imports_only_the_assigned_job_type(job_type):
     handler = get_job_handler(job_type)

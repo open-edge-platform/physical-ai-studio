@@ -19,7 +19,14 @@ import pytest
 from pydantic import SecretStr
 
 from schemas.dataset import Snapshot
-from schemas.job import _DEFAULT_MAX_EPOCHS, LocalTrainJobPayload, TrainingDevice, TrainingPrecision, TrainJobPayload
+from schemas.job import (
+    _DEFAULT_MAX_EPOCHS,
+    LocalTrainJobPayload,
+    RemoteTrainJobPayload,
+    TrainingDevice,
+    TrainingPrecision,
+    TrainJobPayload,
+)
 from schemas.model import Model
 from services.training_backends.base import TrainingContext
 from services.training_backends.local import LocalTrainingBackend, build_spec
@@ -94,6 +101,16 @@ def _context(
 
 class TestBuildSpec:
     """The payload -> spec translation shared by the local and remote backends."""
+
+    def test_all_devices_is_carried_into_the_spec(self, tmp_path):
+        """Remote jobs build their spec here too; local payloads reject the option before this."""
+        payload = RemoteTrainJobPayload.model_validate(
+            _payload().model_dump(exclude={"training_target"})
+            | {"remote_trainer_id": uuid4(), "device": {"type": "cuda", "all_devices": True}}
+        )
+        spec = build_spec(_context(tmp_path, payload))
+
+        assert (spec.device_type, spec.device_index, spec.all_devices) == ("cuda", None, True)
 
     def test_training_parameters_are_forwarded(self, tmp_path):
         payload = _payload(max_steps=500, batch_size=16, num_workers="auto", val_split=0.2)

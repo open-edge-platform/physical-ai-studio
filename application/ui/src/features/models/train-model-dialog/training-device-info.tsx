@@ -9,6 +9,8 @@ interface TrainingDeviceInfoProps {
     remoteHealth: SchemaRemoteTrainerHealth | null;
     localDevice: SchemaDeviceInfo | null;
     remoteDevice: SchemaDeviceInfo | null;
+    /** How many such devices the job trains on together (all GPUs of the trainer). */
+    remoteDeviceCount?: number;
     isRemoteDeviceBusy: boolean;
     isCheckingRemote: boolean;
 }
@@ -18,6 +20,7 @@ export const TrainingDeviceInfo = ({
     remoteHealth,
     localDevice,
     remoteDevice,
+    remoteDeviceCount = 1,
     isRemoteDeviceBusy,
     isCheckingRemote,
 }: TrainingDeviceInfoProps) => {
@@ -30,7 +33,9 @@ export const TrainingDeviceInfo = ({
                     <StatusLight variant='neutral'>Starting trainer container…</StatusLight>
                 ) : remoteDevice ? (
                     <StatusLight variant={isRemoteDeviceBusy ? 'yellow' : 'positive'}>
+                        {remoteDeviceCount > 1 ? `${remoteDeviceCount} × ` : ''}
                         {remoteDevice.name}, {formatBytes(remoteDevice.memory!)} VRAM
+                        {remoteDeviceCount > 1 ? ' each' : ''}
                     </StatusLight>
                 ) : isCheckingRemote && remoteHealth === null ? (
                     <StatusLight variant='neutral'>Checking remote trainer…</StatusLight>

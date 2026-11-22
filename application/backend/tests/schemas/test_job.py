@@ -16,7 +16,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingTarget
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingDevice, TrainingTarget
 
 
 def _base_kwargs() -> dict:
@@ -58,6 +58,30 @@ class TestRemoteTarget:
             remote_trainer_url="https://trainer.test",
         )
         assert payload.training_target is TrainingTarget.REMOTE
+
+
+class TestAllDevices:
+    def test_a_cuda_device_without_an_index_can_ask_for_all_devices(self) -> None:
+        device = TrainingDevice(type="cuda", all_devices=True)
+        assert (device.index, device.all_devices) == (None, True)
+
+    def test_a_single_cuda_device_still_defaults_to_index_zero(self) -> None:
+        assert TrainingDevice(type="cuda").index == 0
+
+    @pytest.mark.parametrize("invalid", [{"type": "xpu"}, {"type": "cpu"}, {"type": "cuda", "index": 1}])
+    def test_all_devices_rejects_what_it_cannot_honour(self, invalid: dict) -> None:
+        with pytest.raises(ValidationError):
+            TrainingDevice(all_devices=True, **invalid)
+
+    def test_a_remote_job_may_train_on_all_devices(self) -> None:
+        payload = RemoteTrainJobPayload(
+            **_base_kwargs(), remote_trainer_id=uuid4(), device={"type": "cuda", "all_devices": True}
+        )
+        assert payload.device.all_devices is True
+
+    def test_a_local_job_may_not(self) -> None:
+        with pytest.raises(ValidationError, match="only available on a remote trainer"):
+            LocalTrainJobPayload(**_base_kwargs(), device={"type": "cuda", "all_devices": True})
 
 
 class TestCameraMapping:

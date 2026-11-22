@@ -8,9 +8,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from exceptions import InvalidResourceError
-from schemas.job import RemoteTrainJobPayload
-from schemas.remote_trainer import DirectConnection, RemoteTrainer
+from exceptions import InvalidResourceError, RemoteAllDevicesUnsupportedError
+from schemas.hardware import DeviceInfo
+from schemas.job import RemoteTrainJobPayload, TrainingDevice
+from schemas.remote_trainer import DirectConnection, RemoteTrainer, RemoteTrainerHealth
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets.remote import RemoteTrainingTargetHandler
 from trainer.main import app as trainer_app
@@ -74,6 +75,65 @@ async def test_remote_submission_rechecks_policy_before_saving() -> None:
         remote_trainer_id=trainer_id, project_id=uuid4(), dataset_id=uuid4(), policy="pi05", model_name="model"
     )
     with pytest.raises(InvalidResourceError, match="not available"):
+        await RemoteTrainingTargetHandler(service).prepare(payload)
+
+
+def _health(*, status: str = "healthy", capabilities: list[str], cuda: int = 2) -> RemoteTrainerHealth:
+    return RemoteTrainerHealth(
+        remote_trainer_id=uuid4(),
+        status=status,
+        checked_at="2026-11-16T09:00:00Z",
+        devices=[DeviceInfo(type="cuda", name="RTX 3090", index=i) for i in range(cuda)],
+        capabilities=capabilities,
+    )
+
+
+def _all_gpus_submission(health: RemoteTrainerHealth) -> tuple[AsyncMock, RemoteTrainJobPayload]:
+    service = AsyncMock()
+    service.get_remote_trainer.return_value = RemoteTrainer(
+        id=health.remote_trainer_id, name="gpu", connection=DirectConnection(url="https://trainer.test")
+    )
+    service.get_policy_catalog.return_value = PolicyCatalog(
+        available=[AvailablePolicy(id="act", name="ACT", description="", min_vram=None)], backends={}
+    )
+    service.check_remote_trainer.return_value = health
+    payload = RemoteTrainJobPayload(
+        remote_trainer_id=health.remote_trainer_id,
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="model",
+        device=TrainingDevice(type="cuda", all_devices=True),
+    )
+    return service, payload
+
+
+@pytest.mark.asyncio
+async def test_all_gpus_is_accepted_by_a_trainer_that_supports_it() -> None:
+    service, payload = _all_gpus_submission(_health(capabilities=["all_devices"]))
+
+    prepared = await RemoteTrainingTargetHandler(service).prepare(payload)
+
+    assert prepared.device.all_devices is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "capabilities", "cuda", "reason"),
+    [
+        ("healthy", [], 2, "update the trainer image"),
+        ("starting", ["all_devices"], 2, "isn't ready"),
+        ("unreachable", [], 0, "isn't ready"),
+        ("healthy", ["all_devices"], 1, "several CUDA GPUs"),
+    ],
+)
+async def test_all_gpus_is_rejected_before_queueing_when_the_trainer_cannot_run_it(
+    status: str, capabilities: list[str], cuda: int, reason: str
+) -> None:
+    """Rejected at submission, the dialog shows why instead of the job failing on the trainer later."""
+    service, payload = _all_gpus_submission(_health(status=status, capabilities=capabilities, cuda=cuda))
+
+    with pytest.raises(RemoteAllDevicesUnsupportedError, match=reason):
         await RemoteTrainingTargetHandler(service).prepare(payload)
 
 

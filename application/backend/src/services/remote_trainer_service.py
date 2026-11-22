@@ -165,7 +165,9 @@ class RemoteTrainerService:
                 reason_code=launch_failure,
             )
         started = perf_counter()
-        status, reason_code, devices, storage = await RemoteTrainerService._probe_http(str(remote_trainer.url))
+        status, reason_code, devices, storage, capabilities = await RemoteTrainerService._probe_http(
+            str(remote_trainer.url)
+        )
 
         status, reason_code = RemoteTrainerService._require_managed_accelerator(
             remote_trainer, status, reason_code, devices
@@ -187,20 +189,26 @@ class RemoteTrainerService:
             devices=devices,
             storage=storage,
             reason_code=reason_code,
+            capabilities=capabilities,
             issues=[] if status in {"healthy", "degraded"} else None,
         )
 
     @staticmethod
     async def _probe_http(
         url: str,
-    ) -> tuple[HealthStatus, str | None, list[DeviceInfo], StorageInfo | None]:
-        """Hit /health, /devices and /storage on an HTTP trainer."""
+    ) -> tuple[HealthStatus, str | None, list[DeviceInfo], StorageInfo | None, list[str]]:
+        """Hit /health, /devices and /storage on an HTTP trainer.
+
+        Also returns the optional features the trainer lists in its /health
+        ``capabilities``; a trainer image that predates the field reports none.
+        """
         base_url = url.rstrip("/")
         timeout = httpx.Timeout(_HEALTH_CHECK_TIMEOUT_S)
         status: HealthStatus = "healthy"
         reason_code: str | None = None
         devices: list[DeviceInfo] = []
         storage: StorageInfo | None = None
+        capabilities: list[str] = []
 
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
@@ -210,6 +218,9 @@ class RemoteTrainerService:
                 if not isinstance(health_payload, dict) or health_payload.get("status") != "healthy":
                     status, reason_code = "degraded", "unhealthy"
                 else:
+                    reported = health_payload.get("capabilities")
+                    if isinstance(reported, list):
+                        capabilities = [item for item in reported if isinstance(item, str)]
                     devices_response = await client.get(f"{base_url}/devices")
                     devices_response.raise_for_status()
                     devices_payload = devices_response.json()
@@ -229,7 +240,7 @@ class RemoteTrainerService:
             status, reason_code = "unreachable", "connection_failed"
         except (ValidationError, ValueError):
             status, reason_code = "degraded", "invalid_devices_response"
-        return status, reason_code, devices, storage
+        return status, reason_code, devices, storage, capabilities
 
     @staticmethod
     def _require_managed_accelerator(

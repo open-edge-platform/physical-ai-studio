@@ -5,7 +5,7 @@ import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { formatBytes } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
 import { PolicySelection } from './policy-selection';
-import { TrainingTargetOption } from './train-model-dialog';
+import { ALL_GPUS_KEY, TrainingTargetOption } from './train-model-dialog';
 
 interface SetupStepProps {
     datasets: SchemaProjectInput['datasets'];
@@ -16,6 +16,8 @@ interface SetupStepProps {
     onTargetIdChange: (value: Key | null) => void;
     remoteDevices: SchemaDeviceInfo[];
     busyGpuKeys: Set<string>;
+    /** Number of CUDA GPUs one job can train on together; 0 hides the option. */
+    allGpusCount: number;
     selectedGpuKey: Key | null;
     onSelectedGpuKeyChange: (value: Key | null) => void;
     selectedGpuUnavailable: boolean;
@@ -38,6 +40,7 @@ export const SetupStep = ({
     onTargetIdChange,
     remoteDevices,
     busyGpuKeys,
+    allGpusCount,
     selectedGpuKey,
     onSelectedGpuKeyChange,
     selectedGpuUnavailable,
@@ -92,13 +95,27 @@ export const SetupStep = ({
                 selectedKey={selectedGpuKey ?? (activeDevice ? `${activeDevice.type}:${activeDevice.index}` : null)}
                 onSelectionChange={onSelectedGpuKeyChange}
                 width='100%'
-                items={remoteDevices.map((device) => ({
-                    key: `${device.type}:${device.index}`,
-                    label: `${device.type.toUpperCase()} ${device.index} — ${device.name}${
-                        device.memory ? ` (${formatBytes(device.memory)})` : ''
-                    }`,
-                    busy: busyGpuKeys.has(`${device.type}:${device.index}`),
-                }))}
+                items={[
+                    ...remoteDevices.map((device) => ({
+                        key: `${device.type}:${device.index}`,
+                        label: `${device.type.toUpperCase()} ${device.index} — ${device.name}${
+                            device.memory ? ` (${formatBytes(device.memory)})` : ''
+                        }`,
+                        busy: busyGpuKeys.has(`${device.type}:${device.index}`),
+                    })),
+                    ...(allGpusCount > 1
+                        ? [
+                              {
+                                  key: ALL_GPUS_KEY,
+                                  label: `All GPUs (${allGpusCount})`,
+                                  busy: remoteDevices.some(
+                                      (device) =>
+                                          device.type === 'cuda' && busyGpuKeys.has(`${device.type}:${device.index}`)
+                                  ),
+                              },
+                          ]
+                        : []),
+                ]}
             >
                 {(device) => (
                     <Item key={device.key} textValue={device.label}>
