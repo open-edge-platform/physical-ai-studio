@@ -177,9 +177,13 @@ describe('useJobUpdates', () => {
         expect(queryClient.getQueryState(currentProjectModels)?.isInvalidated).toBe(false);
     });
 
-    it('refetches jobs whenever the socket (re)connects', () => {
+    it('refreshes jobs, model details and all project model lists whenever the socket (re)connects', () => {
         const queryClient = createQueryClient();
         queryClient.setQueryData<SchemaJob[]>(JOBS_QUERY_KEY, []);
+        const modelKey = ['get', '/api/models/{model_id}', { params: { path: { model_id: 'model-1' } } }];
+        queryClient.setQueryData(modelKey, {});
+        queryClient.setQueryData(modelsQueryKey(PROJECT_ID), []);
+        queryClient.setQueryData(modelsQueryKey(OTHER_PROJECT_ID), []);
 
         renderHook(() => useJobUpdates(PROJECT_ID), { queryClient });
 
@@ -188,6 +192,9 @@ describe('useJobUpdates', () => {
         });
 
         expect(queryClient.getQueryState(JOBS_QUERY_KEY)?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(modelKey)?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(modelsQueryKey(PROJECT_ID))?.isInvalidated).toBe(true);
+        expect(queryClient.getQueryState(modelsQueryKey(OTHER_PROJECT_ID))?.isInvalidated).toBe(true);
     });
 
     it('refreshes model details and available backends after export', () => {

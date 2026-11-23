@@ -121,7 +121,7 @@ class ModelExportWorker(ProcessWorker[None]):
                 await session.rollback()
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                if destination.exists():
+                if ExportPackage(destination, job.payload.backend).is_complete:
                     raise FileExistsError(f"Export already exists: {destination.name}")
                 await session.commit()
         if canceled:

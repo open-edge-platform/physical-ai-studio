@@ -79,6 +79,15 @@ class ExportPackage:
         return manifest
 
     @property
+    def is_complete(self) -> bool:
+        """Whether the package has a valid manifest and all required artifacts."""
+        try:
+            self.manifest
+        except (KeyError, TypeError, ValueError, OSError):
+            return False
+        return True
+
+    @property
     def artifact(self) -> Path:
         return self.directory / self.manifest["model"]["artifacts"][self.backend]
 

@@ -88,6 +88,7 @@ export const useJobUpdates = (project_id?: string) => {
     const onOpen = () => {
         client.invalidateQueries({ queryKey: JOBS_QUERY_KEY });
         client.invalidateQueries({ queryKey: ['get', '/api/models/{model_id}'] });
+        client.invalidateQueries({ queryKey: ['get', '/api/projects/{project_id}/models'] });
     };
 
     useWebSocket(fetchClient.PATH('/api/jobs/ws'), {

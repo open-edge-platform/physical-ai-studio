@@ -4,10 +4,10 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.schema import JobDB
+from db.schema import JobDB, ModelDB
 from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
 from schemas.job import ExportBackend, TrainJob
@@ -38,6 +38,8 @@ class ModelService:
         return await self.repo.update(model, update)
 
     async def delete_model(self, model: Model) -> None:
+        # Reserve the same database write lock as export submission until the model row is deleted.
+        await self.session.execute(update(ModelDB).where(ModelDB.id == str(model.id)).values(id=ModelDB.id))
         active = await self.session.scalar(
             select(JobDB.id)
             .where(
@@ -48,6 +50,7 @@ class ModelService:
             .limit(1)
         )
         if active is not None:
+            await self.session.rollback()
             raise ResourceInUseError(ResourceType.MODEL, str(model.id))
         snapshot_repo = SnapshotRepository(self.session)
         await self.repo.delete_by_id(model.id)
@@ -80,7 +83,10 @@ class ModelService:
     def get_export_actions(model: Model) -> list[ModelExportAction]:
         """Offer only missing formats supported by the policy and installed backends."""
         try:
-            checkpoint = FileTree(Path(model.path)).resolve(Path("model.ckpt"))
+            from training.job import resolve_checkpoint
+
+            model_path = Path(model.path)
+            checkpoint = FileTree(model_path).resolve(resolve_checkpoint(model_path).relative_to(model_path))
             if not checkpoint.is_file():
                 return []
             from physicalai.export import ExportablePolicyMixin
@@ -100,7 +106,7 @@ class ModelService:
             ModelExportAction(backend=backend)
             for backend in ExportBackend
             if backend in supported
-            and not ExportPackage.for_model(Path(model.path), backend).directory.exists()
+            and not ExportPackage.for_model(Path(model.path), backend).is_complete
             and find_spec(backend.value) is not None
         ]
 

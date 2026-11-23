@@ -5,6 +5,7 @@ import asyncio
 import json
 import multiprocessing as mp
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -276,3 +277,142 @@ async def test_model_deletion_is_blocked_by_active_export(exports):
     await submit(exports)
     assert (await exports.client.delete(f"/api/models/{exports.source.id}")).status_code == 409
     assert exports.root.exists()
+
+
+@pytest.mark.parametrize("original_exists", [False, True])
+async def test_reexport_uses_the_distilled_checkpoint(exports, original_exists):
+    distilled = exports.root / "snapflow-model.ckpt"
+    distilled.write_bytes(b"distilled weights")
+    if not original_exists:
+        (exports.root / "model.ckpt").unlink()
+    assert ModelExportAction(backend="torch") in ModelService.get_export_actions(exports.source)
+    job = await submit(exports)
+    await worker(job).run_loop()
+    assert exports.loaded == [(str(distilled), {"map_location": "cpu", "compile_model": False})]
+    assert ExportPackage(exports.target, "torch").is_complete
+
+
+async def test_distilled_checkpoint_symlinks_are_rejected(exports, tmp_path):
+    from schemas.job import ModelExportJob, ModelExportJobPayload
+
+    outside = tmp_path / "outside.ckpt"
+    outside.write_bytes(b"untrusted weights")
+    (exports.root / "snapflow-model.ckpt").symlink_to(outside)
+    assert ModelService.get_export_actions(exports.source) == []
+    assert (await exports.client.post(f"/api/models/{exports.source.id}/exports/torch")).status_code == 409
+    job = ModelExportJob(
+        project_id=exports.source.project_id,
+        payload=ModelExportJobPayload(model_id=exports.source.id, backend="torch"),
+    )
+    with pytest.raises(ValueError, match="symbolic links"):
+        ModelExportService.export_checkpoint(exports.source, ModelExportService.staging(job.id), job)
+    assert exports.loaded == []
+
+
+@pytest.mark.parametrize("contents", ["empty", "partial", "invalid_manifest", "missing_artifact"])
+async def test_incomplete_training_exports_can_be_retried(exports, contents):
+    exports.target.mkdir()
+    if contents == "partial":
+        (exports.target / "partial.pt").write_bytes(b"partial")
+    elif contents == "invalid_manifest":
+        (exports.target / "manifest.json").write_text("{")
+    elif contents == "missing_artifact":
+        (exports.target / "manifest.json").write_text(json.dumps({"model": {"artifacts": {"torch": "model.pt"}}}))
+    assert ModelExportAction(backend="torch") in ModelService.get_export_actions(exports.source)
+    job = await submit(exports)
+    await worker(job).run_loop()
+    assert ExportPackage(exports.target, "torch").info.job_id == job.id
+    assert {path.name for path in exports.target.iterdir()} == {"model.pt", "manifest.json"}
+
+
+def test_publication_never_overwrites_a_valid_export(exports):
+    from schemas.job import ModelExportJob, ModelExportJobPayload
+
+    job = ModelExportJob(
+        project_id=exports.source.project_id,
+        payload=ModelExportJobPayload(model_id=exports.source.id, backend="torch"),
+    )
+    staging = ModelExportService.staging(job.id)
+    ModelExportService.export_checkpoint(exports.source, staging, job)
+    exports.target.mkdir()
+    (exports.target / "model.pt").write_bytes(b"existing weights")
+    (exports.target / "manifest.json").write_text(json.dumps({"model": {"artifacts": {"torch": "model.pt"}}}))
+    with pytest.raises(FileExistsError):
+        ModelExportService.publish(exports.source, job.id, "torch")
+    assert (exports.target / "model.pt").read_bytes() == b"existing weights"
+    assert staging.exists()
+
+
+async def test_invalid_staging_does_not_remove_incomplete_output(exports):
+    job = await submit(exports)
+    exports.target.mkdir()
+    partial = exports.target / "partial.pt"
+    partial.write_bytes(b"partial weights")
+    with pytest.raises(FileNotFoundError):
+        ModelExportService.publish(exports.source, job.id, "torch")
+    assert partial.read_bytes() == b"partial weights"
+
+
+async def test_publication_rejects_links_inside_incomplete_output(exports, tmp_path):
+    job = await submit(exports)
+    staging = ModelExportService.staging(job.id)
+    ModelExportService.export_checkpoint(exports.source, staging, job)
+    exports.target.mkdir()
+    outside = tmp_path / "outside.pt"
+    outside.write_bytes(b"outside weights")
+    (exports.target / "partial.pt").symlink_to(outside)
+    with pytest.raises(ValueError, match="symbolic links"):
+        ModelExportService.publish(exports.source, job.id, "torch")
+    assert outside.read_bytes() == b"outside weights"
+    assert staging.exists()
+
+
+async def test_canceled_retry_leaves_incomplete_output_untouched(exports):
+    exports.target.mkdir()
+    partial = exports.target / "partial.pt"
+    partial.write_bytes(b"partial weights")
+    job = await submit(exports)
+    process = worker(job)
+    process.cancel_event.set()
+    await process.run_loop()
+    assert partial.read_bytes() == b"partial weights"
+    assert (await submit(exports)).id != job.id
+
+
+@pytest.mark.parametrize("winner", ["delete", "export"])
+async def test_model_deletion_and_export_submission_are_serialized(exports, monkeypatch, winner):
+    execute = AsyncSession.execute
+    reserved, attempted, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    operation = ContextVar("operation")
+
+    async def pause(self, statement, *args, **kwargs):
+        if isinstance(statement, Update) and statement.table.name == "models":
+            if operation.get() == winner:
+                result = await execute(self, statement, *args, **kwargs)
+                reserved.set()
+                await release.wait()
+                return result
+            attempted.set()
+        return await execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", pause)
+    url = f"/api/models/{exports.source.id}"
+
+    async def request(action):
+        operation.set(action)
+        if action == "delete":
+            return await exports.client.delete(url)
+        return await exports.client.post(f"{url}/exports/torch")
+
+    loser = "export" if winner == "delete" else "delete"
+    first = asyncio.create_task(request(winner), name=winner)
+    second = None
+    try:
+        await asyncio.wait_for(reserved.wait(), 5)
+        second = asyncio.create_task(request(loser), name=loser)
+        await asyncio.wait_for(attempted.wait(), 5)
+    finally:
+        release.set()
+        results = await asyncio.wait_for(asyncio.gather(first, *([second] if second else [])), 5)
+    assert [result.status_code for result in results] == ([200, 404] if winner == "delete" else [202, 409])
+    assert exports.root.exists() == (winner == "export")

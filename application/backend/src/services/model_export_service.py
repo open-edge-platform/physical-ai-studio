@@ -43,7 +43,7 @@ class ModelExportService:
             )
             pending = any(status != "completed" or self.staging(UUID(job_id)).exists() for job_id, status in jobs)
             target = ExportPackage.for_model(Path(model.path), payload.backend)
-            if pending or target.directory.exists():
+            if pending or target.is_complete:
                 raise DuplicateJobException("An export already exists or is being created")
             job = ModelExportJob(
                 project_id=model.project_id,
@@ -67,9 +67,10 @@ class ModelExportService:
         from physicalai.policies import get_physicalai_policy_class
 
         from services.training_backends.local import resolve_hf_token
-        from training.job import _hf_token_env
+        from training.job import _hf_token_env, resolve_checkpoint
 
-        checkpoint = FileTree(Path(model.path)).resolve(Path("model.ckpt"))
+        model_path = Path(model.path)
+        checkpoint = FileTree(model_path).resolve(resolve_checkpoint(model_path).relative_to(model_path))
         destination.mkdir(parents=True)
         with _hf_token_env(resolve_hf_token()):
             policy = get_physicalai_policy_class(model.policy).load_from_checkpoint(
@@ -97,13 +98,18 @@ class ModelExportService:
         """Publish an already-committed job's complete package with one rename."""
         staging = ModelExportService.staging(job_id)
         destination = ExportPackage.for_model(Path(model.path), backend)
-        if destination.directory.exists():
+        if destination.is_complete:
             if destination.info.job_id != job_id:
                 raise FileExistsError("An export from another job already exists")
             shutil.rmtree(staging, ignore_errors=True)
             return
         if ExportPackage(staging, backend).info.job_id != job_id:
             raise ValueError("The staged export does not belong to this job")
+        if destination.directory.exists():
+            # Failed training exports can leave partial output. Never follow links while removing it.
+            tuple(FileTree(destination.directory).files())
+            shutil.rmtree(destination.directory)
+        destination.directory.parent.mkdir(parents=True, exist_ok=True)
         staging.rename(destination.directory)
 
     async def cleanup(self, job: Job) -> None:
