@@ -171,7 +171,6 @@ def _first_tensor(out: Any) -> Any:  # noqa: ANN401
 def _check_device(
     policy: Any,  # noqa: ANN401
     sample: dict,
-    reference: Any,  # noqa: ANN401
     device: str,
     export_dir: Path,
     row: dict[str, Any],
@@ -198,9 +197,17 @@ def _check_device(
         # Policies may trace a trimmed / fp32-cast sample (rldx1): feed the inputs the .pte was exported with.
         manifest = json.loads((pte.parent / "manifest.json").read_text(encoding="utf-8"))
         names = manifest.get("input_names") or list(sample)
-        inputs = [sample[n].float() if sample[n].is_floating_point() else sample[n] for n in names]
+        feed = {n: sample[n].float() if sample[n].is_floating_point() else sample[n] for n in names}
+        # Eager reference after export: policy export prep (xr0 input alias, rldx1 model swap) is applied.
+        reference = None
+        try:
+            with torch.no_grad():
+                # Shallow copy: normalizers write normalized values back into the input dict.
+                reference = _first_tensor(policy._export_module(dict(feed))).float()  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"eager: {_error(exc)}")
         method = Runtime.get().load_program(pte).load_method("forward")
-        output = _first_tensor(method.execute(inputs)).float()
+        output = _first_tensor(method.execute(list(feed.values()))).float()
     except Exception as exc:  # noqa: BLE001
         row[step] = "FAIL"
         errors.append(f"{step}: {_error(exc)}")
@@ -250,8 +257,6 @@ def _probe(source: str, name: str, devices: list[str], result_path: Path) -> Non
     row["declared_et"] = ExportBackend.EXECUTORCH in policy.get_supported_export_backends()
     save()
 
-    import torch  # noqa: PLC0415
-
     # Probe ExecuTorch even when the policy does not declare it.
     all_backends = list(ExportBackend)
     type(policy).get_supported_export_backends = staticmethod(lambda: all_backends)
@@ -268,17 +273,9 @@ def _probe(source: str, name: str, devices: list[str], result_path: Path) -> Non
         return
     sample = {k: v.cpu() for k, v in sample.items()}
 
-    try:
-        with torch.no_grad():
-            # Shallow copy: normalizers write normalized values back into the input dict.
-            reference = _first_tensor(policy._export_module(dict(sample))).float()  # noqa: SLF001
-    except Exception as exc:  # noqa: BLE001
-        reference = None
-        errors.append(f"eager: {_error(exc)}")
-
     with tempfile.TemporaryDirectory() as tmp:
         for device in devices:
-            _check_device(policy, sample, reference, device, Path(tmp) / device, row, errors, save)
+            _check_device(policy, sample, device, Path(tmp) / device, row, errors, save)
             save()
 
 

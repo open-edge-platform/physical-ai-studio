@@ -8,6 +8,11 @@ Environment: torch 2.14.1+cpu, executorch 1.6.0.dev20261105+cpu (nightly), torch
 transformers 5.15.1, lerobot 0.6.0, diffusers 0.42.1, physicalai (runtime) 0.3.1.dev48+gee381b7.
 Python 3.12, uv 0.12. Host: 93 GB RAM, 1 GB swap.
 
+xr0 and rldx1 re-runs (2026-11-23) used a newer env: torch 2.15.0+xpu, executorch 1.6.0+cpu (release, from
+the PyTorch CPU index; the PyPI 1.6.0 wheel links `libcudart.so.13` and fails to import without
+CUDA), torchao 0.18.0+xpu, openvino / openvino-tokenizers 2026.4.1, transformers 5.22.2,
+lerobot 0.7.0, physicalai (runtime) 0.4.1.dev26+ge089a02.
+
 ## Setup (reproduce the matrix)
 
 Branch `dl/executorch_lerobot` of
@@ -77,9 +82,9 @@ Results: `executorch_report/executorch_support.csv` (+ per-policy logs). Large V
 | cosmos3 | physicalai | — | SKIP | — | — | — | Not exportable (no `ExportablePolicyMixin`) |
 | molmoact2 | physicalai | no | PASS | OOM (SIGKILL) | — | — | Resource limit |
 | pi05 | physicalai | no | PASS | PASS | PASS | 5.33 (noise) | Supported |
-| rldx1 | physicalai | no | PASS | FAIL | — | — | Fixed (`to_executorch` override), re-run pending |
+| rldx1 | physicalai | no | PASS | OOM (SIGKILL) | — | — | Resource limit (`to_executorch` override done) |
 | smolvla | physicalai | no | PASS | FAIL | — | — | ExecuTorch op limitation (`aten.bucketize`) |
-| xr0 | physicalai | no | PASS | FAIL | — | — | Fixed (`to_executorch` override), re-run pending |
+| xr0 | physicalai | no | PASS | PASS | PASS | 4.8 (noise) | Supported (`to_executorch` override) |
 | act | lerobot | yes | PASS | PASS | PASS | 1.43e-06 | Supported |
 | diffusion | lerobot | yes | PASS | FAIL | — | — | `torch.export` blocker in diffusers DDPM |
 | groot | lerobot | no | PASS | FAIL | — | — | Wrapper unsupported (no `NormalizerProcessorStep`) + Qwen3-VL backbone |
@@ -104,7 +109,7 @@ backend territory and are fixed there by preference.
 | Problem | Fails in | Fix in | Why not ExecuTorch / why ExecuTorch |
 |---|---|---|---|
 | smolvla `aten.bucketize` (both sources) | `to_edge` verifier | **ExecuTorch + OpenVINO** (library fallback) | Post-export op coverage. OpenVINO has a native `Bucketize` op and the TorchScript frontend already maps `aten::bucketize`; the FX table (`openvino/frontend/pytorch/torchdynamo/op_support.py`) and the ET partitioner just don't list `aten.bucketize.Tensor`. |
-| molmoact2 OOM | unknown stage (SIGKILL) | **ExecuTorch** first, after measuring | If peak RSS is in lowering / OpenVINO compile / `.pte` serialization, it is ET memory use (model copies). If it is in `torch.export`, PyTorch. Library fallback: bf16. |
+| molmoact2 / rldx1 OOM | unknown stage (SIGKILL) | **ExecuTorch** first, after measuring | If peak RSS is in lowering / OpenVINO compile / `.pte` serialization, it is ET memory use (model copies). If it is in `torch.export`, PyTorch. Library fallback: bf16. |
 | xvla `aten.index_put` (`x[..., idx] = 0.0`) | OpenVINO PyTorch frontend (`AtenIndexPutReplacer`) | **OpenVINO** (library fallback) | Valid static graph; the FX translator fails on `None` (ellipsis) indices + scalar value. |
 | diffusion DDPM | `torch.export` | Upstream diffusers / LeRobot; library shim meanwhile | `nonzero()[0][0]` + `if index == ...` in the scheduler; never reaches ET. |
 | groot | library wrapper, then `torch.export` | Library | Wrapper design (no `NormalizerProcessorStep`) and Qwen3-VL `tolist()` geometry; XR0 patches already live in the library. |
@@ -144,17 +149,23 @@ backend territory and are fixed there by preference.
 - **physicalai xr0 `to_executorch`** (`policies/xr0/policy.py`). The generic path skipped
   `_bake_ingraph_export()` (vision geometry, RMSNorm, `tokenized_prompt` → `input_ids` aliasing),
   so the model got no `input_ids`. The override bakes, then calls the base export, like
-  `to_openvino`. Eager after the bake: `(1, 30, 32)`, finite. Matrix re-run pending.
+  `to_openvino`. Eager after the bake: `(1, 30, 32)`, finite. Verified: exports and runs on CPU
+  (442 s, fits in 93 GB), diff 4.8 (flow-matching noise; `aten.randn` is not delegated and runs on
+  the portable runtime).
 - **physicalai rldx1 `to_executorch`** (`policies/rldx1/export.py`). The generic path skipped the
   graph-safe model swap and the trimmed fp32 sample → `IndexError: mask [1152] vs tensor [1088]`, and
   `extra_export_args` failed on `backbone.qwen_config` (only the graph-safe backbone has it;
   `nn.Module.__getattr__` reported it as `extra_export_args` missing). The override mirrors
   `to_openvino`: fp32 weights, graph-safe swap, sample trimmed to `pixel_values`, `input_ids`,
-  `position_ids`, `attention_mask`, `state`. Eager: `(1, 16, 7)`, finite. Matrix re-run pending.
+  `position_ids`, `attention_mask`, `state`. Eager: `(1, 16, 7)`, finite. Re-run: the original
+  error is gone, but `export_cpu` is SIGKILLed (OOM) after 289 s, before the `.pte` is written
+  (see molmoact2 below).
 - **Matrix script** (`scripts/executorch_support_matrix.py`). The run step feeds the `.pte` the
   inputs listed in the exported `manifest.json` (`input_names`), cast to fp32, instead of the full
-  sample (needed for rldx1). The eager reference is still computed before policy export prep, so
-  `diff_cpu` stays `—` for xr0 / rldx1.
+  sample (needed for rldx1). The eager reference is computed after export, on the same inputs, so
+  policy export prep (xr0 `tokenized_prompt` alias, rldx1 graph-safe swap) is applied. Before, it
+  ran on the un-prepared policy and failed for xr0 with `ValueError: You must specify exactly one
+  of input_ids or inputs_embeds`.
 - **LeRobot pi05 / pi0_fast host-normalized state** (`policies/lerobot/policy.py`). Fixed
   `KeyError: 'observation.language.tokens'`. `Pi05PrepareStateTokenizerProcessorStep` /
   `Pi0FastPrepareStateAndLanguageTokenizerProcessorStep` discretize the *normalized* state into the
@@ -292,12 +303,13 @@ Exact for 1-D sorted boundaries. Next possible blocker: the boolean `index_put`
 `position_ids[mask] = pos_ids[mask]` in the same function (all-true mask for smolvla, so it can be
 replaced by `arange` if the partitioner rejects it).
 
-### physicalai molmoact2 — `CRASH rc=-9`
+### physicalai molmoact2 / rldx1 — `CRASH rc=-9`
 
-**Cause.** SIGKILL after 823 s with no Python traceback: almost certainly the kernel OOM killer. Weights alone
-are ~22 GB in fp32 (5.4B params); ExecuTorch lowering holds several copies of the model
-(exported program, edge program, delegate blob, serialized `.pte`), which can exceed 93 GB RAM.
-rldx1 (6.9B), xr0 (4.7B) and pi05 (4.1B) may hit the same limit once their other issues are fixed.
+**Cause.** SIGKILL with no Python traceback (molmoact2 after 823 s, rldx1 after 289 s, both in
+`export_cpu`): almost certainly the kernel OOM killer. fp32 weights alone are ~22 GB for molmoact2
+(5.4B params) and ~28 GB for rldx1 (6.9B, Qwen3-VL-8B backbone + 1.2B MSAT); ExecuTorch lowering
+holds several copies of the model (exported program, edge program, delegate blob, serialized
+`.pte`), which can exceed 93 GB RAM. xr0 (4.7B) and pi05 (4.1B) export within 93 GB.
 
 **Fix.** First measure peak RSS per stage (`torch.export`, `to_edge_transform_and_lower` /
 OpenVINO compile, `to_executorch` + serialization). If the peak is in the ExecuTorch stages (likely:
@@ -311,8 +323,9 @@ The script now reports this case as `OOM? (SIGKILL)`.
 
 1. ExecuTorch / OpenVINO: `aten.bucketize.Tensor` support (FX op table + partitioner
    `ops_to_not_decompose`) → unblocks smolvla in both sources; library decomposition as fallback.
-2. ExecuTorch: measure molmoact2 peak RSS per stage; reduce lowering memory if it is ET-side.
-3. Re-run the matrix for xr0 and rldx1 (`to_executorch` overrides done); memory may be the next limit.
+2. ExecuTorch: measure molmoact2 / rldx1 peak RSS per stage; reduce lowering memory if it is
+   ET-side.
+3. (done) xr0 re-run passes; rldx1 re-run gets past the export fix and hits OOM (step 2).
 4. xvla: OpenVINO `AtenIndexPutReplacer` fix for `None` indices + scalar value (library mask
    fallback for `JointActionSpace.pre/postprocess`); upstream the static `forward_vlm` to LeRobot.
 5. Library: dedicated groot export module (shared Qwen3-VL export patches with XR0).
