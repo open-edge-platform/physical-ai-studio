@@ -133,3 +133,32 @@ def test_first_party_engine_exposes_policy_schema_and_capabilities() -> None:
 def test_studio_owned_first_party_run_path_remains_separate() -> None:
     with pytest.raises(NotImplementedError, match="run_training_job"):
         Trainer.run({}, dataset=Path("dataset"), output_dir=Path("output"), device="cpu")
+
+
+def test_policy_names_resolve_without_importing_unrelated_policies(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A short name imports only its own policy; a class path skips policies that fail to import."""
+    import physicalai.policies as policies
+    from physicalai.train import trainer as trainer_module
+
+    class SmolVLA(Policy):  # type: ignore[misc]
+        pass
+
+    imported: list[str] = []
+
+    def get_class(name: str) -> type[Policy]:
+        imported.append(name)
+        if name == "act":
+            msg = "an unrelated optional dependency is missing"
+            raise ImportError(msg)
+        return SmolVLA
+
+    monkeypatch.setattr(policies, "list_physicalai_policies", lambda: ["act", "smolvla"])
+    monkeypatch.setattr(policies, "get_physicalai_policy_class", get_class)
+
+    assert trainer_module._resolve_policy_class("smolvla", Policy) is SmolVLA
+    assert imported == ["smolvla"]
+    imported.clear()
+    assert trainer_module._resolve_policy_class(f"{SmolVLA.__module__}.SmolVLA", Policy) is SmolVLA
+    assert imported == ["act", "smolvla"]
+    with pytest.raises(ValueError, match="Unknown first-party policy class 'nope'"):
+        trainer_module._resolve_policy_class("nope", Policy)

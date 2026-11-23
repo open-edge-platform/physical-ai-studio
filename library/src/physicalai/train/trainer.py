@@ -426,10 +426,17 @@ def _resolve_policy_class(policy_class: str | type[Any], policy_base: type[Any])
             raise TypeError(msg)
         return policy_class
 
-    for name in list_physicalai_policies():
-        candidate = get_physicalai_policy_class(name)
-        class_path = f"{candidate.__module__}.{candidate.__name__}"
-        if policy_class in {name, class_path}:
+    names = list_physicalai_policies()
+    if policy_class in names:
+        return get_physicalai_policy_class(policy_class)
+    # A class path: import candidates one by one, skipping policies whose optional
+    # dependencies are not installed.
+    for name in names:
+        try:
+            candidate = get_physicalai_policy_class(name)
+        except ImportError:
+            continue
+        if policy_class == f"{candidate.__module__}.{candidate.__name__}":
             return candidate
     msg = f"Unknown first-party policy class {policy_class!r}."
     raise ValueError(msg)
