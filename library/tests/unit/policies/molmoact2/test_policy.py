@@ -1017,7 +1017,7 @@ def test_load_from_checkpoint_preserves_normalization_and_training_arguments(
     assert restored.scheduler_decay_lr == 1e-6
 
 
-def test_configure_optimizers_scales_manual_horizon_to_estimated_step_budget(
+def test_configure_optimizers_preserves_manual_horizon_beyond_step_budget(
     tiny_molmoact2_config: MolmoAct2Config,
 ) -> None:
     policy = MolmoAct2.from_config(
@@ -1040,9 +1040,10 @@ def test_configure_optimizers_scales_manual_horizon_to_estimated_step_budget(
     scheduler = scheduler_config["scheduler"]
 
     assert scheduler_config["interval"] == "step"
-    assert all(group["lr"] == pytest.approx(group["initial_lr"] / 21) for group in optimizer.param_groups)
+    assert all(group["lr"] == pytest.approx(group["initial_lr"] / 200) for group in optimizer.param_groups)
     assert scheduler.get_last_lr() == pytest.approx([group["lr"] for group in optimizer.param_groups])
-    assert scheduler.lr_lambdas[0](3_000) == pytest.approx(1e-6 / 1e-5)
+    assert scheduler.lr_lambdas[0](3_000) > 1e-6 / 1e-5
+    assert scheduler.lr_lambdas[0](29_999) == pytest.approx(1e-6 / 1e-5)
 
 
 def test_configure_optimizers_uses_training_length_when_decay_steps_are_none(
@@ -1061,8 +1062,8 @@ def test_configure_optimizers_uses_training_length_when_decay_steps_are_none(
 
     scheduler = policy.configure_optimizers()["lr_scheduler"]["scheduler"]
 
-    assert scheduler.lr_lambdas[0](99) == pytest.approx(100 / 201)
-    assert scheduler.lr_lambdas[0](199) == pytest.approx(200 / 201)
+    assert scheduler.lr_lambdas[0](99) == pytest.approx(100 / 200)
+    assert scheduler.lr_lambdas[0](199) == pytest.approx(1.0)
     assert scheduler.lr_lambdas[0](3_000) == pytest.approx(1e-6 / 1e-5)
 
 
@@ -1079,8 +1080,9 @@ def test_training_defaults_match_verified_optimizer_recipe() -> None:
     assert policy.adapt_to_so101 is False
     assert policy.calibration is None
     assert policy.preserve_pretrained_normalization_in_training is False
-    assert policy.gradient_checkpointing is False
-    assert policy.use_random_input_noise is False
+    assert policy.gradient_checkpointing is True
+    assert policy.freeze_vocab is True
+    assert policy.use_random_input_noise is True
     assert policy.lora_enabled is False
     assert policy.lora_rank == 64
     assert policy.lora_alpha == 16
@@ -1107,6 +1109,13 @@ def test_from_config_defaults_match_init_defaults() -> None:
             continue
         assert name in init_parameters
         assert parameter.default == init_parameters[name].default
+
+
+def test_explicit_zero_noise_policy_option_is_preserved() -> None:
+    policy = MolmoAct2(pretrained_name_or_path=None, use_random_input_noise=False)
+
+    assert policy.use_random_input_noise is False
+    assert policy.hparams["use_random_input_noise"] is False
 
 
 def test_from_config_uses_explicit_tokenizer_json_path(

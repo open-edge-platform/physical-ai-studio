@@ -26,8 +26,9 @@ class RMSNorm(nn.Module):
         Returns:
             The RMS-normalized tensor, preserving the input dtype.
         """
-        out_dtype = x.dtype
-        normalized = x.to(torch.float32)
-        normalized = normalized * torch.rsqrt(normalized.pow(2).mean(-1, keepdim=True) + self.eps)  # noqa: PLR6104
-        normalized = normalized.to(out_dtype)
-        return normalized if self.weight is None else normalized * self.weight
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            normalized = x.to(torch.float32)
+            normalized = normalized * torch.rsqrt(normalized.pow(2).mean(-1, keepdim=True) + self.eps)  # noqa: PLR6104
+            if self.weight is not None:
+                normalized = self.weight.float() * normalized
+            return normalized.to(x.dtype)

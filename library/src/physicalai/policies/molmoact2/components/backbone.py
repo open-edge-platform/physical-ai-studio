@@ -235,15 +235,15 @@ class MolmoAct2Backbone(nn.Module):
         action_dim_is_pad: torch.Tensor | None = None,
         action_horizon: int,
         num_steps: int | None = None,
-        sample_noise: bool = False,
+        sample_noise: bool = True,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Continuous flow-matching action generation.
 
         Encodes text+vision, collects per-layer KV, then Euler-integrates the
-        action expert's velocity field. Integration starts from zeros by default
-        (deterministic, export-friendly); set ``sample_noise`` to start from a
-        sampled Gaussian vector instead.
+        action expert's velocity field. Integration starts from Gaussian noise
+        by default. Seed ``generator`` for reproducible sampling, or explicitly
+        pass ``sample_noise=False`` to start from zeros.
 
         Returns:
             Action trajectory ``(batch, action_horizon, max_action_dim)``.

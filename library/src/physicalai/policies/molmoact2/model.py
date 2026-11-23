@@ -12,13 +12,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, override
 
 import torch
-from safetensors.torch import load_file as load_safetensors_file
-from torch import Tensor
-from torch.nn import functional
-
 from physicalai.data.observation import ACTION, FeatureType
 from physicalai.policies.base import Model
 from physicalai.policies.mixins.peft import PeftModelMixin
+from safetensors.torch import load_file as load_safetensors_file
+from torch import Tensor
+from torch.nn import functional
 
 from .components import (
     ActionExpert,
@@ -198,7 +197,7 @@ class MolmoAct2Model(PeftModelMixin, Model):
         flow_matching_beta_beta: float = 1.5,
         chunk_size: int = 30,
         action_dim: int | None = None,
-        use_random_input_noise: bool = False,
+        use_random_input_noise: bool = True,
     ) -> None:
         """Construct the text, vision, and action components."""
         super().__init__()
@@ -478,7 +477,7 @@ class MolmoAct2Model(PeftModelMixin, Model):
         Returns:
             Denoised action MSE and detached action-MSE and flow-loss metrics.
         """
-        predicted = self.predict_action_chunk(batch, sample_noise=False)
+        predicted = self.predict_action_chunk(batch)
         target = batch[ACTION][:, : predicted.shape[1], : predicted.shape[2]].to(predicted)
         horizon_mask = batch.get("action_horizon_is_pad")
         if horizon_mask is not None:

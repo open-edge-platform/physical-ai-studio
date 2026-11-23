@@ -14,8 +14,6 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal, override
 
 import torch
-from torch import Tensor
-
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import (
     ACTION,
@@ -27,7 +25,10 @@ from physicalai.policies.base import Policy
 from physicalai.policies.mixins.peft import PeftPolicyMixin, is_lora_injected
 from physicalai.policies.utils.deprecation import deprecate
 from physicalai.policies.utils.features import get_feature_by_type
+from torch import Tensor
 
+from .components.rms_norm import RMSNorm
+from .components.text import MolmoAct2RotaryEmbedding
 from .config import MolmoAct2Config
 from .export import MolmoAct2ExportMixin
 from .from_hf import MolmoAct2FromHFMixin
@@ -42,7 +43,6 @@ from .so101 import load_so101_calibration, make_so101_joint_transform
 
 if TYPE_CHECKING:
     from lightning.pytorch.utilities.types import OptimizerLRScheduler
-
     from physicalai.gyms import Gym
     from physicalai.policies.utils import JointFrameTransform
 
@@ -133,8 +133,9 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         # weight management
         compile_model: bool = False,
         openvino_compress_to_fp16: bool = False,
-        gradient_checkpointing: bool = False,
-        use_random_input_noise: bool = False,
+        gradient_checkpointing: bool = True,
+        freeze_vocab: bool = True,
+        use_random_input_noise: bool = True,
         lora_enabled: bool = False,
         lora_rank: int = 64,
         lora_alpha: int | None = 16,
@@ -185,6 +186,8 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             compile_model: Whether to compile model action generation. Training remains eager.
             openvino_compress_to_fp16: Whether OpenVINO export compresses FP32 constants to FP16.
             gradient_checkpointing: Whether to enable gradient checkpointing on the model.
+            freeze_vocab: Whether fitting freezes the base vocabulary embedding, leaving
+                the additional token table trainable.
             use_random_input_noise: Whether action generation starts from Gaussian noise.
             lora_enabled: Whether to enable LoRA or DoRA adapters on the model.
             lora_rank: LoRA rank.
@@ -239,6 +242,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         self.compile_model = compile_model
         self.openvino_compress_to_fp16 = openvino_compress_to_fp16
         self.gradient_checkpointing = gradient_checkpointing
+        self.freeze_vocab = freeze_vocab
         self.use_random_input_noise = use_random_input_noise
         self.lora_enabled = lora_enabled
         self.lora_rank = lora_rank
@@ -288,7 +292,8 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         preserve_pretrained_normalization_in_training: bool = False,
         compile_model: bool = False,
         openvino_compress_to_fp16: bool = False,
-        gradient_checkpointing: bool = False,
+        gradient_checkpointing: bool = True,
+        freeze_vocab: bool = True,
         train_action_head_only: bool = False,
         tokenizer_json_path: str | Path | None = None,
         optimizer_lr: float = 5e-5,
@@ -313,6 +318,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             compile_model: Whether to compile model action generation. Training remains eager.
             openvino_compress_to_fp16: Whether OpenVINO export compresses FP32 constants to FP16.
             gradient_checkpointing: Whether to enable gradient checkpointing on the model.
+            freeze_vocab: Whether fitting freezes the base vocabulary embedding.
             train_action_head_only: Whether to freeze the VLM and train only the action head.
             tokenizer_json_path: Optional local tokenizer.json file or directory containing it.
             optimizer_lr: Learning rate for text-model parameters.
@@ -346,6 +352,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             compile_model=compile_model,
             openvino_compress_to_fp16=openvino_compress_to_fp16,
             gradient_checkpointing=gradient_checkpointing,
+            freeze_vocab=freeze_vocab,
             use_random_input_noise=config.use_random_input_noise,
             lora_enabled=config.lora_enabled,
             lora_rank=config.lora_rank,
@@ -751,6 +758,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
                         "replacing them with the dataset features and normalization statistics.",
                     )
                     self.set_features(dataset_input_features, dataset_output_features)
+            self._prepare_training_parameters()
             return
 
         if self.adapt_to_so101:
@@ -768,6 +776,35 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         self.input_features = dataset_input_features
         self.output_features = dataset_output_features
         self.initialize_model()
+        self._prepare_training_parameters()
+
+    def _prepare_training_parameters(self) -> None:
+        """Match upstream storage without BF16-rounding the FP32-retained tensors."""
+        model = self._require_model()
+        backbone = model.backbone.model
+        if self.freeze_vocab:
+            backbone.transformer.wte.embedding.requires_grad_(requires_grad=False)
+        if self.trainer.precision != "bf16-mixed":
+            return
+
+        fp32_modules = {
+            id(module)
+            for module in model.modules()
+            if isinstance(module, (torch.nn.LayerNorm, RMSNorm, MolmoAct2RotaryEmbedding))
+        }
+        if backbone.action_expert is not None:
+            fp32_modules.update(id(module) for module in backbone.action_expert.modules())
+        for name, module in model.named_modules():
+            if id(module) in fp32_modules:
+                continue
+            # PEFT adapters retain their independently configured storage precision.
+            if self.lora_adapter_dtype == "float32" and any(part.startswith("lora_") for part in name.split(".")):
+                continue
+            for parameter in module.parameters(recurse=False):
+                parameter.data = parameter.data.to(torch.bfloat16)
+            for buffer_name, buffer in module.named_buffers(recurse=False):
+                if buffer.is_floating_point():
+                    module._buffers[buffer_name] = buffer.to(torch.bfloat16)  # noqa: SLF001
 
     @staticmethod
     def _dataset_features(dataset: Dataset) -> tuple[list[Feature], list[Feature]]:
