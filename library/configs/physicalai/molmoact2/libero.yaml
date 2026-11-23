@@ -1,8 +1,6 @@
 # Continue the released LIBERO policy for 10k optimizer updates on one GPU.
 # Usage (install the molmoact2 extra first):
 #   physicalai fit --config configs/physicalai/molmoact2/libero.yaml
-# Training only: no simulator or camera renaming is needed.
-seed_everything: 42
 
 model:
   class_path: physicalai.policies.MolmoAct2
