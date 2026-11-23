@@ -8,7 +8,11 @@ from unittest.mock import Mock
 
 import pytest
 import torch
+from lightning import LightningDataModule
+from lightning.pytorch import Trainer
+from torch.utils.data import DataLoader
 
+from physicalai.data import Observation
 from physicalai.data.dataset import Dataset
 from physicalai.policies.molmoact2 import MolmoAct2, MolmoAct2Config
 from physicalai.policies.molmoact2.components.rms_norm import RMSNorm
@@ -143,3 +147,105 @@ def test_action_expert_uses_bf16_compute_with_fp32_gradients_and_moments(
     optimizer.step()
     assert optimizer.state[projection.weight]["exp_avg"].dtype == torch.float32
     assert optimizer.state[projection.weight]["exp_avg_sq"].dtype == torch.float32
+
+
+@pytest.mark.parametrize("autocast", [False, True])
+def test_kv_projection_accepts_bf16_context_with_fp32_weights(
+    tiny_molmoact2_config: MolmoAct2Config,
+    autocast: bool,
+) -> None:
+    policy = MolmoAct2.from_config(tiny_molmoact2_config)
+    expert = policy.model.backbone.model.action_expert
+    projection = expert.context_k_proj
+    context = torch.randn(1, 3, projection.in_features, dtype=torch.bfloat16, requires_grad=True)
+
+    with torch.autocast("cpu", dtype=torch.bfloat16, enabled=autocast):
+        projected = expert._project_kv(context, projection)
+
+    assert projected.dtype == (torch.bfloat16 if autocast else torch.float32)
+    assert torch.isfinite(projected).all()
+    projected.float().square().mean().backward()
+    assert context.grad is not None
+    assert torch.isfinite(context.grad).all()
+    assert projection.weight.grad.dtype == torch.float32
+    assert torch.isfinite(projection.weight.grad).all()
+
+
+def test_direct_prediction_after_bf16_mixed_fit(
+    tiny_molmoact2_config: MolmoAct2Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(
+        tiny_molmoact2_config,
+        flow_matching_num_steps=1,
+        num_flow_timesteps=1,
+        image_start_token_id=64,
+        image_end_token_id=65,
+        image_patch_id=66,
+        image_placeholder_token_id=67,
+        low_res_image_start_token_id=64,
+        image_use_col_tokens=False,
+        image_processor_size={"height": 28, "width": 28},
+    )
+    policy = MolmoAct2.from_config(config)
+    # Keep real observation/image processing, but avoid downloading a tokenizer.
+    monkeypatch.setattr(
+        policy._preprocessor._tokenizers,
+        "tokenize_prompts",
+        lambda _: (torch.tensor([[1, 67, 2]]), torch.ones(1, 3, dtype=torch.long)),
+    )
+    monkeypatch.setattr(type(policy._preprocessor._tokenizers), "pad_token_id", property(lambda _: 0))
+    observation = Observation(
+        images={"image": torch.rand(1, 3, 28, 28)},
+        state=torch.zeros(1, 4),
+        action=torch.zeros(1, config.chunk_size, 4),
+        task=["pick up the object"],
+    )
+    datamodule = LightningDataModule()
+    datamodule.train_dataset = Mock(spec=Dataset)
+    datamodule.train_dataset.observation_features = {feature.name: feature for feature in config.input_features}
+    datamodule.train_dataset.action_features = {feature.name: feature for feature in config.output_features}
+    monkeypatch.setattr(datamodule, "train_dataloader", lambda: DataLoader([observation], batch_size=None))
+    trainer = Trainer(
+        accelerator="cpu",
+        devices=1,
+        precision="bf16-mixed",
+        max_steps=1,
+        limit_val_batches=0,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.fit(policy, datamodule=datamodule)
+
+    assert trainer.global_step == 1
+    assert policy.model.backbone.lm_head.weight.dtype == torch.bfloat16
+    assert policy.model.backbone.model.action_expert.context_k_proj.weight.dtype == torch.float32
+    assert not torch.is_autocast_enabled("cpu")
+    actions = policy.eval().predict_action_chunk(observation)
+
+    assert actions.shape == (1, config.chunk_size, 4)
+    assert actions.dtype == torch.float32
+    assert torch.isfinite(actions).all()
+
+
+def test_mixed_storage_kv_projection_can_be_traced(tiny_molmoact2_config: MolmoAct2Config) -> None:
+    policy = MolmoAct2.from_config(tiny_molmoact2_config)
+
+    class KVProjection(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.expert = policy.model.backbone.model.action_expert
+
+        def forward(self, context: torch.Tensor) -> torch.Tensor:
+            return self.expert._project_kv(context, self.expert.context_k_proj)
+
+    module = KVProjection().eval()
+    context = torch.randn(1, 3, module.expert.context_k_proj.in_features, dtype=torch.bfloat16)
+    traced = torch.jit.trace(module, context)
+    actual = traced(context)
+
+    assert actual.dtype == torch.float32
+    assert torch.isfinite(actual).all()
+    torch.testing.assert_close(actual, module(context))
