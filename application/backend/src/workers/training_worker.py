@@ -69,6 +69,10 @@ class TrainingWorker(ProcessWorker[None]):
                 if payload.training_target == TrainingTarget.LOCAL:
                     payload = TrainJobRequestAdapter.validate_python(payload.model_dump())
                     payload = await LocalTrainingTargetHandler().prepare(payload)
+                elif not payload.remote_job_id:
+                    # New remote work must not silently discard fields from another branch.
+                    # Reattachment only observes an existing execution; it does not resubmit its configuration.
+                    payload = TrainJobPayloadAdapter.validate_python(payload.model_dump(), extra="forbid")
                 await self._run_training_job(job, payload)
             except Exception as error:
                 logger.exception("Training job {} failed during preparation", job.id)
