@@ -243,3 +243,44 @@ def test_worker_runner_rejects_invalid_protocol_before_accepting_progress(
 
     with pytest.raises(RuntimeError, match="first protocol message must be a hello"):
         run_worker(env, [], device="cpu", hooks=None, interpreter=sys.executable)
+
+
+def test_worker_runner_reports_the_worker_error_when_it_exits_right_away(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A worker that fails immediately is reported by its own error, not as a handshake or exit failure."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    env = _worker_env(
+        tmp_path,
+        _protocol_writer(
+            "{'type': 'hello', 'protocol': 1, 'framework': 'demo', 'package': 'lerobot', 'version': '0.6.1'}",
+            "{'type': 'error', 'error': 'ValueError', 'message': 'bad dataset'}",
+        )
+        + "\nsys.exit(1)\n",
+    )
+    read_protocol = _runner._read_protocol
+
+    def slow_reader(*args: object) -> None:
+        # Let the worker exit before its events are read, as on a busy host.
+        import time
+
+        time.sleep(0.5)
+        read_protocol(*args)
+
+    monkeypatch.setattr(_runner, "_read_protocol", slow_reader)
+
+    with pytest.raises(RuntimeError, match="demo worker raised ValueError: bad dataset"):
+        run_worker(env, [], device="cpu", interpreter=sys.executable)
+
+
+def test_worker_runner_shows_worker_output_when_it_fails_before_the_handshake(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A worker that dies before its handshake reports what it printed, such as its traceback."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    env = _worker_env(tmp_path, "import physicalai_missing_worker_dependency\n")
+
+    with pytest.raises(_runner.WorkerProtocolError, match="No module named 'physicalai_missing_worker_dependency'"):
+        run_worker(env, [], device="cpu", interpreter=sys.executable)

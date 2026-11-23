@@ -13,6 +13,7 @@ import selectors
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Unmanaged workers use argv lists with shell=False.  # nosec B404
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from importlib import resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
@@ -36,6 +37,11 @@ _PROTOCOL_PREFIX = bytes([30]) + b"physicalai-worker "
 _STARTUP_TIMEOUT_SECONDS = 60.0
 _CANCEL_GRACE_SECONDS = 5.0
 _TERMINATE_GRACE_SECONDS = 5.0
+# After the worker exits, keep reading its events until stderr closes, or this long if a
+# child process holds stderr open.
+_EOF_GRACE_SECONDS = 2.0
+# Worker output kept for errors raised before the worker reports anything itself.
+_STDERR_TAIL_LINES = 20
 _STREAM_CHUNK_ENCODING = "utf-8"
 
 
@@ -79,6 +85,8 @@ class _WorkerState:
     termination_sent_at: float | None = None
     threads: tuple[threading.Thread, ...] = ()
     protocol_reader_stop: threading.Event = field(default_factory=threading.Event)
+    exited_at: float | None = None
+    stderr_tail: deque[str] = field(default_factory=lambda: deque(maxlen=_STDERR_TAIL_LINES))
 
     def consume(self, event: dict[str, Any] | BaseException | _ProtocolEOF) -> None:
         if event is _PROTOCOL_EOF:
@@ -287,6 +295,7 @@ def _start_worker(
             events,
             state.protocol_reader_stop,
             f"{engine_env.framework} worker stderr",
+            state.stderr_tail,
         ),
         name=f"{engine_env.framework}-worker-protocol",
         daemon=True,
@@ -313,11 +322,15 @@ def _wait_for_worker(state: _WorkerState) -> int:
         state.check_control(time.monotonic())
         terminal_message_received = state.result is not None or state.worker_error is not None or state.cancelled
         return_code = state.process.poll()
-        if (
-            return_code is not None
-            and (state.protocol_closed or terminal_message_received or return_code != 0)
-            and state.events.empty()
-        ):
+        if return_code is None:
+            continue
+        now = time.monotonic()
+        if state.exited_at is None:
+            state.exited_at = now
+        # A worker can exit before its last events are read; wait for stderr to close so a fast
+        # failure is reported by its own error rather than as a handshake or exit-status failure.
+        drained = state.protocol_closed or now - state.exited_at >= _EOF_GRACE_SECONDS
+        if state.events.empty() and (drained or terminal_message_received):
             return state.process.wait()
 
 
@@ -339,7 +352,7 @@ def _close_worker(state: _WorkerState) -> None:
 
 def _worker_result(state: _WorkerState, return_code: int) -> Run:
     if not state.hello_received:
-        msg = f"{state.env.framework} worker exited before completing its version handshake."
+        msg = f"{state.env.framework} worker exited before completing its version handshake.{_output_tail(state)}"
         raise WorkerProtocolError(msg)
     if state.cancelled or (
         state.cancellation_sent_at is not None and state.result is None and state.worker_error is None
@@ -350,7 +363,7 @@ def _worker_result(state: _WorkerState, return_code: int) -> Run:
         msg = f"{state.env.framework} worker raised {error_type}: {error_message}"
         raise RuntimeError(msg)
     if return_code != 0:
-        msg = f"{state.env.framework} worker exited with status {return_code}."
+        msg = f"{state.env.framework} worker exited with status {return_code}.{_output_tail(state)}"
         raise RuntimeError(msg)
     if state.result is None:
         return Run(framework=state.env.framework, output_dir=None, checkpoint=None)
@@ -361,11 +374,18 @@ def _worker_result(state: _WorkerState, return_code: int) -> Run:
     )
 
 
+def _output_tail(state: _WorkerState) -> str:
+    if not state.stderr_tail:
+        return ""
+    return "\nLast worker output:\n" + "\n".join(state.stderr_tail)
+
+
 def _read_protocol(
     stream: BinaryIO | None,
     events: queue.Queue[dict[str, Any] | BaseException | _ProtocolEOF],
     stop: threading.Event,
     label: str,
+    tail: deque[str] | None = None,
 ) -> None:
     try:
         if stream is None:
@@ -384,10 +404,10 @@ def _read_protocol(
                 while b"\n" in pending:
                     line, _, rest = pending.partition(b"\n")
                     pending = bytearray(rest)
-                    if not _read_protocol_line(bytes(line), events, label):
+                    if not _read_protocol_line(bytes(line), events, label, tail):
                         return
             if pending and not stop.is_set():
-                _read_protocol_line(bytes(pending), events, label)
+                _read_protocol_line(bytes(pending), events, label, tail)
     except (OSError, ValueError) as exc:
         events.put(exc)
     finally:
@@ -398,6 +418,7 @@ def _read_protocol_line(
     line: bytes,
     events: queue.Queue[dict[str, Any] | BaseException | _ProtocolEOF],
     label: str,
+    tail: deque[str] | None = None,
 ) -> bool:
     # Console progress may share stderr without a newline before the tagged event.
     protocol_offset = line.find(_PROTOCOL_PREFIX)
@@ -405,11 +426,15 @@ def _read_protocol_line(
         text = line[:protocol_offset].decode(_STREAM_CHUNK_ENCODING, errors="replace").rstrip("\r")
         if text:
             logger.info("%s: %s", label, text)
+            if tail is not None:
+                tail.append(text)
         payload = line[protocol_offset + len(_PROTOCOL_PREFIX) :].rstrip(b"\r")
         return _enqueue_protocol_line(payload, events)
     text = line.decode(_STREAM_CHUNK_ENCODING, errors="replace").rstrip("\r")
     if text:
         logger.info("%s: %s", label, text)
+        if tail is not None:
+            tail.append(text)
     return True
 
 
