@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    import builtins
     from collections.abc import Awaitable, Callable
 
     from physicalai.capture import Camera
@@ -78,7 +79,7 @@ class CameraCatalogDefinition[PayloadT: BaseModel]:
 
     type: str
     display_name: str
-    camera_payload: type[PayloadT]
+    camera_payload: builtins.type[PayloadT]
     camera_builder: Callable[[CatalogCamera[PayloadT], CatalogCameraFactory], Awaitable[Camera]] | None = None
     probe: CameraProbe[PayloadT] | None = None
     claim_policy: CameraClaimPolicy = CameraClaimPolicy.SHARED_MATCHING_SETTINGS

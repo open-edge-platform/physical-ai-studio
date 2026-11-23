@@ -31,7 +31,7 @@ def camera(driver="usb_camera", fingerprint=None, payload=None):
     "driver,class_path,identity",
     [
         ("usb_camera", "physicalai.capture.UVCCamera", {"device": {"serial": "test-camera"}}),
-        ("realsense", "physicalai.capture.RealSenseCamera", {"serial_number": "test-camera"}),
+        ("realsense", "physicalai.capture.RealSenseCamera", {"serial_number": "test-camera", "enable_depth": False}),
         ("basler", "physicalai.capture.BaslerCamera", {"serial_number": "test-camera"}),
         ("ipcam", "physicalai.capture.IPCamera", {"url": "http://127.0.0.1:5000/mjpeg"}),
     ],
@@ -127,6 +127,7 @@ def test_exclusive_policy_applies_to_current_session_claims(monkeypatch):
         robot_factory=Mock(),
         resolve=Mock(),
     )
-    with pytest.raises(CameraExclusiveUseError), session._claim(SimpleNamespace(cameras={"cam": row}, robot_names={})):
+    description = SimpleNamespace(cameras={"cam": row}, robot_names={}, simulation_owner=None)
+    with pytest.raises(CameraExclusiveUseError), session._claim(description):
         pytest.fail("Exclusive camera was shared")
     sessions.release_robots.assert_called_once_with(session)
