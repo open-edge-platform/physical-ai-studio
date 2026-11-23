@@ -742,8 +742,10 @@ def test_setup_uses_dataset_normalization_when_uninitialized(
     trainer.datamodule.train_dataset = Mock(spec=Dataset)
     policy._trainer = trainer
     initialize_model = Mock()
+    prepare_training_parameters = Mock()
     monkeypatch.setattr(policy, "_dataset_features", lambda _dataset: (dataset_inputs, dataset_outputs))
     monkeypatch.setattr(policy, "initialize_model", initialize_model)
+    monkeypatch.setattr(policy, "_prepare_training_parameters", prepare_training_parameters)
 
     policy.setup("fit")
 
@@ -751,6 +753,7 @@ def test_setup_uses_dataset_normalization_when_uninitialized(
     assert policy.input_features == dataset_inputs
     assert policy.output_features == dataset_outputs
     initialize_model.assert_called_once_with()
+    prepare_training_parameters.assert_called_once_with()
 
 
 def test_setup_warns_when_dataset_quantiles_are_missing(
@@ -771,12 +774,15 @@ def test_setup_warns_when_dataset_quantiles_are_missing(
     policy._trainer = trainer
     monkeypatch.setattr(policy, "_dataset_features", lambda _dataset: (dataset_inputs, dataset_outputs))
     monkeypatch.setattr(policy, "initialize_model", Mock())
+    prepare_training_parameters = Mock()
+    monkeypatch.setattr(policy, "_prepare_training_parameters", prepare_training_parameters)
 
     with caplog.at_level("WARNING"):
         policy.setup("fit")
 
     assert "missing q01/q99 statistics for: action" in caplog.text
     assert "lerobot.scripts.augment_dataset_quantile_stats" in caplog.text
+    prepare_training_parameters.assert_called_once_with()
 
 
 def test_setup_transforms_dataset_normalization_in_adapted_mode(
