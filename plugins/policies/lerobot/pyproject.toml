@@ -12,13 +12,15 @@ license = "Apache-2.0"
 dependencies = [
     "physicalai>=0.4.1.dev0,<0.5",
     "lerobot[dataset]>=0.7,<0.8",
+    # LeRobot's Diffusion policy imports Diffusers at inference time; floor for CVE-2026-44827.
+    # No upper bound here: the training worker gets LeRobot's own range in its locked project.
+    "diffusers>=0.38.0",
 ]
 
 [project.optional-dependencies]
 train = [
     "physicalai-train>=0.3.0",
     "lerobot[training]",
-    "diffusers>=0.38.0,<0.40.0",
 ]
 tests = ["pytest>=9.0.3"]
 

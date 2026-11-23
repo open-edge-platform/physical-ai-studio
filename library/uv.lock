@@ -3742,20 +3742,20 @@ name = "physicalai-lerobot-policy-plugin"
 version = "0.1.0"
 source = { editable = "../plugins/policies/lerobot" }
 dependencies = [
+    { name = "diffusers" },
     { name = "lerobot", extra = ["dataset"] },
     { name = "physicalai" },
 ]
 
 [package.optional-dependencies]
 train = [
-    { name = "diffusers" },
     { name = "lerobot", extra = ["training"] },
     { name = "physicalai-train" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "diffusers", marker = "extra == 'train'", specifier = ">=0.38.0,<0.40.0" },
+    { name = "diffusers", specifier = ">=0.38.0" },
     { name = "lerobot", extras = ["dataset"], specifier = ">=0.7,<0.8" },
     { name = "lerobot", extras = ["training"], marker = "extra == 'train'" },
     { name = "physicalai", git = "https://github.com/n3puiol/physicalai.git?rev=08f33c6b442ab17b8537769f816fbe41d15e5bcf" },
