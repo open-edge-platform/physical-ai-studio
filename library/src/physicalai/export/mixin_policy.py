@@ -255,10 +255,10 @@ class ExportablePolicyMixin:
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
                 callbacks=callbacks or [],
-                observation_history=observation_history,
                 input_features=extras.pop("input_features", []),
                 output_features=extras.pop("output_features", []),
             ),
+            observation_history=observation_history,
             **extras,
         )
         manifest.save(export_dir / "manifest.json")

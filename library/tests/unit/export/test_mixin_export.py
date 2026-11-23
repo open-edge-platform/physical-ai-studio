@@ -3,6 +3,7 @@
 
 """Unit tests for mixin_export module."""
 
+import json
 import logging
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,7 @@ import pytest
 import torch
 
 from physicalai.export.backends import (
+    ExecuTorchExportParameters,
     ExportParameters,
     ONNXExportParameters,
     OpenVINOExportParameters,
@@ -175,7 +177,7 @@ class ExportWrapper(ExportablePolicyMixin):
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
-        return [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
+        return [ExportBackend.TORCH, ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
 
 
 class TestToOnnx:
@@ -351,24 +353,33 @@ class TestQuietOnnxExportLogs:
             onnxscript_logger.setLevel(logging.NOTSET)
 
 
-class TestToOpenVINO:
-    """Tests for to_openvino method."""
+class TestObservationHistory:
+    """Tests for runtime sampling requirements in exported manifests."""
 
+    @pytest.mark.parametrize("backend", [ExportBackend.TORCH, ExportBackend.ONNX, ExportBackend.OPENVINO])
     @pytest.mark.parametrize("history", [None, ObservationHistorySpec(n_obs_steps=3, stride=2)])
-    def test_exports_observation_history(self, tmp_path: Path, history: ObservationHistorySpec | None) -> None:
+    def test_exports_observation_history(
+        self, tmp_path: Path, backend: ExportBackend, history: ObservationHistorySpec | None
+    ) -> None:
         """Sampling requirements round-trip without inserting a preprocessor."""
         wrapper = ExportWrapper(ModelWithSampleInput())
-        wrapper._extra_export_args[ExportBackend.OPENVINO] = OpenVINOExportParameters(
-            observation_history=history,
-        )
+        wrapper._extra_export_args[backend] = backend.parameter_class(observation_history=history)
 
-        wrapper.to_openvino(tmp_path / "model.xml")
+        wrapper.export(backend=backend, output_path=tmp_path / f"model{backend.extension}")
 
         manifest = Manifest.load(tmp_path)
-        assert manifest.model.observation_history == history
+        assert manifest.observation_history == history
         assert manifest.model.preprocessors == []
-        if history is not None:
-            assert manifest.model.model_dump()["observation_history"] == {"n_obs_steps": 3, "stride": 2}
+        raw = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+        assert "observation_history" not in raw["model"]
+        if history is None:
+            assert "observation_history" not in raw
+        else:
+            assert raw["observation_history"] == {"n_obs_steps": 3, "stride": 2}
+
+
+class TestToOpenVINO:
+    """Tests for to_openvino method."""
 
     def test_exported_tokenizer_enables_truncation(self, tmp_path) -> None:
         """Converted tokenizers enforce the same fixed width as training."""
@@ -681,17 +692,17 @@ class TestToExecutorch:
 
             assert result == tmp_path / "model.pte"
 
-    def test_to_executorch_manifest_records_processors_and_input_names(self, tmp_path):
-        """Manifest stores pre/postprocessor specs and the tensor-only input_names."""
-        import json
-
-        from physicalai.export.backends import ExecuTorchExportParameters
-
+    @pytest.mark.parametrize("history", [None, ObservationHistorySpec(n_obs_steps=3, stride=2)])
+    def test_to_executorch_manifest_records_processors_and_input_names(
+        self, tmp_path: Path, history: ObservationHistorySpec | None
+    ) -> None:
+        """Manifest stores processors, tensor-only input_names, and root sampling requirements."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)
         wrapper = ExportWrapper(model)
         wrapper._extra_export_args[ExportBackend.EXECUTORCH] = ExecuTorchExportParameters(
             preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=[ComponentSpec(type="action_chunk_trimmer", n_action_steps=5)],
+            observation_history=history,
         )
 
         mocks = self._mock_executorch_modules()
@@ -701,9 +712,15 @@ class TestToExecutorch:
         manifest = Manifest.load(tmp_path / "manifest.json")
         assert [spec.type for spec in manifest.model.preprocessors] == ["to_float_tensor"]
         assert [spec.type for spec in manifest.model.postprocessors] == ["action_chunk_trimmer"]
+        assert manifest.observation_history == history
 
-        raw = json.loads((tmp_path / "manifest.json").read_text())
+        raw = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
         assert raw["input_names"] == ["input_tensor"]
+        assert "observation_history" not in raw["model"]
+        if history is None:
+            assert "observation_history" not in raw
+        else:
+            assert raw["observation_history"] == {"n_obs_steps": 3, "stride": 2}
 
     def test_to_executorch_no_sample_input(self, tmp_path):
         """Test that RuntimeError is raised when model has no sample_input."""

@@ -57,8 +57,6 @@ exports/
 
 ### Observation History
 
-Policies can declare sampling requirements in their backend export parameters:
-
 ```python test="skip" reason="policy-specific export parameters"
 from physicalai.export.backends import OpenVINOExportParameters
 from physicalai.inference.manifest import ComponentSpec, ObservationHistorySpec
@@ -72,12 +70,8 @@ parameters = OpenVINOExportParameters(
 )
 ```
 
-Return these parameters under `"openvino"` in the policy's `extra_export_args`.
-Export writes the sampling settings to `model.observation_history` in
-`manifest.json`. No history preprocessor is inserted automatically.
-At runtime, pass `model.manifest.model.observation_history` explicitly to
-`PolicySource(observation_history=...)`; direct `InferenceModel` calls must
-supply complete observation windows.
+Return these parameters under `"openvino"` in `extra_export_args`; export writes root-level `observation_history` and the explicitly declared preprocessors.
+Pass `observation_history=model.manifest.observation_history` to `PolicySource`; direct inference requires complete windows.
 
 ## Post-Export Hooks
 
