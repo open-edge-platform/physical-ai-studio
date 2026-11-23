@@ -20,7 +20,10 @@ def test_native_worker_reports_le_robot_update_metrics_and_run_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The real worker bridge reports native updates over the shared protocol."""
+    """The real worker bridge reports native updates over the shared protocol.
+
+    Non-finite metrics (for example a skipped AMP step) are dropped instead of stopping training.
+    """
     fake_site = tmp_path / "site"
     train_module = fake_site / "lerobot" / "scripts" / "lerobot_train.py"
     config_module = fake_site / "lerobot" / "configs" / "train.py"
@@ -46,7 +49,7 @@ def test_native_worker_reports_le_robot_update_metrics_and_run_paths(
         "class Tracker:\n"
         "    steps = 0\n"
         "    def to_dict(self, use_avg=False):\n"
-        "        return {'loss': 0.25, 'steps': self.steps}\n"
+        "        return {'loss': 0.25, 'grad_norm': float('nan'), 'lr': float('inf'), 'steps': self.steps}\n"
         "def update_policy(tracker):\n"
         "    return tracker, None\n"
         "def main():\n"

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import math
 import os
 import select
 import sys
@@ -137,6 +138,8 @@ def _read_metrics(tracker: object) -> dict[str, float]:
     if not isinstance(values, dict):
         msg = "LeRobot tracker to_dict() must return a dictionary."
         raise TypeError(msg)
+    # Drop non-finite values (for example a skipped AMP step): the protocol is strict JSON, and
+    # one bad metric must not stop training.
     return {
         name: float(value)
         for name, value in values.items()
@@ -144,6 +147,7 @@ def _read_metrics(tracker: object) -> dict[str, float]:
         and name not in _NON_METRIC_FIELDS
         and isinstance(value, (int, float))
         and not isinstance(value, bool)
+        and math.isfinite(value)
     }
 
 
