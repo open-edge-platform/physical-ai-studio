@@ -416,7 +416,7 @@ def run_training_job(
             logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
             callbacks=callbacks,
             accelerator=accelerator,
-            strategy=resolve_strategy(spec.device_type),
+            strategy=resolve_strategy(accelerator, spec.device_index),
             devices=resolve_devices(spec.device_index),
             max_epochs=spec.max_epochs,
             auto_scale_batch_size=spec.auto_scale_batch_size,

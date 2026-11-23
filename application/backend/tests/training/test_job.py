@@ -428,12 +428,19 @@ class TestRunTrainingJob:
         assert kwargs["auto_scale_batch_size"] is True
         assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("cpu", "auto", [1])
 
-    def test_xpu_gets_its_single_device_strategy(self, tmp_path: Path) -> None:
-        """Device resolution is shared with the trainer service; assert it is used."""
-        trainer_class = _run(TrainingJobSpec(policy="act", device_type="xpu"), tmp_path)
+    @pytest.mark.parametrize("device_type", ["xpu", None])
+    @pytest.mark.parametrize("device_index", [None, 0, 1])
+    def test_xpu_uses_selected_device(self, tmp_path: Path, device_type: str | None, device_index: int | None) -> None:
+        import torch
+        from physicalai.train.trainer import Trainer
 
-        kwargs = trainer_class.call_args.kwargs
-        assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("xpu", "xpu_single", 1)
+        spec = TrainingJobSpec(policy="act", device_type=device_type, device_index=device_index, precision="32-true")
+        with patch("torch.xpu.is_available", return_value=True), patch(f"{JOB}._release_memory"):
+            trainer_class = _run(spec, tmp_path)
+            trainer = Trainer(**trainer_class.call_args.kwargs)
+
+        assert trainer.strategy.root_device == torch.device("xpu", device_index or 0)
+        assert trainer_class.call_args.kwargs["devices"] == ([device_index] if device_index is not None else 1)
 
     def test_dataset_is_loaded_from_the_local_root(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(policy="act", batch_size=16, num_workers=2, val_split=0.25)
