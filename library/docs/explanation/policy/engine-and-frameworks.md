@@ -18,6 +18,7 @@ Python API / pai CLI / Studio
 Engine registry (`physicalai.engines`)
   ├── Trainer: first-party Lightning training, in-process
   ├── LeRobotEngine: LeRobot's own config, CLI and trainer, in a locked worker environment
+  ├── Gr00tEngine: Isaac-GR00T at a pinned commit, plus an OpenVINO enablement
   └── other framework or repository engines, added as plugins
             │
 locked worker environments (`physicalai.isolate`)
@@ -115,6 +116,7 @@ The LeRobot plugin ships one worker project, `env/`, built for CPU, CUDA 13.2 (`
 ```bash
 pai engine prepare lerobot --accelerator cuda   # pre-provision an environment
 pai engine prepare lerobot --policy smolvla     # a policy family's environment
+pai engine prepare gr00t --enablement robotics-ai-suite-openvino   # an enablement's environment
 pai engine list                                 # show the engine's cached environments
 pai engine prune                                # remove those no installed engine declares
 ```
@@ -124,6 +126,24 @@ pai engine prune                                # remove those no installed engi
 The LeRobot engine packages the native `pretrained_model/` folder with a Runtime manifest. The plugin's Runtime adapter runs LeRobot's own preprocessor, `select_action()`, postprocessor and reset, one step at a time; executable code stays in the installed plugin, not the package.
 
 The plugin supports only policy types whose training, packaging and Runtime inference have been checked: ACT, Diffusion, SmolVLA and Pi0.5. Training, the CLI, export and the Runtime adapter reject other types before any LeRobot code runs; several LeRobot policies load remote code without a pinned revision. Policies that need a different inference loop than `select_action()` are out of scope until checked. Before LeRobot loads a checkpoint's saved processors, each step must be a registered LeRobot step or a class under `lerobot.`, and each state file a `.safetensors` file in the checkpoint.
+
+## Repository plugin: GR00T N1.7
+
+`plugins/policies/gr00t/` supports NVIDIA Isaac-GR00T N1.7 from its own repository rather than through LeRobot, whose GR00T policy loads remote code and stays unsupported.
+
+```python
+engine = Engine.create("gr00t")
+run = engine.train(Gr00tTrainConfig(dataset_path=..., embodiment_tag="LIBERO_PANDA", output_dir=...))
+native = engine.export(run, "exports/native")                          # PyTorch package
+openvino = engine.export(run, "exports/openvino", backend="openvino")  # Robotics AI Suite patches
+actions = Engine.load(openvino).predict_action_chunk(observation)
+```
+
+- **Environments:** `default` is a `GitProject` of Isaac-GR00T at a pinned commit with its own lock, installed with `uv sync --frozen`. The `robotics-ai-suite-openvino` enablement applies the Robotics AI Suite's OpenVINO patches to the same commit as `PublishedPatches`.
+- **Training:** GR00T's own `launch_finetune.py` runs unchanged in the worker; `pai train gr00t` passes native flags through.
+- **Inference:** GR00T's pins conflict with Runtime's, so the Runtime adapter runs GR00T in a worker of the package's environment and exchanges pickle-free frames over pipes.
+
+The [plugin README](../../../../plugins/policies/gr00t/README.md) covers packages, model access, security and validation.
 
 ## Enablements
 
