@@ -4,7 +4,7 @@ Policies are Lightning modules that wrap PyTorch models for training and inferen
 
 ## Native Framework Engines
 
-[Engine and Native Frameworks](engine-and-frameworks.md) describes the framework-native plugin architecture and the LeRobot plugin, including its API, CLI, worker environments, Runtime adapter, validation, and follow-up work. The [Runtime isolate validation checklist and results](isolate-validation.md) records cold-reader commands and evidence for the Runtime and LeRobot/GR00T plugins.
+[Engine and Native Frameworks](engine-and-frameworks.md) describes the framework-native plugin architecture and the LeRobot plugin: its API, CLI, worker environments, and Runtime adapter.
 
 ## Structure
 
