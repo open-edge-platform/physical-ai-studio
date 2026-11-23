@@ -21,6 +21,7 @@ from physicalai.inference.manifest import (
     ComponentSpec,
     Manifest,
     ModelSpec,
+    ObservationHistorySpec,
     PolicySource,
     PolicySpec,
 )
@@ -217,6 +218,7 @@ class ExportablePolicyMixin:
         input_names: list[str] | None = None,
         output_names: list[str] | None = None,
         callbacks: list[ComponentSpec] | None = None,
+        observation_history: ObservationHistorySpec | None = None,
         **extras: Any,  # noqa: ANN401
     ) -> None:
         """Create ``manifest.json`` for an exported model.
@@ -228,6 +230,7 @@ class ExportablePolicyMixin:
             preprocessors: Preprocessor component specs to include in the manifest.
             postprocessors: Postprocessor component specs to include in the manifest.
             callbacks: Callback component specs to include in the manifest.
+            observation_history: Optional runtime observation sampling requirements.
             input_names: Optional ordered list of model input names.
             output_names: Optional ordered list of model output names.
             **extras: Additional keyword arguments to forward to the manifest.
@@ -252,6 +255,7 @@ class ExportablePolicyMixin:
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
                 callbacks=callbacks or [],
+                observation_history=observation_history,
                 input_features=extras.pop("input_features", []),
                 output_features=extras.pop("output_features", []),
             ),
@@ -371,6 +375,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             callbacks=extra_model_args.callbacks_specs,
+            observation_history=extra_model_args.observation_history,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -444,6 +449,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             callbacks=extra_model_args.callbacks_specs,
+            observation_history=extra_model_args.observation_history,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -562,6 +568,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             callbacks=extra_model_args.callbacks_specs,
+            observation_history=extra_model_args.observation_history,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -679,6 +686,7 @@ class ExportablePolicyMixin:
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
             callbacks=extra_model_args.callbacks_specs,
+            observation_history=extra_model_args.observation_history,
             input_names=list(input_sample.keys()),
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),

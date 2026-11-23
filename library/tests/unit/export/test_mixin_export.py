@@ -30,7 +30,7 @@ from physicalai.inference.data import (
     InferenceFeatureDtype,
     InferenceFeatureType,
 )
-from physicalai.inference.manifest import ComponentSpec, Manifest
+from physicalai.inference.manifest import ComponentSpec, Manifest, ObservationHistorySpec
 
 
 # Test configurations
@@ -353,6 +353,22 @@ class TestQuietOnnxExportLogs:
 
 class TestToOpenVINO:
     """Tests for to_openvino method."""
+
+    @pytest.mark.parametrize("history", [None, ObservationHistorySpec(n_obs_steps=3, stride=2)])
+    def test_exports_observation_history(self, tmp_path: Path, history: ObservationHistorySpec | None) -> None:
+        """Sampling requirements round-trip without inserting a preprocessor."""
+        wrapper = ExportWrapper(ModelWithSampleInput())
+        wrapper._extra_export_args[ExportBackend.OPENVINO] = OpenVINOExportParameters(
+            observation_history=history,
+        )
+
+        wrapper.to_openvino(tmp_path / "model.xml")
+
+        manifest = Manifest.load(tmp_path)
+        assert manifest.model.observation_history == history
+        assert manifest.model.preprocessors == []
+        if history is not None:
+            assert manifest.model.model_dump()["observation_history"] == {"n_obs_steps": 3, "stride": 2}
 
     def test_exported_tokenizer_enables_truncation(self, tmp_path) -> None:
         """Converted tokenizers enforce the same fixed width as training."""
