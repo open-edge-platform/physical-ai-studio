@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from schemas.base import BaseIDModel, Field, UTCDatetime
+from schemas.policy import ReadablePolicy
 
 LORA_PROPERTY = "lora_enabled"
 DORA_PROPERTY = "lora_use_dora"
@@ -25,6 +26,14 @@ class Model(BaseIDModel):
     parent_model_id: UUID | None = Field(None, description="Parent model this was retrained from")
     version: int = Field(1, description="Model version, incremented on each retrain")
     created_at: UTCDatetime | None = Field(None)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def policy_reference(self) -> ReadablePolicy:
+        """Local training availability; exported artifacts remain independently usable."""
+        from training.policy_catalog import readable_policy
+
+        return readable_policy(self.policy)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

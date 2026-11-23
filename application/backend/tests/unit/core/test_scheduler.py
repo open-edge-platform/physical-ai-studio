@@ -38,6 +38,20 @@ def _import_job():
     )
 
 
+@pytest.mark.anyio
+async def test_missing_local_policy_does_not_block_other_jobs_or_remote_reattachment(scheduler, services):
+    missing = _training_job()
+    missing.payload.policy = "removed_plugin_policy"
+    available = _training_job()
+    remote = _training_job(trainer_id=uuid4())
+    remote.payload.policy = "remote_only_policy"
+    remote.payload.remote_job_id = uuid4()
+    services[0].get_pending_jobs.return_value = [missing, available, remote]
+    with patch.object(scheduler, "_start_job") as start:
+        await scheduler._schedule_jobs()
+    assert [call.args[1].id for call in start.call_args_list] == [available.id, remote.id]
+
+
 @pytest.fixture
 def scheduler():
     @asynccontextmanager

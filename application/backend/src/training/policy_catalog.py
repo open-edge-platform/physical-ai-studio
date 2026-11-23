@@ -7,6 +7,8 @@ from loguru import logger
 from packaging.requirements import Requirement
 from pydantic import BaseModel
 
+from schemas.policy import AvailablePolicyReference, ReadablePolicy, UnavailablePolicy, UnknownPolicyAvailability
+
 
 class AvailablePolicy(BaseModel):
     id: str
@@ -118,4 +120,38 @@ def policy_catalog(classes: dict[str, tuple[type, list[str]]]) -> PolicyCatalog:
 
 def declared_policy_catalog(backends: dict[str, list[str]]) -> PolicyCatalog:
     """Describe an image's declared capabilities without importing local policies."""
-    return PolicyCatalog(available=[_STUDIO_POLICIES[name] for name in backends], backends=backends)
+    return PolicyCatalog(
+        available=[
+            _STUDIO_POLICIES.get(name)
+            or AvailablePolicy(id=name, name=name, description="Policy declared by the trainer", min_vram=None)
+            for name in backends
+        ],
+        backends=backends,
+    )
+
+
+def readable_policy(policy: str, catalog: PolicyCatalog | None = None, *, remote: bool = False) -> ReadablePolicy:
+    """Describe a saved reference without importing policy implementations or contacting trainers.
+
+    An unverified remote target is unknown, never unavailable merely because
+    the policy is absent locally. Callers with a verified inventory can supply it.
+    Execution still verifies constructors and target capabilities separately.
+    """
+    if catalog is not None:
+        return (
+            AvailablePolicyReference(id=policy)
+            if policy in {item.id for item in catalog.available}
+            else UnavailablePolicy(id=policy, reason="Policy is not available on the selected trainer.")
+        )
+    if remote:
+        return UnknownPolicyAvailability(id=policy, reason="Check policy availability on the selected remote trainer.")
+    try:
+        from physicalai.policies import list_physicalai_policies
+
+        if policy not in list_physicalai_policies() or policy not in _STUDIO_POLICIES:
+            return UnavailablePolicy(id=policy, reason="Policy definition is not installed or supported by Studio.")
+        if missing := missing_policy_dependencies(policy):
+            return UnavailablePolicy(id=policy, reason=f"Missing policy dependencies: {', '.join(missing)}")
+    except (ImportError, ValueError, metadata.PackageNotFoundError):
+        return UnknownPolicyAvailability(id=policy, reason="The local policy inventory could not be verified.")
+    return AvailablePolicyReference(id=policy)

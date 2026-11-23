@@ -3,13 +3,14 @@
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import Field, TypeAdapter, model_validator
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from schemas.base_job import BaseJob, JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.job import Job as InternalJob
 from schemas.job import LocalTrainJobPayload, TrainingTarget, TrainJobPayloadBase
 from schemas.operational_issue import OperationalIssue
+from schemas.policy import ReadablePolicy
 
 
 class RemoteTrainJobPayloadResponse(TrainJobPayloadBase):
@@ -52,6 +53,14 @@ class TrainJob(JobResponseBase):
 
     type: Literal[JobType.TRAINING] = JobType.TRAINING  # type: ignore[valid-type]
     payload: Annotated[LocalTrainJobPayload | RemoteTrainJobPayloadResponse, Field(discriminator="training_target")]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def policy_reference(self) -> ReadablePolicy:
+        """Availability on this job's execution target, not necessarily Studio's machine."""
+        from training.policy_catalog import readable_policy
+
+        return readable_policy(self.payload.policy, remote=self.payload.training_target == TrainingTarget.REMOTE)
 
 
 class DatasetImportJob(JobResponseBase):
