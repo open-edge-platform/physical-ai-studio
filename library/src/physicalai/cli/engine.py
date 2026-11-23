@@ -46,7 +46,8 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
         Zero after a successful command.
 
     Raises:
-        ValueError: If ``prepare`` has no engine name or the selected engine has no worker environment.
+        ValueError: If ``prepare`` has no engine name, ``--policy`` names a policy the engine does not
+            provide, or the selected engine has no worker environment.
     """
     del parser
     if cfg.action == "prepare":
@@ -62,6 +63,9 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
         if enablement is not None:
             env = engine_class.environment(enablement)
         else:
+            if policy is not None and policy not in (known := engine_class.policies()):
+                msg = f"{engine_class.framework} has no policy {policy!r}; choose one of: {', '.join(sorted(known))}."
+                raise ValueError(msg)
             env = engine_class.environment_for_policy(policy)
         python = prepare(env, cfg.accelerator, offline=cfg.offline)
         print(f"Prepared {engine_class.framework} {getattr(env, 'name', 'default')} worker environment: {python}")  # noqa: T201

@@ -171,6 +171,10 @@ def test_engine_prepare_selects_a_policy_environment(monkeypatch: pytest.MonkeyP
         env = base
         policy_envs = {"smolvla": smol}  # noqa: RUF012
 
+        @classmethod
+        def policies(cls) -> list[str]:
+            return ["act", "smolvla"]
+
     calls: list[WorkerEnv] = []
 
     def prepare(env: WorkerEnv, accelerator: str, *, offline: bool) -> Path:
@@ -187,3 +191,6 @@ def test_engine_prepare_selects_a_policy_environment(monkeypatch: pytest.MonkeyP
     assert calls == [smol, base]
     with pytest.raises(ValueError, match="either --enablement or --policy"):
         engine_cli.run(parser, parser.parse_args(["prepare", "demo", "--policy", "smolvla", "--enablement", "x"]))
+    with pytest.raises(ValueError, match=r"demo has no policy 'smol_vla'; choose one of: act, smolvla"):
+        engine_cli.run(parser, parser.parse_args(["prepare", "demo", "--policy", "smol_vla"]))
+    assert calls == [smol, base]
