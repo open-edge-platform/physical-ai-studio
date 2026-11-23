@@ -253,16 +253,15 @@ Runtime isolate caches environments by the source and selected `SyncProfile` (Py
 
 The worker handshake checks the framework package against the environment's exact lock. A plugin that depends on a PyPI framework also declares its supported range, which the handshake checks as before; frameworks pinned by Git commit declare no range.
 
-The LeRobot plugin declares its supported LeRobot range in its main `pyproject.toml`. Its worker `env/pyproject.toml` describes training dependencies and CPU, CUDA 13.2 (`cu132`), and XPU PyTorch indexes, matching Studio's host build; `env/uv.lock` pins exact transitive versions. Policy families with their own extras (`smolvla`, the `pi` family, `molmoact2`) train in their own projects under `envs/`; every other policy uses `env/`. Engine verifies that each locked LeRobot version satisfies the plugin's declared range.
+The LeRobot plugin declares its supported LeRobot range in its main `pyproject.toml`. Its worker `env/pyproject.toml` describes training dependencies and CPU, CUDA 13.2 (`cu132`), and XPU PyTorch indexes, matching Studio's host build; `env/uv.lock` pins exact transitive versions. Policy families with their own LeRobot extras (`smolvla`, the `pi` family, `molmoact2`) are extras of that same project, declared mutually exclusive: each family trains in its own environment built with its extra, every other policy uses the project without one, and all of them share one lock. Engine verifies that the locked LeRobot version satisfies the plugin's declared range.
 
 ```text
 physicalai-lerobot-policy-plugin/
 ├── engine.py       LeRobotEngine; no Studio imports
 ├── _worker.py      worker-side protocol and native training entry point
-├── env/            default worker project
+├── env/            worker project; policy families are extras
 │   ├── pyproject.toml
 │   └── uv.lock
-├── envs/           per-family projects: smolvla/, pi/, molmoact2/
 ├── inference.py    lazy Runtime adapter registration
 └── runtime.py      LeRobot inference adapter
 ```

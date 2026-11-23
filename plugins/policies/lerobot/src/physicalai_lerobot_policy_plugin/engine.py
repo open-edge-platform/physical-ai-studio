@@ -46,24 +46,27 @@ _HUB_REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]
 logger = logging.getLogger(__name__)
 
 
-def _worker_env(name: str = "default") -> WorkerEnv:
-    """Declare a LeRobot worker environment from a bundled, locked project.
+_ACCELERATOR_EXTRAS = {"cpu": "cpu", "cuda": "cu132", "xpu": "xpu"}
 
-    ``default`` uses ``env/``; a policy family uses ``envs/<name>/``, whose project installs
-    only that family's LeRobot extra so its dependencies never meet another family's.
+
+def _worker_env(name: str = "default") -> WorkerEnv:
+    """Declare a LeRobot worker environment from the bundled, locked ``env/`` project.
+
+    ``default`` installs the project as is; a policy family also installs its own extra, so
+    each family gets its own environment while all of them share one lock.
 
     Returns:
         The worker environment declaration.
     """
-    project = _PLUGIN_ROOT / "env" if name == "default" else _PLUGIN_ROOT / "envs" / name
+    family = () if name == "default" else (name,)
     return WorkerEnv(
         framework="lerobot",
-        project=project,
+        project=_PLUGIN_ROOT / "env",
         worker=_PLUGIN_ROOT / "_worker.py",
         distribution=_PLUGIN_DISTRIBUTION,
         package="lerobot",
         name=name,
-        extras={"cpu": ("cpu",), "cuda": ("cu132",), "xpu": ("xpu",)},
+        extras={accelerator: (extra, *family) for accelerator, extra in _ACCELERATOR_EXTRAS.items()},
     )
 
 
@@ -76,7 +79,8 @@ class LeRobotEngine(TrainingEngine):
     """Run LeRobot's own trainer in its version-locked worker environment.
 
     Policy families with their own dependencies (``smolvla``, the ``pi`` family and
-    ``molmoact2``) train in their own environment; every other policy uses ``env``.
+    ``molmoact2``) train in their own environment, built from ``env/`` with that family's
+    extra; every other policy uses ``env/`` without one.
     """
 
     framework: ClassVar[str] = "lerobot"
