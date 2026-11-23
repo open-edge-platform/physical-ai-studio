@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from physicalai.config import Config
-from physicalai.data import Feature  # noqa: TC002  # Config resolves feature annotations at runtime.
+
+from physicalai.data import Feature  # noqa: TC001  # Config resolves feature annotations at runtime.
 from physicalai.policies.mixins.peft import PeftConfigMixin
 
 

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal, override
 
 import torch
+from torch import Tensor
+
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import (
     ACTION,
@@ -25,7 +27,6 @@ from physicalai.policies.base import Policy
 from physicalai.policies.mixins.peft import PeftPolicyMixin, is_lora_injected
 from physicalai.policies.utils.deprecation import deprecate
 from physicalai.policies.utils.features import get_feature_by_type
-from torch import Tensor
 
 from .components.rms_norm import RMSNorm
 from .components.text import MolmoAct2RotaryEmbedding
@@ -43,6 +44,7 @@ from .so101 import load_so101_calibration, make_so101_joint_transform
 
 if TYPE_CHECKING:
     from lightning.pytorch.utilities.types import OptimizerLRScheduler
+
     from physicalai.gyms import Gym
     from physicalai.policies.utils import JointFrameTransform
 
@@ -783,7 +785,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         model = self._require_model()
         backbone = model.backbone.model
         if self.freeze_vocab:
-            backbone.transformer.wte.embedding.requires_grad_(requires_grad=False)
+            backbone.transformer.wte.embedding.requires_grad_(False)  # noqa: FBT003
         if self.trainer.precision != "bf16-mixed":
             return
 
