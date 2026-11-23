@@ -5,6 +5,7 @@ export const getMockedModel = (overrides: Partial<SchemaModel> = {}): SchemaMode
     name: 'pick-and-place',
     path: '/models/pick-and-place',
     policy: 'act',
+    policy_reference: { id: overrides.policy ?? 'act', status: 'available' },
     properties: {},
     project_id: 'project-1',
     dataset_id: 'dataset-1',

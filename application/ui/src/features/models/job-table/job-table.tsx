@@ -24,6 +24,7 @@ import { useRemoteTrainerHealth } from '../../training-targets/use-remote-traine
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { PeftBadge } from '../shared/peft-badge';
+import { PolicyLabel } from '../shared/policy-label';
 import { SnapflowBadge } from '../shared/snapflow-badge';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
 import { getTrainerLabel } from '../shared/trainer';
@@ -210,7 +211,7 @@ export const TrainingRow = ({
                 <div />
                 <TrainJobStatus job={trainJob} />
                 <Text>{loss ? loss.toFixed(2) : '...'}</Text>
-                <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+                <PolicyLabel policy={trainJob.payload.policy} reference={trainJob.policy_reference} />
                 <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
                 <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
                 <TrainerCell job={trainJob} />
@@ -241,7 +242,7 @@ export const TrainingRow = ({
         >
             <TrainJobStatus job={trainJob} />
             <Text>{loss ? loss.toFixed(2) : '...'}</Text>
-            <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+            <PolicyLabel policy={trainJob.payload.policy} reference={trainJob.policy_reference} />
             <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
             <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
             <TrainerCell job={trainJob} />
