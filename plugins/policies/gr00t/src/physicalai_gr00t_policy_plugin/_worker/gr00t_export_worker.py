@@ -33,6 +33,13 @@ def main(argv: list[str]) -> int:
     """
     channel = common.EventChannel()
     channel.send({"type": "hello", "protocol": common.PROTOCOL_VERSION, **common.identity()})
+    if channel.enabled and common.wait_for_host_acknowledgement() != "ack":
+        channel.send({
+            "type": "error",
+            "error": "WorkerHandshakeError",
+            "message": "The host did not accept the handshake.",
+        })
+        return 1
     try:
         result = _export(json.loads(argv[0]))
     except Exception as exc:  # ruff: ignore[blind-except]  # Report any exporter failure over the protocol.

@@ -17,6 +17,7 @@ import os
 import select
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ PROTOCOL_VERSION = 1
 _PROTOCOL_FD_ENV = "PHYSICALAI_WORKER_PROTOCOL_FD"
 _PROTOCOL_PREFIX = bytes([30]) + b"physicalai-worker "
 _PROJECT_ENV = "PHYSICALAI_WORKER_PROJECT"
+_ACK_TIMEOUT_SECONDS = 60.0
 _AUTO_MODULES = (
     "transformers.models.auto.configuration_auto",
     "transformers.models.auto.auto_factory",
@@ -97,6 +99,33 @@ class EventChannel:
         payload = _PROTOCOL_PREFIX + (json.dumps(_finite(message), separators=(",", ":")) + "\n").encode("utf-8")
         while payload:
             payload = payload[os.write(self._fd, payload) :]
+
+
+def wait_for_host_acknowledgement() -> str:
+    """Block until the host accepts the handshake, so a rejected worker never starts work.
+
+    Returns:
+        ``"ack"`` when accepted, ``"cancel"`` when the host cancelled, or ``"closed"`` when the
+        host closed standard input or did not answer in time.
+    """
+    deadline = time.monotonic() + _ACK_TIMEOUT_SECONDS
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            readable, _, _ = select.select([sys.stdin], [], [], min(remaining, 0.5))
+        except (OSError, ValueError):
+            return "closed"
+        if not readable:
+            continue
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return "closed"
+        try:
+            control = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(control, dict) and control.get("type") in {"ack", "cancel"}:
+            return str(control["type"])
+    return "closed"
 
 
 def start_cancel_listener() -> threading.Event:

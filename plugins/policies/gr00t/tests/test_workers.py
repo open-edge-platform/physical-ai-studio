@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import importlib
+import io
+import os
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fixed interpreter and worker path.
 import sys
 from pathlib import Path
@@ -198,3 +200,56 @@ def test_worker_finds_its_sibling_modules_without_its_folder_on_sys_path(worker:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_host_acknowledgement_reads_ack_cancel_and_closed(
+    workers: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    common = workers["gr00t_worker_common"]
+
+    def answer(lines: bytes) -> str:
+        read_fd, write_fd = os.pipe()
+        os.write(write_fd, lines)
+        os.close(write_fd)
+        with io.TextIOWrapper(os.fdopen(read_fd, "rb"), encoding="utf-8") as stdin:
+            monkeypatch.setattr(common.sys, "stdin", stdin)
+            return common.wait_for_host_acknowledgement()
+
+    assert answer(b'not json\n{"type":"other"}\n{"type":"ack"}\n') == "ack"
+    assert answer(b'{"type":"cancel"}\n') == "cancel"
+    assert answer(b"") == "closed"
+
+
+@pytest.mark.parametrize(
+    ("worker", "answer", "status", "event"),
+    [
+        ("gr00t_train_worker", "closed", 1, "error"),
+        ("gr00t_train_worker", "cancel", 130, "cancelled"),
+        ("gr00t_export_worker", "closed", 1, "error"),
+        ("gr00t_export_worker", "cancel", 1, "error"),
+    ],
+)
+def test_worker_does_no_work_until_the_host_accepts_the_handshake(
+    workers: dict[str, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    worker: str,
+    answer: str,
+    status: int,
+    event: str,
+) -> None:
+    common = workers["gr00t_worker_common"]
+    module = importlib.import_module(worker)
+    sent: list[dict[str, Any]] = []
+
+    def refuse(*_args: object) -> None:
+        pytest.fail("the worker started before the host accepted the handshake")
+
+    monkeypatch.setenv("PHYSICALAI_WORKER_PROTOCOL_FD", "2")
+    monkeypatch.setattr(common.EventChannel, "send", lambda _self, message: sent.append(message))
+    monkeypatch.setattr(common, "identity", lambda: {"framework": "gr00t", "package": "gr00t", "version": "0.1.0"})
+    monkeypatch.setattr(common, "wait_for_host_acknowledgement", lambda: answer)
+    monkeypatch.setattr(module, "_train" if worker == "gr00t_train_worker" else "_export", refuse)
+
+    assert module.main(["{}"]) == status
+    assert [message["type"] for message in sent] == ["hello", event]

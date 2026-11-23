@@ -43,6 +43,18 @@ def main(argv: list[str]) -> int:
     """
     channel = common.EventChannel()
     channel.send({"type": "hello", "protocol": common.PROTOCOL_VERSION, **common.identity()})
+    if channel.enabled:
+        answer = common.wait_for_host_acknowledgement()
+        if answer == "cancel":
+            channel.send({"type": "cancelled", "step": None})
+            return 130
+        if answer != "ack":
+            channel.send({
+                "type": "error",
+                "error": "WorkerHandshakeError",
+                "message": "The host did not accept the handshake.",
+            })
+            return 1
     cancel = common.start_cancel_listener() if channel.enabled else None
     try:
         result = _train(argv, channel, cancel)
