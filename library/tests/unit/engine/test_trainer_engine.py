@@ -162,3 +162,9 @@ def test_policy_names_resolve_without_importing_unrelated_policies(monkeypatch: 
     assert imported == ["act", "smolvla"]
     with pytest.raises(ValueError, match="Unknown first-party policy class 'nope'"):
         trainer_module._resolve_policy_class("nope", Policy)
+
+
+def test_first_party_export_requires_an_explicit_backend(tmp_path: Path) -> None:
+    """Like `Policy.export()` and `pai export`, `Trainer.export()` has no default backend."""
+    with pytest.raises(ValueError, match="Choose an export backend: executorch, onnx, openvino, torch"):
+        Trainer.export(object(), tmp_path / "export")

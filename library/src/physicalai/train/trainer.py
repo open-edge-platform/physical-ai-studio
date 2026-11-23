@@ -308,7 +308,7 @@ class Trainer(TrainingEngine, lightning.Trainer):
         cls,
         source: Any,
         output_path: str | Path,
-        backend: str | None = "openvino",
+        backend: str | None = None,
         *,
         policy_class: str | type[Any] | None = None,
         input_sample: dict[str, torch.Tensor] | None = None,
@@ -322,9 +322,17 @@ class Trainer(TrainingEngine, lightning.Trainer):
 
         Raises:
             TypeError: If the selected policy does not implement ``export()``.
-            ValueError: If a checkpoint is exported without a policy class or the run belongs to another engine.
+            ValueError: If no backend is given, a checkpoint is exported without a policy class, or the
+                run belongs to another engine.
         """
+        from physicalai.export.backends import ExportBackend  # noqa: PLC0415
         from physicalai.policies.base.policy import Policy  # noqa: PLC0415
+
+        if backend is None:
+            # Like `Policy.export()` and `pai export`: not every policy supports every backend.
+            choices = ", ".join(sorted(str(choice) for choice in ExportBackend))
+            msg = f"Choose an export backend: {choices}."
+            raise ValueError(msg)
 
         if isinstance(source, Policy):
             policy = source
@@ -343,7 +351,7 @@ class Trainer(TrainingEngine, lightning.Trainer):
             raise TypeError(msg)
         export_policy(
             output_path,
-            backend or "openvino",
+            backend,
             input_sample=input_sample,
             post_export_hooks=post_export_hooks,
             **export_kwargs,
