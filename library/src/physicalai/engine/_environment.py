@@ -374,7 +374,7 @@ def prepare_environment(env: WorkerEnv, accelerator: str = "auto", *, offline: b
     environment = to_isolate_environment(env, selected)
     prepared = isolate.prepare(
         environment,
-        provider=isolate.UvProvider(cache_dir=engine_cache_root()),
+        provider=isolate.UvProvider(cache_dir=engine_cache_root(), uv=_installed_uv()),
         offline=offline,
     )
     key = env.key()
@@ -400,6 +400,23 @@ def prepare_environment(env: WorkerEnv, accelerator: str = "auto", *, offline: b
         prepared.path,
         _isolate=prepared,
     )
+
+
+def _installed_uv() -> str | None:
+    """Return the uv executable installed with this Python's ``uv`` package.
+
+    Studio depends on a patched uv, so prefer that binary over whatever ``uv`` comes first on
+    ``PATH``; this also works when the virtual environment is not activated.
+
+    Returns:
+        The uv path, or ``None`` to let isolate look it up on ``PATH``.
+    """
+    try:
+        from uv import find_uv_bin  # ruff: ignore[import-outside-top-level]  # Optional at import time.
+
+        return find_uv_bin()
+    except (ImportError, FileNotFoundError):
+        return None
 
 
 def list_prepared() -> list[PreparedEnvironment]:

@@ -98,6 +98,7 @@ def test_prepare_delegates_to_runtime_isolate_and_keeps_engine_metadata(
         return isolate.PreparedEnvironment(path=root, key=environment.key(), profile=environment.profile)
 
     monkeypatch.setattr(isolate, "prepare", fake_prepare)
+    monkeypatch.setattr("uv.find_uv_bin", lambda: "/venv/bin/uv")
 
     prepared = _environment.prepare_environment(env, accelerator="auto", offline=True)
 
@@ -111,6 +112,7 @@ def test_prepare_delegates_to_runtime_isolate_and_keeps_engine_metadata(
     assert calls[0][0].source is env.source
     assert calls[0][0].profile == isolate.SyncProfile(python="3.12", extras=())
     assert calls[0][1].cache_dir == cache
+    assert calls[0][1].uv == "/venv/bin/uv"
     assert calls[0][2] is True
     marker = json.loads((prepared.path / ".physicalai-engine.json").read_text(encoding="utf-8"))
     assert marker["source"] == {"kind": "generated", "revision": "a" * 40}
@@ -354,3 +356,12 @@ def _generated_env(tmp_path: Path, **overrides: object) -> WorkerEnv:
     }
     values.update(overrides)
     return WorkerEnv(**values)  # type: ignore[arg-type]
+
+
+def test_installed_uv_falls_back_to_path_when_the_uv_package_has_no_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing() -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr("uv.find_uv_bin", missing)
+
+    assert _environment._installed_uv() is None
