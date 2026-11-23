@@ -512,3 +512,53 @@ def test_lerobot_train_and_run_select_the_policys_environment(
 
 def test_lerobot_engine_lists_each_family_environment_once() -> None:
     assert [env.name for env in LeRobotEngine.environments()] == ["default", "smolvla", "pi", "molmoact2"]
+
+
+def test_lerobot_cli_with_an_interpreter_skips_managed_environment_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user-managed interpreter bypasses environment selection, Hub lookups, and device checks."""
+    calls: list[list[str]] = []
+
+    def unexpected(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("A user-managed interpreter must not resolve managed environments.")
+
+    def fake_call(command: list[str], *, shell: bool) -> int:
+        assert not shell
+        calls.append(command)
+        return 0
+
+    monkeypatch.setattr(lerobot_engine_module, "_hub_policy_type", unexpected)
+    monkeypatch.setattr(lerobot_engine_module, "_resolve_worker_device", unexpected)
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", unexpected)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", fake_call)
+
+    argv = ["--policy.path=lerobot/smolvla_base", "--policy.device=mps"]
+    assert LeRobotEngine.cli(argv, interpreter="/opt/lerobot/bin/python") == 0
+    assert calls == [["/opt/lerobot/bin/lerobot-train", *argv]]
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"policy": {"type": "smolvla", "device": "cpu"}},
+        {"policy.type": "smolvla", "policy.device": "cpu"},
+    ],
+    ids=["nested", "dotted"],
+)
+def test_lerobot_run_reads_policy_and_device_from_nested_or_dotted_settings(
+    settings: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    selected: list[tuple[str, str]] = []
+
+    def fake_run_worker(env: WorkerEnv, *_args: object, **kwargs: object) -> Run:
+        selected.append((env.name, str(kwargs["device"])))
+        return Run(framework="lerobot", output_dir=tmp_path, checkpoint=None)
+
+    monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
+
+    LeRobotEngine.run(settings, dataset=tmp_path, output_dir=tmp_path, device="auto")
+
+    assert selected == [("smolvla", "cpu")]

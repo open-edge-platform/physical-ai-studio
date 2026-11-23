@@ -155,13 +155,18 @@ class LeRobotEngine(TrainingEngine):
             RuntimeError: If the engine does not declare a worker environment.
             ValueError: If the native device has no matching worker extra.
         """
-        if cls.env is None:
-            msg = "LeRobotEngine requires a worker environment."
-            raise RuntimeError(msg)
-        env = cls.environment_for_policy(_policy_type_from_cli(argv))
-        requested_device = _device_from_cli(argv)
-        _, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
-        python = interpreter_for(env, accelerator=accelerator, interpreter=interpreter)
+        if interpreter is not None:
+            # A user-managed environment: run its LeRobot as given, without choosing a managed
+            # environment (no Hub lookups) or checking the device against managed profiles.
+            python = Path(interpreter).expanduser()
+        else:
+            if cls.env is None:
+                msg = "LeRobotEngine requires a worker environment."
+                raise RuntimeError(msg)
+            env = cls.environment_for_policy(_policy_type_from_cli(argv))
+            requested_device = _device_from_cli(argv)
+            _, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
+            python = interpreter_for(env, accelerator=accelerator, interpreter=None)
         script_name = "lerobot-train.exe" if os.name == "nt" else "lerobot-train"
         executable = scripts_dir(python) / script_name
         return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.  # nosec B603
@@ -192,14 +197,16 @@ class LeRobotEngine(TrainingEngine):
         if cls.env is None:
             msg = "LeRobotEngine requires a worker environment."
             raise RuntimeError(msg)
-        env = cls.environment_for_policy(_settings_policy_type(settings))
-        settings_device = _settings_device(settings)
+        # Flatten first so nested ({"policy": {"type": ...}}) and dotted ({"policy.type": ...})
+        # settings select the same environment and device.
+        flattened: dict[str, object] = {}
+        _flatten_settings(settings, "", flattened)
+        env = cls.environment_for_policy(_settings_policy_type(flattened))
+        settings_device = _settings_device(flattened)
         requested_device = (
             settings_device if device.strip().lower() == "auto" and settings_device is not None else device
         )
         resolved_device, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
-        flattened: dict[str, object] = {}
-        _flatten_settings(settings, "", flattened)
         flattened.update(
             {
                 "dataset.repo_id": "local",
@@ -380,11 +387,8 @@ def _device_for_accelerator(accelerator: str) -> str:
     return accelerator
 
 
-def _settings_device(settings: Mapping[str, Any]) -> str | None:
-    policy = settings.get("policy")
-    if not isinstance(policy, Mapping):
-        return None
-    device = policy.get("device")
+def _settings_device(flattened: Mapping[str, object]) -> str | None:
+    device = flattened.get("policy.device")
     return device if isinstance(device, str) and device.strip() else None
 
 
@@ -442,17 +446,20 @@ def _policy_type_from_cli(arguments: Sequence[str]) -> str | None:
     return _policy_type_from_config(options.get("--config_path"))
 
 
-def _settings_policy_type(settings: Mapping[str, Any]) -> str | None:
-    policy = settings.get("policy")
-    if not isinstance(policy, Mapping):
-        return None
-    policy_type = policy.get("type")
+def _settings_policy_type(flattened: Mapping[str, object]) -> str | None:
+    """Find the policy type in flattened settings, with the same precedence as the native CLI.
+
+    Returns:
+        The policy type, or ``None`` when the settings do not determine it.
+    """
+    policy_type = flattened.get("policy.type")
     if isinstance(policy_type, str) and policy_type.strip():
         return policy_type.strip()
-    path = policy.get("path")
+    path = flattened.get("policy.path")
     if isinstance(path, str) and path.strip():
         return _policy_type_from_config(path, policy_config=True) or _hub_policy_type(path)
-    return None
+    config_path = flattened.get("config_path")
+    return _policy_type_from_config(config_path) if isinstance(config_path, str) and config_path.strip() else None
 
 
 def _policy_type_from_config(config_path: str | None, *, policy_config: bool = False) -> str | None:
