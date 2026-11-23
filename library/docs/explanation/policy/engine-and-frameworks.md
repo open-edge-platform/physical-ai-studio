@@ -291,7 +291,7 @@ PHYSICALAI_RUN_LEROBOT_INTEGRATION=1 PHYSICALAI_LEROBOT_TEST_STEPS=5 \
 
 The LeRobot engine packages the native `pretrained_model/` folder with a Runtime manifest. The installed plugin's `RuntimeAdapter` handles LeRobot preprocessing, stateful `select_action()`, postprocessing, and reset. Runtime's own generic preprocessors are not used for this plugin package. Exported packages contain model data; executable code stays in installed and registered plugins.
 
-The LeRobot GR00T policy is not advertised or loaded: its loader enables `trust_remote_code=True`. It remains blocked until remote code is reviewed and pinned. NVIDIA's own GR00T N1.7 is planned as a separate repository plugin.
+The plugin supports only LeRobot policy types whose training, packaging and Runtime inference have been checked (ACT, Diffusion, SmolVLA and Pi0.5) and rejects others before any LeRobot code runs. Several LeRobot policies, including its GR00T policy, load remote code without a pinned revision. Saved processor configs are checked before LeRobot imports the classes they name. NVIDIA's own GR00T N1.7 is planned as a separate repository plugin.
 
 ## Studio integration and enablements
 

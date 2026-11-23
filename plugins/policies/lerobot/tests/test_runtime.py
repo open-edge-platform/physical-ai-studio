@@ -147,7 +147,7 @@ def test_groot_package_is_rejected_before_loading_remote_policy_code(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Reject unreviewed Groot before the policy factory can load its model class."""
+    """Reject unsupported Groot, which loads remote code, before the policy factory can load its model class."""
     from lerobot.configs.policies import PreTrainedConfig  # ruff: ignore[import-outside-top-level]
     from lerobot.policies import factory  # ruff: ignore[import-outside-top-level]
     from lerobot.utils import import_utils  # ruff: ignore[import-outside-top-level]
@@ -164,7 +164,7 @@ def test_groot_package_is_rejected_before_loading_remote_policy_code(
     get_policy_class = Mock(side_effect=AssertionError("Groot model factory must not run"))
     monkeypatch.setattr(factory, "get_policy_class", get_policy_class)
 
-    with pytest.raises(ValueError, match=r"Groot.*remote code.*reviewed and pinned"):
+    with pytest.raises(ValueError, match="LeRobot policy 'groot' is not supported"):
         LeRobotRuntimeAdapter().load(artifact)
 
     get_policy_class.assert_not_called()

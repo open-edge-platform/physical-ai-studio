@@ -82,7 +82,7 @@ def test_lerobot_cli_auto_selects_worker_extra_when_device_is_unspecified(
     monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
     monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
 
-    assert LeRobotEngine.cli(["--steps=2"]) == 0
+    assert LeRobotEngine.cli(["--policy.type=act", "--steps=2"]) == 0
     assert selected == ["auto"]
 
 
@@ -91,7 +91,7 @@ def test_lerobot_cli_uses_native_config_device_to_select_worker_extra(
     tmp_path: Path,
 ) -> None:
     config = tmp_path / "train_config.json"
-    config.write_text('{"policy":{"device":"xpu"}}', encoding="utf-8")
+    config.write_text('{"policy":{"type":"act","device":"xpu"}}', encoding="utf-8")
     prepared: list[str] = []
     def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
         del env, interpreter
@@ -111,7 +111,7 @@ def test_lerobot_cli_uses_policy_path_config_to_select_worker_extra(
 ) -> None:
     policy_path = tmp_path / "pretrained_model"
     policy_path.mkdir()
-    (policy_path / "config.json").write_text('{"device":"xpu"}', encoding="utf-8")
+    (policy_path / "config.json").write_text('{"type":"act","device":"xpu"}', encoding="utf-8")
     prepared: list[str] = []
 
     def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
@@ -131,7 +131,7 @@ def test_lerobot_cli_native_flag_overrides_device_in_config_without_rewriting_ar
     tmp_path: Path,
 ) -> None:
     config = tmp_path / "train_config.json"
-    config.write_text('{"policy":{"device":"xpu"}}', encoding="utf-8")
+    config.write_text('{"policy":{"type":"act","device":"xpu"}}', encoding="utf-8")
     prepared: list[str] = []
     calls: list[list[str]] = []
 
@@ -168,6 +168,7 @@ def test_lerobot_train_serializes_native_config_and_checks_exact_worker_version(
     expected_run = Run(framework="lerobot", output_dir=tmp_path / "run", checkpoint=None)
 
     class _Policy:
+        type = "act"
         device = "xpu"
 
     class _Config:
@@ -212,6 +213,7 @@ def test_lerobot_train_auto_selects_a_matching_worker_for_unspecified_policy_dev
     events: list[tuple[str, str]] = []
 
     class _Policy:
+        type = "act"
         device = None
 
     class _Config:
@@ -402,7 +404,7 @@ def _capture_cli_environment(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 @pytest.mark.parametrize(
     ("policy_type", "environment"),
-    [("smolvla", "smolvla"), ("pi0", "pi"), ("pi05", "pi"), ("pi0_fast", "pi"), ("molmoact2", "molmoact2"), ("act", "default")],
+    [("smolvla", "smolvla"), ("pi05", "pi"), ("act", "default")],
 )
 def test_lerobot_cli_trains_each_policy_family_in_its_own_environment(
     monkeypatch: pytest.MonkeyPatch,
@@ -422,14 +424,14 @@ def test_lerobot_cli_reads_the_policy_type_of_a_local_checkpoint_and_train_confi
     selected = _capture_cli_environment(monkeypatch)
     checkpoint = tmp_path / "pretrained_model"
     checkpoint.mkdir()
-    (checkpoint / "config.json").write_text('{"type": "molmoact2", "device": "cpu"}', encoding="utf-8")
+    (checkpoint / "config.json").write_text('{"type": "pi05", "device": "cpu"}', encoding="utf-8")
     train_config = tmp_path / "train_config.json"
     train_config.write_text('{"policy": {"type": "smolvla", "device": "cpu"}}', encoding="utf-8")
 
     assert LeRobotEngine.cli(["--policy.path", str(checkpoint)]) == 0
     assert LeRobotEngine.cli([f"--config_path={train_config}"]) == 0
-    assert LeRobotEngine.cli([f"--policy.path={checkpoint}", "--policy.type=pi05"]) == 0
-    assert selected == ["molmoact2", "smolvla", "pi"]
+    assert LeRobotEngine.cli([f"--policy.path={checkpoint}", "--policy.type=act"]) == 0
+    assert selected == ["pi", "smolvla", "default"]
 
 
 def test_lerobot_cli_reads_the_policy_type_of_a_hub_checkpoint(
@@ -454,10 +456,11 @@ def test_lerobot_cli_reads_the_policy_type_of_a_hub_checkpoint(
     assert selected == ["smolvla"]
 
 
-def test_lerobot_cli_falls_back_to_the_default_environment_when_the_hub_is_unreachable(
+def test_lerobot_cli_rejects_a_hub_checkpoint_whose_type_it_cannot_read(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Without the policy type it cannot check the policy is supported, so it stops."""
     import huggingface_hub
 
     selected = _capture_cli_environment(monkeypatch)
@@ -468,8 +471,9 @@ def test_lerobot_cli_falls_back_to_the_default_environment_when_the_hub_is_unrea
 
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", unreachable)
 
-    assert LeRobotEngine.cli(["--policy.path=lerobot/smolvla_base", "--policy.device=cpu"]) == 0
-    assert selected == ["default"]
+    with pytest.raises(ValueError, match="Cannot determine the LeRobot policy type"):
+        LeRobotEngine.cli(["--policy.path=lerobot/smolvla_base", "--policy.device=cpu"])
+    assert selected == []
     assert "using the default LeRobot environment" in caplog.text
 
 
@@ -503,11 +507,11 @@ def test_lerobot_train_and_run_select_the_policys_environment(
     monkeypatch.setattr(lerobot_engine_module, "_host_lerobot_version", fake_host_version)
 
     LeRobotEngine().train(_Config())  # type: ignore[arg-type]
-    LeRobotEngine.run({"policy": {"type": "molmoact2"}}, dataset=tmp_path, output_dir=tmp_path, device="cpu")
+    LeRobotEngine.run({"policy": {"type": "smolvla"}}, dataset=tmp_path, output_dir=tmp_path, device="cpu")
     LeRobotEngine.run({"policy": {"type": "act"}}, dataset=tmp_path, output_dir=tmp_path, device="cpu")
 
     assert versions == ["pi"]
-    assert selected == ["pi", "molmoact2", "default"]
+    assert selected == ["pi", "smolvla", "default"]
 
 
 def test_lerobot_engine_lists_each_family_environment_once() -> None:
@@ -562,3 +566,50 @@ def test_lerobot_run_reads_policy_and_device_from_nested_or_dotted_settings(
     LeRobotEngine.run(settings, dataset=tmp_path, output_dir=tmp_path, device="auto")
 
     assert selected == [("smolvla", "cpu")]
+
+
+@pytest.mark.parametrize("policy_type", ["pi0", "pi0_fast", "molmoact2", "groot", "wall_x"])
+def test_lerobot_rejects_unsupported_policies_before_starting_a_worker(
+    monkeypatch: pytest.MonkeyPatch,
+    policy_type: str,
+    tmp_path: Path,
+) -> None:
+    selected = _capture_cli_environment(monkeypatch)
+
+    def unexpected(*_args: object, **_kwargs: object) -> Run:
+        pytest.fail("An unsupported policy must not start a worker.")
+
+    monkeypatch.setattr(lerobot_engine_module, "run_worker", unexpected)
+
+    class _Policy:
+        type = policy_type
+        device = "cpu"
+
+    class _Config:
+        policy = _Policy()
+
+        def save_pretrained(self, directory: Path) -> None:
+            pytest.fail("An unsupported policy must not be serialized.")
+
+    match = f"LeRobot policy '{policy_type}' is not supported"
+    with pytest.raises(ValueError, match=match):
+        LeRobotEngine.cli([f"--policy.type={policy_type}", "--policy.device=cpu"])
+    with pytest.raises(ValueError, match=match):
+        LeRobotEngine().train(_Config())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=match):
+        LeRobotEngine.run({"policy": {"type": policy_type}}, dataset=tmp_path, output_dir=tmp_path, device="cpu")
+    assert selected == []
+    assert policy_type not in LeRobotEngine.policies()
+
+
+def test_lerobot_help_needs_no_policy_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = _capture_cli_environment(monkeypatch)
+
+    assert LeRobotEngine.cli(["--help"]) == 0
+    assert selected == ["default"]
+
+
+def test_unsupported_families_keep_their_declared_environments() -> None:
+    """Environments stay declared for families that are not supported yet."""
+    assert LeRobotEngine.environment_for_policy("pi0").name == "pi"
+    assert LeRobotEngine.environment_for_policy("molmoact2").name == "molmoact2"

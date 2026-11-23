@@ -15,7 +15,7 @@ from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.callbacks.base import Callback
 
-from .policy_support import UNREVIEWED_POLICY_TYPES
+from .policy_support import require_supported_policy, validate_processor_configs
 
 if TYPE_CHECKING:
     from physicalai.inference.model import InferenceModel
@@ -58,8 +58,8 @@ class LeRobotRuntimeAdapter(RuntimeAdapter):
             model_path: Runtime's LeRobot artifact directory.
 
         Raises:
-            FileNotFoundError: If the artifact or native config file is missing.
-            ValueError: If the policy requires unreviewed remote code.
+            FileNotFoundError: If the artifact, native config, or a processor file is missing.
+            ValueError: If the policy type is not supported or a processor config is unsafe.
         """
         model_path = Path(model_path).expanduser()
         if not model_path.is_dir():
@@ -76,10 +76,9 @@ class LeRobotRuntimeAdapter(RuntimeAdapter):
             native_dir,
             cli_overrides=[f"--device={self.device}"],
         )
-        policy_type = getattr(config, "type", None)
-        if isinstance(policy_type, str) and policy_type.lower() in UNREVIEWED_POLICY_TYPES:
-            msg = "LeRobot Groot policy loading is disabled until its remote code is reviewed and pinned."
-            raise ValueError(msg)
+        require_supported_policy(getattr(config, "type", None))
+        # LeRobot imports the classes these files name; check them before it does.
+        validate_processor_configs(native_dir)
 
         from lerobot.policies.factory import get_policy_class  # ruff: ignore[import-outside-top-level]
 

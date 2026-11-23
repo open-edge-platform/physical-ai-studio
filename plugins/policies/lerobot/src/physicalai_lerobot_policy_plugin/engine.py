@@ -31,7 +31,7 @@ from physicalai.engine import (
     supported_versions,
 )
 
-from .policy_support import UNREVIEWED_POLICY_TYPES
+from .policy_support import SUPPORTED_POLICY_TYPES, require_supported_policy
 
 if TYPE_CHECKING:
     from lerobot.configs.train import TrainPipelineConfig
@@ -117,8 +117,8 @@ class LeRobotEngine(TrainingEngine):
             raise TypeError(msg)
 
         policy = getattr(config, "policy", None)
-        policy_type = getattr(policy, "type", None)
-        env = self.environment_for_policy(policy_type if isinstance(policy_type, str) else None)
+        policy_type = require_supported_policy(getattr(policy, "type", None))
+        env = self.environment_for_policy(policy_type)
         expected_version = _host_lerobot_version(env)
         configured_device = getattr(policy, "device", None)
         device, worker_accelerator = _resolve_worker_device(configured_device, allowed=env.accelerators)
@@ -163,7 +163,10 @@ class LeRobotEngine(TrainingEngine):
             if cls.env is None:
                 msg = "LeRobotEngine requires a worker environment."
                 raise RuntimeError(msg)
-            env = cls.environment_for_policy(_policy_type_from_cli(argv))
+            policy_type = _policy_type_from_cli(argv)
+            if not _asks_for_help(argv):
+                require_supported_policy(policy_type)
+            env = cls.environment_for_policy(policy_type)
             requested_device = _device_from_cli(argv)
             _, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
             python = interpreter_for(env, accelerator=accelerator, interpreter=None)
@@ -201,7 +204,7 @@ class LeRobotEngine(TrainingEngine):
         # settings select the same environment and device.
         flattened: dict[str, object] = {}
         _flatten_settings(settings, "", flattened)
-        env = cls.environment_for_policy(_settings_policy_type(flattened))
+        env = cls.environment_for_policy(require_supported_policy(_settings_policy_type(flattened)))
         settings_device = _settings_device(flattened)
         requested_device = (
             settings_device if device.strip().lower() == "auto" and settings_device is not None else device
@@ -249,17 +252,17 @@ class LeRobotEngine(TrainingEngine):
 
     @classmethod
     def policies(cls) -> list[str]:
-        """List built-in LeRobot policy types safe for the stock engine.
+        """List the LeRobot policy types this plugin supports.
 
         Returns:
-            Policy identifiers supported by LeRobot's installed config registry.
+            Supported policy identifiers that LeRobot's installed config registry provides.
         """
         import_module("lerobot.policies")
         from lerobot.configs.policies import PreTrainedConfig  # ruff: ignore[import-outside-top-level]
 
         choices = PreTrainedConfig.get_known_choices()
         names = choices.keys() if isinstance(choices, Mapping) else choices
-        return sorted(policy for policy in names if isinstance(policy, str) and policy not in UNREVIEWED_POLICY_TYPES)
+        return sorted(policy for policy in names if isinstance(policy, str) and policy in SUPPORTED_POLICY_TYPES)
 
     @classmethod
     def config_schema(cls, policy: str) -> dict[str, Any]:
@@ -415,6 +418,10 @@ def _cli_options(arguments: Sequence[str]) -> dict[str, str]:
                 break
         index += 1
     return found
+
+
+def _asks_for_help(arguments: Sequence[str]) -> bool:
+    return any(argument in {"-h", "--help"} for argument in arguments)
 
 
 def _device_from_cli(arguments: Sequence[str]) -> str | None:

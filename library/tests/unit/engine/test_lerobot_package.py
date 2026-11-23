@@ -26,8 +26,21 @@ def _write_native_checkpoint(model_dir: Path) -> None:
         encoding="utf-8",
     )
     (model_dir / "model.safetensors").write_bytes(b"native weights")
-    (model_dir / "policy_preprocessor.json").write_text("{}", encoding="utf-8")
-    (model_dir / "policy_postprocessor.json").write_text("{}", encoding="utf-8")
+    _write_processors(model_dir)
+
+
+def _write_processors(model_dir: Path, **step_overrides: object) -> None:
+    """Write processor configs shaped like LeRobot's, with one registered step and its state."""
+    state_file = "policy_preprocessor_step_0_normalizer_processor.safetensors"
+    (model_dir / state_file).write_bytes(b"stats")
+    step: dict[str, object] = {"registry_name": "normalizer_processor", "config": {}, "state_file": state_file}
+    step.update(step_overrides)
+    step = {key: value for key, value in step.items() if value is not None}
+    (model_dir / "policy_preprocessor.json").write_text(json.dumps({"name": "pre", "steps": [step]}), encoding="utf-8")
+    (model_dir / "policy_postprocessor.json").write_text(
+        json.dumps({"name": "post", "steps": [{"registry_name": "device_processor", "config": {}}]}),
+        encoding="utf-8",
+    )
 
 
 class _Processor:
@@ -198,3 +211,50 @@ def test_export_rejects_unsafe_policy_directory_component(tmp_path: Path) -> Non
         LeRobotEngine.export(native_model_dir, output_path=package_dir)
 
     assert not package_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("step_overrides", "error"),
+    [
+        ({"registry_name": None, "class": "os.system"}, "names a class outside `lerobot.`"),
+        ({"registry_name": None, "class": "lerobot.processor.normalize.NormalizeStep"}, None),
+        ({"registry_name": "normalizer_processor", "class": "lerobot.processor.X"}, "not both"),
+        ({"state_file": "../outside.safetensors"}, "invalid state file"),
+        ({"state_file": "weights.pickle"}, "invalid state file"),
+        ({"state_file": "missing.safetensors"}, "state file is missing"),
+    ],
+)
+def test_processor_configs_are_checked_before_lerobot_loads_them(
+    tmp_path: Path,
+    step_overrides: dict[str, object],
+    error: str | None,
+) -> None:
+    from physicalai_lerobot_policy_plugin.policy_support import validate_processor_configs
+
+    model_dir = tmp_path / "pretrained_model"
+    _write_native_checkpoint(model_dir)
+    _write_processors(model_dir, **step_overrides)
+
+    if error is None:
+        validate_processor_configs(model_dir)
+    else:
+        with pytest.raises((ValueError, FileNotFoundError), match=error):
+            validate_processor_configs(model_dir)
+
+
+def test_export_rejects_an_incomplete_or_unsupported_checkpoint(tmp_path: Path) -> None:
+    incomplete = tmp_path / "incomplete" / "pretrained_model"
+    _write_native_checkpoint(incomplete)
+    (incomplete / "policy_postprocessor.json").unlink()
+    with pytest.raises(FileNotFoundError, match="missing policy_postprocessor.json"):
+        LeRobotEngine.export(incomplete, output_path=tmp_path / "export-incomplete")
+
+    unsupported = tmp_path / "unsupported" / "pretrained_model"
+    _write_native_checkpoint(unsupported)
+    for name in ("config.json", "train_config.json"):
+        path = unsupported / name
+        path.write_text(path.read_text(encoding="utf-8").replace('"act"', '"pi0_fast"'), encoding="utf-8")
+    with pytest.raises(ValueError, match="LeRobot policy 'pi0_fast' is not supported"):
+        LeRobotEngine.export(unsupported, output_path=tmp_path / "export-unsupported")
+    assert not (tmp_path / "export-incomplete").exists()
+    assert not (tmp_path / "export-unsupported").exists()

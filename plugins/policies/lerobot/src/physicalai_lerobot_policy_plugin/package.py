@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .policy_support import require_supported_policy, validate_processor_configs
+
 if TYPE_CHECKING:
     from physicalai.engine import Run
 
@@ -36,10 +38,13 @@ def package_lerobot_checkpoint(source: Run | str | Path, output_dir: Path) -> Pa
 
     Raises:
         FileExistsError: If *output_dir* already exists.
-        ValueError: If the model name or source tree is unsafe or invalid.
+        ValueError: If the policy type is not supported, or the model name, source tree, or
+            saved processors are unsafe or invalid.
     """
     native_dir = _native_model_directory(source)
-    policy_name = _policy_name(native_dir)
+    policy_name = require_supported_policy(_policy_name(native_dir))
+    # Runtime loads these processors; fail here rather than when the package is loaded.
+    validate_processor_configs(native_dir)
     output_candidate = Path(output_dir).expanduser()
     if output_candidate.exists() or output_candidate.is_symlink():
         msg = f"Export directory already exists: {output_candidate}"
