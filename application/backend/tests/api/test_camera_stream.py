@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import quote
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
+from physicalai.capture.errors import CaptureTimeoutError
 
 from api.dependencies import get_camera_claim_registry, get_scheduler
 from main import app
@@ -69,5 +71,27 @@ def test_stream_endpoint_overwrites_settings_of_an_unclaimed_camera() -> None:
             with client.websocket_connect(f"/api/cameras/ws?camera={quote(_camera_query())}"):
                 pass
             assert build.call_args.kwargs["overwrite_settings"] is True
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_stream_releases_the_camera_once_frames_stop() -> None:
+    """A dead publisher leaves its last frame in place; the preview must not hold the camera forever."""
+    client = _client(CameraClaimRegistry())
+    try:
+        with (
+            patch("api.camera.build_shared_camera") as build,
+            patch("api.camera.Rate") as rate_cls,
+            patch("utils.jpeg.encode_jpeg_rgb", return_value=b"jpeg"),
+        ):
+            camera = build.return_value
+            camera.read.side_effect = CaptureTimeoutError("timed out waiting for frame")
+            rate_cls.return_value.sleep = AsyncMock(side_effect=[None] * 10 + [WebSocketDisconnect()])
+            with (
+                pytest.raises(CaptureTimeoutError),
+                client.websocket_connect(f"/api/cameras/ws?camera={quote(_camera_query())}") as websocket,
+            ):
+                websocket.receive_bytes()
+            camera.disconnect.assert_called_once()
     finally:
         app.dependency_overrides.clear()
