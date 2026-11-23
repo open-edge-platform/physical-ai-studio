@@ -16,14 +16,8 @@ from physicalai.engine import Run, TrainHooks, WorkerEnv, run_worker
 from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
 
-def test_native_worker_reports_le_robot_update_metrics_and_run_paths(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """The real worker bridge reports native updates over the shared protocol.
-
-    Non-finite metrics (for example a skipped AMP step) are dropped instead of stopping training.
-    """
+def _fake_lerobot_worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[WorkerEnv, Path]:
+    """Install a fake LeRobot whose trainer creates the run directory, and declare its worker."""
     fake_site = tmp_path / "site"
     train_module = fake_site / "lerobot" / "scripts" / "lerobot_train.py"
     config_module = fake_site / "lerobot" / "configs" / "train.py"
@@ -88,6 +82,19 @@ def test_native_worker_reports_le_robot_update_metrics_and_run_paths(
         package="lerobot",
     )
 
+    return env, output_dir
+
+
+def test_native_worker_reports_le_robot_update_metrics_and_run_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The real worker bridge reports native updates over the shared protocol.
+
+    Non-finite metrics (for example a skipped AMP step) are dropped instead of stopping training.
+    """
+    env, output_dir = _fake_lerobot_worker(monkeypatch, tmp_path)
+
     class _Hooks:
         steps: list[tuple[int, int | None, Mapping[str, float]]]
 
@@ -110,3 +117,31 @@ def test_native_worker_reports_le_robot_update_metrics_and_run_paths(
         checkpoint=output_dir / "checkpoints" / "last" / "pretrained_model",
     )
     assert hooks.steps == [(1, 2, {"loss": 0.25})]
+
+
+def test_native_worker_waits_for_the_host_to_accept_its_handshake(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A worker whose version the host rejects never starts native training."""
+    from packaging.version import Version
+
+    from physicalai.engine import _runner
+    from physicalai.engine._runner import WorkerProtocolError
+
+    env, output_dir = _fake_lerobot_worker(monkeypatch, tmp_path)
+    read_protocol = _runner._read_protocol
+
+    def slow_reader(*args: object) -> None:
+        # Validate the handshake late, as on a busy host, so an eager worker would start training.
+        import time
+
+        time.sleep(0.5)
+        read_protocol(*args)
+
+    monkeypatch.setattr(_runner, "_read_protocol", slow_reader)
+
+    with pytest.raises(WorkerProtocolError):
+        run_worker(env, [], device="cpu", interpreter=sys.executable, expected_version=Version("9.9.9"))
+
+    assert not output_dir.exists()

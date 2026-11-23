@@ -101,6 +101,8 @@ class _WorkerState:
         if not self.hello_received:
             _validate_hello(self.env, event, self.expected_version)
             self.hello_received = True
+            # Workers wait for this before starting native training; others ignore it.
+            _send_control(self.process, b'{"type":"ack"}\n')
             return
         self._consume_message(event)
 
@@ -336,7 +338,11 @@ def _wait_for_worker(state: _WorkerState) -> int:
 
 def _close_worker(state: _WorkerState) -> None:
     if state.process.stdin is not None:
-        state.process.stdin.close()
+        # Closing flushes any control message the worker exited before reading.
+        try:
+            state.process.stdin.close()
+        except BrokenPipeError:
+            logger.debug("Worker exited before reading its last control message.")
     for thread in state.threads:
         thread.join(timeout=1.0)
     state.protocol_reader_stop.set()
@@ -514,13 +520,17 @@ def _report_progress(hooks: TrainHooks, message: dict[str, Any]) -> int:
 
 
 def _send_cancel(process: isolate.Session | subprocess.Popen[bytes]) -> None:
+    _send_control(process, b'{"type":"cancel"}\n')
+
+
+def _send_control(process: isolate.Session | subprocess.Popen[bytes], message: bytes) -> None:
     if process.stdin is None:
         return
     try:
-        process.stdin.write(b'{"type":"cancel"}\n')
+        process.stdin.write(message)
         process.stdin.flush()
     except BrokenPipeError:
-        logger.debug("Worker closed its control pipe before cancellation was delivered.")
+        logger.debug("Worker closed its control pipe before %s was delivered.", message.decode().strip())
 
 
 def _stop_process(process: isolate.Session | subprocess.Popen[bytes]) -> None:

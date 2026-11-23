@@ -12,6 +12,7 @@ import os
 import select
 import sys
 import threading
+import time
 import traceback
 from contextlib import contextmanager
 from pathlib import Path
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 _PROTOCOL_VERSION = 1
 _PROTOCOL_PREFIX = bytes([30]) + b"physicalai-worker "
 _NON_METRIC_FIELDS = frozenset({"steps", "samples", "episodes", "epochs"})
+# How long to wait for the host to accept the handshake; matches the host's startup timeout.
+_ACK_TIMEOUT_SECONDS = 60.0
 _CANCEL_EVENT = threading.Event()
 _CANCEL_LISTENER_STOP = threading.Event()
 
@@ -34,6 +37,33 @@ def _send(message: dict[str, object]) -> None:
     file_descriptor = int(os.environ["PHYSICALAI_WORKER_PROTOCOL_FD"])
     while payload:
         payload = payload[os.write(file_descriptor, payload) :]
+
+
+def _wait_for_host_acknowledgement() -> str:
+    """Block until the host accepts the handshake, so a rejected worker never starts training.
+
+    Returns:
+        ``"ack"`` when accepted, ``"cancel"`` when the host cancelled, or ``"closed"`` when the
+        host closed standard input or did not answer in time.
+    """
+    deadline = time.monotonic() + _ACK_TIMEOUT_SECONDS
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            readable, _, _ = select.select([sys.stdin], [], [], min(remaining, 0.5))
+        except (OSError, ValueError):
+            return "closed"
+        if not readable:
+            continue
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return "closed"
+        try:
+            control = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(control, dict) and control.get("type") in {"ack", "cancel"}:
+            return str(control["type"])
+    return "closed"
 
 
 def _listen_for_cancellation() -> None:
@@ -181,6 +211,13 @@ def _run(arguments: list[str]) -> int:
             "version": importlib.metadata.version(package),
         },
     )
+    answer = _wait_for_host_acknowledgement()
+    if answer == "cancel":
+        _send({"type": "cancelled", "step": None})
+        return 130
+    if answer != "ack":
+        _send({"type": "error", "error": "WorkerHandshakeError", "message": "The host did not accept the handshake."})
+        return 1
     _CANCEL_EVENT.clear()
     _CANCEL_LISTENER_STOP.clear()
     cancellation_listener = threading.Thread(target=_listen_for_cancellation, name="worker-control", daemon=True)
