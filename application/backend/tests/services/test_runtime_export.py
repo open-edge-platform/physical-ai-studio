@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from physicalai.config import Config, validate_config
+from physicalai.inference.manifest import ObservationHistorySpec
 from physicalai.runtime import RobotRuntime
 
 from robots.robot_client_factory import RobotClientFactory
@@ -197,6 +198,29 @@ def test_policy_source_fragment_is_independent_of_the_export_dir() -> None:
     assert export["init_args"]["model"]["init_args"]["export_dir"] == "./exports/torch"
     assert export["init_args"]["task"] == "pick up the cube"
     assert "task" not in other["init_args"]
+    assert "observation_history" not in export["init_args"]
+    assert "observation_history" not in other["init_args"]
+
+
+@pytest.mark.parametrize("history", [None, ObservationHistorySpec(n_obs_steps=3, stride=2)])
+def test_policy_source_history_config_round_trip(history, mocker) -> None:
+    fragment = policy_source_fragment(
+        export_dir="./exports/torch", backend="torch", device="cpu", observation_history=history
+    )
+    if history is None:
+        assert "observation_history" not in fragment["init_args"]
+    else:
+        assert fragment["init_args"]["observation_history"] == {"n_obs_steps": 3, "stride": 2}
+    validate_config(fragment)
+    mocker.patch("physicalai.inference.InferenceModel.__init__", return_value=None)
+    with NamedTemporaryFile(mode="w", suffix=".yaml") as config_file:
+        config_file.write(Config.from_dict(fragment).to_yaml())
+        config_file.flush()
+        source = Config.load(config_file.name).instantiate()
+    if history is None:
+        assert source._history is None
+    else:
+        assert source._history._spec == history
 
 
 def test_policy_source_fragment_runs_the_session_s_execution() -> None:

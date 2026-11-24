@@ -20,6 +20,7 @@ from schemas.runtime_session import ExecutionConfig
 from utils.camera_factory import build_camera_config, is_migrated
 
 if TYPE_CHECKING:
+    from physicalai.inference.manifest import ObservationHistorySpec
     from physicalai_studio_plugin import CatalogRobotFactory, SerialPortInfo
 
     from schemas.project_camera import Camera
@@ -76,6 +77,7 @@ def policy_source_fragment(
     device: str,
     task: str | None = None,
     execution: ExecutionConfig | None = None,
+    observation_history: ObservationHistorySpec | None = None,
 ) -> dict[str, Any]:
     """Return the PolicySource recipe the inference export instantiates.
 
@@ -101,6 +103,8 @@ def policy_source_fragment(
     }
     if task:
         init_args["task"] = task
+    if observation_history is not None:
+        init_args["observation_history"] = observation_history.to_config_value()
     return Config("physicalai.runtime.PolicySource", init_args).to_dict()
 
 

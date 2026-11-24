@@ -55,6 +55,24 @@ exports/
 └── metadata.json
 ```
 
+### Observation History
+
+```python test="skip" reason="policy-specific export parameters"
+from physicalai.export.backends import OpenVINOExportParameters
+from physicalai.inference.manifest import ComponentSpec, ObservationHistorySpec
+
+parameters = OpenVINOExportParameters(
+    observation_history=ObservationHistorySpec(n_obs_steps=3, stride=2),
+    preprocessors_specs=[
+        ComponentSpec(type="stack_observation_history"),
+        # Policy preprocessing follows.
+    ],
+)
+```
+
+Return these parameters under `"openvino"` in `extra_export_args`; export writes root-level `observation_history` and the explicitly declared preprocessors.
+Pass `observation_history=model.manifest.observation_history` to `PolicySource`; direct inference requires complete windows.
+
 ## Post-Export Hooks
 
 `export(...)` accepts `post_export_hooks`, a list of callables run after the model

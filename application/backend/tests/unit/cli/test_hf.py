@@ -276,6 +276,52 @@ def test_inspect_pins_revision_and_only_downloads_json(environment):
     assert report["model"]["policy"] == "pi05"
 
 
+@pytest.mark.parametrize("version", ["1.0", "1.1", "1.1.0", "1.01"])
+def test_inspection_accepts_supported_manifest_versions(version):
+    files = model_files()
+    name = "exports/torch/manifest.json"
+    files[name] = json.dumps({**json.loads(files[name]), "version": version}).encode()
+
+    report = inspection.inspect_model_files(dict.fromkeys(files, 0), lambda name: json.loads(files[name]))
+
+    assert report.importable
+    assert not report.errors
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"version": "0.9"},
+        {"version": "1.2"},
+        {"version": "1.10"},
+        {"version": "2.0"},
+        {"version": None},
+        {"version": []},
+        {"format": "unknown"},
+    ],
+)
+def test_inspection_rejects_unsupported_manifests(changes):
+    files = model_files()
+    name = "exports/torch/manifest.json"
+    files[name] = json.dumps({**json.loads(files[name]), **changes}).encode()
+
+    report = inspection.inspect_model_files(dict.fromkeys(files, 0), lambda name: json.loads(files[name]))
+
+    assert not report.importable
+    assert any("Unsupported policy manifest" in error for error in report.errors)
+
+
+def test_inspection_rejects_malformed_manifest_version():
+    files = model_files()
+    name = "exports/torch/manifest.json"
+    files[name] = json.dumps({**json.loads(files[name]), "version": "1.x"}).encode()
+
+    report = inspection.inspect_model_files(dict.fromkeys(files, 0), lambda name: json.loads(files[name]))
+
+    assert not report.importable
+    assert any("Invalid version" in error for error in report.errors)
+
+
 def test_ambiguous_roots_and_subfolder(environment):
     environment.hub.repos["owner/model"] = {**model_files(prefix="a/"), **model_files(prefix="b/")}
     report = json.loads(invoke("model", "inspect", "owner/model", "--json").stdout)

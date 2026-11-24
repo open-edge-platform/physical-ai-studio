@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, cast
 
+from packaging.version import Version
+
 from cli.hf.schemas import (
     AssetMetadata,
     DatasetDetails,
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
 
 CARDS_AND_LICENSES = {"README.md", "LICENSE", "LICENSE.md"}
 MAX_METADATA_BYTES = 4 * 1024 * 1024
+MAX_POLICY_MANIFEST_VERSION = Version("1.1")
 
 
 def token() -> str | bool:
@@ -178,7 +181,11 @@ def _model_manifests(
             continue
         try:
             manifest = inventory.read(manifest_name)
-            if manifest.get("format") != "policy_package" or manifest.get("version") != "1.0":
+            version = manifest.get("version")
+            supported_version = (
+                isinstance(version, str) and Version("1.0") <= Version(version) <= MAX_POLICY_MANIFEST_VERSION
+            )
+            if manifest.get("format") != "policy_package" or not supported_version:
                 errors.append(f"Unsupported policy manifest: {manifest_name}")
             policies.add(manifest_policy(manifest, manifest_name))
             artifact = safe_path(manifest_artifact(manifest, backend, manifest_name))

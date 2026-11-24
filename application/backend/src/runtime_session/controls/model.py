@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
+from physicalai.capture.frame import Frame
 from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource, SyncExecution
 from physicalai.runtime.events import TickEvent
 
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class _Observation:
-    """The follower's state as ``PolicySource`` takes it; the model worker adds the frames from the store."""
+    """The follower's state as ``PolicySource`` takes it; selected cameras are passed separately."""
 
     joint_positions: np.ndarray
     timestamp: float
@@ -61,8 +62,13 @@ class ModelControl(Control):
             else SyncExecution(request_threshold=config.execution.request_threshold)
         )
         self.source = PolicySource(
-            cast("Any", model), execution, ChunkedActionQueue(smoother=LerpSmoother()), task=config.task or None
+            cast("Any", model),
+            execution,
+            ChunkedActionQueue(smoother=LerpSmoother()),
+            task=config.task or None,
+            observation_history=model.inputs.observation_history,
         )
+        self._cameras = tuple(dict.fromkeys(model.inputs.images.values())) if model.inputs.observation_history else ()
         self.step = 0
         self.grace_s = config.grace_s
         self.started_at = 0.0
@@ -84,9 +90,15 @@ class ModelControl(Control):
         if state is None:
             return  # nothing to infer from until the follower is measured
         observation = _Observation(state.value, state.timestamp)
+        frames = {}
+        for camera in self._cameras:
+            sample = self.store.read_observation(camera)
+            if sample is None:
+                raise RuntimeError(f"Camera {camera!r} has no frame yet")
+            frames[camera] = Frame(sample.value, sample.timestamp, self.step)
         if self._events is not None:
             self._events.step = self.step
-        action = self.source.update(observation, {}, self.step)
+        action = self.source.update(observation, frames, self.step)
         due = max(time.monotonic() + 1 / self.hz, self.started_at + self.grace_s)
         self.store.write(ACTION, action, timestamp=due)
         if self._events is not None:

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
 
+from physicalai.inference.manifest import ObservationHistorySpec
+
 #: Supported ExecuTorch delegate backends.
 ExecuTorchDelegate = Literal["portable", "xnnpack", "openvino"]
 
@@ -50,6 +52,7 @@ class ExportParameters:
     preprocessors_specs: list = field(default_factory=list)
     postprocessors_specs: list = field(default_factory=list)
     callbacks_specs: list = field(default_factory=list)
+    observation_history: ObservationHistorySpec | None = None
 
 
 @dataclass
