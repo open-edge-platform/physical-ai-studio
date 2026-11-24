@@ -7,7 +7,7 @@ VQ-BeT and diffusion action heads; the default is DINOv2 with VQ-BeT. See the [p
 ## Forward Pass
 
 These features match the SO101 example use case:
-two cameras, six joint-state values, and six action values. No dataset normalization statistics are supplied.
+two cameras and six action values. Predictions use only images; joint state is ignored. No dataset normalization statistics are supplied.
 
 ```python
 import torch
@@ -18,7 +18,6 @@ from physicalai.policies import PatchPolicy
 input_features = [
     Feature(name="overview", ftype=FeatureType.VISUAL, shape=(3, 480, 640)),
     Feature(name="wrist", ftype=FeatureType.VISUAL, shape=(3, 480, 640)),
-    Feature(name="state", ftype=FeatureType.STATE, shape=(6,)),
 ]
 output_features = [Feature(name="action", ftype=FeatureType.ACTION, shape=(6,))]
 
@@ -34,7 +33,6 @@ observation = Observation(
         "overview": torch.rand(1, 2, 3, 480, 640),
         "wrist": torch.rand(1, 2, 3, 480, 640),
     },
-    state=torch.zeros(1, 6),
 )
 with torch.inference_mode():
     actions = policy(observation)
@@ -52,6 +50,8 @@ physicalai fit --config configs/physicalai/patch_policy/pusht/dinov2-vqbet.yaml
 ```
 
 The recipe trains for 400 epochs with five history frames. It logs metrics to W&B and records local rollout videos in `output/rollouts`.
+
+Fresh VQ-BeT tokenizer fitting supports only LeRobot datasets and single-device training. These restrictions are checked when fitting with the lightning trainer.
 
 To resume with the complete saved model config and optimizer state:
 
