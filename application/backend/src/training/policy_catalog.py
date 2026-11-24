@@ -2,12 +2,14 @@
 
 from collections.abc import Callable
 from importlib import metadata
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from packaging.requirements import Requirement
 from pydantic import BaseModel
 
-from schemas.policy import AvailablePolicyReference, ReadablePolicy, UnavailablePolicy, UnknownPolicyAvailability
+if TYPE_CHECKING:
+    from schemas.policy import ReadablePolicy
 
 
 class AvailablePolicy(BaseModel):
@@ -130,13 +132,16 @@ def declared_policy_catalog(backends: dict[str, list[str]]) -> PolicyCatalog:
     )
 
 
-def readable_policy(policy: str, catalog: PolicyCatalog | None = None, *, remote: bool = False) -> ReadablePolicy:
+def readable_policy(policy: str, catalog: PolicyCatalog | None = None, *, remote: bool = False) -> "ReadablePolicy":
     """Describe a saved reference without importing policy implementations or contacting trainers.
 
     An unverified remote target is unknown, never unavailable merely because
     the policy is absent locally. Callers with a verified inventory can supply it.
     Execution still verifies constructors and target capabilities separately.
     """
+    # Trainer images share this catalog but do not ship Studio's schemas package.
+    from schemas.policy import AvailablePolicyReference, UnavailablePolicy, UnknownPolicyAvailability
+
     if catalog is not None:
         return (
             AvailablePolicyReference(id=policy)
