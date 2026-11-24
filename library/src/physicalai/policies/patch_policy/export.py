@@ -29,7 +29,7 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
 
     Model-only backend parameters describe the NumPy processing pipeline.
     Torch keeps normalization and action postprocessing inside the policy.
-    Observation history is supplied by the caller, not assembled here.
+    The caller collects observation history; the declared processor stacks it.
     """
 
     @property
@@ -60,6 +60,7 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
 
         # Order camera windows, scale pixels to float32, then resize without letterboxing.
         preproc_specs = [
+            ComponentSpec(type="stack_observation_history"),
             ComponentSpec(
                 type="patch_policy",
                 camera_names=[

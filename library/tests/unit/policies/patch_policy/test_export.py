@@ -10,15 +10,16 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from physicalai.inference.component_factory import instantiate_component, resolve_artifact
+from physicalai.inference.manifest import ComponentSpec, Manifest, ObservationHistorySpec
+from physicalai.inference.postprocessors.base import Postprocessor
+from physicalai.inference.preprocessors.base import Preprocessor
+from physicalai.runtime.action_sources.observation_history import ObservationHistory
 
 from physicalai import policies
 from physicalai.data import Feature, FeatureType, NormalizationParameters, Observation
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.inference import InferenceModel
-from physicalai.inference.component_factory import instantiate_component, resolve_artifact
-from physicalai.inference.manifest import ComponentSpec, Manifest
-from physicalai.inference.postprocessors.base import Postprocessor
-from physicalai.inference.preprocessors.base import Preprocessor
 from physicalai.policies import patch_policy
 from physicalai.policies.patch_policy import policy as policy_module
 from physicalai.policies.patch_policy.config import PatchPolicyConfig
@@ -168,7 +169,8 @@ def test_torch_export_round_trip_is_offline(tiny_encoder, small_config, tmp_path
     assert manifest.policy.name == "patchpolicy"
     assert manifest.model.artifacts == {"torch": "patchpolicy.pt"}
     assert (export_dir / manifest.model.artifacts["torch"]).is_file()
-    assert manifest.model.preprocessors[0].flat_params["n_obs_steps"] == small_config.n_obs_steps
+    assert manifest.model.preprocessors[0].type == "stack_observation_history"
+    assert manifest.model.preprocessors[1].flat_params["n_obs_steps"] == small_config.n_obs_steps
     assert not manifest.model.postprocessors
     assert not (export_dir / "stats.safetensors").exists()
     assert manifest.model.input_features[0].init_args["shape"] == [small_config.n_obs_steps, 3, 4, 4]
@@ -198,8 +200,9 @@ def test_unconfigured_torch_export_fails(tmp_path) -> None:
 @pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
 def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path, action_head) -> None:
     ov = pytest.importorskip("openvino")
-    policy = PatchPolicy.from_config(replace(small_config, action_head=action_head), encoder_pretrained=False).eval()
-    images = np.random.default_rng(42).integers(0, 256, (1, small_config.n_obs_steps, 3, 7, 9), dtype=np.uint8)
+    config = replace(small_config, action_head=action_head, n_obs_steps=3, use_random_input_noise=False)
+    policy = PatchPolicy.from_config(config, encoder_pretrained=False).eval()
+    images = np.random.default_rng(42).integers(0, 256, (1, config.n_obs_steps, 3, 7, 9), dtype=np.uint8)
     expected = policy.predict_action_chunk(Observation(images={"front": torch.from_numpy(images)})).numpy()
 
     policy.export(tmp_path, backend="openvino")
@@ -211,6 +214,22 @@ def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path, act
     with InferenceModel(tmp_path, device="CPU", INFERENCE_PRECISION_HINT="f32") as model:
         actual = model({"images.front": images})["action"]
         np.testing.assert_array_equal(model({"images.front": images})["action"], actual)
+        assert sum(spec.type == "stack_observation_history" for spec in model.manifest.model.preprocessors) == 1
+        history = ObservationHistory(ObservationHistorySpec(n_obs_steps=config.n_obs_steps))
+        for _ in range(2):
+            history.reset()
+            for index in range(config.n_obs_steps):
+                frame = images[:, index].transpose(0, 2, 3, 1)
+                deferred = history.window(
+                    {"images.front": frame},
+                    record=True,
+                    camera_names=("front",),
+                    stack=False,
+                )
+                indices = [max(0, index - offset) for offset in reversed(range(config.n_obs_steps))]
+                window = torch.from_numpy(images[:, indices])
+                reference = policy.predict_action_chunk(Observation(images={"front": window})).numpy()
+                np.testing.assert_allclose(model(deferred)["action"], reference, rtol=1e-4, atol=1e-5)
     assert actual.shape == expected.shape
     np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-5)
 
