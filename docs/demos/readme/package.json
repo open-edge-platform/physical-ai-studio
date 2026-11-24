@@ -1,20 +1,31 @@
 {
   "name": "physical-ai-studio-readme-demos",
   "private": true,
-  "description": "Source files for the Python API and Studio UI demos on the Physical AI Studio README.",
+  "description": "Open-source React, Playwright, and FFmpeg renderer for the README demos.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "preview": "remotion studio src/index.ts",
-    "render:api": "remotion render src/index.ts ApiDemo out/api-demo.mp4 --codec h264 --crf 18 --log=error && ./scripts/to-gif.sh out/api-demo.mp4 ../../assets/readme/api-demo.gif",
-    "render:gui": "remotion render src/index.ts GuiDemo --public-dir=public out/gui-demo.mp4 --codec h264 --crf 18 --log=error && GIF_FPS=8 GIF_WIDTH=900 ./scripts/to-gif.sh out/gui-demo.mp4 ../../assets/readme/gui-demo.gif",
-    "render": "npm run render:api && npm run render:gui"
+    "preview": "node scripts/render.ts preview",
+    "render:api": "node scripts/render.ts api",
+    "render:gui": "node scripts/render.ts gui",
+    "render": "node scripts/render.ts all",
+    "check": "tsc --noEmit",
+    "test": "playwright test"
   },
   "devDependencies": {
-    "@remotion/cli": "^4.0.528",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "remotion": "^4.0.528",
     "typescript": "^7.0.2"
   }
 }

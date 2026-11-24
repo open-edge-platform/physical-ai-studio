@@ -6,7 +6,9 @@
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "scripts", "tests", "playwright.config.ts"]
 }
