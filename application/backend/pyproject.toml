@@ -140,7 +140,7 @@ explicit = false
 
 [tool.uv.sources]
 # Runtime main with the task_index preprocessor (openvinotoolkit/physicalai#477); move to the next release.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "e089a021ab527da1f119bbf3fe888dd14705b1fc" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "a23c9a024f6f6541f685dd84f6a9cd420f5269be" }
 physicalai-train = { path = "../../library", editable = true }
 torchao = [
     { index = "pytorch-cpu", extra = "cpu" },
