@@ -3,7 +3,8 @@
 A :class:`ProcessModel` starts a ``ModelWorker`` that loads one of the model's
 exports, and reports as ``model`` on the session's bus. To ``ModelControl``'s
 executor it is the model itself: ``predict_action_chunk`` sends the state and
-the task to the worker, which adds the frames from the store, and returns the
+the task to the worker, which adds the frames from the store unless the request
+already carries a selected observation-history window, and returns the
 whole chunk. Queueing it, smoothing and deciding when to ask again stays with
 the executor, as ``physicalai.runtime`` runs it.
 """
@@ -12,12 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import secrets
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from multiprocessing import shared_memory
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
+from physicalai.inference.manifest import ObservationHistorySpec
 
 from runtime_session.bus import Bus, publish_status, until_serving
 from schemas.runtime_session import CommandDone, SessionModel
@@ -49,6 +54,7 @@ class ModelInputs:
     """Model input name to the store camera it reads."""
     tasks: tuple[str, ...] = ()
     """The only tasks a policy trained on a fixed set takes, such as a multi-task ACT; empty if any text goes."""
+    observation_history: ObservationHistorySpec | None = None
 
 
 def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
@@ -80,7 +86,13 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     tasks = next(
         (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
     )
-    return ModelInputs(state_size, images, tuple(tasks))
+    history = manifest.get("observation_history")
+    return ModelInputs(
+        state_size,
+        images,
+        tuple(tasks),
+        ObservationHistorySpec.model_validate(history) if history is not None else None,
+    )
 
 
 class ProcessModel:
@@ -99,6 +111,8 @@ class ProcessModel:
         self.backend = backend
         self.device = device
         self.inputs = model_inputs(export_dir, store.spec)
+        self._spec = store.spec
+        self._history_prefix = f"pai-{os.getpid()}-{secrets.token_hex(4)}-"
         self._worker = ModelWorker(
             export_dir,
             backend=backend,
@@ -107,6 +121,8 @@ class ProcessModel:
             store_name=store.name,
             spec=store.spec,
             images=self.inputs.images,
+            observation_history=self.inputs.observation_history,
+            history_prefix=self._history_prefix,
         )
         self._session_id = session_id
         self._bus: Bus | None = None
@@ -154,18 +170,62 @@ class ProcessModel:
     # What an executor calls, from its own thread.
 
     def predict_action_chunk(self, observation: dict[str, Any]) -> np.ndarray:
-        """The action chunk for ``observation``'s state and task, with the store's latest frames.
+        """Infer from the selected history, or state/task with the store's latest frames.
 
         Raises:
             BusRequestError: The model failed on it.
             NoResponderError: The model is no longer loaded.
         """
         task = observation.get(model_rpc.TASK)
+        if self.inputs.observation_history is not None:
+            return self._predict_history(observation, task[0] if task else None)
         request = InferRequest(
             state=np.asarray(observation[model_rpc.STATE])[0].tolist(), task=task[0] if task else None
         )
         chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
         return np.asarray(chunk.actions, dtype=np.float32)
+
+    def _predict_history(self, observation: dict[str, Any], task: str | None) -> np.ndarray:
+        history = self.inputs.observation_history
+        if history is None:
+            raise ValueError("Observation history is not enabled")
+        steps = history.n_obs_steps
+        state = observation[model_rpc.STATE]
+        if (
+            not isinstance(state, tuple)
+            or len(state) != steps
+            or any(frame.shape != (1, self.inputs.state_size) for frame in state)
+        ):
+            raise ValueError("Invalid observation history state selection")
+        request = InferRequest(state=[frame[0].tolist() for frame in state], task=task)
+        layout, size = model_rpc.history_image_layout(self._spec, self.inputs.images, steps)
+        block = None
+        try:
+            if size:
+                block = shared_memory.SharedMemory(
+                    name=self._history_prefix + secrets.token_hex(4), create=True, size=size
+                )
+                request.history_images = block.name
+                for name, (shape, offset) in layout.items():
+                    camera = self.inputs.images[name]
+                    # Runtime collapses a single selected camera to plain "images".
+                    key = _IMAGES if len(set(self.inputs.images.values())) == 1 else f"{_IMAGES}.{camera}"
+                    window = observation.get(key)
+                    if (
+                        not isinstance(window, tuple)
+                        or len(window) != steps
+                        or any(frame.shape != shape[1:] or frame.dtype != np.uint8 for frame in window)
+                    ):
+                        raise ValueError(f"Invalid observation history image selection for {camera!r}")
+                    np.ndarray(shape, np.uint8, block.buf, offset)[...] = window
+            chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
+            return np.asarray(chunk.actions, dtype=np.float32)
+        finally:
+            if block is not None:
+                try:
+                    block.close()
+                finally:
+                    block.unlink()
 
     def reset(self) -> None:
         self._loaded_bus().request_sync(model_rpc.RESET, model_rpc.Empty(), CommandDone, timeout=_INFER_S)

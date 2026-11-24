@@ -2,14 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import io
+import json
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from physicalai.config import Config
+from physicalai.inference.manifest import Manifest, ModelSpec, ObservationHistorySpec
 
 from api.dependencies import (
     get_environment_service,
@@ -21,7 +24,6 @@ from exceptions import ResourceNotFoundError, ResourceType
 from main import app
 from schemas import Model
 from schemas.environment import EnvironmentWithRelations
-from services.runtime_export import policy_source_fragment
 
 
 class _StubModelService:
@@ -182,11 +184,20 @@ def test_openvino_export_download_is_weights_only_without_recipe(tmp_path: Path)
         assert "runtime.yaml" not in names
 
 
-def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path, mocker) -> None:
+@pytest.mark.parametrize("history", [None, ObservationHistorySpec(n_obs_steps=3, stride=2)])
+def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path, mocker, history) -> None:
     model_dir = tmp_path / "model"
     export_dir = model_dir / "exports" / "openvino"
     export_dir.mkdir(parents=True)
     (export_dir / "model.xml").write_text("<net/>")
+    Manifest(version="1.1", observation_history=history, model=ModelSpec(n_obs_steps=7)).save(
+        export_dir / "manifest.json"
+    )
+    other_export = model_dir / "exports" / "torch"
+    other_export.mkdir()
+    Manifest(version="1.1", observation_history=ObservationHistorySpec(n_obs_steps=5, stride=4)).save(
+        other_export / "manifest.json"
+    )
     model = _make_model(model_dir)
     environment = _environment()
     document = Config(
@@ -197,19 +208,18 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
                 "init_args": {"name": "rt-follower", "robot": {"class_path": "physicalai.robot.so101.SO101"}},
             },
             "fps": 30.0,
-            "action_source": policy_source_fragment(
-                export_dir="./exports/openvino",
-                backend="openvino",
-                device="CPU",
-                task="pick",
-            ),
         },
     ).to_dict()
 
     environment_service = SimpleNamespace(
         get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
     )
-    mocker.patch("api.models.build_runtime_config", return_value=document)
+
+    async def build_recipe(**kwargs):
+        document["init_args"]["action_source"] = kwargs["action_source"]
+        return document
+
+    mocker.patch("api.models.build_runtime_config", side_effect=build_recipe)
     _override_export_download(model, environment_service=environment_service)
     try:
         client = TestClient(app)
@@ -239,8 +249,41 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
         assert "physicalai.runtime.SyncExecution" in yaml_text
         assert "./exports/openvino" in yaml_text
         assert "pick" in yaml_text
+        recipe_path = tmp_path / "runtime.yaml"
+        recipe_path.write_text(yaml_text)
+        source_args = Config.load(recipe_path).to_dict()["init_args"]["action_source"]["init_args"]
+        if history is None:
+            assert "observation_history" not in source_args
+        else:
+            assert source_args["observation_history"] == {"n_obs_steps": 3, "stride": 2}
         readme = archive.read("README.md").decode()
         assert "physicalai run --config runtime.yaml" in readme
+
+
+@pytest.mark.parametrize("manifest", [None, {"observation_history": {"n_obs_steps": 0}}, "invalid json"])
+def test_export_download_recipe_rejects_missing_or_invalid_manifest(tmp_path, mocker, manifest) -> None:
+    model_dir = tmp_path / "model"
+    export_dir = model_dir / "exports" / "openvino"
+    export_dir.mkdir(parents=True)
+    (export_dir / "model.xml").write_text("<net/>")
+    if manifest is not None:
+        (export_dir / "manifest.json").write_text(json.dumps(manifest) if isinstance(manifest, dict) else manifest)
+    model = _make_model(model_dir)
+    environment = _environment()
+    environment_service = SimpleNamespace(
+        get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
+    )
+    builder = mocker.patch("api.models.build_runtime_config")
+    _override_export_download(model, environment_service=environment_service)
+    try:
+        response = TestClient(app).get(
+            f"/api/models/{model.id}/exports/openvino/download",
+            params={"environment_id": str(environment.id), "device": "CPU"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 400
+    builder.assert_not_called()
 
 
 def test_openvino_export_download_recipe_400_when_device_missing(tmp_path) -> None:

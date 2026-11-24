@@ -9,6 +9,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from physicalai.config import Config
 from physicalai.export.backends import ExportBackend
+from physicalai.inference.manifest import Manifest
 from pydantic import BaseModel, StringConstraints
 from sse_starlette import EventSourceResponse
 from starlette import status
@@ -70,13 +71,15 @@ async def _runtime_recipe_texts(  # noqa: PLR0913 - the download endpoint's depe
             detail="Runtime export requires exactly one follower robot",
         )
 
-    fragment = policy_source_fragment(
-        export_dir=f"./exports/{backend.value}",
-        backend=backend.value,
-        device=device,
-        task=(task.strip() or None) if task else None,
-    )
     try:
+        manifest = Manifest.load(Path(model.path) / "exports" / backend.value)
+        fragment = policy_source_fragment(
+            export_dir=f"./exports/{backend.value}",
+            backend=backend.value,
+            device=device,
+            task=(task.strip() or None) if task else None,
+            observation_history=manifest.observation_history,
+        )
         document = await build_runtime_config(
             follower=environment.robots[0].robot,
             leader=None,
@@ -88,7 +91,7 @@ async def _runtime_recipe_texts(  # noqa: PLR0913 - the download endpoint's depe
             allow_stored_port=True,
             action_source=fragment,
         )
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     unresolved = runtime_config_change_me(document)

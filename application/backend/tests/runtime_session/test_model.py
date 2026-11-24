@@ -11,6 +11,8 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from physicalai.inference.manifest import ObservationHistorySpec
+from physicalai.inference.preprocessors.observation_history import StackObservationHistory
 
 from exceptions import RuntimeSessionCommandError
 from runtime_session.controls.model import ModelControl
@@ -28,7 +30,12 @@ SPEC = FeatureSpec(("shoulder_pan.pos", "gripper.pos"), {"cam 0": ImageSpec(120,
 
 
 def _export(
-    path: Path, *, joints: int = 2, cameras: tuple[str, ...] = ("images.cam 0",), tasks: list[str] | None = None
+    path: Path,
+    *,
+    joints: int = 2,
+    cameras: tuple[str, ...] = ("images.cam 0",),
+    tasks: list[str] | None = None,
+    history: dict | None = None,
 ) -> Path:
     features = [{"init_args": {"ftype": "STATE", "shape": [joints], "name": "state"}}]
     features += [{"init_args": {"ftype": "VISUAL", "shape": [3, 120, 160], "name": name}} for name in cameras]
@@ -37,6 +44,9 @@ def _export(
     manifest: dict = {"model": {"input_features": features, "preprocessors": [{"type": "to_float_tensor"}]}}
     if tasks is not None:
         manifest["model"]["preprocessors"].append({"type": "task_index", "tasks": tasks})
+    if history is not None:
+        manifest["observation_history"] = history
+        manifest["model"]["preprocessors"].insert(0, {"type": "stack_observation_history"})
     (path / "manifest.json").write_text(json.dumps(manifest))
     return path
 
@@ -91,10 +101,13 @@ def test_an_export_for_other_joints_or_cameras_does_not_fit(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize("mode", ["sync", "async"])
-async def test_the_model_drives_the_follower(new_session, fake_cameras, fake_model_worker, tmp_path, mode) -> None:
+@pytest.mark.parametrize("history", [None, {"n_obs_steps": 1}, {"n_obs_steps": 3, "stride": 2}])
+async def test_the_model_drives_the_follower(
+    new_session, fake_cameras, fake_model_worker, tmp_path, mode, history
+) -> None:
     session: RuntimeSession = await new_session()
     await session.load_environment(make_environment())
-    model = _model(tmp_path)
+    model = _model(tmp_path, history=history)
     await session.load_model(model, "torch", "cpu")
     assert session.state().model.name == "Picker"
 
@@ -175,5 +188,66 @@ def test_the_models_actions_are_due_at_the_end_of_the_grace_period() -> None:
         control.on_tick()
         assert store.read(ACTION).timestamp == pytest.approx(time.monotonic() + 1 / control.hz, abs=0.01)
         control.on_stop()
+    finally:
+        store.unlink()
+
+
+def test_history_is_root_opt_in_and_validated(tmp_path):
+    assert model_inputs(_export(tmp_path / "plain"), SPEC).observation_history is None
+    assert model_inputs(_export(tmp_path / "history", history={"n_obs_steps": 1}), SPEC).observation_history == (
+        ObservationHistorySpec(n_obs_steps=1)
+    )
+    with pytest.raises(ValueError):
+        model_inputs(_export(tmp_path / "invalid", history={"n_obs_steps": 0}), SPEC)
+
+
+def test_control_without_history_leaves_camera_reads_to_worker():
+    store = Store.create(SPEC, uuid4().hex)
+    model = _FarModel()
+    model.inputs = ModelInputs(2, {"images.cam 0": "cam 0"})
+    control = ModelControl(store, model, ModelControlConfig())
+    try:
+        store.write(STATE, [0, 0], timestamp=time.monotonic())
+        control.on_start()
+        with patch.object(store, "read_observation", side_effect=AssertionError("Read on control thread")):
+            control.on_tick()
+        control.on_stop()
+        np.testing.assert_array_equal(store.read(ACTION).value, [50, 50])
+    finally:
+        store.unlink()
+
+
+@pytest.mark.parametrize("steps", [1, 3])
+def test_control_records_only_required_cameras_with_stride_padding_and_owned_copies(steps):
+    spec = FeatureSpec(SPEC.joint_names, {"cam 0": ImageSpec(2, 3), "unused": ImageSpec(1, 1)})
+    store = Store.create(spec, uuid4().hex)
+    model = _FarModel()
+    model.inputs = ModelInputs(
+        2, {"images.cam 0": "cam 0"}, observation_history=ObservationHistorySpec(n_obs_steps=steps, stride=2)
+    )
+    control = ModelControl(store, model, ModelControlConfig(task="pick"))
+    captured = []
+    # Record every tick without scheduling inference.
+    control.source._warmed_up = True
+    control.source._execution.maybe_request = lambda observation: captured.append(observation)
+    control.source._last = np.zeros(2)
+    try:
+        for tick in range(5):
+            store.write(STATE, [tick, tick], timestamp=time.monotonic())
+            store.write_observation("cam 0", np.full((2, 3, 3), tick, np.uint8), timestamp=time.monotonic())
+            control.on_tick()
+        first = StackObservationHistory()(captured[0])
+        last = StackObservationHistory()(captured[-1])
+        assert first["images"].shape == (1, steps, 2, 3, 3)
+        assert last["state"].shape == (1, steps, 2)
+        expected = [4] if steps == 1 else [0, 2, 4]
+        np.testing.assert_array_equal(last["state"][0, :, 0], expected)
+        np.testing.assert_array_equal(last["images"][0, :, 0, 0, 0], expected)
+        np.testing.assert_array_equal(first["images"], 0)
+        assert last["task"] == ["pick"]
+        assert not captured[0]["images"][0].flags.writeable
+        store.invalidate_observation("cam 0")
+        with pytest.raises(RuntimeError, match="no frame yet"):
+            control.on_tick()
     finally:
         store.unlink()
