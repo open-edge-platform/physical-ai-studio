@@ -35,7 +35,6 @@ class ImmediatelyClosingEventSource extends EventTarget {
 }
 
 const localJob: SchemaTrainJob = {
-    policy_reference: { id: 'act', status: 'available' },
     id: 'job-1',
     project_id: 'project-1',
     progress: 42,
@@ -97,30 +96,12 @@ describe('TrainingRow', () => {
         expect(screen.getByText('ACT')).toBeInTheDocument();
     });
 
-    it.each(['pending', 'failed', 'completed'] as const)(
-        'shows historical policy references for a %s job',
-        (status) => {
-            renderTrainingRow({
-                status,
-                payload: getMockedTrainJobPayload({ policy: 'removed_policy', plugin_option: { layers: [1, 3] } }),
-                policy_reference: {
-                    id: 'removed_policy',
-                    status: 'unavailable',
-                    unavailable: true,
-                    reason: 'Policy definition is missing.',
-                },
-            });
-            expect(screen.getByText('REMOVED_POLICY')).toBeInTheDocument();
-            expect(screen.getByText('Policy unavailable')).toBeInTheDocument();
-        }
-    );
-
-    it('does not label an unverified remote policy as missing locally', () => {
+    it.each(['pending', 'failed', 'completed'] as const)('shows the saved policy identifier for a %s job', (status) => {
         renderTrainingRow({
-            policy_reference: { id: 'act', status: 'unknown', reason: 'Check the selected remote trainer.' },
+            status,
+            payload: getMockedTrainJobPayload({ policy: 'removed_policy', plugin_option: { layers: [1, 3] } }),
         });
-        expect(screen.getByText('Availability unknown')).toBeInTheDocument();
-        expect(screen.queryByText('Policy unavailable')).not.toBeInTheDocument();
+        expect(screen.getByText('REMOVED_POLICY')).toBeInTheDocument();
     });
 
     it('shows "..." when extra_info[\'train/loss_step\'] is missing', () => {

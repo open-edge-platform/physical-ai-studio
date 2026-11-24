@@ -20,7 +20,6 @@ import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { PeftBadge } from '../shared/peft-badge';
-import { PolicyLabel } from '../shared/policy-label';
 import { SnapflowBadge } from '../shared/snapflow-badge';
 import { getTrainerLabel } from '../shared/trainer';
 import { ModelDownloadDialog } from './model-download-dialog';
@@ -76,9 +75,6 @@ export const ModelRow = ({
 
     // Disable logs if we don't know the training job
     const disabledKeys = !model.train_job_id ? ['logs'] : [];
-    if (model.policy_reference?.status === 'unavailable') {
-        disabledKeys.push('retrain');
-    }
 
     const version = model.version ?? 1;
 
@@ -90,7 +86,7 @@ export const ModelRow = ({
                 <PeftBadge isEnabled={model.lora_enabled} isDora={model.lora_use_dora} />
                 <SnapflowBadge isEnabled={model.snapflow_enabled} />
             </Flex>
-            <PolicyLabel policy={model.policy} reference={model.policy_reference} />
+            <Text>{model.policy.toUpperCase()}</Text>
             <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
             <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
             <Text data-testid='trainer-cell'>{trainer || '-'}</Text>

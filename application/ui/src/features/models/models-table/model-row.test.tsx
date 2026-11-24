@@ -38,7 +38,6 @@ const model: SchemaModel = {
     name: 'pick-and-place',
     path: '/models/pick-and-place',
     policy: 'act',
-    policy_reference: { id: 'act', status: 'available' },
     properties: {},
     project_id: 'project-1',
     dataset_id: null,
@@ -54,7 +53,6 @@ const model: SchemaModel = {
 };
 
 const trainingJob: SchemaTrainJob = {
-    policy_reference: { id: 'act', status: 'available' },
     issues: [],
     id: 'job-1',
     project_id: 'project-1',
@@ -310,27 +308,17 @@ describe('ModelRow', () => {
         expect(screen.getByRole('button', { name: 'Run model' })).toBeInTheDocument();
     });
 
-    it('keeps missing-policy models visible and downloadable but disables retraining', async () => {
+    it('keeps missing-policy models visible and lets the training wizard check retraining availability', async () => {
         const user = userEvent.setup();
         renderModelRow({
             modelOverride: {
                 policy: 'removed_policy',
-                policy_reference: {
-                    id: 'removed_policy',
-                    status: 'unavailable',
-                    unavailable: true,
-                    reason: 'Install the policy plugin.',
-                },
             },
         });
         expect(screen.getByText('REMOVED_POLICY')).toBeInTheDocument();
-        expect(screen.getByTitle('Install the policy plugin.')).toHaveTextContent('Policy unavailable');
         expect(screen.getByRole('button', { name: 'Run model' })).toBeEnabled();
         await user.click(screen.getByRole('button', { name: 'options' }));
-        expect(screen.getByRole('menuitem', { name: 'Retrain' }).closest('[aria-disabled]')).toHaveAttribute(
-            'aria-disabled',
-            'true'
-        );
+        expect(screen.getByRole('menuitem', { name: 'Retrain' })).not.toHaveAttribute('aria-disabled', 'true');
         expect(screen.getByRole('menuitem', { name: 'Download' })).not.toHaveAttribute('aria-disabled', 'true');
     });
 

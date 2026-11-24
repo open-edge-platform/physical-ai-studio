@@ -70,7 +70,8 @@ async def test_missing_policy_history_survives_reads_and_status_updates(remote: 
             assert snapshot["payload"]["future_plugin_setting"] == payload["future_plugin_setting"]
             assert snapshot["payload"]["max_steps"] == 321
             assert snapshot["payload"]["image_key_reorder_map"] == payload["image_key_reorder_map"]
-            assert snapshot["policy_reference"]["status"] == ("unknown" if remote else "unavailable")
+            assert snapshot["payload"]["policy"] == "branch_only_policy"
+            assert "policy_reference" not in snapshot
             updated = await service.update_job_status(job_id, JobStatus.FAILED, message="History retained")
             assert updated.payload.model_dump()["future_plugin_setting"] == payload["future_plugin_setting"]
 
@@ -100,8 +101,9 @@ async def test_missing_policy_history_survives_reads_and_status_updates(remote: 
             model_detail = client.get(f"/api/models/{model.id}")
             assert model_detail.status_code == 200
             assert model_detail.json()["training_summary"]["lora_enabled"] is True
-            assert model_detail.json()["model"]["policy_reference"]["status"] == "unavailable"
-            with patch("training.policy_catalog.readable_policy") as describe:
+            assert model_detail.json()["model"]["policy"] == "branch_only_policy"
+            assert "policy_reference" not in model_detail.json()["model"]
+            with patch("training.policy_catalog.is_local_policy_available") as describe:
                 assert ModelMapper.to_schema(model).policy == "branch_only_policy"
                 describe.assert_not_called()
             await service.delete_job(job_id)

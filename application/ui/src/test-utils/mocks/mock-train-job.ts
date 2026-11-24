@@ -17,7 +17,6 @@ export const getMockedTrainJob = (overrides: Partial<SchemaTrainJob> = {}): Sche
         created_at: '2026-07-14T09:00:00Z',
         extra_info: {},
         issues: [],
-        policy_reference: { id: overrides.payload?.policy ?? 'act', status: 'available' },
         ...overrides,
         payload: getMockedTrainJobPayload(overrides.payload as never),
     }) as SchemaTrainJob;
