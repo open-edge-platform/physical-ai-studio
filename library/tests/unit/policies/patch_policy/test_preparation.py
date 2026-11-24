@@ -110,6 +110,15 @@ def test_action_reader_only_accepts_lerobot_adapters() -> None:
         list(preparation._lerobot_action_targets(HFDataset.from_dict({"action": [[1.0]]})))
 
 
+def test_action_reader_rejects_missing_episode_metadata() -> None:
+    """Tokenizer preparation requires episode boundaries for temporal padding."""
+    dataset = _dataset()
+    dataset._lerobot_dataset.meta.episodes = None
+
+    with pytest.raises(ValueError, match="requires episode metadata"):
+        list(preparation._lerobot_action_targets(dataset))
+
+
 def test_action_reader_clamps_at_episode_boundaries_and_preserves_split_column_order() -> None:
     targets = list(preparation._lerobot_action_targets(_dataset(split_columns=True)))
 

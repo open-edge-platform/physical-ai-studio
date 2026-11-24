@@ -241,6 +241,16 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
 ):
     config = replace(small_config, n_action_steps=2)
     policy = PatchPolicy.from_config(config)
+    expected_hparams = {
+        "n_action_steps",
+        "num_inference_steps",
+        "use_random_noise",
+        "vqvae_iters",
+        "vqvae_batch_size",
+        "optimizer_lr",
+        "optimizer_weight_decay",
+    }
+    assert set(policy.hparams) == expected_hparams
     with torch.no_grad():
         next(policy.model.action_head.parameters()).fill_(0.25)
     checkpoint = {
@@ -249,6 +259,8 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
         "pytorch-lightning_version": lightning.__version__,
     }
     policy.on_save_checkpoint(checkpoint)
+    assert checkpoint["policy_config"] == policy.config.to_dict()
+    assert set(checkpoint["hyper_parameters"]) == expected_hparams
     path = tmp_path / "policy.ckpt"
     # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch  # Trusted checkpoint created by this test.
     torch.save(checkpoint, path)
@@ -259,6 +271,7 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
     monkeypatch.setattr(policy_module, "resolve_encoder_artifacts", forbid_download)
     overrides = {} if n_action_steps is None else {"n_action_steps": n_action_steps}
     restored = PatchPolicy.load_from_checkpoint(path, **overrides, **sampling_overrides)
+    assert set(restored.hparams) == expected_hparams
     expected_steps = config.n_action_steps if n_action_steps is None else n_action_steps
     expected_random = sampling_overrides.get("use_random_noise", config.use_random_input_noise)
     expected_inference_steps = sampling_overrides.get("num_inference_steps", config.num_inference_steps)
@@ -276,6 +289,10 @@ def test_checkpoint_round_trip_restores_weights_statistics_and_execution_horizon
     assert restored.predict_action_chunk(observation).shape == (1, expected_steps, 2)
     queued = restored._action_queue
     restored.configure_model()
+    resaved = {"hyper_parameters": dict(restored.hparams)}
+    restored.on_save_checkpoint(resaved)
+    assert resaved["policy_config"] == restored.config.to_dict()
+    assert set(resaved["hyper_parameters"]) == expected_hparams
     assert restored._action_queue is queued
     assert restored.use_random_noise is expected_random
     assert restored.hparams["use_random_noise"] is expected_random

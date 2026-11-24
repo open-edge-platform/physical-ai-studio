@@ -162,17 +162,21 @@ def _lerobot_action_targets(dataset: Any) -> Iterator[torch.Tensor]:  # noqa: AN
 
     Raises:
         TypeError: If the dataset is not a LeRobot dataset adapter.
-        ValueError: If an action window leaves the training split.
+        ValueError: If episode metadata is missing or an action window leaves the training split.
     """
     if not isinstance(dataset, _LeRobotDatasetAdapter):
         msg = "PATCH tokenizer preparation only supports LeRobot datasets."
         raise TypeError(msg)
     source = dataset._lerobot_dataset  # noqa: SLF001
+    episodes = source.meta.episodes
+    if episodes is None:
+        msg = "PATCH tokenizer preparation requires episode metadata."
+        raise ValueError(msg)
     keys = getattr(dataset, "_action_columns", None) or ["action"]
     table = source.hf_dataset.select_columns(["index", "episode_index", *keys]).with_format("torch")
     absolute = np.asarray(list(table["index"]), dtype=np.int64)
     for row in cast("Iterator[dict[str, Any]]", iter(table)):
-        episode = source.meta.episodes[int(row["episode_index"])]
+        episode = episodes[int(row["episode_index"])]
         values = {}
         for key in keys:
             targets = np.clip(

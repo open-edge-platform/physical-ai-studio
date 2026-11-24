@@ -213,8 +213,16 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.compile_model = compile_model
         self._encoder_compiled = False
 
-        # Don't save possibly unresolved input / output features
-        self.save_hyperparameters(ignore=["input_features", "output_features", "compile_model"])
+        # Architecture and features are saved in policy_config.
+        self.save_hyperparameters(
+            "n_action_steps",
+            "num_inference_steps",
+            "use_random_noise",
+            "vqvae_iters",
+            "vqvae_batch_size",
+            "optimizer_lr",
+            "optimizer_weight_decay",
+        )
 
         if encoder_pretrained:
             self._encoder_config, self._encoder_weights = resolve_encoder_artifacts(encoder_name, pretrained=True)
@@ -470,14 +478,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         self.num_inference_steps = config.num_inference_steps
         self.use_random_noise = config.use_random_input_noise
         self.hparams.update(
-            encoder_name=config.encoder_name,
-            action_head=config.action_head,
-            n_obs_steps=config.n_obs_steps,
-            chunk_size=config.chunk_size,
             n_action_steps=config.n_action_steps,
-            hidden_dim=config.hidden_dim,
-            num_layers=config.num_layers,
-            num_heads=config.num_heads,
             num_inference_steps=config.num_inference_steps,
             use_random_noise=config.use_random_input_noise,
         )
