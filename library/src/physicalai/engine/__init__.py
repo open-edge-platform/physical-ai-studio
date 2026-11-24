@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, ClassVar, Literal, overload
 from . import _registry
 from ._environment import (
     PreparedEnvironment,
-    engine_cache_root,
     interpreter_for,
     list_prepared,
     locked_version,
@@ -306,7 +305,6 @@ __all__ = [
     "TrainingCancelledError",
     "TrainingEngine",
     "WorkerEnv",
-    "engine_cache_root",
     "interpreter_for",
     "list_prepared",
     "locked_version",

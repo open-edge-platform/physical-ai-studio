@@ -169,12 +169,6 @@ class WorkerEnv:
 
         return locked_version(self)
 
-    def lock_hash(self) -> str:
-        """Return the SHA-256 digest of a bundled worker lock."""
-        from ._environment import lock_hash  # ruff: ignore[import-outside-top-level]  # Lazy to avoid an import cycle.
-
-        return lock_hash(self)
-
 
 __all__ = [
     "Capabilities",

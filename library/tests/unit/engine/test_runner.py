@@ -100,8 +100,7 @@ def test_worker_runner_launches_managed_entrypoints_through_runtime_isolate(
         accelerator="cpu",
         key=env.key(),
         distribution=env.distribution,
-        path=root,
-        _isolate=isolated,
+        isolate=isolated,
     )
     monkeypatch.setattr(_runner, "prepare_environment", lambda *_args: engine_prepared)
     real_start = isolate.start

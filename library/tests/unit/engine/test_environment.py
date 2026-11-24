@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -75,16 +76,16 @@ def test_prepare_delegates_to_runtime_isolate_and_keeps_engine_metadata(
 ) -> None:
     env = _generated_env(tmp_path, python="3.12", extras={"cpu": ()})
     cache = tmp_path / "cache"
-    monkeypatch.setattr(_environment, "engine_cache_root", lambda: cache)
-    calls: list[tuple[isolate.Environment, isolate.UvProvider, bool]] = []
+    calls: list[tuple[isolate.Environment, isolate.UvProvider, bool, Mapping[str, str]]] = []
 
     def fake_prepare(
         environment: isolate.Environment,
         *,
         provider: isolate.UvProvider,
         offline: bool,
+        labels: Mapping[str, str],
     ) -> isolate.PreparedEnvironment:
-        calls.append((environment, provider, offline))
+        calls.append((environment, provider, offline, labels))
         root = cache / environment.key()
         project = root / "project"
         project.mkdir(parents=True)
@@ -96,7 +97,12 @@ def test_prepare_delegates_to_runtime_isolate_and_keeps_engine_metadata(
         python = root / "venv" / "bin" / "python"
         python.parent.mkdir(parents=True)
         python.write_text("python", encoding="utf-8")
-        return isolate.PreparedEnvironment(path=root, key=environment.key(), profile=environment.profile)
+        return isolate.PreparedEnvironment(
+            path=root,
+            key=environment.key(),
+            profile=environment.profile,
+            labels=labels,
+        )
 
     monkeypatch.setattr(isolate, "prepare", fake_prepare)
     monkeypatch.setattr("uv.find_uv_bin", lambda: "/venv/bin/uv")
@@ -112,12 +118,11 @@ def test_prepare_delegates_to_runtime_isolate_and_keeps_engine_metadata(
     assert prepared.isolate.key == calls[0][0].key()
     assert calls[0][0].source is env.source
     assert calls[0][0].profile == isolate.SyncProfile(python="3.12", extras=())
-    assert calls[0][1].cache_dir == cache
+    # Engine shares isolate's cache (PHYSICALAI_ISOLATE_CACHE) and records its metadata as labels.
+    assert calls[0][1].cache_dir is None
     assert calls[0][1].uv == "/venv/bin/uv"
     assert calls[0][2] is True
-    marker = json.loads((prepared.path / ".physicalai-engine.json").read_text(encoding="utf-8"))
-    assert marker["source"] == {"kind": "generated", "revision": "a" * 40}
-    assert marker["isolate_key"] == calls[0][0].key()
+    assert calls[0][3] == _engine_labels(env, name="openvino")
     assert str(_environment.locked_version(env, prepared.project)) == "0.1.0"
     with pytest.raises(ValueError, match="only after preparation"):
         _environment.locked_version(env)
@@ -198,7 +203,6 @@ def test_worker_lock_and_plugin_metadata_are_the_version_sources(
     assert str(env.pinned()) == "0.6.1"
     assert env.supported().contains("0.6.1")
     assert not env.supported().contains("0.7.0")
-    assert env.lock_hash() == _environment.lock_hash(env)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="creating symbolic links may need privileges on Windows")
@@ -210,26 +214,31 @@ def test_bundled_worker_lock_must_be_a_regular_file(tmp_path: Path) -> None:
     lock.symlink_to(real_lock)
 
     with pytest.raises(ValueError, match="cannot be a symbolic link"):
-        _environment.lock_bytes(env)
+        _environment._lock_bytes(env)
 
     lock.unlink()
     with pytest.raises(FileNotFoundError, match="does not include uv.lock"):
-        _environment.lock_bytes(env)
+        _environment._lock_bytes(env)
 
 
-def _marker(env: WorkerEnv, **overrides: object) -> str:
-    marker = {
-        "format_version": 3,
+def _engine_labels(env: WorkerEnv, **overrides: str) -> dict[str, str]:
+    metadata = {
         "framework": env.framework,
         "name": env.name,
         "accelerator": "cpu",
         "key": env.key(),
         "distribution": env.distribution,
-        "source": env.source.identity(),
-        "isolate_key": "1" * 64,
+        **overrides,
     }
-    marker.update(overrides)
-    return json.dumps(marker)
+    return {f"engine.{name}": value for name, value in metadata.items()}
+
+
+def _isolate_entry(root: Path, labels: Mapping[str, str]) -> isolate.PreparedEnvironment:
+    python = root / "venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"python")
+    (root / "project").mkdir()
+    return isolate.PreparedEnvironment(path=root, key=root.name, profile=isolate.SyncProfile(), labels=labels)
 
 
 def test_prune_removes_only_stale_engine_managed_environments(
@@ -237,7 +246,6 @@ def test_prune_removes_only_stale_engine_managed_environments(
     tmp_path: Path,
 ) -> None:
     cache = tmp_path / "cache"
-    cache.mkdir()
     env = _worker_env(tmp_path / "project")
     enablement_env = WorkerEnv(
         framework="demo",
@@ -248,28 +256,23 @@ def test_prune_removes_only_stale_engine_managed_environments(
         package="lerobot",
         python="3.12",
     )
-    directories = {
-        name: cache / name for name in ("current", "enablement", "stale", "removed-name", "legacy", "unrelated")
+    entries = {
+        "current": _isolate_entry(cache / ("1" * 64), _engine_labels(env)),
+        "enablement": _isolate_entry(cache / ("2" * 64), _engine_labels(enablement_env)),
+        "stale": _isolate_entry(cache / ("3" * 64), _engine_labels(env, key="0" * 64)),
+        "removed-name": _isolate_entry(cache / ("4" * 64), _engine_labels(env, name="gone")),
+        # Prepared by another application in the shared cache, or labelled only in part.
+        "runtime": _isolate_entry(cache / ("5" * 64), {"owner": "runtime"}),
+        "partial": _isolate_entry(cache / ("6" * 64), {"engine.framework": "demo"}),
     }
-    for directory in directories.values():
-        directory.mkdir()
-    (directories["current"] / ".physicalai-engine.json").write_text(_marker(env), encoding="utf-8")
-    (directories["enablement"] / ".physicalai-engine.json").write_text(_marker(enablement_env), encoding="utf-8")
-    (directories["stale"] / ".physicalai-engine.json").write_text(_marker(env, key="0" * 64), encoding="utf-8")
-    (directories["removed-name"] / ".physicalai-engine.json").write_text(_marker(env, name="gone"), encoding="utf-8")
-    (directories["legacy"] / ".physicalai-engine.json").write_text(
-        json.dumps({"format_version": 2, "framework": "demo", "lock_hash": "old"}),
-        encoding="utf-8",
-    )
-    (directories["unrelated"] / "keep.txt").write_text("not ours", encoding="utf-8")
-    monkeypatch.setattr(_environment, "engine_cache_root", lambda: cache)
+    removed_entries: list[isolate.PreparedEnvironment] = []
+    monkeypatch.setattr(isolate, "list_prepared", lambda: list(entries.values()))
+    monkeypatch.setattr(isolate, "remove_prepared", removed_entries.append)
 
     removed = _environment.prune_prepared([env, enablement_env])
 
-    assert removed == sorted([directories["legacy"], directories["removed-name"], directories["stale"]])
-    assert directories["current"].is_dir()
-    assert directories["enablement"].is_dir()
-    assert directories["unrelated"].is_dir()
+    assert removed == sorted([entries["stale"].path, entries["removed-name"].path])
+    assert sorted(entry.path for entry in removed_entries) == removed
 
 
 def test_list_prepared_reports_engine_metadata_for_isolate_cache_entries(
@@ -278,14 +281,9 @@ def test_list_prepared_reports_engine_metadata_for_isolate_cache_entries(
 ) -> None:
     cache = tmp_path / "cache"
     env = _worker_env(tmp_path / "project")
-    prepared = cache / ("1" * 64)
-    venv = prepared / "venv" / "bin"
-    venv.mkdir(parents=True)
-    (prepared / "project").mkdir()
-    (venv / "python").write_bytes(b"python")
-    (prepared / ".physicalai-isolate.json").write_text("{}\n", encoding="utf-8")
-    (prepared / ".physicalai-engine.json").write_text(_marker(env), encoding="utf-8")
-    monkeypatch.setattr(_environment, "engine_cache_root", lambda: cache)
+    prepared = _isolate_entry(cache / ("1" * 64), _engine_labels(env))
+    runtime_only = _isolate_entry(cache / ("2" * 64), {})
+    monkeypatch.setattr(isolate, "list_prepared", lambda: [runtime_only, prepared])
 
     environments = _environment.list_prepared()
 
@@ -294,19 +292,11 @@ def test_list_prepared_reports_engine_metadata_for_isolate_cache_entries(
     assert environments[0].name == "default"
     assert environments[0].accelerator == "cpu"
     assert environments[0].key == env.key()
+    assert environments[0].distribution == "demo-plugin"
     assert environments[0].size_bytes >= len(b"python")
-    assert environments[0].path == prepared
-    assert environments[0].python == prepared / "venv" / "bin" / "python"
-
-
-def test_engine_cache_defaults_to_runtime_isolate_cache(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("PHYSICALAI_ENGINE_CACHE", raising=False)
-    monkeypatch.setenv("PHYSICALAI_ISOLATE_CACHE", str(tmp_path / "isolate"))
-
-    assert _environment.engine_cache_root() == (tmp_path / "isolate").resolve()
+    assert environments[0].isolate is prepared
+    assert environments[0].path == prepared.path
+    assert environments[0].python == prepared.path / "venv" / "bin" / "python"
 
 
 def test_worker_environment_keys_change_with_every_input(tmp_path: Path) -> None:
