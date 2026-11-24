@@ -10,12 +10,11 @@ import logging
 import os
 import queue
 import selectors
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Unmanaged workers use argv lists with shell=False.  # nosec B404
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Pipe constants and TimeoutExpired only; isolate launches workers.  # nosec B404
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from importlib import resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -71,7 +70,7 @@ class _WorkerState:
     env: WorkerEnv
     hooks: TrainHooks
     expected_version: Version | None
-    process: isolate.Session | subprocess.Popen[bytes]
+    process: isolate.Session
     events: queue.Queue[dict[str, Any] | BaseException | _ProtocolEOF]
     started_at: float = field(default_factory=time.monotonic)
     hello_received: bool = False
@@ -170,7 +169,8 @@ def run_worker(
         device: Device string exposed to the worker.
         hooks: Progress and cancellation hooks.
         accelerator: Accelerator profile of a managed environment.
-        interpreter: User-managed interpreter that bypasses provisioning.
+        interpreter: User-managed interpreter that bypasses provisioning. Its worker keeps the
+            host environment, including ``PYTHONPATH``.
         expected_version: Exact package version the worker must report.
         worker: Worker script to run instead of ``env.worker``.
         extra_env: Additional environment variables for the worker.
@@ -190,64 +190,42 @@ def run_worker(
 
     variables = dict(extra_env or {})
     entrypoint = worker if worker is not None else env.worker
-    isolate_prepared: isolate.PreparedEnvironment | None = None
+    target: isolate.PreparedEnvironment | isolate.ExternalInterpreter
     if interpreter is None:
         prepared = prepare_environment(env, accelerator)
-        isolate_prepared = prepared.isolate
+        target = prepared.isolate
         variables["PHYSICALAI_WORKER_PROJECT"] = str(prepared.project)
         if expected_version is None:
             expected_version = locked_version(env, prepared.project)
     else:
-        python = Path(interpreter).expanduser()
+        # A user-managed interpreter keeps the host environment, including PYTHONPATH.
+        target = isolate.ExternalInterpreter(Path(interpreter))
     expected = Version(str(expected_version)) if expected_version is not None else None
 
-    if isolate_prepared is not None:
-
-        def launch_managed(child_env: Mapping[str, str]) -> isolate.Session:
-            return isolate.start(
-                isolate_prepared,
-                entrypoint=entrypoint,
-                args=arguments,
-                env=child_env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
-        return _run_process(
-            env,
-            launch_managed,
-            device=device,
-            hooks=hooks,
-            expected_version=expected,
-            variables=variables,
+    def launch(child_env: Mapping[str, str]) -> isolate.Session:
+        return isolate.start(
+            target,
+            entrypoint=entrypoint,
+            args=arguments,
+            env=child_env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
 
-    with resources.as_file(entrypoint) as entrypoint_path:
-
-        def launch_unmanaged(child_env: Mapping[str, str]) -> subprocess.Popen[bytes]:
-            return subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # Explicit argv, no shell.  # nosec B603
-                [str(python), str(entrypoint_path), *arguments],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=dict(child_env),
-                shell=False,
-            )
-
-        return _run_process(
-            env,
-            launch_unmanaged,
-            device=device,
-            hooks=hooks,
-            expected_version=expected,
-            variables=variables,
-        )
+    return _run_process(
+        env,
+        launch,
+        device=device,
+        hooks=hooks,
+        expected_version=expected,
+        variables=variables,
+    )
 
 
 def _run_process(
     env: WorkerEnv,
-    launch: Callable[[Mapping[str, str]], isolate.Session | subprocess.Popen[bytes]],
+    launch: Callable[[Mapping[str, str]], isolate.Session],
     *,
     device: str,
     hooks: TrainHooks | None,
@@ -266,7 +244,7 @@ def _run_process(
 
 def _start_worker(
     engine_env: WorkerEnv,
-    launch: Callable[[Mapping[str, str]], isolate.Session | subprocess.Popen[bytes]],
+    launch: Callable[[Mapping[str, str]], isolate.Session],
     device: str,
     hooks: TrainHooks | None,
     expected_version: Version | None,
@@ -348,12 +326,7 @@ def _close_worker(state: _WorkerState) -> None:
     state.protocol_reader_stop.set()
     for thread in state.threads:
         thread.join(timeout=1.0)
-    if isinstance(state.process, isolate.Session):
-        state.process.close()
-    else:
-        for stream in (state.process.stdout, state.process.stderr):
-            if stream is not None:
-                stream.close()
+    state.process.close()
 
 
 def _worker_result(state: _WorkerState, return_code: int) -> Run:
@@ -519,11 +492,11 @@ def _report_progress(hooks: TrainHooks, message: dict[str, Any]) -> int:
     return step
 
 
-def _send_cancel(process: isolate.Session | subprocess.Popen[bytes]) -> None:
+def _send_cancel(process: isolate.Session) -> None:
     _send_control(process, b'{"type":"cancel"}\n')
 
 
-def _send_control(process: isolate.Session | subprocess.Popen[bytes], message: bytes) -> None:
+def _send_control(process: isolate.Session, message: bytes) -> None:
     if process.stdin is None:
         return
     try:
@@ -533,7 +506,7 @@ def _send_control(process: isolate.Session | subprocess.Popen[bytes], message: b
         logger.debug("Worker closed its control pipe before %s was delivered.", message.decode().strip())
 
 
-def _stop_process(process: isolate.Session | subprocess.Popen[bytes]) -> None:
+def _stop_process(process: isolate.Session) -> None:
     if process.poll() is not None:
         return
     try:
