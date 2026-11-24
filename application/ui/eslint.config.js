@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
-import reactCompiler from 'eslint-plugin-react-compiler';
 
 import sharedEslintConfig from './eslint.shared.config.js';
 
@@ -70,5 +69,4 @@ export default [
             'playwright/no-nested-step': ['off'],
         },
     },
-    reactCompiler.configs.recommended,
 ];
