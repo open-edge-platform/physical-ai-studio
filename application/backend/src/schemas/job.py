@@ -14,7 +14,7 @@ from schemas.remote_trainer import ModalGpu
 from training.job import PEFT_POLICIES, SNAPFLOW_POLICIES
 
 RemoteJobId = UUID | Annotated[str, Field(pattern=r"^fc-[a-zA-Z0-9]+$", max_length=128)]
-RemoteJobIdAdapter = TypeAdapter(RemoteJobId)
+RemoteJobIdAdapter: TypeAdapter[RemoteJobId] = TypeAdapter(RemoteJobId)
 
 
 class ExportBackend(StrEnum):
