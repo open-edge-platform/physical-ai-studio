@@ -246,6 +246,16 @@ def test_training_options_auto_prefers_usable_xpu(monkeypatch: pytest.MonkeyPatc
     assert _training_options() == (1, "xpu")
 
 
+def test_training_parity_is_exact_on_cpu_and_cuda_and_bounded_by_measured_noise_on_xpu() -> None:
+    assert _training_parity_tolerances("cpu") == _training_parity_tolerances("cuda") == ((1e-6, 1e-7), (1e-6, 1e-7))
+    loss_tolerances, weight_tolerances = _training_parity_tolerances("xpu")
+    # Measured XPU run-to-run noise at 20 steps: about 2e-3 in loss (at losses near 1) and 1.1e-4 in weights.
+    assert loss_tolerances == (1e-2, 1e-3)
+    assert weight_tolerances == (1e-3, 5e-4)
+    with pytest.raises(ValueError, match="measure its run-to-run noise"):
+        _training_parity_tolerances("mps")
+
+
 @pytest.mark.parametrize(("steps", "device"), [("0", "cpu"), ("many", "cpu"), ("1", "mps")])
 def test_training_options_reject_invalid_values(
     monkeypatch: pytest.MonkeyPatch,
@@ -421,7 +431,7 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     engine_saved_config["output_dir"] = "<run-output>"
     assert engine_saved_config == native_saved_config
 
-    rtol, atol = _training_parity_tolerances(device)
+    (loss_rtol, loss_atol), (weight_rtol, weight_atol) = _training_parity_tolerances(device)
     native_weights = load_file(str(native_checkpoint / "model.safetensors"), device="cpu")
     engine_weights = load_file(str(run.checkpoint / "model.safetensors"), device="cpu")
     assert engine_weights.keys() == native_weights.keys()
@@ -432,34 +442,51 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     weight_mismatches = [
         name
         for name, native_weight in native_weights.items()
-        if not torch.allclose(engine_weights[name], native_weight, rtol=rtol, atol=atol)
+        if not torch.allclose(engine_weights[name], native_weight, rtol=weight_rtol, atol=weight_atol)
     ]
     loss_max_abs_difference = float(np.max(np.abs(np.asarray(engine_losses) - np.asarray(native_losses))))
-    losses_match = bool(np.allclose(engine_losses, native_losses, rtol=rtol, atol=atol))
+    losses_match = bool(np.allclose(engine_losses, native_losses, rtol=loss_rtol, atol=loss_atol))
+    # The first update sees the same weights and batch on both sides, so its loss must match exactly
+    # on every device; only later steps may drift on a nondeterministic backend.
+    first_loss_matches = math.isclose(engine_losses[0], native_losses[0], rel_tol=1e-6, abs_tol=1e-7)
 
     summary = {
         "steps": requested_steps,
         "device": device,
         "cudnn_deterministic": deterministic_cuda,
         "losses": {"native": native_losses, "engine": engine_losses},
+        "first_loss_matches": first_loss_matches,
         "loss_max_abs_difference": loss_max_abs_difference,
         "weight_max_abs_difference": max(weight_differences.values()),
         "weight_mismatch_count": len(weight_mismatches),
-        "rtol": rtol,
-        "atol": atol,
+        "loss_tolerances": {"rtol": loss_rtol, "atol": loss_atol},
+        "weight_tolerances": {"rtol": weight_rtol, "atol": weight_atol},
     }
     trajectory = json.dumps(summary, sort_keys=True)
     record_property("native_engine_training_parity", trajectory)
-    assert losses_match and not weight_mismatches, trajectory
+    assert first_loss_matches and losses_match and not weight_mismatches, trajectory
     (tmp_path / "native-engine-training-parity.json").write_text(trajectory + "\n", encoding="utf-8")
     print(f"Native/Engine training parity ({requested_steps} steps, {device}): {trajectory}")
 
 
-def _training_parity_tolerances(device: str) -> tuple[float, float]:
-    """Return tolerances for repeated LeRobot optimization on one backend.
+def _training_parity_tolerances(device: str) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return loss and weight tolerances for repeated LeRobot optimization on one backend.
+
+    CPU and CUDA with deterministic cuDNN repeat a run exactly. XPU has no deterministic mode:
+    two native ACT/PushT runs of 20 steps on one Intel GPU differed by up to 2e-3 in loss and
+    1.1e-4 in weights, as much as the Engine run differs from a native one. Its tolerances sit
+    above that run-to-run noise and were calibrated at 20 steps; drift grows with more steps.
+    The first update's loss is compared exactly on every device.
 
     Returns:
-        Relative and absolute tolerances. CPU and deterministic CUDA parity use
-        tight tolerances; XPU allows small float32 implementation differences.
+        ``(rtol, atol)`` for the per-step losses, then for the final weights.
+
+    Raises:
+        ValueError: If no parity tolerances are defined for *device*.
     """
-    return (1e-6, 1e-7) if device in {"cpu", "cuda"} else (5e-4, 5e-5)
+    if device in {"cpu", "cuda"}:
+        return (1e-6, 1e-7), (1e-6, 1e-7)
+    if device == "xpu":
+        return (1e-2, 1e-3), (1e-3, 5e-4)
+    msg = f"No training parity tolerances for device {device!r}; measure its run-to-run noise first."
+    raise ValueError(msg)
