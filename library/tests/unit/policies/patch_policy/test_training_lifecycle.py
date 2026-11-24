@@ -86,7 +86,7 @@ class CheckEMA(lightning.Callback):
 
 @pytest.mark.parametrize("accumulate_grad_batches", [1, 2])
 def test_ema_follows_actual_optimizer_updates(tiny_encoder, small_config, accumulate_grad_batches):
-    policy = PatchPolicy.from_config(small_config, compile_model=False)
+    policy = PatchPolicy.from_config(small_config, encoder_pretrained=False, compile_model=False)
     check = CheckEMA()
     trainer = lightning.Trainer(
         accelerator="cpu",
@@ -111,7 +111,7 @@ def test_ema_follows_actual_optimizer_updates(tiny_encoder, small_config, accumu
 
 
 def test_ema_ignores_grad_scaler_skipped_step(tiny_encoder, small_config):
-    policy = PatchPolicy.from_config(small_config, compile_model=False)
+    policy = PatchPolicy.from_config(small_config, encoder_pretrained=False, compile_model=False)
     check = CheckEMA()
 
     class OverflowFirstStep(lightning.Callback):
@@ -146,11 +146,17 @@ def test_ema_ignores_grad_scaler_skipped_step(tiny_encoder, small_config):
 
 def test_loaded_policy_resumes_full_config_and_optimizer_state(tiny_encoder, small_config, tmp_path):
     config = replace(small_config, dropout=0.1, embedding_dropout=0.2)
-    policy = PatchPolicy.from_config(config, compile_model=False)
+    policy = PatchPolicy.from_config(config, encoder_pretrained=False, compile_model=False)
     settings = {
-        "accelerator": "cpu", "devices": 1, "limit_train_batches": 1,
-        "logger": False, "enable_checkpointing": False, "enable_progress_bar": False,
-        "enable_model_summary": False, "limit_val_batches": 0, "num_sanity_val_steps": 0,
+        "accelerator": "cpu",
+        "devices": 1,
+        "limit_train_batches": 1,
+        "logger": False,
+        "enable_checkpointing": False,
+        "enable_progress_bar": False,
+        "enable_model_summary": False,
+        "limit_val_batches": 0,
+        "num_sanity_val_steps": 0,
     }
     trainer = lightning.Trainer(max_epochs=1, **settings)
     trainer.fit(policy, datamodule=TrainingDataModule(policy.config))

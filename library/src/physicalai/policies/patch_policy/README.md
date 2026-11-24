@@ -53,6 +53,10 @@ The recipe trains for 400 epochs with five history frames. It logs metrics to W&
 
 Fresh VQ-BeT tokenizer fitting supports only LeRobot datasets and single-device training. These restrictions are checked when fitting with the lightning trainer.
 
+`PatchPolicy.from_config(config)` initializes pretrained encoder weights by default. Pass `encoder_pretrained=False` to skip weight initialization; checkpoint loading always restores saved weights without downloading encoder artifacts.
+
+Diffusion with the default `clip_sample=True` requires action min/max statistics before training, prediction, or export. Dataset setup supplies these statistics during training. Construction without statistics is allowed, and constant action dimensions are supported. Deliberate raw-action diffusion without statistics requires `clip_sample=False` in the config.
+
 To resume with the complete saved model config and optimizer state:
 
 ```python

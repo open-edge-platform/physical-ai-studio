@@ -47,7 +47,7 @@ def _config() -> PatchPolicyConfig:
 def test_defaults_match_real_robot_recipe(tiny_encoder) -> None:
     config = _config()
     policy = PatchPolicy(encoder_pretrained=False)
-    restored = PatchPolicy.from_config(config)
+    restored = PatchPolicy.from_config(config, encoder_pretrained=False)
     expected = {
         "encoder_name": "dinov2",
         "action_head": "behavior_transformer",

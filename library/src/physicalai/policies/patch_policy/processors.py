@@ -31,6 +31,26 @@ _TEMPORAL_IMAGE_NDIM = 5
 _ACTION_NDIM = 3
 
 
+def validate_action_normalization(
+    features: list[Feature],
+    *,
+    action_head: str,
+    clip_sample: bool,
+) -> None:
+    """Require action bounds when diffusion clips predictions in normalized space.
+
+    Raises:
+        ValueError: If clipped diffusion has incomplete action min/max statistics.
+    """
+    if action_head != "diffusion" or not clip_sample:
+        return
+    for feature in features:
+        stats = feature.normalization_data
+        if stats is None or stats.min is None or stats.max is None:
+            msg = f"Clipped diffusion requires action min/max normalization data for {feature.name!r}."
+            raise ValueError(msg)
+
+
 def resolve_camera_name(feature: Feature) -> str:
     """Return the canonical camera name for a visual feature.
 

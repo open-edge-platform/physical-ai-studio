@@ -1,8 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
-# Copyright 2026 Gaoyue Zhou
-# Authors: Gaoyue Zhou, Zichen Jeff Cui
+# Copyright (c) 2024 Zichen Jeff Cui
 # SPDX-License-Identifier: MIT
 #
 # Copyright (c) 2022 Andrej Karpathy

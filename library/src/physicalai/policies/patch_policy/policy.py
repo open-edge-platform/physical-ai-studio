@@ -36,6 +36,7 @@ from .processors import (
     PatchPolicyPreprocessor,
     make_policy_processors,
     resolve_camera_name,
+    validate_action_normalization,
 )
 
 if TYPE_CHECKING:
@@ -247,7 +248,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
 
         Raises:
             TypeError: If the training dataset is not a physicalai Dataset.
-            ValueError: If configured features differ from the training dataset.
+            ValueError: If features differ from the dataset or clipped diffusion lacks action bounds.
         """
         # only setup on fit stage
         if stage != "fit":
@@ -283,6 +284,11 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             dataset_output_features if self.output_features is None else self.output_features,
             dataset_output_features,
         )
+        validate_action_normalization(
+            output_features,
+            action_head=self._config.action_head if self._config is not None else self.action_head,
+            clip_sample=self._config.clip_sample if self._config is not None else True,
+        )
         self.input_features = input_features
         self.output_features = output_features
 
@@ -296,6 +302,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         cls,
         config: PatchPolicyConfig,
         *,
+        encoder_pretrained: bool = True,
         optimizer_lr: float = 3e-4,
         optimizer_weight_decay: float = 1e-4,
         compile_model: bool = True,
@@ -304,6 +311,17 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
     ) -> PatchPolicy:
         """Build a policy from a resolved configuration.
 
+        Pretrained encoder weights are initialized unless ``encoder_pretrained=False``.
+
+        Args:
+            config: Resolved feature and architecture configuration.
+            encoder_pretrained: Whether to initialize the encoder with pretrained weights.
+            optimizer_lr: AdamW learning rate.
+            optimizer_weight_decay: AdamW weight-decay coefficient.
+            compile_model: Whether to compile the frozen feature encoder.
+            vqvae_iters: Full passes over action windows when fitting a new tokenizer.
+            vqvae_batch_size: Tokenizer fitting minibatch size.
+
         Returns:
             Configured policy with its model and processors initialized.
         """
@@ -311,7 +329,7 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             input_features=None,
             output_features=None,
             encoder_name=config.encoder_name,
-            encoder_pretrained=False,
+            encoder_pretrained=encoder_pretrained,
             action_head=config.action_head,
             n_obs_steps=config.n_obs_steps,
             chunk_size=config.chunk_size,
@@ -411,6 +429,8 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
             parameter = next(model.parameters())
             preprocessor.to(device=parameter.device)
             postprocessor.to(device=parameter.device)
+            preprocessor.train(self.training)
+            postprocessor.train(self.training)
 
         if self.compile_model and not self._encoder_compiled:
             model.encoder.compile()
@@ -531,6 +551,11 @@ class PatchPolicy(PatchPolicyExportMixin, Policy):
         if self._config is None or self._preprocessor is None:
             msg = "Patch Policy is not initialized."
             raise RuntimeError(msg)
+        validate_action_normalization(
+            self.config.output_features,
+            action_head=self.config.action_head,
+            clip_sample=self.config.clip_sample,
+        )
         values = batch.to(self.device).to_dict()
         if require_actions and not isinstance(values.get("action"), Tensor):
             msg = "Training requires tensor actions."

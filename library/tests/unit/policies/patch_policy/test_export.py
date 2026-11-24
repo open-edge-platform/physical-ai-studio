@@ -61,15 +61,25 @@ def _run_processors(
 
 
 @pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
+@pytest.mark.parametrize("clip_sample", [True, False])
 @pytest.mark.parametrize("dtype", [np.uint8, np.float32])
 @pytest.mark.parametrize(("batch", "timesteps", "source_size"), [(1, 1, (9, 11)), (2, 3, (4, 5))])
 def test_model_only_processors_match_torch(
-    tiny_encoder, small_config, tmp_path, action_head, dtype, batch, timesteps, source_size,
+    tiny_encoder,
+    small_config,
+    tmp_path,
+    action_head,
+    clip_sample,
+    dtype,
+    batch,
+    timesteps,
+    source_size,
 ) -> None:
     image_size = (5, 7)
     config = replace(
         small_config,
         action_head=action_head,
+        clip_sample=clip_sample,
         n_obs_steps=timesteps,
         action_dim=4,
         input_features=[
@@ -92,11 +102,19 @@ def test_model_only_processors_match_torch(
                 name="gripper",
                 ftype=FeatureType.ACTION,
                 shape=(1,),
-                normalization_data=NormalizationParameters(min=[-5.0]),
+                normalization_data=NormalizationParameters(min=[-5.0], max=[5.0])
+                if clip_sample
+                else NormalizationParameters(min=[-5.0]),
             ),
-            Feature(name="other", ftype=FeatureType.ACTION, shape=(1,)),
+            Feature(
+                name="other",
+                ftype=FeatureType.ACTION,
+                shape=(1,),
+                normalization_data=NormalizationParameters(min=[7.0], max=[7.0]) if clip_sample else None,
+            ),
         ],
     )
+
     class Exporter(PatchPolicyExportMixin):
         @property
         def config(self):
@@ -105,14 +123,15 @@ def test_model_only_processors_match_torch(
     exporter = Exporter()
     exporter.model = SimpleNamespace(encoder=tiny_encoder("tiny", "patch", image_size=image_size))
     parameters = exporter.extra_export_args["openvino"]
-    preprocessors = [ComponentSpec.model_validate(spec.model_dump(mode="json")) for spec in parameters.preprocessors_specs]
-    postprocessors = [ComponentSpec.model_validate(spec.model_dump(mode="json")) for spec in parameters.postprocessors_specs]
+    preprocessors = [
+        ComponentSpec.model_validate(spec.model_dump(mode="json")) for spec in parameters.preprocessors_specs
+    ]
+    postprocessors = [
+        ComponentSpec.model_validate(spec.model_dump(mode="json")) for spec in parameters.postprocessors_specs
+    ]
     torch_preprocessor, torch_postprocessor = make_policy_processors(config, image_size)
     rng = np.random.default_rng(42)
-    images = {
-        name: rng.random((batch, timesteps, 3, *source_size), dtype=np.float32)
-        for name in ("front", "wrist")
-    }
+    images = {name: rng.random((batch, timesteps, 3, *source_size), dtype=np.float32) for name in ("front", "wrist")}
     if dtype == np.uint8:
         images = {name: (image * 255).astype(dtype) for name, image in images.items()}
     actual = _run_processors(preprocessors, {"images": images}, tmp_path, Preprocessor)
@@ -129,14 +148,16 @@ def test_model_only_processors_match_torch(
     expected_actions = torch_postprocessor(torch.from_numpy(actions)).numpy()
     assert actual_actions.shape == (batch, config.n_action_steps, config.action_dim)
     np.testing.assert_allclose(actual_actions, expected_actions, rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(actual_actions[..., 1:], actions[:, : config.n_action_steps, 1:])
+    np.testing.assert_array_equal(actual_actions[..., 1], actions[:, : config.n_action_steps, 1])
+    if not clip_sample:
+        np.testing.assert_array_equal(actual_actions[..., 2:], actions[:, : config.n_action_steps, 2:])
     if action_head == "behavior_transformer":
         np.testing.assert_array_equal(actual_actions, actions[:, : config.n_action_steps])
 
 
 def test_torch_export_round_trip_is_offline(tiny_encoder, small_config, tmp_path, monkeypatch) -> None:
     torch.manual_seed(42)
-    policy = PatchPolicy.from_config(small_config).cpu().eval()
+    policy = PatchPolicy.from_config(small_config, encoder_pretrained=False).cpu().eval()
     images = np.random.default_rng(42).integers(0, 256, (2, small_config.n_obs_steps, 3, 7, 9), dtype=np.uint8)
     with torch.inference_mode():
         expected = policy.predict_action_chunk(Observation(images={"front": torch.from_numpy(images)})).numpy()
@@ -151,7 +172,10 @@ def test_torch_export_round_trip_is_offline(tiny_encoder, small_config, tmp_path
     assert not manifest.model.postprocessors
     assert not (export_dir / "stats.safetensors").exists()
     assert manifest.model.input_features[0].init_args["shape"] == [small_config.n_obs_steps, 3, 4, 4]
-    assert manifest.model.output_features[0].init_args["shape"] == [small_config.n_action_steps, small_config.action_dim]
+    assert manifest.model.output_features[0].init_args["shape"] == [
+        small_config.n_action_steps,
+        small_config.action_dim,
+    ]
 
     def forbid_download(*args, **kwargs):
         raise AssertionError("Torch export restoration must not download encoder artifacts")
@@ -174,7 +198,7 @@ def test_unconfigured_torch_export_fails(tmp_path) -> None:
 @pytest.mark.parametrize("action_head", ["diffusion", "behavior_transformer"])
 def test_openvino_export_matches_torch(tiny_encoder, small_config, tmp_path, action_head) -> None:
     ov = pytest.importorskip("openvino")
-    policy = PatchPolicy.from_config(replace(small_config, action_head=action_head)).eval()
+    policy = PatchPolicy.from_config(replace(small_config, action_head=action_head), encoder_pretrained=False).eval()
     images = np.random.default_rng(42).integers(0, 256, (1, small_config.n_obs_steps, 3, 7, 9), dtype=np.uint8)
     expected = policy.predict_action_chunk(Observation(images={"front": torch.from_numpy(images)})).numpy()
 

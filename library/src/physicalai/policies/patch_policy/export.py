@@ -17,7 +17,7 @@ from physicalai.data import FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import ExportParameters, OpenVINOExportParameters, TorchExportParameters
 
-from .processors import resolve_camera_name
+from .processors import resolve_camera_name, validate_action_normalization
 
 if TYPE_CHECKING:
     from .config import PatchPolicyConfig
@@ -46,11 +46,16 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
         must not apply normalization or action postprocessing a second time.
 
         Raises:
-            ValueError: If an action feature has no concrete shape.
+            ValueError: If an action feature has no shape or clipped diffusion lacks action bounds.
         """
         if self.model is None:
             return {}
         config = self.config
+        validate_action_normalization(
+            config.output_features,
+            action_head=config.action_head,
+            clip_sample=config.clip_sample,
+        )
         model = cast("PatchPolicyModel", self.model)
 
         # Order camera windows, scale pixels to float32, then resize without letterboxing.
@@ -104,7 +109,7 @@ class PatchPolicyExportMixin(ExportablePolicyMixin):
         ]
 
         # Diffusion predicts normalized actions; concatenate stats in output-feature order.
-        # Missing statistics and masked dimensions remain identity; BeT needs no denormalization.
+        # Unclipped diffusion may use identity for missing stats; masks also preserve raw dimensions.
         if config.action_head == "diffusion":
             minimum, maximum, mask = [], [], []
             for feature in config.output_features:
