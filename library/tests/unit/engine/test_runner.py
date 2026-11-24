@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -284,3 +286,143 @@ def test_worker_runner_shows_worker_output_when_it_fails_before_the_handshake(
 
     with pytest.raises(_runner.WorkerProtocolError, match="No module named 'physicalai_missing_worker_dependency'"):
         run_worker(env, [], device="cpu", interpreter=sys.executable)
+
+
+# The tests below characterize the user-managed interpreter path (``--interpreter``), which launches
+# the worker itself rather than through physicalai.isolate. They pin what callers observe, so that path
+# can move onto an isolate session without changing behaviour unnoticed.
+
+_HELLO = "{'type': 'hello', 'protocol': 1, 'framework': 'demo', 'package': 'lerobot', 'version': '0.6.1'}"
+
+
+def _hanging_worker(*messages: str, ignore_sigterm: bool = False) -> str:
+    """Record the worker's pid in argv[1], send *messages*, then hang without reading stdin."""
+    lines = [_protocol_writer(), "import signal, time", "from pathlib import Path"]
+    if ignore_sigterm:
+        lines.append("signal.signal(signal.SIGTERM, signal.SIG_IGN)")
+    lines.append("Path(sys.argv[1]).write_text(str(os.getpid()))")
+    lines.extend(f"send({message})" for message in messages)
+    return "\n".join([*lines, "while True:", "    time.sleep(0.05)"])
+
+
+def _has_exited(pid_file: Path) -> bool:
+    try:
+        os.kill(int(pid_file.read_text(encoding="utf-8")), 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+@pytest.mark.parametrize("ignore_sigterm", [False, True], ids=["terminated", "killed"])
+def test_interpreter_worker_that_ignores_cancellation_is_stopped(
+    ignore_sigterm: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unresponsive worker is terminated after the cancel grace period, then killed, and reaped."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(_runner, "_CANCEL_GRACE_SECONDS", 0.2)
+    monkeypatch.setattr(_runner, "_TERMINATE_GRACE_SECONDS", 0.2)
+    env = _worker_env(
+        tmp_path,
+        _hanging_worker(
+            _HELLO,
+            "{'type': 'progress', 'step': 2, 'total': 9, 'metrics': {}}",
+            ignore_sigterm=ignore_sigterm,
+        ),
+    )
+    pid_file = tmp_path / "worker.pid"
+
+    class _StopHooks(_Hooks):
+        def should_stop(self) -> bool:
+            return bool(self.steps)
+
+    with pytest.raises(TrainingCancelledError) as exc_info:
+        run_worker(env, [str(pid_file)], device="cpu", hooks=_StopHooks(), interpreter=sys.executable)
+
+    assert exc_info.value.step == 2
+    assert _has_exited(pid_file)
+
+
+def test_interpreter_worker_without_a_handshake_times_out_and_is_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(_runner, "_STARTUP_TIMEOUT_SECONDS", 0.3)
+    env = _worker_env(tmp_path, _hanging_worker())
+    pid_file = tmp_path / "worker.pid"
+
+    with pytest.raises(TimeoutError, match="'demo' did not complete its version handshake"):
+        run_worker(env, [str(pid_file)], device="cpu", interpreter=sys.executable)
+
+    assert _has_exited(pid_file)
+
+
+def test_interpreter_worker_is_stopped_when_the_host_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An exception raised by host hooks stops the worker instead of leaving it running."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    env = _worker_env(tmp_path, _hanging_worker(_HELLO, "{'type': 'progress', 'step': 1, 'total': 9, 'metrics': {}}"))
+    pid_file = tmp_path / "worker.pid"
+
+    class _FailingHooks(_Hooks):
+        def on_step(self, step: int, total: int | None, metrics: Mapping[str, float]) -> None:
+            msg = "host failed"
+            raise RuntimeError(msg)
+
+    with pytest.raises(RuntimeError, match="host failed"):
+        run_worker(env, [str(pid_file)], device="cpu", hooks=_FailingHooks(), interpreter=sys.executable)
+
+    assert _has_exited(pid_file)
+
+
+def test_interpreter_worker_runs_in_the_host_environment_with_worker_variables(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A user-managed interpreter keeps the host's variables, including PYTHONPATH, and gets no project."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "user-site"))
+    monkeypatch.setenv("PHYSICALAI_TEST_HOST_VARIABLE", "kept")
+    names = [
+        "PYTHONPATH",
+        "PHYSICALAI_TEST_HOST_VARIABLE",
+        "PHYSICALAI_TEST_EXTRA",
+        "PHYSICALAI_WORKER_PROTOCOL_FD",
+        "PHYSICALAI_WORKER_FRAMEWORK",
+        "PHYSICALAI_WORKER_PACKAGE",
+        "PHYSICALAI_WORKER_DEVICE",
+        "PHYSICALAI_WORKER_PROJECT",
+    ]
+    record = "\n".join([
+        "from pathlib import Path",
+        f"names = {names!r}",
+        "Path(sys.argv[1]).write_text(json.dumps({name: os.environ.get(name) for name in names}))",
+    ])
+    env = _worker_env(
+        tmp_path,
+        _protocol_writer(_HELLO) + "\n" + record + "\n" + "send({'type': 'result', 'output_dir': None, 'checkpoint': None})",
+    )
+    seen = tmp_path / "environment.json"
+
+    run_worker(
+        env,
+        [str(seen)],
+        device="xpu",
+        interpreter=sys.executable,
+        extra_env={"PHYSICALAI_TEST_EXTRA": "extra"},
+    )
+
+    assert json.loads(seen.read_text(encoding="utf-8")) == {
+        "PYTHONPATH": str(tmp_path / "user-site"),
+        "PHYSICALAI_TEST_HOST_VARIABLE": "kept",
+        "PHYSICALAI_TEST_EXTRA": "extra",
+        "PHYSICALAI_WORKER_PROTOCOL_FD": "2",
+        "PHYSICALAI_WORKER_FRAMEWORK": "demo",
+        "PHYSICALAI_WORKER_PACKAGE": "lerobot",
+        "PHYSICALAI_WORKER_DEVICE": "xpu",
+        "PHYSICALAI_WORKER_PROJECT": None,
+    }

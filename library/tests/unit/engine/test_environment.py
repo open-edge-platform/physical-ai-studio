@@ -322,6 +322,22 @@ def test_worker_environment_keys_change_with_every_input(tmp_path: Path) -> None
     assert len({env.key(), *(variant.key() for variant in variants)}) == len(variants) + 1
 
 
+def test_environment_keys_are_pinned_for_a_fixed_project(tmp_path: Path) -> None:
+    """Pin both keys so a change to either is deliberate.
+
+    The isolate key names the cache directory, so changing it makes every user rebuild their
+    environments. The Engine key decides what ``physicalai engine prune`` treats as stale.
+    Both depend only on file contents, so they are the same on every machine.
+    """
+    env = _worker_env(tmp_path / "project")
+
+    assert env.key() == "64bde4ef6e3934d58898d6b5d772008fccaae333559a18000550c617abfe27b2"
+    assert {accelerator: to_isolate_environment(env, accelerator).key() for accelerator in ("cpu", "cuda", "xpu")} == {
+        "cpu": "66857cfe1ed66a1904e0c8977a5261c3f05885444ff35f5ac780c4ab4bdaff47",
+        "cuda": "f27a1f30d1e0fb19607614b68dd828a570ad22a9b941017c387eebc1c6d18e43",
+        "xpu": "9c4e643abadf5e651179f0843b64b76fec36c6b50e83139c16adacae291e86fd",
+    }
+
 def test_single_profile_environments_skip_hardware_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": True})
     monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"cuda"})
