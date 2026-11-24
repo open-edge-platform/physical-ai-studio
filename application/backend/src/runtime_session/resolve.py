@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from schemas.runtime_session import EnvironmentDraft
     from services import DatasetService, ModelService, RobotService
     from services.project_camera_service import ProjectCameraService
+    from services.robot_simulation_service import RobotSimulationService
+    from services.simulation_manager import SimulationManager
 
 
 def project_resolvers(
@@ -30,23 +32,34 @@ def project_resolvers(
     cameras: ProjectCameraService,
     datasets: DatasetService,
     models: ModelService,
+    simulations: SimulationManager | None = None,
+    robot_simulations: RobotSimulationService | None = None,
 ) -> Resolvers:
-    """Resolvers backed by the database, scoped to ``project_id``."""
+    """Resolvers backed by the database, scoped to ``project_id``.
+
+    With ``simulations``, a leader that reads from a simulation is pointed at its follower's. With
+    ``robot_simulations``, a simulation camera streams from where its simulation runs now.
+    """
 
     async def environment(draft: EnvironmentDraft) -> EnvironmentWithRelations:
         configured = []
         for robot in draft.robots:
             teleoperator: TeleoperatorRobotWithRobot | TeleoperatorNoneWithRobot = TeleoperatorNoneWithRobot()
+            follower = await robots.get_robot_by_id(project_id, robot.robot_id)
             if robot.tele_operator.type == "robot":
                 leader = await robots.get_robot_by_id(project_id, robot.tele_operator.robot_id)
+                if simulations is not None:
+                    follower, leader = await simulations.point_leader_at_follower(project_id, follower, leader)
                 teleoperator = TeleoperatorRobotWithRobot(robot_id=leader.id, robot=leader)
-            follower = await robots.get_robot_by_id(project_id, robot.robot_id)
             configured.append(RobotWithTeleoperator(robot=follower, tele_operator=teleoperator))
+        loaded = [await cameras.get_camera_by_id(project_id, camera.camera_id) for camera in draft.cameras]
+        if robot_simulations is not None:
+            loaded = await robot_simulations.resolve_cameras(project_id, loaded)
         return EnvironmentWithRelations(
             id=draft.id or UNSAVED_ENVIRONMENT_ID,
             name=draft.name,
             robots=configured,
-            cameras=[await cameras.get_camera_by_id(project_id, camera.camera_id) for camera in draft.cameras],
+            cameras=loaded,
         )
 
     async def dataset(dataset_id: UUID) -> Dataset:

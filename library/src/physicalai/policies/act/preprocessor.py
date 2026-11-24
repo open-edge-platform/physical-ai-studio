@@ -8,6 +8,7 @@ and actions into the format expected by ACT model.
 
 Handles:
 - Image resizing
+- Task prompt to task index mapping (multi-task models)
 """
 
 from __future__ import annotations
@@ -18,16 +19,18 @@ from typing import Any
 import torch
 import torch.nn.functional as F  # noqa: N812
 
-from physicalai.data.observation import IMAGES, Observation
+from physicalai.data.observation import IMAGES, STATE, TASK, TASK_INDEX, Observation
 
 
 class ACTPreprocessor(torch.nn.Module):
     """Preprocessor for ACT model inputs.
 
     - Resizes images to target resolution with keeping proportions
+    - Maps ``task`` prompts to ``task_index`` when ``tasks`` is set
 
     Args:
         image_resolution: Target image resolution (height, width).
+        tasks: Task prompts the model was trained on; a prompt's position is its task index.
 
     Example:
         >>> preprocessor = ACTPreprocessor(
@@ -39,16 +42,19 @@ class ACTPreprocessor(torch.nn.Module):
     def __init__(
         self,
         image_resolution: tuple[int, int] = (512, 512),
+        tasks: list[str] | None = None,
     ) -> None:
         """Initialize the ACT preprocessor.
 
         Args:
             image_resolution: Target resolution for input images as (height, width).
                 Defaults to (512, 512).
+            tasks: Task prompts the model was trained on. ``None`` disables task mapping.
         """
         super().__init__()
 
         self.image_resolution = image_resolution
+        self.tasks = list(tasks) if tasks else []
 
     def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
         """Process a batch by applying newline processing, tokenization, and normalization.
@@ -77,7 +83,33 @@ class ACTPreprocessor(torch.nn.Module):
         if not is_flat:
             batch[IMAGES] = target_dict
 
+        if self.tasks:
+            batch[TASK_INDEX] = self._task_index(batch)
+
         return batch
+
+    def _task_index(self, batch: dict[str, Any]) -> torch.Tensor:
+        """Map the batch's ``task`` prompts to indices into ``self.tasks``.
+
+        Returns:
+            ``(B,)`` int64 task indices, or the batch's own ``task_index`` when it has no prompts.
+
+        Raises:
+            ValueError: If a prompt is not one of ``self.tasks``, or the batch has neither prompts nor indices.
+        """
+        task = batch.get(TASK)
+        if task is None:
+            if isinstance(batch.get(TASK_INDEX), torch.Tensor):
+                return batch[TASK_INDEX]
+            msg = f"This policy was trained on multiple tasks; pass `task` as one of {self.tasks}."
+            raise ValueError(msg)
+        prompts = [task] if isinstance(task, str) else list(task)
+        unknown = sorted({str(p) for p in prompts} - set(self.tasks))
+        if unknown:
+            msg = f"Unknown task(s) {unknown}; this policy only knows {self.tasks}."
+            raise ValueError(msg)
+        device = batch[STATE].device if isinstance(batch.get(STATE), torch.Tensor) else None
+        return torch.tensor([self.tasks.index(str(p)) for p in prompts], dtype=torch.long, device=device)
 
     @staticmethod
     def _resize_with_ar_pad(img: torch.Tensor, target_width: int, target_height: int) -> torch.Tensor:

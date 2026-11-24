@@ -5,7 +5,7 @@ from functools import cache
 from typing import Annotated
 
 import anyio
-from fastapi import APIRouter, Depends, Query, WebSocket, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, status
 from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 
@@ -13,7 +13,7 @@ from api.dependencies import CameraClaimRegistryDep
 from exceptions import DeviceInUseError
 from schemas.camera import SupportedCameraFormat
 from schemas.project_camera import Camera as ProjectCamera
-from schemas.project_camera import CameraAdapter
+from schemas.project_camera import CameraAdapter, streamed_camera
 from schemas.robot_stream import ErrorEvent
 from utils.camera_factory import build_shared_camera
 from workers.rate import Rate
@@ -70,9 +70,15 @@ async def get_supported_formats(
     try:
         parsed = json.loads(fingerprint)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Unable to parse fingerprint into a dictionary: {e}") from e
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Camera fingerprint must be valid JSON",
+        ) from e
     if not isinstance(parsed, dict) or not parsed:
-        raise ValueError("Camera fingerprint must be a non-empty JSON object")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Camera fingerprint must be a non-empty JSON object",
+        )
     fingerprint_key = json.dumps(parsed, sort_keys=True, separators=(",", ":"))
     return _query_formats(driver, fingerprint_key)
 
@@ -124,6 +130,7 @@ async def camera_websocket(
     await websocket.accept()
 
     try:
+        camera = streamed_camera(camera)
         if camera.fingerprint is None:
             raise ValueError("Camera must be reselected")
         if (claim := claims.holder_of(camera.fingerprint)) is not None:

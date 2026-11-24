@@ -365,6 +365,12 @@ class _LeRobotDatasetAdapter(Dataset):
         return self._lerobot_dataset.tolerance_s
 
     @property
+    def tasks(self) -> list[str]:
+        """Task prompts in the dataset, ordered by task index."""
+        tasks = self._lerobot_dataset.meta.tasks
+        return [] if tasks is None else [str(task) for task in tasks.sort_values("task_index").index]
+
+    @property
     def delta_indices(self) -> dict[str, list[int]]:
         """Expose delta_indices from the DatasetReader (lerobot >=0.5.1)."""
         reader = getattr(self._lerobot_dataset, "reader", None)

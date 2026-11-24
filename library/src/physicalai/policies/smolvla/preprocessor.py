@@ -92,7 +92,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
             image_resolution: Target resolution for input images as (height, width).
                 Defaults to (512, 512).
             image_key_reorder_map: Optional mapping from source image keys to target
-                camera indices used for deterministic ordering.
+                camera indices used for deterministic ordering. When the batch holds a
+                single unnamed image under ``images``, a single-entry map applies to it.
             num_cameras: Total number of camera slots expected by the model. Slots left
                 unfilled by the batch image keys are filled with masked dummy images.
                 Values <= 0 keep only the batch cameras, without any dummy images.
@@ -158,16 +159,21 @@ class SmolVLAPreprocessor(torch.nn.Module):
         Raises:
             ValueError: If ``image_key_reorder_map`` is set and its keys do not match
                 the batch image keys exactly, or if the resolved slots do not fit into
-                ``num_cameras``.
+                ``num_cameras``. A single-entry map is exempt from the name check when
+                the batch holds one unnamed image.
         """
         if self.image_key_reorder_map:
-            if set(self.image_key_reorder_map.keys()) != set(batch_img_keys):
+            # An unnamed single image cannot be matched by name, so a single-entry map applies to it.
+            if batch_img_keys == [IMAGES] and len(self.image_key_reorder_map) == 1:
+                slot_by_key = {IMAGES: next(iter(self.image_key_reorder_map.values()))}
+            elif set(self.image_key_reorder_map.keys()) != set(batch_img_keys):
                 msg = (
                     "image_key_reorder_map keys must match the batch image keys exactly. "
                     f"Expected {sorted(self.image_key_reorder_map.keys())}, got {sorted(batch_img_keys)}."
                 )
                 raise ValueError(msg)
-            slot_by_key = {key: self.image_key_reorder_map[key] for key in batch_img_keys}
+            else:
+                slot_by_key = {key: self.image_key_reorder_map[key] for key in batch_img_keys}
         else:
             slot_by_key = {key: index for index, key in enumerate(batch_img_keys)}
 

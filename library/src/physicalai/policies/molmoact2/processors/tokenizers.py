@@ -82,6 +82,8 @@ class MolmoAct2Tokenizers:
             return str(local_path)
 
         if self.tokenizer_name_or_path != MOLMOACT2_TOKENIZER_REPO_ID:
+            # Logs a file path, not a credential.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure  # noqa: ERA001
             logger.warning(
                 "MolmoAct2 tokenizer.json was not found at %s; downloading the pinned default tokenizer.",
                 local_path,

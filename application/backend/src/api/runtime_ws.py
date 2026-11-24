@@ -28,7 +28,9 @@ from api.dependencies import (
     ProjectServiceDep,
     RobotClientFactoryDep,
     RobotServiceDep,
+    RobotSimulationServiceDep,
     RuntimeSessionRegistryDep,
+    SimulationManagerDep,
 )
 from runtime_session import session as runtime_session
 from runtime_session.bus import STATUSES, Bus, BusRequestError, NoResponderError, Subscription, command_key
@@ -46,6 +48,8 @@ from schemas.runtime_session import (
     StateMessage,
     StatusMessage,
 )
+from schemas.simulation import SimulationStatus
+from services.simulation_manager import SimulationManager
 from workers.rate import Rate
 
 router = APIRouter(prefix="/api/projects/{project_id}/runtime", tags=["Runtime Sessions"])
@@ -95,6 +99,8 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
     robot_client_factory: RobotClientFactoryDep,
     registry: RuntimeSessionRegistryDep,
     camera_claims: CameraClaimRegistryDep,
+    simulations: SimulationManagerDep,
+    robot_simulations: RobotSimulationServiceDep,
     hz: Annotated[float, Query(gt=0, le=60)] = 20,
 ) -> None:
     await websocket.accept()
@@ -105,7 +111,9 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
         registry=registry,
         camera_claims=camera_claims,
         robot_factory=robot_client_factory,
-        resolve=project_resolvers(project_id, robot_service, camera_service, dataset_service, model_service),
+        resolve=project_resolvers(
+            project_id, robot_service, camera_service, dataset_service, model_service, simulations, robot_simulations
+        ),
     )
     async with session:
         try:
@@ -120,10 +128,26 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
                     tasks.start_soon(_forward_events, websocket, events)
                     tasks.start_soon(_forward_events, websocket, statuses)
                     tasks.start_soon(_sample_store, websocket, session, hz)
+                    tasks.start_soon(_follow_simulations, session, simulations)
         except* (WebSocketDisconnect, _SessionEnded):
             pass
         except* Exception as errors:
             logger.opt(exception=errors).error("Runtime session {} websocket failed", session.id)
+
+
+async def _follow_simulations(session: RuntimeSession, simulations: SimulationManager) -> None:
+    """Reload the session's environment when the simulation of its robot runs again on another address."""
+    async with simulations.subscribe() as states:
+        while True:
+            state = await states.get()
+            if (
+                state.status is SimulationStatus.RUNNING
+                and state.project_id == session.project_id
+                and state.robot_id is not None
+                and state.http_url is not None
+            ):
+                # A run is told apart by when it started: a new one may serve on an address used before.
+                await session.follow_simulation(state.robot_id, state.http_url, run=str(state.started_at))
 
 
 async def _forward_commands(websocket: WebSocket, bus: Bus) -> None:

@@ -1,1 +1,9 @@
 **/uv.lock
+
+# Markdown docs
+*.md
+
+# Test code
+tests/
+*.test.ts
+*.test.tsx

@@ -36,8 +36,7 @@ export const Preview = () => {
     };
 
     // Make sure we completely refresh the camera preview when changing camera or resolution
-    // eslint-disable-next-line max-len
-    const key = `${camera.driver}-${fingerprintKey(camera.fingerprint)}-${camera.payload?.fps}-${camera.payload?.height}-${camera.payload?.width}`;
+    const key = `${camera.driver}-${fingerprintKey(camera.fingerprint)}-${JSON.stringify(camera.payload ?? {})}`;
 
     return (
         <View height={'100%'} position={'relative'}>

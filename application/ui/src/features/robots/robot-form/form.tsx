@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 
-import { Item, Picker, TextField } from '@geti-ui/ui';
+import { ComboBox, Item, Section, TextField } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
+import { SchemaRobotCatalogDefinitionResponse } from '../../../api/openapi-spec';
 import { FormHeading } from '../../../components/form-heading/form-heading';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../paths';
@@ -12,17 +13,25 @@ import { BimanualSO101FormFields } from './catalog/bimanual-so101';
 import { useRobotForm } from './provider';
 import { SchemaForm } from './robot-schema/schema-form';
 
+const catalogSections = (catalog: SchemaRobotCatalogDefinitionResponse[]) =>
+    [
+        { name: 'Followers', items: catalog.filter((entry) => !entry.simulation && entry.role !== 'leader') },
+        { name: 'Leaders', items: catalog.filter((entry) => !entry.simulation && entry.role === 'leader') },
+        { name: 'Simulation', items: catalog.filter((entry) => entry.simulation) },
+    ].filter((section) => section.items.length > 0);
+
 export const RobotType = () => {
     const { activeType, name, setName } = useRobotForm();
     const { setActiveType } = useRobotForm();
     const catalogQuery = useRobotCatalogQuery();
 
     return (
-        <Picker
+        <ComboBox
             isRequired
             label='Robot type'
             width='100%'
-            selectedKey={activeType}
+            defaultItems={catalogSections(catalogQuery.data)}
+            selectedKey={activeType ?? null}
             onSelectionChange={(selected) => {
                 if (selected === null) {
                     return;
@@ -38,10 +47,12 @@ export const RobotType = () => {
                 }
             }}
         >
-            {catalogQuery.data.map((entry) => (
-                <Item key={entry.type}>{entry.display_name}</Item>
-            ))}
-        </Picker>
+            {(section) => (
+                <Section key={section.name} title={section.name} items={section.items}>
+                    {(entry) => <Item key={entry.type}>{entry.display_name}</Item>}
+                </Section>
+            )}
+        </ComboBox>
     );
 };
 

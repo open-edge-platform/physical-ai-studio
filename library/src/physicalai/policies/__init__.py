@@ -71,6 +71,8 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401
     if name not in _LAZY_EXPORTS:
         msg = f"module {__name__!r} has no attribute {name!r}"
         raise AttributeError(msg)
+    # Module name comes from policy directories discovered on disk, not external input.
+    # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
     value = getattr(import_module(f".{_LAZY_EXPORTS[name]}", __name__), name)
     globals()[name] = value
     return value

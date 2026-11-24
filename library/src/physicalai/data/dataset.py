@@ -61,6 +61,11 @@ class Dataset(TorchDataset, ABC):
         """Allows setting delta_indices on the dataset."""
 
     @property
+    def tasks(self) -> list[str]:
+        """Task prompts in the dataset, ordered by task index. Empty if unknown."""
+        return []
+
+    @property
     def stats(self) -> dict[str, dict[str, list[float] | tuple | str]]:
         """Normalization statistics extracted from features.
 

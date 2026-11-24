@@ -206,7 +206,9 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
         },
     ).to_dict()
 
-    environment_service = SimpleNamespace(get_environment_by_id=mocker.AsyncMock(return_value=environment))
+    environment_service = SimpleNamespace(
+        get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
+    )
     mocker.patch("api.models.build_runtime_config", return_value=document)
     _override_export_download(model, environment_service=environment_service)
     try:

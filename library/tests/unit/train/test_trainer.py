@@ -1,5 +1,8 @@
+import logging
+
 import pytest
 from lightning.pytorch.callbacks import BatchSizeFinder
+from physicalai.devices.xpu.strategy import SingleXPUStrategy
 from physicalai.train.trainer import Trainer
 
 
@@ -18,6 +21,41 @@ class TestTrainer:
 
         # physicalai default: num_sanity_val_steps=0 (instead of Lightning's 2)
         assert trainer.num_sanity_val_steps == 0
+
+    def test_logs_selected_cpu_device(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Report CPU selection even when an Intel GPU is available."""
+        monkeypatch.setattr("torch.xpu.is_available", lambda: True)
+
+        with caplog.at_level(logging.INFO):
+            Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
+
+        assert "Training device: cpu" in caplog.text
+        assert "Training uses an Intel GPU" not in caplog.text
+
+    @pytest.mark.parametrize("device_index", [0, 1])
+    def test_logs_selected_xpu_device(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch, device_index: int
+    ) -> None:
+        """Clarify Lightning's CUDA/MPS-only availability log for Intel GPU training."""
+        monkeypatch.setattr("torch.xpu.is_available", lambda: True)
+        monkeypatch.setattr("lightning.pytorch.accelerators.CUDAAccelerator.is_available", lambda: False)
+        monkeypatch.setattr("lightning.pytorch.accelerators.MPSAccelerator.is_available", lambda: False)
+
+        with caplog.at_level(logging.INFO):
+            Trainer(
+                accelerator="xpu",
+                strategy=SingleXPUStrategy(device=f"xpu:{device_index}"),
+                devices=[device_index],
+                logger=False,
+                enable_checkpointing=False,
+            )
+
+        assert f"Training device: xpu:{device_index}" in caplog.text
+        assert "GPU available: False, used: False" in caplog.text
+        assert "Training uses an Intel GPU (XPU)" in caplog.text
+        assert "'GPU available' message only checks CUDA/MPS, not XPU" in caplog.text
 
     def test_policy_dataset_interaction_callback_injected(self):
         """Verify PolicyDatasetInteraction callback is automatically added."""

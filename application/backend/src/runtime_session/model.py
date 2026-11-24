@@ -42,11 +42,13 @@ _IMAGES = "images"
 
 @dataclass(frozen=True)
 class ModelInputs:
-    """What an export takes, from its manifest: the state's size and the cameras it reads."""
+    """What an export takes, from its manifest: the state's size, the cameras it reads and the tasks it knows."""
 
     state_size: int
     images: dict[str, str]
     """Model input name to the store camera it reads."""
+    tasks: tuple[str, ...] = ()
+    """The only tasks a policy trained on a fixed set takes, such as a multi-task ACT; empty if any text goes."""
 
 
 def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
@@ -75,7 +77,10 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
             images[name] = camera
     if reasons:
         raise ValueError("The model does not fit this environment: " + "; ".join(reasons))
-    return ModelInputs(state_size, images)
+    tasks = next(
+        (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
+    )
+    return ModelInputs(state_size, images, tuple(tasks))
 
 
 class ProcessModel:
@@ -109,7 +114,13 @@ class ProcessModel:
         self._started = False
 
     def state(self) -> SessionModel:
-        return SessionModel(model_id=self.model.id, name=self.model.name, backend=self.backend, device=self.device)
+        return SessionModel(
+            model_id=self.model.id,
+            name=self.model.name,
+            backend=self.backend,
+            device=self.device,
+            tasks=list(self.inputs.tasks),
+        )
 
     async def __aenter__(self) -> Self:
         """Start the worker and wait until the model is loaded.

@@ -26,6 +26,22 @@ def test_get_settings_masks_huggingface_token(monkeypatch, tmp_path: Path) -> No
     assert response.json()["huggingface"]["hf_token"] is not None
 
 
+def test_rerun_settings_api_persists_merges_validates_and_resets(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    with TestClient(app) as client:
+        defaults = client.get("/api/settings").json()["rerun"]
+        assert defaults["open_viewer"] is False
+        response = client.patch("/api/settings", json={"rerun": {"mode": "connect", "connect_addr": "host:1234"}})
+        assert response.status_code == 200
+        response = client.patch("/api/settings", json={"rerun": {"enabled": False}})
+        assert response.json()["rerun"]["connect_addr"] == "host:1234"
+        assert not get_settings().rerun.enabled
+        assert client.patch("/api/settings", json={"rerun": {"spawn_port": 0}}).status_code == 400
+        assert client.patch("/api/settings", json={"rerun": {"connect_addr": "host"}}).status_code == 400
+        response = client.patch("/api/settings", json={"rerun": None})
+        assert response.json()["rerun"] == defaults
+
+
 def test_patch_settings_preserves_omitted_fields(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     write_user_settings({"huggingface": {"hf_token": "super-secret"}})

@@ -8,6 +8,8 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 from physicalai.config import Config
@@ -820,6 +822,7 @@ class TestSampleInput:
             def __init__(self, stats: dict) -> None:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
+                self.config = Pi05Config()
                 self.rtc_enabled = False
 
         stub = _Stub(dataset_stats)
@@ -1161,22 +1164,45 @@ class TestPi05ExtraExportArgs:
         with pytest.raises(ValueError, match="Dataset stats are required"):
             _ = policy.extra_export_args
 
+    @pytest.mark.parametrize(("backend", "expected"), [("onnx", [[50, 32]]), ("openvino", [[50, 32]]), ("torch", [])])
+    def test_manifest_draws_the_noise_for_graph_exports(self, backend: str, expected: list) -> None:
+        """Graph exports get the start noise from the runtime; eager torch samples it itself."""
+        policy = Pi05()
+        policy._dataset_stats = self._mock_stats()
+
+        specs = policy.extra_export_args[backend].preprocessors_specs
+        noise = [spec.model_dump() for spec in specs if spec.type == "noise"]
+
+        assert [spec["shape"] for spec in noise] == expected
+
+    def test_zero_start_noise_stays_in_the_graph(self) -> None:
+        """With ``use_random_input_noise=False`` eager inference starts from zeros; exports must too."""
+        from physicalai.data.constants import NOISE
+
+        policy = Pi05(use_random_input_noise=False)
+        policy._dataset_stats = self._mock_stats()
+
+        specs = [spec for args in policy.extra_export_args.values() for spec in args.preprocessors_specs]
+        assert not [spec for spec in specs if spec.type == "noise"]
+        stub = SimpleNamespace(model=object(), _dataset_stats=policy._dataset_stats, config=policy.config, rtc_enabled=False)
+        assert NOISE not in {feature.name for feature in Pi05.inputs_schema.fget(stub)}  # type: ignore[attr-defined]
+
     def test_preprocessor_order_normalize_before_pi05(self) -> None:
-        """Normalize must run before the pi05 image transform for both onnx and openvino."""
+        """Normalize must run before the pi05 image transform; tokenizer runs last."""
         policy = Pi05()
         # Inject mock stats directly to avoid building the heavy model.
         policy._dataset_stats = self._mock_stats()
 
         args = policy.extra_export_args
 
-        for backend in ("onnx", "openvino"):
+        tokenizers = {"onnx": "hf_tokenizer", "openvino": "ov_tokenizer", "executorch": "hf_tokenizer"}
+        for backend, tokenizer in tokenizers.items():
             specs = args[backend].preprocessors_specs
             types = [s.type for s in specs]
-            assert types[0] == "normalize", f"{backend}: expected normalize first, got {types}"
-            assert types[1] == "pi05", f"{backend}: expected pi05 second, got {types}"
-            assert types.index("normalize") < types.index("pi05"), (
-                f"{backend}: normalize must precede pi05, got {types}"
-            )
+            assert types == ["normalize", "pi05", "noise", tokenizer], f"{backend}: unexpected order {types}"
+            assert [s.type for s in args[backend].postprocessors_specs][0] == "denormalize"
+
+        assert args["executorch"].delegate == "portable"
 
 
 # ============================================================================ #

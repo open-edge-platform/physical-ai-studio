@@ -10,13 +10,12 @@ from collections import deque
 from typing import TYPE_CHECKING, Any
 
 import lightning as L  # noqa: N812
+import torch
 
 from physicalai.data import Observation
 from physicalai.eval import Rollout
 
 if TYPE_CHECKING:
-    import torch
-
     from physicalai.gyms import Gym
 
     from .model import Model
@@ -241,8 +240,58 @@ class Policy(L.LightningModule, ABC):
         if isinstance(batch, Observation):
             loss, loss_dict = self.compute_val_loss(batch)
             self.log("val/loss", loss_dict["loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+            self.log_action_error(batch, loss_dict.get("action_pred"))
             return loss
         return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def log_action_error(self, batch: Observation, action_pred: torch.Tensor | float | None = None) -> None:
+        """Log the mean absolute action error in dataset units, overall and per action dimension.
+
+        Only the executed part of the chunk (the first ``n_action_steps``) is
+        scored, and padded steps past the episode end are skipped. Logs
+        ``val/action_error`` and ``val/action_error/<name>``, named after the
+        dataset's action ``names`` when available.
+
+        Args:
+            batch: Validation batch with raw ground-truth actions.
+            action_pred: Denormalized predicted chunk ``(B, T, D)``, usually
+                ``compute_val_loss``'s ``"action_pred"``. Computed with
+                :meth:`predict_action_chunk` when not a tensor.
+        """
+        target = batch.action
+        if not isinstance(target, torch.Tensor) or target.dim() != 3:  # noqa: PLR2004
+            return
+        pred = action_pred if isinstance(action_pred, torch.Tensor) else self.predict_action_chunk(batch)
+        steps = min(self._n_action_steps, pred.shape[1], target.shape[1])
+        dims = target.shape[-1]
+        error = (pred[:, :steps, :dims].float() - target[:, :steps].float()).abs()
+
+        is_pad = (batch.extra or {}).get("action_is_pad")
+        valid = torch.ones(error.shape[:2], device=error.device) if is_pad is None else (~is_pad[:, :steps]).float()
+        num_valid = valid.sum()
+        per_dim = (error * valid.unsqueeze(-1)).sum(dim=(0, 1)) / num_valid.clamp_min(1)
+
+        names = self._action_names(dims)
+        metrics = {f"val/action_error/{name}": value for name, value in zip(names, per_dim, strict=True)}
+        metrics["val/action_error"] = per_dim.mean()
+        # Weight epoch means by scored steps, since examples can have different amounts of padding.
+        self.log_dict(metrics, on_step=False, on_epoch=True, sync_dist=True, batch_size=int(num_valid))
+
+    def _action_names(self, dims: int) -> list[str]:
+        """Per-dimension action names from the training dataset, or ``joint_<i>`` if unavailable.
+
+        Returns:
+            One name per action dimension.
+        """
+        try:
+            names = self.trainer.datamodule.train_dataset.raw_features["action"]["names"]  # type: ignore[attr-defined]
+        except (AttributeError, KeyError, TypeError, RuntimeError):
+            names = None
+        if isinstance(names, dict):  # older LeRobot datasets: {"motors": [...]}
+            names = next(iter(names.values()), None)
+        if isinstance(names, list) and len(names) == dims:
+            return [str(name) for name in names]
+        return [f"joint_{i}" for i in range(dims)]
 
     def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
@@ -251,6 +300,10 @@ class Policy(L.LightningModule, ABC):
         For example, diffusion/flow-matching policies should run the full
         denoising loop and compare predicted vs ground-truth actions (action
         prediction MSE), rather than reusing the stochastic training loss.
+
+        Policies that already run inference here should also return the
+        denormalized predicted chunk under ``"action_pred"``, so
+        :meth:`log_action_error` reuses it instead of predicting again.
 
         Args:
             batch: Observation batch (must contain ground-truth actions).

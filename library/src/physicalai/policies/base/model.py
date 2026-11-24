@@ -55,7 +55,9 @@ class Model(nn.Module, ABC):
 
         Override in subclasses to use a different metric from the training
         loss (e.g. action prediction MSE after full denoising).  The default
-        delegates to :meth:`compute_loss`.
+        delegates to :meth:`compute_loss`. Models that run inference here should
+        return the (normalized) predicted chunk under ``"action_pred"`` so the
+        policy can reuse it for :meth:`Policy.log_action_error`.
 
         Args:
             batch: Preprocessed batch dict.

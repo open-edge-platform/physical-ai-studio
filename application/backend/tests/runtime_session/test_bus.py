@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
+from pathlib import Path
 
 import pytest
 
-from runtime_session.bus import Bus, BusRequestError, NoResponderError, socket_path
+from runtime_session.bus import Bus, BusRequestError, NoResponderError, _config, socket_path
 
 from .bus_fakes import Command, EchoWorker, Heard, Say, Stop, upper
 
@@ -66,6 +68,24 @@ async def test_worker_process_on_the_bus(session_id: str) -> None:
             bus.publish("cmd/echo", Stop())
             await asyncio.wait_for(worker.wait_stopped(), 5)
     assert not socket_path(session_id).exists()
+
+
+@pytest.mark.parametrize("endpoint", ["listen", "connect"])
+def test_bus_does_not_use_zenoh_shared_memory(endpoint: str) -> None:
+    # A long-lived session process dropped shared-memory replies above ~3 KB, such as a model's action chunk.
+    config = _config(**{endpoint: Path("/tmp/bus.sock")})
+    assert json.loads(config.get_json("transport/shared_memory/enabled")) is False
+
+
+@pytest.mark.parametrize("size", [3_000, 8_000, 64_000])
+async def test_large_replies_cross_the_bus(session_id: str, size: int) -> None:
+    with Bus.host(session_id) as bus:
+        async with EchoWorker(session_id) as worker:
+            await _until_heard(bus, bus.subscribe("evt/echo", Heard), "ready")
+            reply = await bus.request("rpc/echo/upper", Say(text="a" * size), Heard, timeout=5)
+            assert reply == Heard(text="A" * size)
+            bus.publish("cmd/echo", Stop())
+            await asyncio.wait_for(worker.wait_stopped(), 5)
 
 
 async def test_sessions_do_not_hear_each_other(session_id: str) -> None:

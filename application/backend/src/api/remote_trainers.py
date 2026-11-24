@@ -18,7 +18,7 @@ from schemas.remote_trainer import (
     RemoteTrainerHealth,
     RemoteTrainerUpdate,
 )
-from services.aws_auth_service import operational_aws_error
+from services.aws_auth_service import get_credential_provider
 from services.aws_batch import resolve_aws_batch_configuration
 from services.remote_trainer_service import RemoteTrainerService
 
@@ -36,7 +36,7 @@ async def list_cloud_provider_schemas() -> list[CloudProviderSchema]:
             fields=[
                 CloudProviderField.model_validate({"name": name, **field})
                 for name, field in properties.items()
-                if name == "configuration_uri"
+                if name == "stack_id"
             ]
         )
     ]
@@ -59,12 +59,13 @@ async def resolve_cloud_provider_configuration(
             content=OperationalIssue(
                 id="provider-configuration-invalid",
                 title="Invalid AWS configuration",
-                detail="The S3 configuration document is invalid or exceeds 64 KiB.",
+                detail="One or more AWS Batch resources for the specified stack ID were not found.",
             ).model_dump(),
         )
     except (BotoCoreError, ClientError, TimeoutError) as error:
         return JSONResponse(
-            status_code=400, content=operational_aws_error(error, configuration.profile_name).model_dump()
+            status_code=400,
+            content=get_credential_provider(configuration).to_operational_error(error).model_dump(),
         )
 
 

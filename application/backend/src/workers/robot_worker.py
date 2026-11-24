@@ -105,6 +105,10 @@ class RobotWorker(ProcessWorker["Robot"]):
     enables torque), as attaching a ``SharedRobot`` did.
     """
 
+    stop_timeout_s = 40.0
+    """Disconnecting can park the arm first (the reBot B601 at 30 deg/s), which takes longer than the
+    default 10 s; a worker killed partway through leaves the arm powered and its driver not torn down."""
+
     def __init__(
         self,
         recipe: RobotRecipe,
@@ -174,6 +178,6 @@ class RobotWorker(ProcessWorker["Robot"]):
                     command = observation.joint_positions
                 remaining = action.timestamp - time.monotonic()
                 command = command + (action.value - command) * (tick / remaining) if remaining > tick else action.value
-                context.send_action(command, goal_time=tick)
+                context.send_action(command, goal_time=tick * 3)
             await rate.sleep()
         logger.info("Robot worker {} stopped", self.name)

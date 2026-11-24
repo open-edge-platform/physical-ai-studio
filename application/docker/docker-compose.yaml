@@ -14,14 +14,18 @@
 x-common: &common
     ports:
       - "${PORT:-7860}:${PORT:-7860}"
+      # Rerun has no authentication; expose it only on Docker host loopback.
+      - "127.0.0.1:${RERUN_PORT:-9876}:${RERUN_PORT:-9876}"
     environment:
       - HOST=${HOST:-0.0.0.0}
       - PORT=${PORT:-7860}
+      - RERUN_BIND_HOST=0.0.0.0
     env_file:
       - path: .env
         required: false
     restart: unless-stopped
-    stop_grace_period: 35s
+    # Room for a follower to park on shutdown (RobotWorker waits up to 40 s) and the rest of the teardown.
+    stop_grace_period: 60s
 
     # PyTorch DataLoader workers need shared memory (/dev/shm) beyond
     # Docker's 64 MB default. Using ipc: host shares the host's /dev/shm
@@ -134,6 +138,7 @@ services:
       <<: *common-build
       target: physical-ai-studio-xpu
     environment:
+      - RERUN_BIND_HOST=0.0.0.0
       - SYCL_CACHE_PERSISTENT=${SYCL_CACHE_PERSISTENT:-1}
       - SYCL_CACHE_DIR=${SYCL_CACHE_DIR:-'/app/storage/.sycl-cache'}
       - SYCL_UR_USE_LEVEL_ZERO_V2=${SYCL_UR_USE_LEVEL_ZERO_V2:-0}

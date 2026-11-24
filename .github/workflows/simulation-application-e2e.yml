@@ -25,7 +25,6 @@ env:
   SIM_E2E_CONTROLS_FILE: ${{ github.workspace }}/.simulation-results/full-act/controls.json
   STORAGE_DIR: ${{ github.workspace }}/.simulation-results/full-act/studio
   SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/full-act/studio/settings.json
-  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
   simulation:
@@ -33,7 +32,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, gpu]
     timeout-minutes: 450 # 390 minutes of tests plus setup, cleanup, and upload headroom.
     steps:
-      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -48,8 +47,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: $/.github/actions/simulation-environment
-      - uses: $/.github/actions/start-simulator
+      - uses: $/.github/actions/simulation-environment # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - uses: $/.github/actions/start-simulator # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
       - name: Verify seeded expert and no-action episodes
         id: controls
         timeout-minutes: 30
@@ -77,7 +80,7 @@ jobs:
             fi
           fi
       - name: Retain training and deployment outputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: training-outputs-act
@@ -92,7 +95,7 @@ jobs:
           retention-days: 2
       - name: Retain simulation evidence and video
         id: evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: sim-full-act
