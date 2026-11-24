@@ -31,22 +31,22 @@ def test_scheduler_uses_step_clock() -> None:
         num_training_steps=8,
     )
 
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 / 3)
-    assert optimizer.param_groups[1]["lr"] == pytest.approx(5e-6 / 3)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 / 2)
+    assert optimizer.param_groups[1]["lr"] == pytest.approx(5e-6 / 2)
     optimizer.step()
     scheduler.step()
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 * 2 / 3)
-    assert optimizer.param_groups[1]["lr"] == pytest.approx(5e-6 * 2 / 3)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5)
+    assert optimizer.param_groups[1]["lr"] == pytest.approx(5e-6)
 
     for _ in range(3):
         optimizer.step()
         scheduler.step()
-    expected_multiplier = 0.02 + 0.98 * 0.5 * (1 + math.cos(math.pi * 4 / 8))
+    expected_multiplier = 0.02 + 0.98 * 0.5 * (1 + math.cos(math.pi * 3 / 6))
     assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 * expected_multiplier)
     assert optimizer.param_groups[1]["lr"] == pytest.approx(5e-6 * expected_multiplier)
 
 
-def test_scheduler_shortens_decay_to_training_steps() -> None:
+def test_scheduler_preserves_decay_beyond_training_steps() -> None:
     parameter = torch.nn.Parameter(torch.tensor([1.0]))
     optimizer = torch.optim.AdamW([parameter], lr=5e-5)
     scheduler = molmoact2_cosine_with_warmup_scheduler(
@@ -62,15 +62,16 @@ def test_scheduler_shortens_decay_to_training_steps() -> None:
         optimizer.step()
         scheduler.step()
 
+    assert optimizer.param_groups[0]["lr"] > 1e-6
+
+    for _ in range(25):
+        optimizer.step()
+        scheduler.step()
+
     assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-6)
 
-    optimizer.step()
-    scheduler.step()
 
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-6)
-
-
-def test_scheduler_scales_warmup_for_shorter_training() -> None:
+def test_scheduler_preserves_warmup_for_shorter_training() -> None:
     parameter = torch.nn.Parameter(torch.tensor([1.0]))
     optimizer = torch.optim.AdamW([parameter], lr=5e-5)
     scheduler = molmoact2_cosine_with_warmup_scheduler(
@@ -82,16 +83,17 @@ def test_scheduler_scales_warmup_for_shorter_training() -> None:
         num_training_steps=3_000,
     )
 
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 / 21)
-    assert scheduler.lr_lambdas[0](19) == pytest.approx(20 / 21)
-    assert scheduler.lr_lambdas[0](3_000) == pytest.approx(1e-6 / 5e-5)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 / 200)
+    assert scheduler.lr_lambdas[0](19) == pytest.approx(20 / 200)
+    assert scheduler.lr_lambdas[0](3_000) > 1e-6 / 5e-5
+    assert scheduler.lr_lambdas[0](29_999) == pytest.approx(1e-6 / 5e-5)
 
 
 def test_scheduler_without_warmup_starts_cosine_on_first_step() -> None:
     parameter = torch.nn.Parameter(torch.tensor([1.0]))
     optimizer = torch.optim.AdamW([parameter], lr=5e-5)
 
-    molmoact2_cosine_with_warmup_scheduler(
+    scheduler = molmoact2_cosine_with_warmup_scheduler(
         optimizer,
         peak_lr=5e-5,
         decay_lr=1e-6,
@@ -100,7 +102,9 @@ def test_scheduler_without_warmup_starts_cosine_on_first_step() -> None:
         num_training_steps=8,
     )
 
-    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5)
+    expected = 0.02 + 0.98 * 0.5 * (1 + math.cos(math.pi / 8))
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(5e-5 * expected)
+    assert scheduler.lr_lambdas[0](7) == pytest.approx(0.02)
 
 
 def test_updates_float32_parameters() -> None:

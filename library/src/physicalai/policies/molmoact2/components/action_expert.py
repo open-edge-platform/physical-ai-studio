@@ -451,7 +451,9 @@ class ActionExpert(nn.Module):
         Returns:
             KV projected.
         """
-        flat = self.context_norm(proj(x))
+        # Direct inference/export has no Lightning autocast context: the VLM may
+        # store BF16 KV while these projections retain FP32 weights after fitting.
+        flat = self.context_norm(proj(x.to(proj.weight.dtype)))
         return flat.view(flat.shape[0], flat.shape[1], self.num_heads, self.action_head_dim)
 
     def project_kv_context(

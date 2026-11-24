@@ -5,17 +5,15 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import Tensor
-
-from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
+from torch.optim.lr_scheduler import LambdaLR
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
-
-    from torch.optim.lr_scheduler import LambdaLR
 
 
 def molmoact2_cosine_with_warmup_scheduler(
@@ -29,8 +27,8 @@ def molmoact2_cosine_with_warmup_scheduler(
 ) -> LambdaLR:
     """Build the step-based warmup and cosine schedule used by MolmoAct2.
 
-    When training has fewer optimizer updates than the configured decay
-    horizon, warmup and decay are scaled proportionally to fit the run.
+    An explicit decay horizon is independent of the run's stopping point.
+    The first optimizer update uses step 1, matching the upstream recipe.
 
     Returns:
         LambdaLR: The learning rate scheduler instance.
@@ -54,17 +52,19 @@ def molmoact2_cosine_with_warmup_scheduler(
         msg = f"decay_lr must be in [0, peak_lr), got decay_lr={decay_lr}, peak_lr={peak_lr}."
         raise ValueError(msg)
 
-    if num_training_steps < num_decay_steps:
-        num_warmup_steps = int(num_warmup_steps * num_training_steps / num_decay_steps)
-        num_decay_steps = num_training_steps
+    warmup_steps = min(num_warmup_steps, num_decay_steps - 1)
+    alpha = decay_lr / peak_lr
 
-    return cosine_decay_with_warmup_scheduler(
-        optimizer,
-        peak_lr=peak_lr,
-        decay_lr=decay_lr,
-        num_warmup_steps=num_warmup_steps,
-        num_decay_steps=num_decay_steps,
-    )
+    def multiplier(current_step: int) -> float:
+        step = current_step + 1
+        if warmup_steps > 0 and step < warmup_steps:
+            return step / warmup_steps
+        if step >= num_decay_steps:
+            return alpha
+        progress = (step - warmup_steps) / (num_decay_steps - warmup_steps)
+        return alpha + (1 - alpha) * 0.5 * (1 + math.cos(math.pi * progress))
+
+    return LambdaLR(optimizer, multiplier)
 
 
 class MolmoAct2AdamW(torch.optim.AdamW):

@@ -9,7 +9,7 @@ This module provides a dataclass configuration for the MolmoAct2
 vision-language-action model in physicalai format.
 
 Example (CLI):
-    physicalai fit --config configs/physicalai/molmoact2.yaml
+    physicalai fit --config configs/physicalai/molmoact2/libero.yaml
 
 Example (API):
     >>> from physicalai.policies.molmoact2 import MolmoAct2Config
@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 from physicalai.config import Config
 
-from physicalai.data import Feature  # noqa: TC001
+from physicalai.data import Feature  # noqa: TC001  # Config resolves feature annotations at runtime.
 from physicalai.policies.mixins.peft import PeftConfigMixin
 
 
@@ -124,7 +124,7 @@ class MolmoAct2Config(PeftConfigMixin, Config):
     flow_matching_beta_alpha: float = 1.0
     flow_matching_beta_beta: float = 1.5
     mask_action_dim_padding: bool = True
-    use_random_input_noise: bool = False
+    use_random_input_noise: bool = True
 
     # Token and prompt layout
     num_state_tokens: int = 256

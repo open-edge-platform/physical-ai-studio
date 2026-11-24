@@ -22,12 +22,22 @@ def test_defaults_match_pretrained_architecture() -> None:
     assert config.lora_target_modules is None
     assert config.lora_adapter_dtype == "float32"
     assert config.lora_use_dora is False
+    assert config.use_random_input_noise is True
 
 
 def test_custom_fields() -> None:
     config = MolmoAct2Config(chunk_size=8, n_action_steps=4, hidden_size=128)
 
     assert (config.chunk_size, config.n_action_steps, config.hidden_size) == (8, 4, 128)
+
+
+def test_explicit_zero_noise_config_is_preserved() -> None:
+    data = MolmoAct2Config().to_dict()
+    data["use_random_input_noise"] = False
+    restored = MolmoAct2Config.from_dict(data)
+
+    assert restored.use_random_input_noise is False
+    assert restored.to_dict()["use_random_input_noise"] is False
 
 
 def test_serialization_round_trip() -> None:

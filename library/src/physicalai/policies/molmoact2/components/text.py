@@ -45,10 +45,12 @@ def apply_rotary_pos_emb(
     Returns:
         The rotary version of the position embeddings.
     """
-    cos = cos.unsqueeze(1)
-    sin = sin.unsqueeze(1)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
+    with torch.autocast(device_type=q.device.type, enabled=False):
+        cos = cos.float().unsqueeze(1)
+        sin = sin.float().unsqueeze(1)
+        q_float, k_float = q.float(), k.float()
+        q_embed = ((q_float * cos) + (rotate_half(q_float) * sin)).to(q.dtype)
+        k_embed = ((k_float * cos) + (rotate_half(k_float) * sin)).to(k.dtype)
     return q_embed, k_embed
 
 
@@ -87,11 +89,12 @@ class MolmoAct2RotaryEmbedding(nn.Module):
     @torch.no_grad()
     def forward(self, x: torch.Tensor, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Return ``(cos, sin)`` of shape ``(batch, seq_len, head_dim)``."""
-        inv_freq = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
-        positions = position_ids[:, None, :].float()
-        freqs = (inv_freq @ positions).transpose(1, 2)
-        emb = torch.cat((freqs, freqs), dim=-1)
-        return emb.cos().to(x.dtype), emb.sin().to(x.dtype)
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            inv_freq = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+            positions = position_ids[:, None, :].float()
+            freqs = (inv_freq @ positions).transpose(1, 2)
+            emb = torch.cat((freqs, freqs), dim=-1)
+            return emb.cos().to(x.dtype), emb.sin().to(x.dtype)
 
 
 class MolmoAct2Attention(nn.Module):

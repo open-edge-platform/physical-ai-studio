@@ -128,31 +128,32 @@ class TestConfigParsing:
         assert cfg.data.class_path == "physicalai.data.lerobot.LeRobotDataModule"
         assert cfg.trainer.max_steps == 70000
 
-    def test_fit_parser_accepts_molmoact2_pusht_config(self) -> None:
+    def test_fit_parser_accepts_molmoact2_libero_config(self) -> None:
         parser = fit_module.register().parser
-        cfg = parser.parse_args([f"--config={_molmoact2_config_path('pusht')}"])
+        cfg = parser.parse_args([f"--config={_molmoact2_config_path('libero')}"])
 
         assert cfg.model.class_path == "physicalai.policies.MolmoAct2"
-        assert cfg.model.init_args.pretrained_name_or_path == "allenai/MolmoAct2"
+        assert cfg.model.init_args.pretrained_name_or_path == "allenai/MolmoAct2-LIBERO"
         assert cfg.model.init_args.chunk_size == 10
         assert cfg.model.init_args.n_action_steps == 10
         assert cfg.model.init_args.use_random_input_noise is True
         assert cfg.model.init_args.optimizer_lr == pytest.approx(1e-5)
         assert cfg.model.init_args.optimizer_vit_lr == pytest.approx(5e-6)
         assert cfg.model.init_args.optimizer_connector_lr == pytest.approx(5e-6)
-        assert cfg.model.init_args.gradient_checkpointing is False
+        assert cfg.model.init_args.gradient_checkpointing is True
+        assert cfg.model.init_args.freeze_vocab is True
         assert cfg.model.init_args.scheduler_decay_steps == 24_000
-        assert cfg.model.init_args.setup_type.startswith("single 2D point-mass pusher")
-        assert cfg.model.init_args.control_mode == "absolute planar end-effector position"
-        assert cfg.data.init_args.val_gym.class_path == "physicalai.gyms.pusht.PushTGym"
-        assert cfg.data.init_args.num_rollouts_val == 10
-        assert cfg.trainer.max_epochs == 8
-        assert cfg.trainer.val_check_interval == 2000
-        assert cfg.trainer.check_val_every_n_epoch is None
-        video_callback = cfg.trainer.callbacks[0]
-        assert video_callback["class_path"] == "physicalai.train.RolloutVideoRecorderCallback"
-        assert video_callback["init_args"]["frame_key"] == "top"
-        assert video_callback["init_args"]["fps"] == 10
+        assert cfg.model.init_args.setup_type == "single franka robotic arm in libero"
+        assert cfg.model.init_args.control_mode == "delta end-effector pose"
+        assert cfg.data.init_args.repo_id == "allenai/MolmoAct2-LIBERO-Dataset"
+        assert cfg.data.init_args.val_gym is None
+        assert cfg.trainer.max_steps == 10_000
+        assert cfg.trainer.precision == "bf16-mixed"
+        assert cfg.trainer.accumulate_grad_batches == 16
+        assert cfg.trainer.limit_val_batches == 0
+        checkpoint = cfg.trainer.callbacks[0]
+        assert checkpoint["class_path"] == "lightning.pytorch.callbacks.ModelCheckpoint"
+        assert checkpoint["init_args"]["every_n_train_steps"] == 2_000
 
     def test_fit_parser_accepts_molmoact2_so101_config(self) -> None:
         parser = fit_module.register().parser

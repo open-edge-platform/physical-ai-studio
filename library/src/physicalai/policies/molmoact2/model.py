@@ -198,7 +198,7 @@ class MolmoAct2Model(PeftModelMixin, Model):
         flow_matching_beta_beta: float = 1.5,
         chunk_size: int = 30,
         action_dim: int | None = None,
-        use_random_input_noise: bool = False,
+        use_random_input_noise: bool = True,
     ) -> None:
         """Construct the text, vision, and action components."""
         super().__init__()
@@ -479,7 +479,7 @@ class MolmoAct2Model(PeftModelMixin, Model):
             Denoised action MSE, detached action-MSE and flow-loss metrics, and the
             normalized predicted chunk under ``"action_pred"``.
         """
-        predicted = self.predict_action_chunk(batch, sample_noise=False)
+        predicted = self.predict_action_chunk(batch)
         target = batch[ACTION][:, : predicted.shape[1], : predicted.shape[2]].to(predicted)
         horizon_mask = batch.get("action_horizon_is_pad")
         if horizon_mask is not None:

@@ -176,10 +176,12 @@ def test_forward_dispatches_by_mode(model: MolmoAct2Model, monkeypatch: pytest.M
     assert model({}) is actions
 
 
+@pytest.mark.parametrize("sample_noise", [None, False, True])
 def test_predict_action_chunk_returns_full_chunk(
     model: MolmoAct2Model,
     tiny_molmoact2_config: MolmoAct2Config,
     monkeypatch: pytest.MonkeyPatch,
+    sample_noise: bool | None,
 ) -> None:
     generated = torch.ones(1, tiny_molmoact2_config.chunk_size, tiny_molmoact2_config.max_action_dim)
     calls: dict[str, object] = {}
@@ -189,10 +191,11 @@ def test_predict_action_chunk_returns_full_chunk(
         return generated
 
     monkeypatch.setattr(model.backbone.model, "generate_actions_from_inputs", generate)
-    actions = model.predict_action_chunk({"input_ids": torch.zeros(1, 1, dtype=torch.long)})
+    actions = model.predict_action_chunk({"input_ids": torch.zeros(1, 1, dtype=torch.long)}, sample_noise=sample_noise)
 
     assert actions.shape == (1, tiny_molmoact2_config.chunk_size, 4)
     assert calls["action_horizon"] == tiny_molmoact2_config.chunk_size
+    assert calls["sample_noise"] is (True if sample_noise is None else sample_noise)
 
 
 def test_validation_reports_action_and_flow_losses(
@@ -202,7 +205,13 @@ def test_validation_reports_action_and_flow_losses(
     predicted = torch.ones(1, 2, 4)
     target = torch.zeros(1, 4, 4)
     flow_loss = torch.tensor(3.0)
-    monkeypatch.setattr(model, "predict_action_chunk", lambda *_, **__: predicted)
+
+    def predict(batch: dict[str, torch.Tensor], **kwargs: object) -> torch.Tensor:
+        assert ACTION in batch
+        assert "sample_noise" not in kwargs
+        return predicted
+
+    monkeypatch.setattr(model, "predict_action_chunk", predict)
     monkeypatch.setattr(model, "compute_loss", lambda _: (flow_loss, {"loss": flow_loss}))
 
     loss, metrics = model.compute_val_loss({ACTION: target})

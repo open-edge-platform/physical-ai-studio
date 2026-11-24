@@ -1,0 +1,75 @@
+# Continue the released LIBERO policy for 10k optimizer updates on one GPU.
+# Usage (install the molmoact2 extra first):
+#   physicalai fit --config configs/physicalai/molmoact2/libero.yaml
+
+model:
+  class_path: physicalai.policies.MolmoAct2
+  init_args:
+    pretrained_name_or_path: allenai/MolmoAct2-LIBERO
+    norm_tag: libero
+    # Keep the released q01/q99 rather than substituting dataset approximations.
+    preserve_pretrained_normalization_in_training: true
+    chunk_size: 10
+    n_action_steps: 10
+    setup_type: single franka robotic arm in libero
+    control_mode: delta end-effector pose
+    lora_enabled: false
+    # Recipe-specific full-fine-tuning rates and schedule. The 24k-step horizon
+    # stays fixed even though this continuation run stops at 10k updates.
+    optimizer_lr: 1.0e-5
+    optimizer_vit_lr: 5.0e-6
+    optimizer_connector_lr: 5.0e-6
+    optimizer_action_expert_lr: 5.0e-5
+    scheduler_warmup_steps: 200
+    scheduler_decay_steps: 24000
+    scheduler_decay_lr: 1.0e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: allenai/MolmoAct2-LIBERO-Dataset
+    revision: fe3ead447f44c0ea950396360b304cc2fb6be8f8
+    # Optionally set root to a pre-downloaded local dataset directory.
+    train_batch_size: 16
+    num_workers: 4
+    video_backend: pyav
+    data_format: physicalai
+    image_transforms:
+      class_path: torchvision.transforms.v2.Compose
+      init_args:
+        transforms:
+          - class_path: torchvision.transforms.v2.RandomResizedCrop
+            init_args:
+              size: [256, 256]
+              scale: [0.9025, 0.9025]
+              ratio: [1.0, 1.0]
+          - class_path: torchvision.transforms.v2.RandomRotation
+            init_args:
+              degrees: [-5.0, 5.0]
+              interpolation: 2 # torchvision InterpolationMode.BILINEAR
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              brightness: 0.2
+              contrast: [0.8, 1.2]
+              saturation: [0.8, 1.2]
+              hue: 0.05
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  max_steps: 10000
+  # 16 examples x 16 micro-batches = reference global batch of 256.
+  accumulate_grad_batches: 16
+  limit_val_batches: 0
+  log_every_n_steps: 20
+  default_root_dir: outputs/molmoact2_libero
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        every_n_train_steps: 2000
+        filename: molmoact2-{step:06d}
+        save_top_k: -1
+        save_last: true
+        save_weights_only: true
+        save_on_train_epoch_end: false

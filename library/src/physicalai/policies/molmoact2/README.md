@@ -77,55 +77,32 @@ checkpoint is restored.
 
 ## Training
 
-### CLI
-
-The checked-in configuration contains the complete model, dataset, optimizer,
-and trainer setup:
+The LIBERO configuration continues the released LIBERO checkpoint
+for 10,000 optimizer updates, with the original normalization and image augmentation:
 
 ```bash
-physicalai fit --config configs/physicalai/molmoact2.yaml
+physicalai fit --config configs/physicalai/molmoact2/libero.yaml
 ```
 
-See [`configs/physicalai/molmoact2.yaml`](../../../../configs/physicalai/molmoact2.yaml)
-for the available overrides.
+Install the `molmoact2` extra. See
+[`configs/physicalai/molmoact2/libero.yaml`](../../../../configs/physicalai/molmoact2/libero.yaml)
+for overrides. The portable single-GPU recipe uses batch size 16 and accumulation
+16 to match the reference global batch of 256. Adjust both together for your GPU
+count and memory budget. The recipe saves checkpoints every 2,000 optimizer
+updates and does not run validation or require a simulator or camera renaming.
+Install the `libero` extra separately and use
+[Benchmarking LIBERO](#benchmarking-libero) to evaluate all four suites.
 
-### Python API
-
-```python
-import multiprocessing
-
-from physicalai.data import LeRobotDataModule
-from physicalai.policies import MolmoAct2
-from physicalai.train import Trainer
-
-multiprocessing.set_start_method("spawn", force=True)
-
-if __name__ == "__main__":
-    policy = MolmoAct2(
-        use_random_input_noise=True,
-        lora_enabled=True,
-        gradient_checkpointing=True,
-    )
-
-    datamodule = LeRobotDataModule(
-        repo_id="lerobot/pusht",
-        train_batch_size=8,
-        data_format="physicalai",
-    )
-
-    trainer = Trainer(max_epochs=30, precision="bf16-mixed")
-    trainer.fit(policy, datamodule=datamodule)
-```
-
-When the policy is constructed lazily, the training dataset supplies its input
-and output feature contract during `setup("fit")`.
-
-By default, `scheduler_decay_steps=None` derives the cosine schedule from
-Lightning's estimated optimizer-step budget. After `scheduler_warmup_steps`,
-the learning rate decays across all remaining training steps and reaches
-`scheduler_decay_lr` at the end of training. Set `scheduler_decay_steps` to an
-integer to use a manual decay horizon instead. If that horizon is longer than
-the run, MolmoAct2 scales it and the warmup proportionally to fit the run.
+With Lightning `precision="bf16-mixed"`, fitting stores large VLM/vision/connector
+parameters in BF16 while retaining the entire action expert, norms, text RoPE
+state, and default FP32 LoRA adapters in FP32. Retained tensors are never rounded
+through BF16 first. Eligible operators, including action-expert linear layers,
+still run under BF16 autocast; sensitive normalization and text RoPE operations
+use explicit FP32 compute. Adam moments follow parameter storage dtype, and the
+optimizer compensates BF16 updates without allocating FP32 master parameters.
+`precision="32-true"` leaves model storage and computation in FP32. This storage
+selection applies during `setup("fit")`; inference/export dtype selection is
+unchanged.
 
 When fine-tuning a compatible pretrained policy, set
 `preserve_pretrained_normalization_in_training=True` to adopt the dataset's feature and
