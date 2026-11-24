@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 from packaging.version import Version
 
+pytest.importorskip("physicalai_lerobot_policy_plugin", reason="needs the lerobot extra: uv sync --extra lerobot")
+
 from physicalai.engine import Engine, Run, TrainHooks, WorkerEnv
 from physicalai_lerobot_policy_plugin import engine as lerobot_engine_module
 from physicalai_lerobot_policy_plugin.engine import LeRobotEngine, settings_to_flags

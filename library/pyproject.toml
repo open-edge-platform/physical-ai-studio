@@ -200,7 +200,6 @@ dev = [
     "ruff==0.16.7",
     "diffusers>=0.40.0",
     "peft>=0.13.0,<1.0.0",
-    "physicalai-lerobot-policy-plugin[train]",
 ]
 
 

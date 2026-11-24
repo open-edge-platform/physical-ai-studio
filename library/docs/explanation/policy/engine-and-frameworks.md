@@ -49,7 +49,7 @@ class TrainingEngine(Engine):
     def config_schema(self, policy: str) -> dict: ...                                   # abstract
 ```
 
-`Engine.get(name)` returns an engine class, `Engine.create(name, **options)` an instance, and `Engine.load(package)` a Runtime model. `Run` describes a native run; `TrainHooks` receives progress and can request cancellation.
+`Engine.get(name)` returns an engine class, `Engine.create(name, **options)` an instance, and `Engine.load(package)` a Runtime model. Both are typed as the base `Engine` for plugin engines; import a plugin's class to use its own methods with type checking. `Run` describes a native run; `TrainHooks` receives progress and can request cancellation.
 
 ### First party: Trainer
 
@@ -72,8 +72,9 @@ from lerobot.configs.default import DatasetConfig
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.policies.act.configuration_act import ACTConfig
 from physicalai.engine import Engine
+from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
-engine = Engine.create("lerobot")
+engine = LeRobotEngine()
 config = TrainPipelineConfig(
     dataset=DatasetConfig(repo_id="lerobot/pusht"),
     policy=ACTConfig(device="cuda", push_to_hub=False),

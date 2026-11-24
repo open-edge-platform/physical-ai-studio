@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 import torch
 
+pytest.importorskip("physicalai_lerobot_policy_plugin", reason="needs the lerobot extra: uv sync --extra lerobot")
+
 
 @pytest.mark.integration
 def test_runtime_actions_match_native_lerobot_across_reset(tmp_path: Path) -> None:

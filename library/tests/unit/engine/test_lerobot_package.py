@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 import torch
 
+pytest.importorskip("physicalai_lerobot_policy_plugin", reason="needs the lerobot extra: uv sync --extra lerobot")
+
 from physicalai.engine import Run
 from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 

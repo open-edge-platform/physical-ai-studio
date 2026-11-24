@@ -14,6 +14,8 @@ import tomllib
 import pytest
 from packaging.requirements import Requirement
 
+pytest.importorskip("physicalai_lerobot_policy_plugin", reason="needs the lerobot extra: uv sync --extra lerobot")
+
 from physicalai.engine._environment import locked_version, supported_versions
 from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 

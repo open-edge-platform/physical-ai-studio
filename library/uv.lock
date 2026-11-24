@@ -3922,7 +3922,6 @@ dev = [
     { name = "diffusers" },
     { name = "mypy" },
     { name = "peft" },
-    { name = "physicalai-lerobot-policy-plugin", extra = ["train"] },
     { name = "pyrefly" },
     { name = "ruff" },
 ]
@@ -4019,7 +4018,6 @@ dev = [
     { name = "diffusers", specifier = ">=0.40.0" },
     { name = "mypy", specifier = "==2.3.1" },
     { name = "peft", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai-lerobot-policy-plugin", extras = ["train"], editable = "../plugins/policies/lerobot" },
     { name = "pyrefly", specifier = "==1.3.0" },
     { name = "ruff", specifier = "==0.16.7" },
 ]

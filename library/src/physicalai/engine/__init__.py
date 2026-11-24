@@ -51,7 +51,6 @@ if TYPE_CHECKING:
     from typing import Any
 
     from physicalai.inference.model import InferenceModel
-    from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     from physicalai.train.trainer import Trainer
 
@@ -202,15 +201,6 @@ class Engine(ABC):
     @classmethod
     def create(
         cls,
-        name: Literal["lerobot"],
-        /,
-        **options: Any,  # ruff: ignore[any-type]  # Engine constructor options are framework-specific.
-    ) -> LeRobotEngine: ...
-
-    @overload
-    @classmethod
-    def create(
-        cls,
         name: str,
         /,
         **options: Any,  # ruff: ignore[any-type]  # Engine constructor options are framework-specific.
@@ -229,10 +219,6 @@ class Engine(ABC):
     @overload
     @classmethod
     def get(cls, name: Literal["physicalai"], /) -> type[Trainer]: ...
-
-    @overload
-    @classmethod
-    def get(cls, name: Literal["lerobot"], /) -> type[LeRobotEngine]: ...
 
     @overload
     @classmethod
