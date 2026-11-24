@@ -572,6 +572,7 @@ class TestAssignedJob:
         ):
             await worker.run_loop()
         run.assert_not_awaited()
+        assert update.await_args is not None
         assert update.await_args.args == (job.id, JobStatus.FAILED)
         assert "not available" in update.await_args.kwargs["message"]
         assert worker.queue.get_nowait() == (EventType.JOB_UPDATE, failed)
