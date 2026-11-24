@@ -19,7 +19,7 @@ GR00T pins `transformers==4.57.3`, `numpy==1.26.4`, `torch==2.7.1`, and Python `
 
 To materialize the `robotics-ai-suite-openvino` environment, Runtime isolate fetches the pinned upstream commit and checks `HEAD`. It then reads each patch, verifies its SHA-256, applies the series with `git am`, checks the resulting Git tree, and runs `uv sync --frozen` on the checkout's lock.
 
-Runtime isolate caches environments under `~/.cache/physicalai/isolate/<key>` (override with `PHYSICALAI_ISOLATE_CACHE`). The key hashes the source and sync profile, including the Python version; a changed commit, reviewed patched tree, or profile builds a new environment. Engine deployments can still set `PHYSICALAI_ENGINE_CACHE` as an Engine-only cache override.
+Runtime isolate caches environments under `~/.cache/physicalai/isolate/<key>` (override with `PHYSICALAI_ISOLATE_CACHE`). The key hashes the source and sync profile, including the Python version; a changed commit, reviewed patched tree, or profile builds a new environment.
 
 ## Where the patches live
 
