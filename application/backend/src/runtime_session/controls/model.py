@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
@@ -129,9 +128,6 @@ def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Executi
             f"Model {model.model.name!r} ({model.backend}) was exported without RTC inputs, so it cannot run with "
             "real-time chunking: choose Synchronous or Asynchronous, or load an RTC export"
         )
-    if "initial_latency_s" not in inspect.signature(RTCExecution).parameters:
-        # Without the RTC fixes the runtime guides each chunk one tick late and can pull it towards zeros.
-        raise ValueError("Real-time chunking needs a physicalai runtime with the RTC fixes (initial_latency_s)")
     chunk_size = model.inputs.rtc_chunk[0]
     if settings.execution_horizon > chunk_size // 2:
         raise ValueError(f"The RTC horizon is at most half the chunk: {settings.execution_horizon} > {chunk_size // 2}")

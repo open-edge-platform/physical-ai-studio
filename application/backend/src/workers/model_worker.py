@@ -114,7 +114,9 @@ class Inference:
                 # The export would drop them without a word and run unguided.
                 raise ValueError("This export takes no RTC inputs; it cannot run with RTC execution")
             return {}
-        if rtc is None:  # sync or async: what RTC sends for a first chunk, which leaves the chunk unguided
+        # Sync or async: what RTC sends for a first chunk, which leaves the chunk unguided. Drop this once the
+        # runtime's InferenceModel fills these itself for an RTC export (proposed in openvinotoolkit/physicalai).
+        if rtc is None:
             return {
                 PREV_CHUNK_LEFT_OVER: np.zeros((1, *self.rtc_chunk), dtype=np.float32),
                 INFERENCE_DELAY: np.int64(0),
