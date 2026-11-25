@@ -252,10 +252,9 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-# Runtime main (with the task_index preprocessor, openvinotoolkit/physicalai#477) plus `physicalai.isolate`
-# (openvinotoolkit/physicalai#479, from the fork until it merges);
-# move to openvinotoolkit/physicalai once it merges.
-physicalai = { git = "https://github.com/n3puiol/physicalai.git", rev = "08f33c6b442ab17b8537769f816fbe41d15e5bcf" }
+# Runtime main at the `physicalai.isolate` merge (openvinotoolkit/physicalai#479), which also has the
+# task_index preprocessor (openvinotoolkit/physicalai#477); move to the PyPI release once one includes isolate.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "30dd715582477605b7a32563f886e636cbae8e51" }
 physicalai-lerobot-policy-plugin = { path = "../plugins/policies/lerobot", editable = true }
 torchcodec = [
     { index = "pytorch-cpu", extra = "cpu" },

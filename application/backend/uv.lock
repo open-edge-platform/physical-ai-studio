@@ -2693,8 +2693,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.4.1.dev38+g08f33c6"
-source = { git = "https://github.com/n3puiol/physicalai.git?rev=08f33c6b442ab17b8537769f816fbe41d15e5bcf#08f33c6b442ab17b8537769f816fbe41d15e5bcf" }
+version = "0.4.1.dev33+g30dd715"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=30dd715582477605b7a32563f886e636cbae8e51#30dd715582477605b7a32563f886e636cbae8e51" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2899,7 +2899,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["capture", "transport", "observer-rerun"], git = "https://github.com/n3puiol/physicalai.git?rev=08f33c6b442ab17b8537769f816fbe41d15e5bcf" },
+    { name = "physicalai", extras = ["capture", "transport", "observer-rerun"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=30dd715582477605b7a32563f886e636cbae8e51" },
     { name = "physicalai-mujoco-plugin", marker = "extra == 'mujoco'", specifier = "~=0.5.0" },
     { name = "physicalai-mujoco-plugin", marker = "extra == 'sim-e2e'", specifier = "==0.5.0" },
     { name = "physicalai-so101-plugin", specifier = "~=0.3.0" },
@@ -3063,7 +3063,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'cosmos3'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/n3puiol/physicalai.git?rev=08f33c6b442ab17b8537769f816fbe41d15e5bcf" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=30dd715582477605b7a32563f886e636cbae8e51" },
     { name = "physicalai-lerobot-policy-plugin", extras = ["train"], marker = "extra == 'lerobot'", editable = "../../plugins/policies/lerobot" },
     { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },

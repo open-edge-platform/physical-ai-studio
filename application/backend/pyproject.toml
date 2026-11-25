@@ -139,9 +139,9 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-# Same Runtime as the library: main plus `physicalai.isolate` (openvinotoolkit/physicalai#479);
-# move to openvinotoolkit/physicalai once it merges.
-physicalai = { git = "https://github.com/n3puiol/physicalai.git", rev = "08f33c6b442ab17b8537769f816fbe41d15e5bcf" }
+# Same Runtime as the library: main at the `physicalai.isolate` merge (openvinotoolkit/physicalai#479);
+# move to the PyPI release once one includes isolate.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "30dd715582477605b7a32563f886e636cbae8e51" }
 physicalai-train = { path = "../../library", editable = true }
 torchao = [
     { index = "pytorch-cpu", extra = "cpu" },
