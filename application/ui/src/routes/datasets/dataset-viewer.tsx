@@ -54,7 +54,11 @@ export const DatasetViewer = () => {
         }
     );
 
-    const { data: selectedEpisode, isLoading: isEpisodeLoading } = $api.useQuery(
+    const {
+        data: selectedEpisode,
+        isLoading: isEpisodeLoading,
+        isPlaceholderData: isEpisodePlaceholder,
+    } = $api.useQuery(
         'get',
         '/api/dataset/{dataset_id}/episodes/{episode_index}',
         {
@@ -108,7 +112,12 @@ export const DatasetViewer = () => {
                     {isEpisodeLoading || !selectedEpisode ? (
                         <Loading />
                     ) : (
-                        <EpisodeViewer episode={selectedEpisode} dataset={dataset} environment={environment} />
+                        <EpisodeViewer
+                            episode={selectedEpisode}
+                            dataset={dataset}
+                            environment={environment}
+                            isPlaceholder={isEpisodePlaceholder}
+                        />
                     )}
                 </Panel>
                 <Separator className={classes.separator} />

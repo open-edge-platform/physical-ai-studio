@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 
-import { Button, Divider, Flex, Form, View } from '@geti-ui/ui';
+import { Button, Divider, Flex, Form, Text, View } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -41,6 +41,7 @@ export const CreateRobotForm = () => {
     const shouldRunZeroCalibration = catalog.some(
         ({ type, zero_calibration }) => type === activeType && zero_calibration != null
     );
+    const isSimulated = catalog.some(({ type, simulation }) => type === activeType && simulation != null);
     const zeroCalibrationPath =
         activeType === 'ReBot_B601_RS_Follower'
             ? paths.project.robots.rebotRsSetup
@@ -84,6 +85,12 @@ export const CreateRobotForm = () => {
                     <Flex direction='column' gap='size-200' width='100%'>
                         <RobotType />
                         <FormFields />
+                        {isSimulated && (
+                            <Text>
+                                Each simulated robot runs its own simulation. To connect to one you started yourself,
+                                change the robot&apos;s name and port after adding it.
+                            </Text>
+                        )}
                     </Flex>
                     <Divider orientation='horizontal' size='S' />
                     <View>

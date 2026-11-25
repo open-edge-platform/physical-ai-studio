@@ -1,5 +1,5 @@
-import { describe, expect, it } from '@rstest/core';
-import { screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from '@rstest/core';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
@@ -47,9 +47,71 @@ const renderRobotTypeAndFields = () =>
 const selectType = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
     await user.click(await screen.findByRole('button', { name: /Robot type/ }));
     await user.click(await screen.findByRole('option', { name }));
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
 };
 
+// jsdom reports a 0 px wide screen, so React Spectrum would show the phone layout's tray.
+const screenWidth = Object.getOwnPropertyDescriptor(window.screen, 'width');
+
 describe('RobotType and FormFields', () => {
+    beforeEach(() => {
+        Object.defineProperty(window.screen, 'width', { configurable: true, value: 1280 });
+    });
+
+    afterEach(() => {
+        if (screenWidth === undefined) {
+            Reflect.deleteProperty(window.screen, 'width');
+        } else {
+            Object.defineProperty(window.screen, 'width', screenWidth);
+        }
+    });
+
+    it('finds a robot type by typing part of its name', async () => {
+        useCatalogMock();
+        const user = userEvent.setup();
+
+        renderRobotTypeAndFields();
+        await user.type(await screen.findByRole('combobox', { name: /Robot type/ }), 'lead');
+
+        const listbox = await screen.findByRole('listbox');
+        expect(
+            within(listbox)
+                .getAllByRole('option')
+                .map((option) => option.textContent)
+        ).toEqual(['SO101 Leader']);
+    });
+
+    it('groups the robot types into followers, leaders and simulation', async () => {
+        server.use(
+            http.get('/api/robots/catalog', () =>
+                HttpResponse.json([
+                    so101FollowerDefinition,
+                    so101LeaderDefinition,
+                    {
+                        ...so101FollowerDefinition,
+                        type: 'MuJoCo_SO101_Follower',
+                        display_name: 'MuJoCo SO-101 Follower',
+                        simulation: { scenes: [], default_scene: 'default' },
+                    },
+                ])
+            )
+        );
+        const user = userEvent.setup();
+
+        renderRobotTypeAndFields();
+        await user.click(await screen.findByRole('button', { name: /Robot type/ }));
+
+        await screen.findByRole('listbox');
+        const section = (title: string) =>
+            within(screen.getByRole('group', { name: title }))
+                .getAllByRole('option')
+                .map((option) => option.textContent);
+        expect(screen.getAllByRole('group')).toHaveLength(3);
+        expect(section('Followers')).toEqual(['SO101 Follower']);
+        expect(section('Leaders')).toEqual(['SO101 Leader']);
+        expect(section('Simulation')).toEqual(['MuJoCo SO-101 Follower']);
+    });
+
     it('auto-focuses the name field on mount', async () => {
         useCatalogMock();
 

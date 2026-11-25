@@ -1,11 +1,16 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
 import { SchemaModel } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { createQueryClient } from '../../../query-client/query-client';
+import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
+import { getMockedDeviceInfo } from '../../../test-utils/mocks/mock-device-info';
+import { getMockedEpisode } from '../../../test-utils/mocks/mock-episode';
 import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
+import { getMockedRerunSettings } from '../../../test-utils/mocks/mock-settings';
 import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
 import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
@@ -40,21 +45,16 @@ const baseModel = {
     policy: 'act',
 } as SchemaModel;
 
-const mockProjectWithRemoteTrainer = () => {
+const testDataset = getMockedDataset({ id: datasetId, name: 'Test dataset', project_id: projectId });
+const otherDataset = getMockedDataset({ id: 'other-dataset', name: 'Other dataset', project_id: projectId });
+
+const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) => {
     server.use(
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
                 id: projectId,
                 name: 'Test project',
-                datasets: [
-                    {
-                        id: datasetId,
-                        name: 'Test dataset',
-                        default_task: 'test',
-                        project_id: projectId,
-                        environment_id: 'ad5c311d-bdd7-4a1c-ad27-26c2775901e9',
-                    },
-                ],
+                datasets,
             })
         ),
         http.get('/api/system/devices/training', () =>
@@ -82,6 +82,7 @@ const mockProjectWithRemoteTrainer = () => {
                     trainer_shm_size_gb: 32,
                 },
                 hotkeys: { bindings: {} },
+                rerun: getMockedRerunSettings(),
             })
         ),
         http.get('/api/policies/available', () =>
@@ -103,7 +104,7 @@ const mockProjectWithRemoteTrainer = () => {
             })
         ),
         http.get('/api/dataset/{dataset_id}/episodes', () =>
-            HttpResponse.json([{ episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 }])
+            HttpResponse.json([getMockedEpisode({ episode_index: 0, tasks: ['Test task'], length: 100 })])
         ),
         http.get('/api/dataset/{dataset_id}/episodes/{episode_index}', () =>
             HttpResponse.json({
@@ -164,6 +165,154 @@ const goToSmolVlaTrainingParameters = async (user: ReturnType<typeof userEvent.s
 };
 
 describe('TrainModelDialog', () => {
+    it('automatically selects the only dataset when the dialog opens', async () => {
+        mockProjectWithRemoteTrainer([testDataset]);
+
+        renderDialog();
+
+        expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent(testDataset.name);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    });
+
+    it.each([{ datasets: [] }, { datasets: [testDataset, otherDataset] }])(
+        'leaves dataset selection empty with $datasets.length datasets',
+        async ({ datasets }) => {
+            mockProjectWithRemoteTrainer(datasets);
+
+            renderDialog();
+
+            expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent('Select…');
+            expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+        }
+    );
+
+    it('keeps the base model dataset selected when retraining', async () => {
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel: { ...baseModel, dataset_id: otherDataset.id } });
+
+        expect(await screen.findByRole('button', { name: /Dataset/ })).toHaveTextContent(otherDataset.name);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    });
+
+    it('defaults the name to the selected policy until the user edits it', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('textbox', { name: /Name/ })).toHaveValue('ACT');
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        expect(name).toHaveValue('SmolVLA');
+
+        await user.clear(name);
+        await user.type(name, 'My model');
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByLabelText('Select ACT policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue('My model');
+    });
+
+    it('shows the name above the summary on training parameters and in the summary afterwards', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        await screen.findByLabelText(/Gripper/i, { selector: 'button' });
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        expect(screen.queryByText('Name')).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        const summary = screen.getByText('Device');
+        expect(name.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        await user.clear(name);
+        await user.type(name, 'My training run');
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(screen.queryByRole('textbox', { name: /Name/ })).not.toBeInTheDocument();
+        expect(screen.getByText('Name')).toBeInTheDocument();
+        expect(screen.getByText('My training run')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        const restoredName = screen.getByRole('textbox', { name: /Name/ });
+        expect(restoredName).toHaveValue('My training run');
+        await user.type(restoredName, ' updated');
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByText('My training run updated')).toBeInTheDocument();
+    });
+
+    it.each(['', '   '])('blocks progress when the name is blank (%j)', async (value) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        const name = screen.getByRole('textbox', { name: /Name/ });
+        await user.clear(name);
+        if (value) {
+            await user.type(name, value);
+        }
+
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.getByRole('textbox', { name: /Name/ })).toHaveValue(value);
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it.each([
+        { model: undefined, customName: undefined, expectedName: 'ACT' },
+        { model: undefined, customName: 'My new model', expectedName: 'My new model' },
+        { model: baseModel, customName: undefined, expectedName: baseModel.name },
+        { model: baseModel, customName: 'My retrained model', expectedName: 'My retrained model' },
+    ])('submits the model name $expectedName', async ({ model, customName, expectedName }) => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | undefined;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog({ baseModel: model });
+        if (model === undefined) {
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        }
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        const name = await screen.findByRole('textbox', { name: /Name/ });
+        await waitFor(() => expect(name).toHaveValue(model?.name ?? 'ACT'));
+        if (customName !== undefined) {
+            await user.clear(name);
+            await user.type(name, customName);
+        }
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toMatchObject({ model_name: expectedName }));
+    });
+
     it('does not submit a remote job when the final health check fails', async () => {
         const user = userEvent.setup();
         let healthCheckCount = 0;
@@ -185,7 +334,7 @@ describe('TrainModelDialog', () => {
 
         renderDialog();
 
-        // A new model starts with no dataset selected, and Train is a no-op without one.
+        // Multiple datasets require an explicit selection.
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
@@ -204,8 +353,8 @@ describe('TrainModelDialog', () => {
         server.use(
             http.get('/api/dataset/{dataset_id}/episodes', () =>
                 HttpResponse.json([
-                    { episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 },
-                    { episode_index: 1, tasks: ['Test task'], length: 100, fps: 30 },
+                    getMockedEpisode({ episode_index: 0, tasks: ['Test task'], length: 100 }),
+                    getMockedEpisode({ episode_index: 1, tasks: ['Test task'], length: 100 }),
                 ])
             )
         );
@@ -312,7 +461,14 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
         await goToSmolVlaTrainingParameters(user);
-        await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        expect(screen.getByRole('region', { name: 'Additional options' })).toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        const snapflowCheckbox = await screen.findByRole('checkbox', { name: /snapflow distillation/i });
+        await user.click(snapflowCheckbox);
+        expect(screen.getByRole('textbox', { name: 'Distillation epochs' })).toBeEnabled();
+        await user.click(snapflowCheckbox);
+        expect(screen.queryByRole('textbox', { name: 'Distillation epochs' })).not.toBeInTheDocument();
+        await user.click(snapflowCheckbox);
         await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
@@ -455,6 +611,161 @@ describe('TrainModelDialog', () => {
         await waitFor(() => expect(within(trainerOption).getByText('Healthy')).toBeInTheDocument());
     });
 
+    it.each([
+        { type: 'cuda' as const, model: undefined },
+        { type: 'xpu' as const, model: undefined },
+        { type: 'cuda' as const, model: baseModel },
+    ])('selects a local $type GPU for training or retraining ($model)', async ({ type, model }) => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | undefined;
+        mockProjectWithRemoteTrainer([testDataset]);
+        server.use(
+            http.get('/api/system/devices/training', () =>
+                HttpResponse.json({
+                    mode: 'local',
+                    remote_available: true,
+                    devices: [
+                        getMockedDeviceInfo({ type: 'cpu', index: null, name: 'CPU', memory: null }),
+                        getMockedDeviceInfo({ type, index: 3, name: 'Small GPU' }),
+                        getMockedDeviceInfo({ type, index: 5, name: 'Large GPU', memory: 24 * 1024 ** 3 }),
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog({ baseModel: model });
+        await user.click(await screen.findByRole('button', { name: /(?:CUDA|XPU) 5 — Large GPU/i }));
+        expect(screen.queryByRole('option', { name: /CPU/i })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('option', { name: /Small GPU/i }));
+        const gpuLabel = `${type.toUpperCase()} 3 — Small GPU`;
+        expect(screen.getByText(`${gpuLabel}, 8 GB VRAM`)).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        const summaryLabel = `This machine (local) — ${gpuLabel}, 8 GB`;
+        expect(screen.getByText(summaryLabel)).toBeInTheDocument();
+        await goToLastStep(user);
+        expect(screen.getByText(`${gpuLabel}, 8 GB VRAM`)).toBeInTheDocument();
+        expect(screen.getByText(summaryLabel)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() =>
+            expect(submitted).toMatchObject({
+                training_target: 'local',
+                device: { type, index: 3 },
+                precision: type === 'cuda' ? 'bf16-mixed' : '32-true',
+            })
+        );
+    });
+
+    it.each([
+        { gpuCount: 0, expectedDevice: undefined },
+        { gpuCount: 1, expectedDevice: { type: 'cuda', index: 0 } },
+        { gpuCount: 2, expectedDevice: { type: 'cuda', index: 1 } },
+    ])('submits the default local device with $gpuCount GPUs', async ({ gpuCount, expectedDevice }) => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | undefined;
+        mockProjectWithRemoteTrainer([testDataset]);
+        server.use(
+            http.get('/api/system/devices/training', () =>
+                HttpResponse.json({
+                    mode: 'local',
+                    remote_available: true,
+                    devices: [
+                        getMockedDeviceInfo({ type: 'cpu', index: null, name: 'CPU', memory: null }),
+                        ...Array.from({ length: gpuCount }, (_, index) =>
+                            getMockedDeviceInfo({ index, memory: (index + 1) * 8 * 1024 ** 3 })
+                        ),
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        if (gpuCount < 2) {
+            expect(screen.queryByRole('button', { name: /^GPU/ })).not.toBeInTheDocument();
+        }
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submitted).toMatchObject({ training_target: 'local' }));
+        expect(submitted?.device).toEqual(expectedDevice);
+    });
+
+    it('resets the GPU choice when switching between local and remote targets', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer([testDataset]);
+        server.use(
+            http.get('/api/system/devices/training', () =>
+                HttpResponse.json({
+                    mode: 'local',
+                    remote_available: true,
+                    devices: [
+                        getMockedDeviceInfo({ index: 3, name: 'Local small GPU' }),
+                        getMockedDeviceInfo({ index: 5, name: 'Local large GPU', memory: 24 * 1024 ** 3 }),
+                    ],
+                })
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        getMockedDeviceInfo({ name: 'Remote GPU zero' }),
+                        getMockedDeviceInfo({ index: 1, name: 'Remote GPU one' }),
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /CUDA 5 — Local large GPU/i }));
+        await user.click(screen.getByRole('option', { name: /Local small GPU/i }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        await user.click(await screen.findByRole('button', { name: /CUDA 0 — Remote GPU zero/i }));
+        await user.click(screen.getByRole('option', { name: /Remote GPU one/i }));
+        await user.click(screen.getByRole('button', { name: new RegExp(remoteTrainer.name) }));
+        await user.click(screen.getByRole('option', { name: /this machine \(local\)/i }));
+        expect(await screen.findByRole('button', { name: /CUDA 5 — Local large GPU/i })).toBeInTheDocument();
+        expect(screen.queryByText(/selected GPU is no longer available/i)).not.toBeInTheDocument();
+    });
+
+    it('blocks training if the explicitly selected local GPU disappears', async () => {
+        const user = userEvent.setup();
+        const queryClient = createQueryClient();
+        mockProjectWithRemoteTrainer([testDataset]);
+        const devices = [getMockedDeviceInfo(), getMockedDeviceInfo({ index: 1, name: 'Second GPU' })];
+        server.use(
+            http.get('/api/system/devices/training', () =>
+                HttpResponse.json({ mode: 'local', remote_available: true, devices })
+            )
+        );
+        render(<TrainModelDialog close={() => undefined} />, {
+            route: `/projects/${projectId}/models`,
+            path: '/projects/:project_id/models',
+            queryClient,
+        });
+
+        await user.click(await screen.findByRole('button', { name: /CUDA 0 — Test GPU/i }));
+        await user.click(screen.getByRole('option', { name: /Second GPU/i }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await goToLastStep(user);
+        act(() => {
+            queryClient.setQueryData(['get', '/api/system/devices/training', {}], {
+                mode: 'local',
+                remote_available: true,
+                devices: devices.slice(0, 1),
+            });
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled());
+    });
+
     it('lets users pick a remote GPU and sends its index with the job', async () => {
         const user = userEvent.setup();
         let submittedDevice: unknown;
@@ -464,8 +775,8 @@ describe('TrainModelDialog', () => {
                 HttpResponse.json({
                     ...healthyRemoteTrainer,
                     devices: [
-                        { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
-                        { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                        { type: 'cuda', index: 0, name: 'Identical GPU', memory: 8 * 1024 ** 3 },
+                        { type: 'cuda', index: 1, name: 'Identical GPU', memory: 8 * 1024 ** 3 },
                     ],
                 })
             ),
@@ -480,10 +791,14 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
         await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
-        await user.click(await screen.findByRole('button', { name: /CUDA 0 — Small GPU/i }));
+        expect(await screen.findByText('CUDA 0 — Identical GPU, 8 GB VRAM')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /CUDA 0 — Identical GPU/i }));
         expect(screen.queryByRole('option', { name: /Automatic/i })).not.toBeInTheDocument();
-        await user.click(await screen.findByRole('option', { name: /CUDA 1 — Large GPU/i }));
+        await user.click(await screen.findByRole('option', { name: /CUDA 1 — Identical GPU/i }));
+        expect(screen.getByText('CUDA 1 — Identical GPU, 8 GB VRAM')).toBeInTheDocument();
         await goToLastStep(user);
+        expect(screen.getByText('CUDA 1 — Identical GPU, 8 GB VRAM')).toBeInTheDocument();
+        expect(screen.getByText(`${remoteTrainer.name} — CUDA 1 — Identical GPU, 8 GB`)).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Train' }));
         await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
     });
@@ -918,7 +1233,8 @@ describe('TrainModelDialog', () => {
             // Keyed by camera name: the policy reads its images as `images.<name>`,
             // so the dataset's `observation.images.` prefix must not ride along.
             image_key_reorder_map: { top: 0, wrist: 1 },
-            num_cameras: 3,
+            // Unfilled slots are skipped rather than trained on masked empty images.
+            num_cameras: 0,
             export_backends: ['openvino'],
         });
     });

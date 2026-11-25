@@ -25,9 +25,13 @@ def thumbnail_cache():
 @pytest.fixture(scope="session")
 def native_video_decoder():
     try:
+        torchcodec = importlib.import_module("torchcodec")
         importlib.import_module("torchcodec.decoders")
     except (ImportError, RuntimeError, OSError) as exc:
         pytest.skip(f"Native TorchCodec decoding unavailable: {str(exc).splitlines()[0]}")
+    # Newer torchcodec treats FFmpeg as optional: the import succeeds without it and decoding fails later.
+    if getattr(torchcodec, "ffmpeg_major_version", None) is None:
+        pytest.skip("Native TorchCodec decoding unavailable: FFmpeg libraries not found")
 
 
 def _write_video(video_path: Path, colors: list[tuple[int, int, int]]) -> None:

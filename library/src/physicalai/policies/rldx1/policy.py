@@ -67,6 +67,7 @@ from physicalai.policies.rldx1.utils.stats import (
     infer_num_views_from_stats,
     merge_explicit_features,
 )
+from physicalai.train.optimizers import build_adamw_auto_precision
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -634,16 +635,17 @@ class Rldx1(Rldx1ExportMixin, Policy):
             batch: Input observation batch.
 
         Returns:
-            Tuple of ``(loss, loss_dict)``.
+            Tuple of ``(loss, loss_dict)``, with the denormalized prediction under ``"action_pred"``.
 
         Raises:
             RuntimeError: If model or preprocessor has not been initialized.
         """
-        if self.model is None or self._preprocessor is None:
+        if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model not initialized. Call trainer.fit() or pass env_action_dim."
             raise RuntimeError(msg)
-        preprocessed = self._preprocessor(batch)
-        return self.model.compute_val_loss(preprocessed)
+        loss, loss_dict = self.model.compute_val_loss(self._preprocessor(batch))
+        loss_dict["action_pred"] = self._postprocessor(loss_dict["action_pred"])
+        return loss, loss_dict
 
     def configure_optimizers(self) -> OptimizerLRScheduler:  # type: ignore[override]
         """Create the configured optimizer and a cosine-decay-with-warmup scheduler.
@@ -705,7 +707,7 @@ class Rldx1(Rldx1ExportMixin, Policy):
         """
         optim = self.config.optim
         if optim in {"adamw_torch", "adamw_torch_fused"}:
-            return torch.optim.AdamW(
+            return build_adamw_auto_precision(
                 params,
                 lr=self.config.learning_rate,
                 weight_decay=self.config.weight_decay,

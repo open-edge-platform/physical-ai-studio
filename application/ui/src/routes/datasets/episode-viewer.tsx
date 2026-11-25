@@ -6,6 +6,7 @@ import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaEpisode } fr
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
+import { EpisodeTask } from '../../features/datasets/episodes/episode-task';
 import {
     EpisodeViewerProvider,
     useEpisodeViewer,
@@ -20,6 +21,8 @@ interface EpisodeViewerProps {
     episode: SchemaEpisode;
     dataset: SchemaDatasetOutput;
     environment: SchemaEnvironmentWithRelations;
+    /** The previous episode, shown while the selected one loads: not editable. */
+    isPlaceholder?: boolean;
 }
 
 interface LiveEpisodeChartProps {
@@ -75,7 +78,7 @@ const EpisodeTimelineComponent = () => {
     );
 };
 
-export const EpisodeViewer = ({ episode, dataset, environment }: EpisodeViewerProps) => {
+export const EpisodeViewer = ({ episode, dataset, environment, isPlaceholder = false }: EpisodeViewerProps) => {
     return (
         <EpisodeViewerProvider episode={episode} environment={environment}>
             <RobotModelsProvider>
@@ -83,7 +86,16 @@ export const EpisodeViewer = ({ episode, dataset, environment }: EpisodeViewerPr
                     <Flex gap='size-100' marginBottom='size-100'>
                         <EpisodeTag episode={episode} variant='medium' />
                         <Divider orientation='vertical' size='S' />
-                        <Text>{episode.tasks.join(', ')}</Text>
+                        {isPlaceholder ? (
+                            <Text>{episode.tasks.join(', ')}</Text>
+                        ) : (
+                            // A new episode, also of another dataset, starts outside edit mode.
+                            <EpisodeTask
+                                key={`${dataset.id}:${episode.episode_index}`}
+                                datasetId={dataset.id!}
+                                episode={episode}
+                            />
+                        )}
                     </Flex>
                     <Flex direction={'row'} flex gap={'size-100'}>
                         <EpisodeDockView

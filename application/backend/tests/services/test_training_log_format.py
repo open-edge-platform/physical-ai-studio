@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from services.training_backends._log_format import (
+from services.training_backends.remote import RemoteTrainingBackend
+from training.log_format import (
     format_training_progress,
     format_validation_progress,
     format_validation_start,
     format_validation_summary,
     render_progress_log,
 )
-from services.training_backends.remote import RemoteTrainingBackend
 
 REMOTE = "services.training_backends.remote"
 

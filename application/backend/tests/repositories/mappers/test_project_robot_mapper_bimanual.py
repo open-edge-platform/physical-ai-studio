@@ -84,12 +84,12 @@ class TestProjectRobotMapperBimanual:
         assert restored.payload.connection_string_right == "192.168.10.2"
 
     def test_from_schema_preserves_robot_from_unavailable_plugin(self):
-        db_model = _make_bimanual_db_model("MuJoCo_SO101_Follower")
+        db_model = _make_bimanual_db_model("Missing_Plugin_Follower")
 
         result = ProjectRobotMapper.from_schema(db_model, RobotCatalogRegistry())
 
         assert isinstance(result, UnavailableRobot)
-        assert result.type == "MuJoCo_SO101_Follower"
+        assert result.type == "Missing_Plugin_Follower"
         assert result.unavailable is True
         assert result.payload == db_model.payload
 

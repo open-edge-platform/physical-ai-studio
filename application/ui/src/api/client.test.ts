@@ -124,14 +124,6 @@ describe('fetchClient.PATH', () => {
             expect(fetchClient.PATH('/api/jobs/ws')).toBe('/api/jobs/ws');
         });
 
-        it('resolves /api/projects/{project_id}/runtime/ws with params', () => {
-            expect(
-                fetchClient.PATH('/api/projects/{project_id}/runtime/ws', {
-                    params: { path: { project_id: 'p1' } },
-                })
-            ).toBe('/api/projects/p1/runtime/ws');
-        });
-
         it('throws when robot WebSocket path params are missing', () => {
             expect(() =>
                 // @ts-expect-error missing required options argument

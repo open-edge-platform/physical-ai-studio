@@ -5,19 +5,24 @@ import { clsx } from 'clsx';
 import { NavLink, useNavigate, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
-import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
+import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { paths } from '../../paths';
 import { useProjectId } from '../projects/use-project';
+import { sessionForRobot, useRuntimeSessions } from '../runtime-sessions/runtime-sessions';
 import {
-    sessionActivity,
-    sessionForRobot,
-    sessionStatusVariant,
-    useRuntimeSessions,
-} from '../runtime-sessions/use-runtime-sessions';
+    ROBOT_SIMULATION_STATUS_LABEL,
+    RobotSimulationLaunch,
+    robotSimulationStatus,
+    RobotSimulationStatus,
+    useRobotSimulationLaunch,
+} from '../simulation/robot-simulation';
+import { useSimulationDialog } from '../simulation/simulation-dialog';
+import { useSimulation, useStopSimulation } from '../simulation/use-simulation';
 import RobotArm from './../../assets/robot-arm.webp';
 import { isUnavailableRobot, SchemaRobot } from './robot-types';
 
+import simulationClasses from '../simulation/simulation.module.css';
 import classes from './robots-list.module.css';
 
 const exportCalibration = async (_project_id: string, robot: SchemaRobot) => {
@@ -68,7 +73,7 @@ const useDeleteRobot = (robot: SchemaRobot) => {
                     }
                 },
                 onError: (error) => {
-                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
+                    if (isResourceInUseError(error)) {
                         toast.info(getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.');
                         return;
                     }
@@ -81,60 +86,97 @@ const useDeleteRobot = (robot: SchemaRobot) => {
     return deleteRobot;
 };
 
-const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
+const MenuActions = ({
+    robot,
+    launch,
+    simulationStatus,
+}: {
+    robot: SchemaRobot;
+    launch: RobotSimulationLaunch | null;
+    simulationStatus: RobotSimulationStatus;
+}) => {
     const { project_id } = useProjectId();
     const deleteRobot = useDeleteRobot(robot);
+    const stopSimulation = useStopSimulation(project_id);
+    const simulationDialog = useSimulationDialog(robot);
 
     const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
     const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
     const isUnavailable = isUnavailableRobot(robot);
 
+    const ownsSimulation = simulationStatus === 'studio' || simulationStatus === 'starting';
+    const canStartSimulation = launch !== null && (simulationStatus === 'offline' || simulationStatus === 'unknown');
+
     return (
-        <MenuTrigger>
-            <ActionButton aria-label={`Actions for ${robot.name}`} isQuiet>
-                <MoreMenu />
-            </ActionButton>
-            <Menu
-                selectionMode='single'
-                disabledKeys={
-                    !('calibration' in robot.payload) || !robot.payload.calibration ? ['export-calibration'] : []
-                }
-                onAction={async (action) => {
-                    if (action === 'delete') {
-                        deleteRobot();
+        <>
+            <MenuTrigger>
+                <ActionButton aria-label={`Actions for ${robot.name}`} isQuiet>
+                    <MoreMenu />
+                </ActionButton>
+                <Menu
+                    selectionMode='single'
+                    disabledKeys={
+                        !('calibration' in robot.payload) || !robot.payload.calibration ? ['export-calibration'] : []
                     }
-                    if (action === 'export-calibration') {
-                        try {
-                            await exportCalibration(project_id, robot);
-                        } catch {
-                            toast.negative('Failed to export calibration.');
+                    onAction={async (action) => {
+                        if (action === 'delete') {
+                            deleteRobot();
                         }
-                    }
-                }}
-            >
-                {isUnavailable ? null : (
-                    <Item key='edit' href={editPath}>
-                        Edit
-                    </Item>
-                )}
-                {isSO101 ? <Item key='export-calibration'>Export calibration</Item> : null}
-                <Item key='delete'>Delete</Item>
-            </Menu>
-        </MenuTrigger>
+                        if (action === 'start-simulation') {
+                            simulationDialog.open?.();
+                        }
+                        if (action === 'stop-simulation') {
+                            stopSimulation.mutate(
+                                {},
+                                { onError: (error) => toast.negative(getApiErrorMessage(error) ?? 'Failed to stop.') }
+                            );
+                        }
+                        if (action === 'export-calibration') {
+                            try {
+                                await exportCalibration(project_id, robot);
+                            } catch {
+                                toast.negative('Failed to export calibration.');
+                            }
+                        }
+                    }}
+                >
+                    {canStartSimulation ? <Item key='start-simulation'>Start simulation…</Item> : null}
+                    {ownsSimulation ? <Item key='stop-simulation'>Stop simulation</Item> : null}
+                    {isUnavailable ? null : (
+                        <Item key='edit' href={editPath}>
+                            Edit
+                        </Item>
+                    )}
+                    {isSO101 ? <Item key='export-calibration'>Export calibration</Item> : null}
+                    <Item key='delete'>Delete</Item>
+                </Menu>
+            </MenuTrigger>
+            {simulationDialog.dialog}
+        </>
     );
 };
 
-export const SessionStatus = ({ session }: { session: SchemaRuntimeSessionInfo | undefined }) => {
-    if (session === undefined) {
-        return null;
-    }
+const SimulationStatus = ({ status }: { status: RobotSimulationStatus }) => {
+    const variant =
+        status === 'studio' || status === 'external' ? 'positive' : status === 'offline' ? 'negative' : 'notice';
 
     return (
-        <StatusLight variant={sessionStatusVariant(session)}>
-            <View>Session · {sessionActivity(session)}</View>
+        <StatusLight variant={variant} UNSAFE_className={classes.connectionStatus}>
+            <View>{ROBOT_SIMULATION_STATUS_LABEL[status]}</View>
         </StatusLight>
     );
 };
+
+const SimulationChips = ({ launch }: { launch: RobotSimulationLaunch }) => (
+    <div className={simulationClasses.chips}>
+        <span className={clsx(simulationClasses.chip, simulationClasses.simulation)}>Simulation</span>
+        {(launch.labels ?? []).map((label) => (
+            <span key={label} className={simulationClasses.chip}>
+                {label}
+            </span>
+        ))}
+    </div>
+);
 
 export const ConnectionStatus = ({
     status,
@@ -175,6 +217,9 @@ const RobotListItem = ({
     session: SchemaRuntimeSessionInfo | undefined;
 }) => {
     const isUnavailable = isUnavailableRobot(robot);
+    const launch = useRobotSimulationLaunch(robot.type);
+    const { data: simulation } = useSimulation();
+    const simulationStatus = robotSimulationStatus(robot.id, simulation, status);
     const connectionString = isUnavailable
         ? undefined
         : (('connection_string' in robot.payload ? robot.payload.connection_string : undefined) ??
@@ -202,10 +247,19 @@ const RobotListItem = ({
                     <View gridArea='type' UNSAFE_style={{ fontSize: '14px' }}>
                         {robot.type.replaceAll('_', ' ')}
                         {isUnavailable ? ' (plugin unavailable)' : ''}
+                        {launch !== null && !isUnavailable ? <SimulationChips launch={launch} /> : null}
                     </View>
                     <View gridArea='status'>
-                        <ConnectionStatus status={status} isUnavailable={isUnavailable} />
-                        <SessionStatus session={session} />
+                        {launch !== null && !isUnavailable ? (
+                            <SimulationStatus status={simulationStatus} />
+                        ) : (
+                            <ConnectionStatus status={status} isUnavailable={isUnavailable} />
+                        )}
+                        {session !== undefined && (
+                            <StatusLight variant='notice'>
+                                In use · {session.environment_name ?? 'runtime session'}
+                            </StatusLight>
+                        )}
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>
@@ -237,7 +291,7 @@ const RobotListItem = ({
                         </ul>
                     </View>
                     <View alignSelf={'end'}>
-                        <MenuActions robot={robot} />
+                        <MenuActions robot={robot} launch={launch} simulationStatus={simulationStatus} />
                     </View>
                 </Flex>
             </Flex>
@@ -256,8 +310,6 @@ export const RobotsList = () => {
         suspense: false,
     });
 
-    // Sessions are host-wide, so this is one query for the page rather than one
-    // per row. A session name is rt-<robot id>, which makes the match exact.
     const { data: runtimeSessions } = useRuntimeSessions();
 
     return (

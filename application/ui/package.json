@@ -52,6 +52,11 @@
         "urdf-loader": "^0.13.1",
         "uuid": "^14.0.2"
     },
+    "overrides": {
+        "@yellow-ticket/seed-json-schema": {
+            "@faker-js/faker": "^10.6.0"
+        }
+    },
     "devDependencies": {
         "@eslint/compat": "^2.1.1",
         "@eslint/js": "^9.39.5",
@@ -83,7 +88,6 @@
         "eslint-plugin-jsx-a11y": "^6.10.2",
         "eslint-plugin-playwright": "^2.12.1",
         "eslint-plugin-react": "^7.37.5",
-        "eslint-plugin-react-compiler": "^19.1.0-rc.2",
         "eslint-plugin-react-hooks": "^7.1.1",
         "globals": "^17.13.0",
         "identity-obj-proxy": "^3.0.0",

@@ -1078,7 +1078,8 @@ class Rldx1Model(Model):
                 validation).
 
         Returns:
-            ``(loss, loss_dict)`` where ``loss`` is action-space MSE.
+            ``(loss, loss_dict)`` where ``loss`` is action-space MSE and
+            ``loss_dict["action_pred"]`` is the normalized predicted chunk.
 
         Raises:
             ValueError: If the batch does not contain ground-truth ``action``.
@@ -1103,7 +1104,7 @@ class Rldx1Model(Model):
         else:
             loss = F.mse_loss(pred_trimmed, target_trimmed)
 
-        return loss, {"loss": float(loss.detach()), "action_mse": float(loss.detach())}
+        return loss, {"loss": float(loss.detach()), "action_mse": float(loss.detach()), "action_pred": predicted}
 
     @property
     def reward_delta_indices(self) -> None:

@@ -1,0 +1,107 @@
+.label {
+    color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.step {
+    min-height: var(--spectrum-global-dimension-size-300);
+}
+
+.step[data-state='pending'] {
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.step[data-state='failed'] .stepIcon {
+    color: var(--spectrum-semantic-negative-color-icon);
+}
+
+.stepIcon {
+    display: inline-flex;
+    justify-content: center;
+    width: var(--spectrum-global-dimension-size-200);
+}
+
+.detail {
+    color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.log {
+    max-height: var(--spectrum-global-dimension-size-2400);
+    overflow: auto;
+    background: var(--spectrum-global-color-gray-75);
+    border-radius: var(--spectrum-global-dimension-size-50);
+    padding: var(--spectrum-global-dimension-size-100);
+}
+
+.log pre {
+    margin: 0;
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spectrum-global-dimension-size-50);
+    margin-top: var(--spectrum-global-dimension-size-50);
+}
+
+.chip {
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    line-height: var(--spectrum-global-dimension-size-200);
+    padding-inline: var(--spectrum-global-dimension-size-75);
+    border-radius: var(--spectrum-global-dimension-size-50);
+    background: var(--spectrum-global-color-gray-300);
+}
+
+.chip.simulation {
+    background: var(--energy-blue);
+    color: var(--spectrum-global-color-gray-50);
+}
+
+.viewerBar {
+    background: var(--spectrum-global-color-gray-100);
+    border-bottom: 1px solid var(--spectrum-global-color-gray-300);
+}
+
+.viewerStatus {
+    padding-block: 0;
+    min-block-size: unset;
+}
+
+.viewer {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    background: var(--spectrum-global-color-gray-50);
+}
+
+.prompt {
+    background: var(--spectrum-global-color-gray-100);
+    border: 1px solid var(--energy-blue);
+    border-radius: var(--spectrum-global-dimension-size-50);
+}
+
+.cameraChoice {
+    width: var(--spectrum-global-dimension-size-2400);
+}
+
+.snapshot {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: var(--spectrum-global-dimension-size-50);
+    background: var(--spectrum-global-color-gray-200);
+}
+
+.footerRow {
+    padding-block: var(--spectrum-global-dimension-size-50);
+    border-top: 1px solid var(--spectrum-global-color-gray-300);
+}
+
+.robotName {
+    font-weight: 600;
+}

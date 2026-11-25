@@ -184,6 +184,25 @@ def test_status_reporter_throttles_progress_but_always_flushes_terminal_states()
     assert written[-1].status is TrainerJobStatus.COMPLETED
 
 
+def test_status_reporter_logs_cadence_and_validation_events_while_keeping_s3_writes_throttled(monkeypatch) -> None:
+    storage = MagicMock()
+    clock = MagicMock(side_effect=[0.0, 1.0, 2.0])
+    info = MagicMock()
+    monkeypatch.setattr("trainer.batch.status.logger.info", info)
+    reporter = StatusReporter(storage, interval_s=5.0, clock=clock)
+
+    reporter.report(10, None, {"global_step": 1, "max_steps": 10, "train/loss_step": 0.5})
+    reporter.report(15, None, {"val_event": "start", "global_step": 1, "max_steps": 10})
+    reporter.report(20, None, {"val_event": "end", "global_step": 1, "val/loss": 0.25, "val_elapsed_s": 1.2})
+
+    assert [call.args[0] for call in info.call_args_list] == [
+        "Training progress: step=1/10 (10%), train/loss_step=0.5",
+        "Validation started at step=1/10",
+        "Validation finished at step=1, val/loss=0.25, elapsed=1.2s",
+    ]
+    assert len(storage.put_status.call_args_list) == 1
+
+
 def test_status_reporter_swallows_storage_errors() -> None:
     storage = MagicMock()
     storage.put_status.side_effect = OSError("s3 down")

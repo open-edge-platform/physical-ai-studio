@@ -8,10 +8,10 @@ Lightning Trainer produces equivalent loss trajectories, gradients, and final
 weights compared to running native LeRobot training with the same data and
 config.
 
-Lightning's internal bookkeeping introduces small float32 rounding differences
-(~1e-6/step) that accumulate across steps; tier tolerances are calibrated from
-measured drift rather than set to bit-exactness. See per-test docstrings for
-the empirical justification of each tolerance.
+Replay uses Lightning's optimizer-group order for gradient clipping rather than
+the registration order used by LeRobot's CLI: changing the reduction order can
+introduce float32 roundoff. Tolerances allow small accumulated floating-point
+drift across steps.
 
 Tests are structured in four tiers:
     1. Fast-dev-run: Single step, verifies loss matches native (all policies).
@@ -24,7 +24,9 @@ Tests are structured in four tiers:
 from __future__ import annotations
 
 import copy
-from typing import Any
+import gc
+import weakref
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
@@ -36,20 +38,59 @@ from physicalai.devices import get_available_device, get_device
 from physicalai.policies.lerobot import SUPPORTED_POLICIES, VALIDATED_EQUIVALENCE_POLICIES, LeRobotPolicy
 from physicalai.train import Trainer
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 pytest.importorskip("lerobot", reason="LeRobot not installed")
 
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
 
 # VLA policies that need smaller batch/episode counts for GPU memory
 _VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
+_MULTI_STEP_NUM_STEPS = 10
 
 
 def _empty_accelerator_cache(device: torch.device) -> None:
     """Free accelerator memory between large policy loads (CUDA + XPU)."""
+    # Lightning reference cycles can retain models, optimizer state, and captured batches.
+    gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
     elif device.type == "xpu" and hasattr(torch, "xpu") and hasattr(torch.xpu, "empty_cache"):
         torch.xpu.empty_cache()
+
+
+@pytest.fixture(autouse=True)
+def _clean_accelerator_memory() -> Iterator[None]:
+    device = get_device()
+    _empty_accelerator_cache(device)
+    yield
+    _empty_accelerator_cache(device)
+
+
+@pytest.mark.parametrize("device_type", ["cpu", "cuda", "xpu"])
+def test_accelerator_cleanup_collects_cycles(device_type: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Release cyclic tensor references before clearing the selected accelerator cache."""
+    model = torch.nn.Linear(1, 1)
+    model_ref = weakref.ref(model)
+    cycle = [model]
+    cycle.append(cycle)
+    del model, cycle
+
+    cache_calls: list[str] = []
+
+    def empty_cache() -> None:
+        assert model_ref() is None, "Collect live tensors before clearing the allocator cache"
+        cache_calls.append(device_type)
+
+    if device_type != "cpu":
+        monkeypatch.setattr(getattr(torch, device_type), "empty_cache", empty_cache)
+
+    _empty_accelerator_cache(torch.device(device_type))
+
+    assert model_ref() is None
+    assert cache_calls == ([] if device_type == "cpu" else [device_type])
+
 
 # Per-policy reasons why wrapper-vs-native equivalence cannot be validated.
 # Named (in SUPPORTED_POLICIES) but not yet validated end-to-end: registered as
@@ -101,7 +142,7 @@ class LossBatchCaptureCallback(Callback):
         batch_idx: int,  # noqa: ARG002
     ) -> None:
         loss_value = _to_loss_value(outputs)
-        self.step_data.append((_clone_batch(batch), loss_value))
+        self.step_data.append((_clone_batch(batch, device=torch.device("cpu")), loss_value))
 
 
 class SeedPerStepCallback(Callback):
@@ -157,20 +198,39 @@ def _to_loss_value(outputs: Any) -> float:
     return float(outputs)
 
 
-def _clone_batch(batch: dict[str, Any]) -> dict[str, Any]:
+def _clone_batch(batch: dict[str, Any], *, device: torch.device | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in batch.items():
         if isinstance(value, torch.Tensor):
-            out[key] = value.detach().clone()
+            out[key] = value.detach().to(device=device, copy=True)
         elif isinstance(value, dict):
-            out[key] = _clone_batch(value)
+            out[key] = _clone_batch(value, device=device)
         elif isinstance(value, (list, tuple)):
             out[key] = type(value)(
-                item.detach().clone() if isinstance(item, torch.Tensor) else copy.deepcopy(item) for item in value
+                item.detach().to(device=device, copy=True) if isinstance(item, torch.Tensor) else copy.deepcopy(item)
+                for item in value
             )
         else:
             out[key] = copy.deepcopy(value)
     return out
+
+
+def test_captured_batches_are_independent_cpu_snapshots() -> None:
+    """Keep replay data off the accelerator without retaining autograd graphs or aliases."""
+    tensor = torch.ones(2, device=get_device(), requires_grad=True)
+    batch = {"tensor": tensor, "nested": {"tensor": tensor}, "sequence": [tensor], "task": ["pick"]}
+    callback = LossBatchCaptureCallback()
+    callback.on_train_batch_end(None, None, torch.tensor(1.0), batch, 0)
+
+    captured, loss = callback.step_data[0]
+    assert loss == 1.0
+    assert captured["task"] == ["pick"]
+    with torch.no_grad():
+        tensor.zero_()
+    for snapshot in (captured["tensor"], captured["nested"]["tensor"], captured["sequence"][0]):
+        assert snapshot.device.type == "cpu"
+        assert not snapshot.requires_grad
+        torch.testing.assert_close(snapshot, torch.ones(2))
 
 
 def _make_datamodule(policy_name: str) -> LeRobotDataModule:
@@ -303,26 +363,56 @@ def _replay_batches_on_native(
     use_autocast: bool = False,
 ) -> list[float]:
     native_losses: list[float] = []
-    device_type = next(native.parameters()).device.type
+    device = next(native.parameters()).device
     for step_idx, (captured_batch, _) in enumerate(captured_steps):
         native_optimizer.zero_grad()
         torch.manual_seed(base_seed + step_idx)
-        preprocessed = preprocessor(_clone_batch(captured_batch))
+        preprocessed = preprocessor(_clone_batch(captured_batch, device=device))
         if use_autocast:
-            with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
                 native_output = native(preprocessed)
         else:
             native_output = native(preprocessed)
         native_loss = native_output[0] if isinstance(native_output, tuple) else native_output
         native_loss.backward()
         if grad_clip_norm is not None:
-            torch.nn.utils.clip_grad_norm_(native.parameters(), grad_clip_norm)
+            # Match Lightning's reduction order, including ACT's separate backbone group.
+            torch.nn.utils.clip_grad_norm_(
+                (parameter for group in native_optimizer.param_groups for parameter in group["params"]),
+                grad_clip_norm,
+            )
         native_optimizer.step()
         native_losses.append(float(native_loss.item()))
     return native_losses
 
 
-def _run_vla_equivalence(
+def test_native_replay_clips_in_optimizer_group_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use Lightning's parameter order even when optimizer groups reorder the model."""
+    native = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD([{"params": [native.bias]}, {"params": [native.weight]}], lr=0.1)
+    clip_grad_norm = torch.nn.utils.clip_grad_norm_
+    clipped_parameters: list[torch.Tensor] = []
+
+    def capture_clip(parameters: Any, max_norm: float) -> torch.Tensor:
+        parameters = list(parameters)
+        clipped_parameters.extend(parameters)
+        return clip_grad_norm(parameters, max_norm)
+
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", capture_clip)
+    losses = _replay_batches_on_native(
+        native,
+        optimizer,
+        [({"input": torch.ones(1, 1)}, 0.0)] * 2,
+        lambda batch: batch["input"],
+        base_seed=303,
+        grad_clip_norm=1.0,
+    )
+
+    assert len(losses) == 2
+    assert [id(parameter) for parameter in clipped_parameters] == [id(native.bias), id(native.weight)] * 2
+
+
+def _run_trainer_capture_and_native_replay(
     policy_name: str,
     dataset: Any,
     *,
@@ -331,11 +421,15 @@ def _run_vla_equivalence(
     max_steps: int | None = None,
 ) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
     device = get_device()
+    use_autocast = policy_name in _VLA_POLICIES
 
-    # 1. Create wrapper and snapshot initial weights on CPU.
+    # 1. Create wrapper and snapshot initial weights on CPU, independent of test order.
+    torch.manual_seed(base_seed)
     policy_kwargs = _get_policy_kwargs(policy_name)
     wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
-    initial_state_dict = {k: v.cpu().clone() for k, v in wrapper.lerobot_policy.state_dict().items()}
+    initial_state_dict = {
+        k: v.detach().to(device="cpu", copy=True) for k, v in wrapper.lerobot_policy.state_dict().items()
+    }
     grad_clip_norm = _extract_grad_clip_norm(wrapper)
     config = wrapper._config
 
@@ -345,7 +439,7 @@ def _run_vla_equivalence(
         grad_clip_norm=grad_clip_norm,
         fast_dev_run=fast_dev_run,
         max_steps=max_steps,
-        precision="bf16-mixed",
+        precision="bf16-mixed" if use_autocast else "32-true",
     )
     torch.manual_seed(base_seed)
     trainer.fit(wrapper, datamodule=_make_datamodule(policy_name))
@@ -354,8 +448,10 @@ def _run_vla_equivalence(
     preprocessor = wrapper._preprocessor
 
     # Free accelerator memory before loading native model.
+    wrapper.zero_grad(set_to_none=True)
     wrapper.cpu()
-    del trainer
+    wrapper.trainer = None
+    del trainer, capture_callback
     _empty_accelerator_cache(device)
 
     # 3. Build native model from saved initial weights (on accelerator).
@@ -374,65 +470,30 @@ def _run_vla_equivalence(
         preprocessor,
         base_seed=base_seed,
         grad_clip_norm=grad_clip_norm,
-        use_autocast=True,
+        use_autocast=use_autocast,
     )
+    native.zero_grad(set_to_none=True)
+    native.cpu()
     return wrapper_losses, native_losses, wrapper, native
 
 
-def _run_standard_equivalence(
-    policy_name: str,
-    dataset: Any,
-    *,
-    base_seed: int,
-    fast_dev_run: int | bool = False,
-    max_steps: int | None = None,
-) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
-    wrapper, native, native_optimizer, grad_clip_norm, _device = _make_wrapper_and_native(policy_name, dataset)
-
-    trainer, capture_callback = _build_trainer(
-        base_seed=base_seed,
-        grad_clip_norm=grad_clip_norm,
-        fast_dev_run=fast_dev_run,
-        max_steps=max_steps,
-    )
-    torch.manual_seed(base_seed)
-    trainer.fit(wrapper, datamodule=_make_datamodule(policy_name))
-
-    wrapper_losses = [loss for _, loss in capture_callback.step_data]
-    native_losses = _replay_batches_on_native(
-        native,
-        native_optimizer,
-        list(capture_callback.step_data),
-        wrapper._preprocessor,
-        base_seed=base_seed,
-        grad_clip_norm=grad_clip_norm,
-    )
-    return wrapper_losses, native_losses, wrapper, native
-
-
-def _run_trainer_capture_and_native_replay(
-    policy_name: str,
-    dataset: Any,
-    *,
-    base_seed: int,
-    fast_dev_run: int | bool = False,
-    max_steps: int | None = None,
-) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
-    if policy_name in _VLA_POLICIES:
-        return _run_vla_equivalence(
-            policy_name,
-            dataset,
-            base_seed=base_seed,
-            fast_dev_run=fast_dev_run,
-            max_steps=max_steps,
-        )
-    return _run_standard_equivalence(
+@pytest.fixture(scope="module", params=ALL_POLICIES_PARAMS)
+def ten_step_equivalence(
+    request: pytest.FixtureRequest,
+    aloha_dataset: Any,
+) -> tuple[list[float], list[float], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    """Share CPU-resident results between loss and weight checks for each policy."""
+    policy_name = str(request.param)
+    _vla_cpu_skip(policy_name)
+    wrapper_losses, native_losses, wrapper, native = _run_trainer_capture_and_native_replay(
         policy_name,
-        dataset,
-        base_seed=base_seed,
-        fast_dev_run=fast_dev_run,
-        max_steps=max_steps,
+        aloha_dataset,
+        base_seed=303,
+        max_steps=_MULTI_STEP_NUM_STEPS,
     )
+    wrapper_params = {n: p.detach().cpu() for n, p in wrapper.lerobot_policy.named_parameters()}
+    native_params = {n: p.detach().cpu() for n, p in native.named_parameters()}
+    return wrapper_losses, native_losses, wrapper_params, native_params
 
 
 def _assert_trajectories_match(
@@ -491,21 +552,10 @@ class TestFastDevRunEquivalence:
 # Tier 2: Multi-step (10 steps) — all policies, CI
 # ---------------------------------------------------------------------------- #
 class TestMultiStepTrainerEquivalence:
-    NUM_STEPS = 10
+    NUM_STEPS = _MULTI_STEP_NUM_STEPS
 
-    @pytest.fixture(params=ALL_POLICIES_PARAMS)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        name = str(request.param)
-        _vla_cpu_skip(name)
-        return name
-
-    def test_loss_trajectories_match(self, policy_name: str, aloha_dataset: Any) -> None:
-        wrapper_losses, native_losses, _, _ = _run_trainer_capture_and_native_replay(
-            policy_name,
-            aloha_dataset,
-            base_seed=202,
-            max_steps=self.NUM_STEPS,
-        )
+    def test_loss_trajectories_match(self, ten_step_equivalence: Any) -> None:
+        wrapper_losses, native_losses, _, _ = ten_step_equivalence
 
         assert len(wrapper_losses) == self.NUM_STEPS
         assert len(native_losses) == self.NUM_STEPS
@@ -572,35 +622,16 @@ class TestGradientEquivalence:
 # Catches optimizer-state bugs invisible to loss-trajectory comparisons.
 # ---------------------------------------------------------------------------- #
 class TestWeightEquivalenceAfterTraining:
-    NUM_STEPS = 10
+    NUM_STEPS = _MULTI_STEP_NUM_STEPS
 
-    @pytest.fixture(params=ALL_POLICIES_PARAMS)
-    def policy_name(self, request: pytest.FixtureRequest) -> str:
-        name = str(request.param)
-        _vla_cpu_skip(name)
-        return name
-
-    def test_final_weights_match(self, policy_name: str, aloha_dataset: Any) -> None:
+    def test_final_weights_match(self, ten_step_equivalence: Any) -> None:
         """Per-parameter weight match after 10 trainer steps.
 
-        Tolerance: ``rtol=atol=5e-5``. Justification: per-step fp32 rounding
-        in Lightning's optimizer/scaler path is ~1.5e-6; 10 steps accumulates
-        to ~1.5e-5 worst-case absolute drift on dense ResNet weights (measured
-        on ACT). ``5e-5`` gives ~3x headroom over the empirical max while
-        still catching any *new* drift source (e.g. an optimizer-state bug
-        that diverges after the first step). Tier-1/2 loss checks use ``1e-5``
-        because direct forward avoids accumulator paths; this tier exercises
-        the full optimizer cycle and warrants the slightly looser bound.
+        Keep ``rtol=atol=5e-5`` for accumulated float32 drift over ten
+        optimizer steps. Loss and first-step gradient checks retain their
+        stricter ``1e-5`` bounds.
         """
-        _, _, wrapper, native = _run_trainer_capture_and_native_replay(
-            policy_name,
-            aloha_dataset,
-            base_seed=303,
-            max_steps=self.NUM_STEPS,
-        )
-
-        wrapper_params = {n: p.detach().cpu() for n, p in wrapper.lerobot_policy.named_parameters()}
-        native_params = {n: p.detach().cpu() for n, p in native.named_parameters()}
+        _, _, wrapper_params, native_params = ten_step_equivalence
         assert set(wrapper_params) == set(native_params)
 
         for name in wrapper_params:
@@ -886,20 +917,18 @@ class TestTrainingForwardContract:
         assert loss.ndim == 0
         assert loss.requires_grad
 
+    @pytest.mark.parametrize("training_policy_and_batch", ["act"], indirect=True)
     def test_act_loss_dict_contains_expected_keys(self, training_policy_and_batch):
-        policy, batch, policy_name = training_policy_and_batch
-        if policy_name != "act":
-            pytest.skip("ACT-specific: loss_dict structure")
+        policy, batch, _ = training_policy_and_batch
 
         _, loss_dict = policy(batch)
 
         assert loss_dict is not None
         assert "l1_loss" in loss_dict
 
+    @pytest.mark.parametrize("training_policy_and_batch", ["diffusion"], indirect=True)
     def test_diffusion_loss_dict_is_none(self, training_policy_and_batch):
-        policy, batch, policy_name = training_policy_and_batch
-        if policy_name != "diffusion":
-            pytest.skip("Diffusion-specific: loss_dict is None")
+        policy, batch, _ = training_policy_and_batch
 
         _, loss_dict = policy(batch)
 

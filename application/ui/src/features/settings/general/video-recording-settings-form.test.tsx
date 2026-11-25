@@ -6,6 +6,7 @@ import { HttpResponse } from 'msw';
 import { SchemaVideoRecordingSettings } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedRerunSettings } from '../../../test-utils/mocks/mock-settings';
 import { render } from '../../../test-utils/render';
 import { VideoRecordingSettingsForm } from './video-recording-settings-form';
 
@@ -59,6 +60,7 @@ describe('VideoRecordingSettingsForm', () => {
                         trainer_shm_size_gb: 32,
                     },
                     hotkeys: { bindings: {} },
+                    rerun: getMockedRerunSettings(),
                 });
             })
         );

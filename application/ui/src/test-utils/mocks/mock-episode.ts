@@ -8,6 +8,7 @@ export const getMockedEpisode = (overrides: Partial<SchemaEpisodeInfo> = {}): Sc
     tasks: [],
     length: 10,
     fps: 30,
+    videos: {},
     ...overrides,
 });
 

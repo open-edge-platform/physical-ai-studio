@@ -10,6 +10,7 @@ from core.security import SshFeatureAvailability, get_ssh_feature_availability
 from db.engine import get_async_db_session
 from exceptions import SshFeatureDisabledError
 from robots.robot_client_factory import RobotClientFactory
+from runtime_session.registry import RuntimeSessionRegistry
 from services import (
     DatasetDownloadService,
     DatasetService,
@@ -31,7 +32,8 @@ from services.health_service import HealthService
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
-from services.runtime_session_service import RuntimeSessionService
+from services.robot_simulation_service import RobotSimulationService
+from services.simulation_manager import SimulationManager
 from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
@@ -48,12 +50,6 @@ def get_system_service() -> SystemService:
 
 
 SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
-
-
-@lru_cache
-def get_runtime_session_service() -> RuntimeSessionService:
-    """Provide a RuntimeSessionService for listing and stopping runtime sessions."""
-    return RuntimeSessionService()
 
 
 def get_health_service(request: HTTPConnection) -> HealthService:
@@ -282,3 +278,35 @@ def get_camera_claim_registry(request: HTTPConnection) -> CameraClaimRegistry:
 
 
 CameraClaimRegistryDep = Annotated[CameraClaimRegistry, Depends(get_camera_claim_registry)]
+
+
+def get_runtime_session_registry(request: HTTPConnection) -> RuntimeSessionRegistry:
+    """Return the process-local registry of live runtime sessions."""
+    registry = getattr(request.app.state, "runtime_session_registry", None)
+    if registry is None:
+        raise RuntimeError("Runtime session registry is not initialized")
+    return cast("RuntimeSessionRegistry", registry)
+
+
+RuntimeSessionRegistryDep = Annotated[RuntimeSessionRegistry, Depends(get_runtime_session_registry)]
+
+
+def get_simulation_manager(request: HTTPConnection) -> SimulationManager:
+    """Return the process-wide simulation manager."""
+    manager = getattr(request.app.state, "simulation_manager", None)
+    if manager is None:
+        raise RuntimeError("Simulation manager is not initialized")
+    return cast("SimulationManager", manager)
+
+
+SimulationManagerDep = Annotated[SimulationManager, Depends(get_simulation_manager)]
+
+
+def get_robot_simulation_service(
+    session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep, manager: SimulationManagerDep
+) -> RobotSimulationService:
+    """Provide a RobotSimulationService for the request's database session."""
+    return RobotSimulationService(session, catalog_service.registry, manager)
+
+
+RobotSimulationServiceDep = Annotated[RobotSimulationService, Depends(get_robot_simulation_service)]

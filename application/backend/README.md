@@ -37,11 +37,26 @@ abandoned jobs, and stops active workers during application shutdown. Per-job
 multiprocessing events handle cancellation without a manager process. Shutdown
 keeps the API event loop free to drain worker events while joining processes.
 
+`services/job_handlers.py` registers one typed lifecycle handler per job type.
+Handlers define runnable eligibility, atomic claim conditions, resource keys,
+lazy worker construction, interruption, and orphan recovery. The scheduler owns
+processes and reservations without branching on job types; the repository owns
+atomic database transitions without choosing domain policy. Workers retain
+execution and transactional result publication. Training target handlers remain
+responsible for local/remote target selection within the training job handler.
+
+Every worker claims its assigned job before execution. Dataset imports can claim
+only queued detection/import steps, never upload or review waits. Generic
+`/api/jobs/{job_id}:interrupt` rejects dataset imports because their running
+workers cannot honor interruption; use the import-specific review-stage cancel
+endpoint instead. A worker exit does not imply completion: a review wait or
+remote reattachment can legitimately leave a job pending.
+
 ## Setup
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13
 - [uv](https://github.com/astral-sh/uv) package manager
 
 ### Install Dependencies
@@ -58,6 +73,13 @@ uv sync --extra cpu     # CPU only
 ```
 
 This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
+
+Simulation is optional. Add `--extra mujoco` to install the MuJoCo plugin; without it Studio offers no
+simulated robots and shows nothing about simulation:
+
+```bash
+uv sync --extra cpu --extra mujoco
+```
 
 ### (Optional) Enable hardware acceleration for video encoding
 Using hardware acceleration for video encoding can improve the speed of recording significantly.
@@ -205,6 +227,7 @@ In interactive terminals, users are prompted for confirmation when a migration i
 
 ## See Also
 
+- **[Rerun Visualization](docs/rerun-visualization.md)** - Runtime visualization settings and deployment
 - **[Application Overview](../README.md)** - Full application architecture
 - **[UI](../ui/README.md)** - React frontend
 - **[Library](../../library/README.md)** - Python SDK for training

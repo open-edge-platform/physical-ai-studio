@@ -27,14 +27,14 @@ Metadata:
 Parameters:
   TrainingPolicy:
     Type: String
-    Default: ACT (g4dn.2xlarge)
+    Default: ACT-g4dn.2xlarge
     AllowedValues:
-      - ACT (g4dn.2xlarge)
-      - Pi0.5 (g6e.2xlarge)
-      - SmolVLA (g4dn.2xlarge)
-      - MolmoAct2 (g7e.8xlarge)
+      - ACT-g4dn.2xlarge
+      - Pi0.5-g6e.2xlarge
+      - SmolVLA-g4dn.2xlarge
+      - MolmoAct2-g7e.8xlarge
     Description: |-
-      Select the policy you plan to train. Its recommended GPU instance is shown in parentheses.
+      Select the policy you plan to train. Each option includes its recommended GPU instance.
       Pricing: Review the current On-Demand price in this AWS Region.
       Cleanup: Delete the stack immediately after training to stop charges.
 
@@ -63,13 +63,13 @@ Parameters:
 
 Mappings:
   PolicyInstanceType:
-    ACT (g4dn.2xlarge):
+    ACT-g4dn.2xlarge:
       InstanceType: g4dn.2xlarge
-    Pi0.5 (g6e.2xlarge):
+    Pi0.5-g6e.2xlarge:
       InstanceType: g6e.2xlarge
-    SmolVLA (g4dn.2xlarge):
+    SmolVLA-g4dn.2xlarge:
       InstanceType: g4dn.2xlarge
-    MolmoAct2 (g7e.8xlarge):
+    MolmoAct2-g7e.8xlarge:
       InstanceType: g7e.8xlarge
 
 Rules:

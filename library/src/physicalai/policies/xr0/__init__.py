@@ -15,6 +15,7 @@ from .preprocessor import (
     make_xr0_preprocessors,
 )
 from .pretrained_utils import (
+    compute_action_chunk_stats,
     extract_xr0_dataset_stats,
     load_xr0_pretrained_weights,
     remap_xr0_state_dict,
@@ -30,6 +31,7 @@ __all__ = [
     "XR0Postprocessor",
     "XR0Preprocessor",
     "XR0Qwen3VL",
+    "compute_action_chunk_stats",
     "extract_xr0_dataset_stats",
     "load_xr0_pretrained_weights",
     "make_xr0_preprocessors",

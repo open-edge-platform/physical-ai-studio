@@ -666,6 +666,21 @@ class TestObservationDeviceTransfer:
         # New instance created
         assert obs is not obs_moved
 
+    @pytest.mark.skipif(
+        not torch.accelerator.is_available() or torch.accelerator.current_accelerator().type == "mps",
+        reason="pinned memory requires an accelerator with pinning support",
+    )
+    def test_dataloader_pins_observation_batches(self):
+        """Test that DataLoader(pin_memory=True) pins Observation tensors, including nested images."""
+        from physicalai.data.datamodules import _collate_observations
+
+        samples = [Observation(action=torch.rand(2), images={"top": torch.rand(3, 8, 8)}, task="pick")] * 2
+        loader = torch.utils.data.DataLoader(samples, batch_size=2, collate_fn=_collate_observations, pin_memory=True)
+        batch = next(iter(loader))
+
+        assert batch.action.is_pinned()
+        assert batch.images["top"].is_pinned()
+
 
 class TestObservationNumpyTensorConversion:
     """Test Observation.to_numpy() and to_torch() conversion methods."""

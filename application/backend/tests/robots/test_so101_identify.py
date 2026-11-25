@@ -108,7 +108,7 @@ def _payload() -> SO101RobotPayload:
 
 
 @pytest.fixture(autouse=True)
-def _clear_fake_drivers() -> Generator[None, None, None]:
+def _clear_fake_drivers() -> Generator[None]:
     _FakeDriver.instances.clear()
     _FakeDriver.default_start = np.zeros(6, dtype=np.float32)
     _FakeDriver.default_observation_failure = None

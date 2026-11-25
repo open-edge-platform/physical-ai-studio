@@ -19,9 +19,9 @@ from api.dependencies import (
 )
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
-from runtime.config_builder import policy_source_fragment
 from schemas import Model
 from schemas.environment import EnvironmentWithRelations
+from services.runtime_export import policy_source_fragment
 
 
 class _StubModelService:
@@ -194,7 +194,7 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
         {
             "robot": {
                 "class_path": "physicalai.robot.SharedRobot",
-                "init_args": {"name": "rt-follower", "robot": {"class_path": "tests.runtime.fakes.FakeRobot"}},
+                "init_args": {"name": "rt-follower", "robot": {"class_path": "physicalai.robot.so101.SO101"}},
             },
             "fps": 30.0,
             "action_source": policy_source_fragment(
@@ -206,7 +206,9 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
         },
     ).to_dict()
 
-    environment_service = SimpleNamespace(get_environment_by_id=mocker.AsyncMock(return_value=environment))
+    environment_service = SimpleNamespace(
+        get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
+    )
     mocker.patch("api.models.build_runtime_config", return_value=document)
     _override_export_download(model, environment_service=environment_service)
     try:

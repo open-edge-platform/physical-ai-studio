@@ -476,7 +476,8 @@ class MolmoAct2Model(PeftModelMixin, Model):
         """Compute denoised action MSE and the flow-matching validation loss.
 
         Returns:
-            Denoised action MSE and detached action-MSE and flow-loss metrics.
+            Denoised action MSE, detached action-MSE and flow-loss metrics, and the
+            normalized predicted chunk under ``"action_pred"``.
         """
         predicted = self.predict_action_chunk(batch, sample_noise=False)
         target = batch[ACTION][:, : predicted.shape[1], : predicted.shape[2]].to(predicted)
@@ -497,6 +498,7 @@ class MolmoAct2Model(PeftModelMixin, Model):
             "loss": action_mse.detach(),
             "action_mse": action_mse.detach(),
             "action_flow_loss": flow_loss.detach(),
+            "action_pred": predicted,
         }
 
     @property

@@ -31,6 +31,19 @@ def test_aws_singleton_constraint_and_downgrade(tmp_path: Path) -> None:
                 "INSERT INTO remote_trainers (id, name, connection_mode, connection) VALUES (?, ?, ?, ?)",
                 (identifier, identifier, identifier.split("-")[0], "{}"),
             )
+    command.upgrade(configuration, "b2c4e6f8a012")
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO remote_trainers (id, name, connection_mode, connection) VALUES (?, ?, ?, ?)",
+            ("another", "Different name", "aws_batch", "{}"),
+        )
+        assert connection.execute(
+            "SELECT id, name FROM remote_trainers WHERE connection_mode = 'aws_batch' ORDER BY id"
+        ).fetchall() == [("another", "Different name"), ("aws", "AWS Provider")]
+    with pytest.raises(RuntimeError, match="Multiple AWS providers"):
+        command.downgrade(configuration, "91d5e3a7c2b0")
+    with sqlite3.connect(database) as connection:
+        connection.execute("DELETE FROM remote_trainers WHERE id = 'another'")
     command.downgrade(configuration, "7e2a9c4d5b61")
     with sqlite3.connect(database) as connection:
         connection.execute(

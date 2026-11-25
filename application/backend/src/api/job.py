@@ -9,9 +9,7 @@ from sse_starlette import EventSourceResponse
 from api.dependencies import get_event_processor_ws, get_job_service, get_model_metrics_service, get_scheduler
 from core.scheduler import Scheduler
 from core.security import require_aws_feature_active
-from exceptions import InvalidJobStateError, ResourceNotFoundError, ResourceType
 from schemas import Job
-from schemas.base_job import JobStatus
 from schemas.job import RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from schemas.job_response import JobResponse, job_response
 from schemas.operational_issue import OperationalIssue
@@ -66,35 +64,10 @@ async def interrupt_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
-    """Endpoint to interrupt job"""
-    job = await job_service.get_job_by_id(job_id)
-    if job is None:
-        raise ResourceNotFoundError(ResourceType.JOB, job_id)
-
-    if (
-        isinstance(job, TrainJob)
-        and job.status in {JobStatus.PENDING, JobStatus.RUNNING}
-        and isinstance(job.payload, RemoteTrainJobPayload)
-        and job.payload.remote_trainer_url
-        and job.payload.remote_trainer_url.startswith("aws-batch://")
-    ):
-        require_aws_feature_active()
-        await job_service.update_remote_job_state(job_id, cancel_requested=True)
-        if job.payload.remote_job_id is not None or job.status == JobStatus.RUNNING:
-            scheduler.cancel_job(job_id)
-            return
-
-    if job.status == JobStatus.CANCELED:
-        return
-    if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
-        raise InvalidJobStateError("Cannot stop a finished job")
-    if isinstance(job, TrainJob):
-        # Claiming and queued cancellation compete atomically. Once claimed,
-        # keep RUNNING until the worker releases its files and flushes progress.
-        if await job_service.cancel_pending_train_job(job_id) is None:
-            scheduler.cancel_job(job_id)
-        return
-    await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
+    """Request interruption using the job type's supported cancellation policy."""
+    updated = await job_service.interrupt_job(job_id, scheduler.cancel_job)
+    if updated is not None:
+        scheduler.event_queue.put((EventType.JOB_UPDATE, updated))
 
 
 @router.get("/{job_id}/model_metrics")

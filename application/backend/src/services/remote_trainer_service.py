@@ -275,8 +275,6 @@ class RemoteTrainerService:
         for existing in await self.repo.list_ordered():
             if existing.id == remote_trainer.id:
                 continue
-            if isinstance(connection, AwsBatchConnection) and isinstance(existing.connection, AwsBatchConnection):
-                raise ResourceAlreadyExistsError("AWS Provider", "Only one AWS Provider training target is allowed.")
             if isinstance(connection, SshConnection):
                 other = existing.connection
                 if (
@@ -393,8 +391,6 @@ class RemoteTrainerService:
             for attempt in range(3):
                 assigned = await self._assign_local_port(config)
                 remote_trainer = RemoteTrainer(id=uuid4(), **assigned.model_dump())
-                if isinstance(remote_trainer.connection, AwsBatchConnection):
-                    remote_trainer.name = "AWS Provider"
                 await self._ensure_unique_connection(remote_trainer)
                 try:
                     saved = await self.repo.save(remote_trainer)
@@ -575,9 +571,6 @@ class RemoteTrainerService:
                 validated = RemoteTrainer(id=remote_trainer.id, **assigned.model_dump())
                 if update.connection is not None or auto_port:
                     data["connection"] = validated.connection.model_dump()
-                if isinstance(validated.connection, AwsBatchConnection):
-                    data["name"] = "AWS Provider"
-                    validated.name = "AWS Provider"
                 connection_changed = validated.connection != remote_trainer.connection
                 await self._validate_connection_update(remote_trainer, validated)
                 try:

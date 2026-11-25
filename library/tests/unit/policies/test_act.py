@@ -3,7 +3,7 @@
 
 import copy
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import pytest
 import torch
 import numpy as np
@@ -384,6 +384,233 @@ class TestACTolicy:
         normed_empirical = policy_empirical.model._input_normalizer(dict(batch))
         expected_top_emp = (1.0 - 0.1) / 0.01
         assert torch.isclose(normed_empirical["images.top"][0, 0, 0, 0], torch.tensor(expected_top_emp), atol=1e-4)
+
+
+_STATS = {
+    "image": {"mean": [0.0] * 3, "std": [1.0] * 3, "type": "VISUAL", "name": "image", "shape": (3, 64, 64)},
+    "state": {"mean": [0.0] * 3, "std": [1.0] * 3, "type": "STATE", "name": "state", "shape": (3,)},
+    "action": {"mean": [0.0] * 3, "std": [1.0] * 3, "type": "ACTION", "name": "action", "shape": (3,)},
+}
+
+
+class TestACTMultiTask:
+    """ACT conditioned on a fixed set of task prompts."""
+
+    TASKS = ["pick", "place"]
+
+    @pytest.fixture
+    def policy(self):
+        return ACT(dataset_stats=_STATS, tasks=self.TASKS, pretrained_backbone_weights=None)
+
+    @staticmethod
+    def _obs(task, bs=1):
+        torch.manual_seed(0)
+        return Observation(images=torch.randn(bs, 3, 64, 64), state=torch.randn(bs, 3), task=task)
+
+    def test_single_task_is_not_conditioned(self):
+        policy = ACT(dataset_stats=_STATS, tasks=["only"], pretrained_backbone_weights=None)
+        assert policy.tasks == []
+        assert not hasattr(policy.model._model, "encoder_task_embed")
+        assert "task_index" not in [f.name for f in policy.inputs_schema]
+
+    def test_training_step(self, policy):
+        bs = 2
+        batch = Observation(
+            images=torch.randn(bs, 3, 64, 64),
+            state=torch.randn(bs, 3),
+            action=torch.randn(bs, 100, 3),
+            task=["place", "pick"],
+            task_index=torch.tensor([7, 7]),  # dataset indices are ignored in favour of the prompts
+            extra={"action_is_pad": torch.zeros(bs, 100, dtype=torch.bool)},
+        )
+        policy.train()
+        assert policy.training_step(batch, 0)["loss"] >= 0
+
+    def test_task_changes_prediction(self, policy):
+        policy.eval()
+        pick = policy.predict_action_chunk(self._obs("pick"))
+        place = policy.predict_action_chunk(self._obs("place"))
+        assert pick.shape == (1, 100, 3)
+        assert not torch.allclose(pick, place)
+
+    def test_unknown_or_missing_task_raises(self, policy):
+        policy.eval()
+        with pytest.raises(ValueError, match="Unknown task"):
+            policy.predict_action_chunk(self._obs("dance"))
+        with pytest.raises(ValueError, match="pass `task`"):
+            policy.predict_action_chunk(self._obs(None))
+
+    @pytest.fixture
+    def unconditioned_policy(self):
+        return ACT(
+            dataset_stats=_STATS, pretrained_backbone_weights=None,
+            dim_model=32, n_heads=4, dim_feedforward=64, n_encoder_layers=1, n_vae_encoder_layers=1,
+        )
+
+    @pytest.fixture
+    def pretrained_dir(self, unconditioned_policy, tmp_path):
+        import json
+        from safetensors.torch import save_file
+
+        config = unconditioned_policy.config.to_dict()
+        features = {key: {"type": stat["type"], "shape": stat["shape"]} for key, stat in _STATS.items()}
+        config["output_features"] = {"action": features.pop("action")}
+        config["input_features"] = features
+        (tmp_path / "config.json").write_text(json.dumps(config))
+        save_file(
+            {f"model.{key}": value.clone() for key, value in unconditioned_policy.model._model.state_dict().items()},
+            tmp_path / "model.safetensors",
+        )
+        return tmp_path
+
+    @staticmethod
+    def _setup(policy, tasks):
+        from physicalai.data import Dataset
+
+        dataset = MagicMock(spec=Dataset)
+        dataset.tasks = tasks
+        dataset.stats = _STATS
+        policy.trainer = MagicMock()
+        policy.trainer.datamodule.train_dataset = dataset
+        with patch("physicalai.policies.act.policy.reformat_dataset_to_match_policy"):
+            policy.setup("fit")
+
+    def test_setup_reads_tasks_from_dataset(self):
+        policy = ACT(pretrained_backbone_weights=None)
+        self._setup(policy, self.TASKS)
+        assert policy.tasks == self.TASKS
+        assert policy.hparams["tasks"] == self.TASKS
+        assert policy.model._model.encoder_task_embed.num_embeddings == 2
+
+    @pytest.mark.parametrize("tasks", [[], ["only"]])
+    @pytest.mark.parametrize("eager", [False, True])
+    def test_setup_respects_explicit_unconditioned_tasks(self, tasks, eager):
+        policy = ACT(tasks=tasks, dataset_stats=_STATS if eager else None, pretrained_backbone_weights=None)
+        self._setup(policy, self.TASKS)
+        assert policy.tasks == []
+        assert policy.hparams["tasks"] == tasks
+        assert not hasattr(policy.model._model, "encoder_task_embed")
+
+    @pytest.mark.parametrize("pretrained", [False, True])
+    def test_setup_conditions_eager_models_without_losing_weights(self, pretrained, pretrained_dir, unconditioned_policy):
+        policy = ACT(pretrained_name_or_path=pretrained_dir) if pretrained else unconditioned_policy
+        policy.to(torch.bfloat16)
+        backbone = policy.model._model.backbone
+        original = {key: value.clone() for key, value in policy.model.state_dict().items()}
+        self._setup(policy, self.TASKS)
+        assert policy.tasks == self.TASKS
+        assert policy.hparams["tasks"] == self.TASKS
+        assert policy.model._model.backbone is backbone
+        assert policy.model._model.encoder_task_embed.weight.dtype == torch.bfloat16
+        for key, value in original.items():
+            actual = policy.model.state_dict()[key]
+            if key == "_model.encoder_1d_feature_pos_embed.weight":
+                assert actual.shape[0] == value.shape[0] + 1
+                actual = actual[:-1]
+            assert torch.equal(actual, value), key
+        # A later setup must not remap already learned task embeddings.
+        self._setup(policy, list(reversed(self.TASKS)))
+        assert policy.tasks == self.TASKS
+        policy.float().eval()
+        assert policy.predict_action_chunk(self._obs("place")).shape == (1, 100, 3)
+
+    def test_enabling_task_conditioning_rejects_invalid_transitions(self, unconditioned_policy):
+        for n_tasks in (0, 1):
+            with pytest.raises(ValueError, match="at least two tasks"):
+                unconditioned_policy.model.enable_task_conditioning(n_tasks)
+        unconditioned_policy.model.enable_task_conditioning(2)
+        with pytest.raises(ValueError, match="unconditioned model"):
+            unconditioned_policy.model.enable_task_conditioning(2)
+
+    def test_pretrained_loading_adds_task_position_without_changing_existing_weights(self, pretrained_dir, unconditioned_policy):
+        policy = ACT(pretrained_name_or_path=pretrained_dir, tasks=self.TASKS)
+        actual = policy.model._model.state_dict()
+        for key, value in unconditioned_policy.model._model.state_dict().items():
+            loaded = actual[key]
+            if key == "encoder_1d_feature_pos_embed.weight":
+                assert loaded.shape[0] == value.shape[0] + 1
+                loaded = loaded[:-1]
+            assert torch.equal(loaded, value), key
+        assert policy.model._model.encoder_task_embed.num_embeddings == 2
+
+    def test_discovered_tasks_survive_checkpoint_round_trip(self, unconditioned_policy, tmp_path):
+        self._setup(unconditioned_policy, self.TASKS)
+        path = tmp_path / "conditioned.pt"
+        unconditioned_policy.to_torch(path)
+        loaded = ACT.load_from_checkpoint(path)
+        self._setup(loaded, list(reversed(self.TASKS)))
+        assert loaded.tasks == self.TASKS
+        unconditioned_policy.eval()
+        loaded.eval()
+        assert torch.equal(
+            loaded.predict_action_chunk(self._obs("place")), unconditioned_policy.predict_action_chunk(self._obs("place")),
+        )
+
+    @pytest.mark.parametrize("legacy", [False, True])
+    def test_restored_unconditioned_checkpoint_does_not_infer_tasks(self, unconditioned_policy, tmp_path, legacy):
+        if legacy:
+            del unconditioned_policy.hparams["tasks"]
+        path = tmp_path / "unconditioned.pt"
+        unconditioned_policy.to_torch(path)
+        loaded = ACT.load_from_checkpoint(path)
+        self._setup(loaded, self.TASKS)
+        assert loaded.tasks == []
+        assert not hasattr(loaded.model._model, "encoder_task_embed")
+
+    def test_checkpoint_round_trip_keeps_tasks(self, policy, tmp_path):
+        path = tmp_path / "act.pt"
+        policy.to_torch(path)
+        loaded = ACT.load_from_checkpoint(path)
+        assert loaded.tasks == self.TASKS
+        self._setup(loaded, list(reversed(self.TASKS)))
+        assert loaded.tasks == self.TASKS
+        loaded.eval()
+        policy.eval()
+        assert torch.allclose(loaded.predict_action_chunk(self._obs("place")), policy.predict_action_chunk(self._obs("place")))
+
+    def test_resuming_with_reordered_dataset_tasks_keeps_checkpoint_mapping(self, policy):
+        # Trainer.fit(ckpt_path=...) runs setup() on the new dataset before restoring the checkpoint.
+        checkpoint = {"hyper_parameters": dict(policy.hparams), "state_dict": policy.state_dict()}
+        resumed = ACT(pretrained_backbone_weights=None)
+        self._setup(resumed, list(reversed(self.TASKS)))
+        resumed.on_load_checkpoint(checkpoint)
+        resumed.load_state_dict(checkpoint["state_dict"])
+        assert resumed.tasks == resumed.hparams["tasks"] == self.TASKS
+        resumed.eval()
+        policy.eval()
+        assert torch.equal(resumed.predict_action_chunk(self._obs("place")), policy.predict_action_chunk(self._obs("place")))
+
+    def test_resuming_with_different_dataset_tasks_raises(self, policy):
+        resumed = ACT(pretrained_backbone_weights=None)
+        self._setup(resumed, ["pick", "stack"])
+        with pytest.raises(ValueError, match="Checkpoint was trained on tasks"):
+            resumed.on_load_checkpoint({"hyper_parameters": dict(policy.hparams)})
+
+    @pytest.mark.parametrize("backend", ["onnx", "openvino", "torch"])
+    def test_exported_model_takes_the_task_prompt(self, policy, tmp_path, backend):
+        import json
+
+        from physicalai.inference import InferenceModel
+
+        policy.eval()
+        policy.export(tmp_path, backend)
+        manifest = json.loads((tmp_path / "manifest.json").read_text())
+        task_specs = [spec for spec in manifest["model"]["preprocessors"] if spec["type"] == "task_index"]
+        assert [spec["tasks"] for spec in task_specs] == [self.TASKS]
+
+        obs = self._obs("place")
+        model = InferenceModel(tmp_path, backend=backend)
+        place, pick = policy.predict_action_chunk(obs).numpy(), policy.predict_action_chunk(self._obs("pick")).numpy()
+        for task_index in (None, torch.tensor([0])):
+            obs.task_index = task_index
+            # Benchmarking sends every observation field, including unset or dataset-specific task indices.
+            actions = model.predict_action_chunk(obs.to_numpy().to_dict(flatten=False))
+            actions = np.asarray(actions).reshape(1, 100, 3)
+            # OpenVINO's CPU plugin runs at lower precision, so compare against the other task, not a tight tolerance.
+            assert np.abs(actions - place).max() < 1e-2 < np.abs(actions - pick).max()
+        obs.task = ["dance"]
+        with pytest.raises(ValueError, match="Unknown task"):
+            model.predict_action_chunk(obs.to_numpy().to_dict(flatten=False))
 
 
 class TestACTPreprocessor:

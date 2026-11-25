@@ -198,6 +198,16 @@
       matchManagers: ["npm"],
     },
 
+    // Keep README demo dependencies current within their existing version ranges.
+    {
+      enabled: true,
+      matchManagers: ["npm"],
+      matchFileNames: ["docs/demos/readme/package.json"],
+      rangeStrategy: "in-range-only",
+      groupName: "README demo dependencies",
+      schedule: ["* * * * 0"], // weekly on Sunday
+    },
+
     // NPM version in package.json is updated manually
     {
       enabled: false,

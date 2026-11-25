@@ -9,6 +9,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from physicalai.config import Config
 from physicalai.export.backends import ExportBackend
+from pydantic import BaseModel, StringConstraints
 from sse_starlette import EventSourceResponse
 from starlette import status
 from starlette.background import BackgroundTask
@@ -24,26 +25,27 @@ from api.dependencies import (
     get_robot_client_factory,
     get_robot_manager_service,
 )
+from api.robot_simulation import resolve_export_cameras
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
 from robots.robot_client_factory import RobotClientFactory
-from runtime.config_builder import (
+from schemas import Model, ModelDetailResponse
+from schemas.job import TrainJob
+from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
+from services.environment_service import EnvironmentService
+from services.runtime_export import (
     RUNTIME_FPS,
     build_runtime_config,
     policy_source_fragment,
     runtime_config_change_me,
     runtime_export_readme,
 )
-from schemas import Model, ModelDetailResponse
-from schemas.job import TrainJob
-from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
-from services.environment_service import EnvironmentService
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
 
-async def _runtime_recipe_texts(
+async def _runtime_recipe_texts(  # noqa: PLR0913 - the download endpoint's dependencies
     *,
     model: Model,
     environment_id: UUID,
@@ -52,6 +54,7 @@ async def _runtime_recipe_texts(
     task: str | None,
     environment_service: EnvironmentService,
     robot_client_factory: RobotClientFactory,
+    request: Request,
 ) -> tuple[str, str]:
     """Build runtime.yaml and README for a model download that includes a recipe."""
     if backend.value not in model.available_backends:
@@ -77,7 +80,9 @@ async def _runtime_recipe_texts(
         document = await build_runtime_config(
             follower=environment.robots[0].robot,
             leader=None,
-            cameras=environment.cameras,
+            cameras=await resolve_export_cameras(
+                request, environment_service.session, model.project_id, environment.cameras
+            ),
             robot_factory=robot_client_factory,
             fps=RUNTIME_FPS,
             allow_stored_port=True,
@@ -115,6 +120,21 @@ async def get_model_by_id(
         training_summary=training_summary,
         hparams=hparams,
     )
+
+
+class ModelNameUpdate(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+@router.patch("/{model_id}")
+async def update_model(
+    model_id: UUID,
+    payload: ModelNameUpdate,
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+) -> Model:
+    """Update a model's display name without changing its files or training history."""
+    model = await model_service.get_model_by_id(model_id)
+    return await model_service.update_model(model, payload.model_dump())
 
 
 @router.get("/{model_id}/tasks")
@@ -222,6 +242,7 @@ async def download_model_backend(  # noqa: PLR0913
             task=task,
             environment_service=environment_service,
             robot_client_factory=robot_client_factory,
+            request=request,
         )
         archive_path = await asyncio.to_thread(
             model_download_service.create_runtime_export,

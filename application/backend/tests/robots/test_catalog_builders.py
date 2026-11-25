@@ -144,7 +144,7 @@ class TestTrossenBuilders:
 
         driver = await _build_trossen_single_arm_driver(robot, _StubFactory())
 
-        assert Config.from_instance(driver) == {
+        assert Config.from_instance(driver).to_dict() == {
             "class_path": "physicalai_trossen_plugin.WidowXAI",
             "init_args": {"ip": "192.168.1.2", "role": "follower"},
         }

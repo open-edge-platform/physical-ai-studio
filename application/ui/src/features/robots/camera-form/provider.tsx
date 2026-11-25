@@ -6,6 +6,7 @@ import {
     SchemaGenicamCameraInput,
     SchemaIpCameraInput,
     SchemaRealsenseCameraInput,
+    SchemaSimulationCameraInput,
     SchemaUsbCameraInput,
 } from '../../../api/openapi-spec';
 import { SchemaProjectCamera } from '../../../api/types';
@@ -14,6 +15,7 @@ import { initialBaslerState, validateBasler } from './drivers/basler';
 import { initialGenicamState, validateGenicam } from './drivers/genicam';
 import { initialIpCamState, validateIpCam } from './drivers/ipcam';
 import { initialRealsenseState, validateRealsense } from './drivers/realsense';
+import { initialSimulationState, validateSimulation } from './drivers/simulation';
 import { initialUsbCameraState, validateUsbCamera } from './drivers/usb-camera';
 
 // Utility type to make all properties (including nested) optional
@@ -29,6 +31,7 @@ type DriverSchemaMap = {
     basler: SchemaBaslerCameraInput;
     realsense: SchemaRealsenseCameraInput;
     genicam: SchemaGenicamCameraInput;
+    simulation: SchemaSimulationCameraInput;
 };
 
 export type DriverFormSchema<K extends CameraDriver> = DeepPartial<DriverSchemaMap[K]> & {
@@ -47,6 +50,8 @@ export const isValid = (schema: DriverFormSchema<CameraDriver>): schema is Schem
             return validateBasler(schema);
         case 'genicam':
             return validateGenicam(schema);
+        case 'simulation':
+            return validateSimulation(schema);
         default:
             return false;
     }
@@ -78,6 +83,7 @@ const getInitialCameraFormState = (camera?: SchemaProjectCamera): CameraFormStat
         genicam: initialGenicamState,
         ipcam: initialIpCamState,
         realsense: initialRealsenseState,
+        simulation: initialSimulationState,
     } satisfies CameraFormState['formData'];
 
     if (camera === undefined) {

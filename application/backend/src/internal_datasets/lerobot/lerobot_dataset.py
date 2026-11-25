@@ -19,6 +19,7 @@ from loguru import logger
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.lerobot.episode_task import set_episode_task
 from internal_datasets.lerobot.video_encoding_settings import VideoEncodingSettings
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from schemas import Episode, EpisodeInfo, EpisodeVideo
@@ -118,11 +119,22 @@ class InternalLeRobotDataset(DatasetClient):
             output_path, recording_video_encoding_settings=self._recording_video_encoding_settings
         )
 
+    def set_episode_task(self, episode_index: int, task: str) -> None:
+        """Make ``task`` the only task of the episode, in place, without touching its videos."""
+        if self._access_mode is not DatasetAccessMode.READ_ONLY:
+            # A recording holds the dataset's metadata in memory and would write it back over the edit.
+            raise ValueError("Cannot edit episode tasks of a dataset opened for recording")
+        if set_episode_task(self.path, episode_index, task):
+            self.load_dataset()
+
     def get_tasks(self) -> list[str]:
-        """Get Tasks in dataset."""
+        """Get dataset tasks, or an empty list before tasks are recorded."""
         if not self.exists_on_disk:
             return []
-        return list(self._dataset.meta.tasks.to_dict()["task_index"].keys())
+        tasks = self._dataset.meta.tasks
+        if tasks is None:
+            return []
+        return list(tasks.to_dict()["task_index"].keys())
 
     def get_video_path(self, episode: int, camera: str) -> Path:
         """Get Video path of specific episode and camera."""
@@ -232,6 +244,7 @@ class InternalLeRobotDataset(DatasetClient):
                 tasks=episode["tasks"],
                 length=episode["length"],
                 fps=metadata.fps,
+                videos=self._build_videos(episode),
             )
             for episode in episodes
         ]
@@ -383,22 +396,27 @@ class InternalLeRobotDataset(DatasetClient):
         actions = self._dataset.hf_dataset["action"][from_idx:to_idx]
         return torch.stack(actions)
 
+    def _build_videos(self, episode: EpisodeMetadata) -> dict[str, EpisodeVideo]:
+        """Build video info for episode."""
+        metadata = self._dataset.meta
+        return {
+            video_key: EpisodeVideo(
+                start=episode[f"videos/{video_key}/from_timestamp"],
+                end=episode[f"videos/{video_key}/to_timestamp"],
+                path=str(metadata.get_video_file_path(episode["episode_index"], video_key)),
+            )
+            for video_key in metadata.video_keys
+        }
+
     def _build_episode_from_metadata(self, episode: EpisodeMetadata) -> Episode:
         metadata = self._dataset.meta
-        episode_index = episode["episode_index"]
         action_feature_names = self._dataset.features.get("action", {}).get("names", [])
+        videos = self._build_videos(episode)
 
         return Episode(
             actions=self._get_episode_actions(episode).tolist(),
             fps=metadata.fps,
-            videos={
-                video_key: EpisodeVideo(
-                    start=episode[f"videos/{video_key}/from_timestamp"],
-                    end=episode[f"videos/{video_key}/to_timestamp"],
-                    path=str(metadata.get_video_file_path(episode_index, video_key)),
-                )
-                for video_key in self._dataset.meta.video_keys
-            },
+            videos=videos,
             action_keys=action_feature_names,
             **episode,
         )
@@ -411,7 +429,10 @@ class InternalLeRobotDataset(DatasetClient):
         return None
 
     def _get_episode_metadata_list(self) -> list[EpisodeMetadata]:
-        return [episode for episode in self._dataset.meta.episodes if isinstance(episode, dict)]
+        episodes = self._dataset.meta.episodes
+        if episodes is None:
+            return []
+        return [episode for episode in episodes if isinstance(episode, dict)]
 
     @staticmethod
     @lru_cache(maxsize=128)

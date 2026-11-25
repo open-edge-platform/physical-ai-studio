@@ -1,0 +1,32 @@
+name: Start conveyor simulator
+description: Start the pinned headless owner and wait for its transport to connect
+runs:
+  using: composite
+  steps:
+    - name: Install rendering dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libegl1 libgl1 ffmpeg
+    - name: Start owner
+      shell: bash
+      working-directory: application/backend
+      run: |
+        mkdir -p "$SIM_E2E_OUTPUT_DIR"
+        if curl --silent --max-time 2 "$SIM_E2E_HTTP_URL/health" > /dev/null; then
+          echo 'Simulator port already in use; refusing to interfere with another owner' >&2
+          exit 1
+        fi
+        uv run --no-sync physicalai-mujoco prefetch
+        uv run --no-sync physicalai-mujoco start --scene conveyor_sort \
+          --name "$SIM_E2E_OWNER" --http-port 8080 --no-gui \
+          > "$SIM_E2E_OUTPUT_DIR/owner.log" 2>&1 &
+        echo $! > "$SIM_E2E_OUTPUT_DIR/owner.pid"
+        for ((attempt=1; attempt<=120; attempt++)); do
+          if grep -q 'Camera/control HTTP server:' "$SIM_E2E_OUTPUT_DIR/owner.log" && \
+             curl --silent --fail "$SIM_E2E_HTTP_URL/health" > /dev/null; then exit 0; fi
+          if ! kill -0 "$(< "$SIM_E2E_OUTPUT_DIR/owner.pid")" 2>/dev/null; then break; fi
+          sleep 1
+        done
+        echo 'Simulator failed to start; inspect owner.log' >&2
+        exit 1

@@ -1,15 +1,10 @@
 import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useEffect, useState } from 'react';
 
 import { $api } from '../../api/client';
-import { SchemaDatasetOutput } from '../../api/openapi-spec';
+import type { SchemaDatasetOutput, SchemaEpisodeInfo } from '../../api/openapi-spec';
 import { getPendingRecordedEpisodes, PendingRecordedEpisodes } from '../../features/datasets/pending-recorded-episodes';
 
-type EpisodeSummary = {
-    episode_index: number;
-    tasks: string[];
-    length: number;
-    fps: number;
-};
+type EpisodeSummary = SchemaEpisodeInfo;
 
 type DatasetContextValue = null | {
     dataset_id: string;

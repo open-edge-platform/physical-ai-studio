@@ -8,17 +8,18 @@ from settings import get_settings
 from .base import BaseIDModel
 
 
+class EpisodeVideo(BaseModel):
+    start: float
+    end: float
+    path: str
+
+
 class EpisodeInfo(BaseModel):
     episode_index: int
     tasks: list[str]
     length: int
     fps: int
-
-
-class EpisodeVideo(BaseModel):
-    start: float
-    end: float
-    path: str
+    videos: dict[str, EpisodeVideo]
 
 
 class Episode(BaseModel):

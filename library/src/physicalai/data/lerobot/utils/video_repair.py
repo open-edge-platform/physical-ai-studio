@@ -17,10 +17,12 @@ from lightning_utilities import module_available
 from tqdm import tqdm
 
 if TYPE_CHECKING or module_available("lerobot"):
+    from lerobot.datasets.dataset_reader import DatasetReader
     from lerobot.datasets.image_writer import write_image
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.datasets.video_utils import decode_video_frames, encode_video_frames
 else:
+    DatasetReader = None
     write_image = None
     LeRobotDataset = None
     decode_video_frames = None
@@ -97,6 +99,7 @@ def find_videos_with_corrupt_frame(dataset: LeRobotDataset, frame_index: int) ->
     Raises:
         ImportError: If lerobot is not available.
         RuntimeError: If there is no video data in the dataset.
+        TypeError: If the dataset reader does not expose the per-frame query API.
 
     """
     if decode_video_frames is None:
@@ -111,6 +114,9 @@ def find_videos_with_corrupt_frame(dataset: LeRobotDataset, frame_index: int) ->
     # rather than on LeRobotDataset itself. Use the reader so detection matches the
     # exact decode path (including per-episode timestamp offsets) used during training.
     reader = dataset._ensure_reader()  # noqa: SLF001
+    if not isinstance(reader, DatasetReader):
+        msg = f"Video repair is not supported for dataset reader {type(reader).__name__}"
+        raise TypeError(msg)
     if reader.hf_dataset is None:
         reader.load_and_activate()
 
@@ -122,7 +128,7 @@ def find_videos_with_corrupt_frame(dataset: LeRobotDataset, frame_index: int) ->
     episode_index = item["episode_index"].item()
     current_timestamp = item["timestamp"].item()
 
-    query_timestamps = reader._get_query_timestamps(current_timestamp, None)  # noqa: SLF001
+    query_timestamps = reader._get_query_timestamps([current_timestamp], [None])[0]  # noqa: SLF001
 
     corrupt_videos = []
     for video_key, query_timestamp in query_timestamps.items():

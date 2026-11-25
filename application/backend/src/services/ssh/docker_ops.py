@@ -312,7 +312,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
       only to loopback.
     * `--restart=no` - a crashed container must surface as a failed job, not
       restart silently.
-    * Non-root, every capability dropped, no `--privileged`, and only the
+    * Non-root, every capability dropped, no privileged mode, and only the
       device nodes the configured accelerator needs are passed through.
     * `--read-only` root filesystem, a bounded `--tmpfs` for `/tmp` scratch,
       and a trainer-scoped data volume for datasets and model artifacts.

@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from internal_datasets.access_mode import DatasetAccessMode
@@ -78,3 +78,17 @@ def test_get_internal_recording_dataset_uses_recording_mode() -> None:
     mocked_cls.assert_called_once()
     _, kwargs = mocked_cls.call_args
     assert kwargs["access_mode"] is DatasetAccessMode.RECORDING_MUTATION
+
+
+def test_get_internal_recording_dataset_uses_configured_video_recording_settings() -> None:
+    settings = MagicMock()
+    settings.video_recording.preset = "cpu-h264"
+    with (
+        patch("internal_datasets.utils.get_settings", return_value=settings),
+        patch("internal_datasets.utils.resolve_video_encoding_settings") as resolve_preset,
+        patch("internal_datasets.utils.InternalLeRobotDataset") as mocked_cls,
+    ):
+        get_internal_recording_dataset(_make_dataset())
+
+    resolve_preset.assert_called_once_with("cpu-h264")
+    assert mocked_cls.call_args.kwargs["recording_video_encoding_settings"] is resolve_preset.return_value

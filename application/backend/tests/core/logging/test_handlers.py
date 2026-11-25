@@ -10,7 +10,7 @@ from core.logging.handlers import LoggerStdoutWriter
 
 
 @pytest.fixture
-def captured_logs() -> Generator[list[str], None, None]:
+def captured_logs() -> Generator[list[str]]:
     messages: list[str] = []
     sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="INFO")
     yield messages
