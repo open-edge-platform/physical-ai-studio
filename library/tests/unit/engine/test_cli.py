@@ -248,6 +248,8 @@ def test_engine_prepare_list_and_prune_manage_real_worker_environments(
     monkeypatch.delenv("PHYSICALAI_ENGINE_CACHE", raising=False)
     monkeypatch.setenv("PHYSICALAI_ISOLATE_CACHE", str(cache))
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    # CI sets UV_EXCLUDE_NEWER; the hand-written lockfiles record no exclude-newer, so `--locked` would reject them.
+    monkeypatch.delenv("UV_EXCLUDE_NEWER", raising=False)
     engines = {
         "demo": _cpu_engine("demo", _empty_worker_project(tmp_path / "v1", "demo-worker")),
         "gone": _cpu_engine("gone", _empty_worker_project(tmp_path / "v1", "gone-worker")),
