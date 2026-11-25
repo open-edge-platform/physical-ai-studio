@@ -170,6 +170,7 @@ def test_dataset_upload_train_export_infer_e2e(
     response = client.post(
         "/api/jobs:train",
         json={
+            "training_target": "local",
             "project_id": str(project_id),
             "dataset_id": dataset_id,
             "policy": "act",
@@ -268,6 +269,7 @@ def test_submit_training_job_for_missing_project_returns_404(migrated_db: None) 
     response = client.post(
         "/api/jobs:train",
         json={
+            "training_target": "local",
             "project_id": str(uuid4()),
             "dataset_id": str(uuid4()),
             "policy": "act",
