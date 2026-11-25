@@ -23,8 +23,14 @@ inputs:
     default: ""
   cache-write:
     description: >
-      Write build cache to the registry (true/false). Set to false for
-      fork PRs where GITHUB_TOKEN cannot write to the org's packages.
+      Write build cache to the registry (true/false). Only the cache-warm
+      workflow on `main` should write it, so PRs don't overwrite each other.
+    required: false
+    default: "true"
+  load:
+    description: >
+      Load the built image into the local Docker daemon when not pushing
+      (true/false). Disable when only the build cache is needed.
     required: false
     default: "true"
   use-cache:
@@ -87,7 +93,7 @@ runs:
         labels: ${{ inputs.labels }}
         # When not pushing, load the image into the local Docker daemon so
         # callers can run smoke tests or inspect image size.
-        load: ${{ inputs.push != 'true' }}
+        load: ${{ inputs.push != 'true' && inputs.load == 'true' }}
         build-args: |
           GIT_SHA=${{ github.sha }}
           GIT_COMMIT_DATE=${{ steps.source-metadata.outputs.commit-date }}
@@ -110,7 +116,7 @@ runs:
 
     - name: Extract first image tag
       id: first-tag
-      if: inputs.push != 'true'
+      if: inputs.push != 'true' && inputs.load == 'true'
       shell: bash
       env:
         IMAGE_TAGS: ${{ inputs.tags }}
