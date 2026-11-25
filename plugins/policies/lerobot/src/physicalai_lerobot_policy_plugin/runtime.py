@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -66,21 +67,19 @@ class LeRobotRuntimeAdapter(RuntimeAdapter):
             msg = f"LeRobot model directory not found: {model_path}"
             raise FileNotFoundError(msg)
         native_dir = _native_model_directory(model_path)
+        # Check the policy type and saved processors before LeRobot parses or imports anything.
+        require_supported_policy(_config_policy_type(native_dir / "config.json"))
+        validate_processor_configs(native_dir)
 
         from lerobot.configs.policies import PreTrainedConfig  # ruff: ignore[import-outside-top-level]
         from lerobot.policies import make_pre_post_processors  # ruff: ignore[import-outside-top-level]
-        from lerobot.utils.import_utils import register_third_party_plugins  # ruff: ignore[import-outside-top-level]
+        from lerobot.policies.factory import get_policy_class  # ruff: ignore[import-outside-top-level]
 
-        register_third_party_plugins()
         config = PreTrainedConfig.from_pretrained(
             native_dir,
             cli_overrides=[f"--device={self.device}"],
         )
         require_supported_policy(getattr(config, "type", None))
-        # LeRobot imports the classes these files name; check them before it does.
-        validate_processor_configs(native_dir)
-
-        from lerobot.policies.factory import get_policy_class  # ruff: ignore[import-outside-top-level]
 
         policy_class = get_policy_class(config.type)
         policy = policy_class.from_pretrained(native_dir, config=config)
@@ -193,6 +192,18 @@ def _native_model_directory(artifact_path: Path) -> Path:
         msg = "LeRobot model folders containing symbolic links are not supported."
         raise ValueError(msg)
     return native_dir
+
+
+def _config_policy_type(config_path: Path) -> object:
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        msg = f"LeRobot {config_path.name} is not valid JSON."
+        raise ValueError(msg) from error
+    if not isinstance(config, dict):
+        msg = f"LeRobot {config_path.name} must contain a JSON object."
+        raise TypeError(msg)
+    return config.get("type")
 
 
 def _to_lerobot_batch(inputs: Mapping[str, object], device: str) -> dict[str, object]:

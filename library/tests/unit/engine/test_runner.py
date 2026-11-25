@@ -210,10 +210,10 @@ def test_worker_runner_delivers_cancellation_and_reports_last_step(
             "prefix = bytes([30]) + b'physicalai-worker '",
             "def send(value): os.write(fd, prefix + (json.dumps(value) + '\\n').encode())",
             "send({'type': 'hello', 'protocol': 1, 'framework': 'demo', 'package': 'lerobot', 'version': '0.6.1'})",
+            "assert json.loads(sys.stdin.readline())['type'] == 'ack'",
             "send({'type': 'progress', 'step': 3, 'total': 5, 'metrics': {}})",
-            "message = sys.stdin.readline()",
-            "assert json.loads(message)['type'] == 'cancel'",
-            "send({'type': 'cancelled', 'step': 3})",
+            "assert json.loads(sys.stdin.readline())['type'] == 'cancel'",
+            "send({'type': 'cancelled', 'step': 4})",
         ],
     )
     env = _worker_env(tmp_path, worker)
@@ -226,7 +226,7 @@ def test_worker_runner_delivers_cancellation_and_reports_last_step(
     with pytest.raises(TrainingCancelledError) as exc_info:
         run_worker(env, [], device="cpu", hooks=hooks, interpreter=sys.executable)
 
-    assert exc_info.value.step == 3
+    assert exc_info.value.step == 4
     assert hooks.steps == [(3, 5, {})]
 
 

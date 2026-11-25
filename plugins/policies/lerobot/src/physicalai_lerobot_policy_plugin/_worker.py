@@ -26,6 +26,13 @@ if TYPE_CHECKING:
 _PROTOCOL_VERSION = 1
 _PROTOCOL_PREFIX = bytes([30]) + b"physicalai-worker "
 _NON_METRIC_FIELDS = frozenset({"steps", "samples", "episodes", "epochs"})
+# Mirrors policy_support.SUPPORTED_POLICY_TYPES; kept inline because workers run without the plugin installed.
+_SUPPORTED_POLICY_TYPES = frozenset({"act", "diffusion", "pi05", "smolvla"})
+# LeRobot trains `reward_model` instead of `policy` when one is set. None is supported yet:
+# reward_classifier, robometer and topreward load remote code without a pinned revision.
+_SUPPORTED_REWARD_MODEL_TYPES: frozenset[str] = frozenset()
+# Set by LeRobotEngine.cli(): run lerobot-train with inherited streams instead of the host protocol.
+_NATIVE_CLI_VARIABLE = "PHYSICALAI_LEROBOT_NATIVE_CLI"
 # How long to wait for the host to accept the handshake; matches the host's startup timeout.
 _ACK_TIMEOUT_SECONDS = 60.0
 _CANCEL_EVENT = threading.Event()
@@ -103,6 +110,27 @@ class _WorkerCancelledError(Exception):
         self.step = step
 
 
+def _require_supported_training(config: TrainPipelineConfig) -> None:
+    """Check the model LeRobot will train, after ``validate()`` resolved its CLI and config file.
+
+    Raises:
+        ValueError: If the resolved reward model or policy is not supported.
+    """
+    reward_model = getattr(config, "reward_model", None)
+    if reward_model is not None:
+        reward_type = getattr(reward_model, "type", None)
+        if not isinstance(reward_type, str) or reward_type not in _SUPPORTED_REWARD_MODEL_TYPES:
+            supported = ", ".join(sorted(_SUPPORTED_REWARD_MODEL_TYPES)) or "none"
+            msg = f"LeRobot reward model {reward_type!r} is not supported; supported reward models: {supported}."
+            raise ValueError(msg)
+        return
+    policy_type = getattr(getattr(config, "policy", None), "type", None)
+    if not isinstance(policy_type, str) or policy_type not in _SUPPORTED_POLICY_TYPES:
+        supported = ", ".join(sorted(_SUPPORTED_POLICY_TYPES))
+        msg = f"LeRobot policy {policy_type!r} is not supported; supported policies: {supported}."
+        raise ValueError(msg)
+
+
 @contextmanager
 def _capture_config(total_steps: list[int | None]) -> Iterator[list[TrainPipelineConfig]]:
     from lerobot.configs.train import TrainPipelineConfig  # ruff: ignore[import-outside-top-level]
@@ -112,6 +140,7 @@ def _capture_config(total_steps: list[int | None]) -> Iterator[list[TrainPipelin
 
     def capture(config: TrainPipelineConfig) -> None:
         original_validate(config)
+        _require_supported_training(config)
         configs.append(config)
         steps = getattr(config, "steps", None)
         total_steps[0] = steps if isinstance(steps, int) and not isinstance(steps, bool) else None
@@ -249,12 +278,33 @@ def _run(arguments: list[str]) -> int:
         cancellation_listener.join(timeout=1.0)
 
 
+def _run_native_cli(arguments: list[str]) -> int:
+    """Run ``lerobot-train`` like its own script, with the same checks as a protocol run.
+
+    LeRobot's help, exits and errors propagate unchanged, so the caller sees its exit code.
+
+    Returns:
+        ``0`` when training finishes.
+    """
+    from lerobot.scripts import lerobot_train  # ruff: ignore[import-outside-top-level]
+
+    sys.argv = ["lerobot-train", *arguments]
+    with _capture_config([None]):
+        lerobot_train.main()
+    return 0
+
+
 def main() -> int:
     """Execute LeRobot's native train command with the worker protocol enabled.
+
+    ``LeRobotEngine.cli()`` sets ``PHYSICALAI_LEROBOT_NATIVE_CLI=1`` to run the command with
+    inherited streams and no protocol instead.
 
     Returns:
         LeRobot's exit code, or the worker cancellation status.
     """
+    if os.environ.get(_NATIVE_CLI_VARIABLE) == "1":
+        return _run_native_cli(sys.argv[1:])
     return _run(sys.argv[1:])
 
 

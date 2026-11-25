@@ -30,11 +30,15 @@ def _fake_lerobot_worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tup
     (fake_site / "lerobot" / "configs" / "__init__.py").write_text("", encoding="utf-8")
     config_module.write_text(
         "from pathlib import Path\n"
+        "from types import SimpleNamespace\n"
         "import os\n"
         "class TrainPipelineConfig:\n"
         "    def __init__(self):\n"
         "        self.steps = 2\n"
         "        self.output_dir = Path(os.environ['FAKE_RUN_OUTPUT'])\n"
+        "        self.policy = SimpleNamespace(type=os.environ.get('FAKE_POLICY_TYPE', 'act'))\n"
+        "        reward_type = os.environ.get('FAKE_REWARD_MODEL_TYPE')\n"
+        "        self.reward_model = SimpleNamespace(type=reward_type) if reward_type else None\n"
         "    def validate(self):\n"
         "        return None\n",
         encoding="utf-8",
@@ -147,3 +151,68 @@ def test_native_worker_waits_for_the_host_to_accept_its_handshake(
         run_worker(env, [], device="cpu", interpreter=sys.executable, expected_version=Version("9.9.9"))
 
     assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "error"),
+    [
+        ("FAKE_POLICY_TYPE", "groot", "LeRobot policy 'groot' is not supported"),
+        ("FAKE_REWARD_MODEL_TYPE", "reward_classifier", "LeRobot reward model 'reward_classifier' is not supported"),
+    ],
+    ids=["policy", "reward-model"],
+)
+def test_native_worker_rejects_an_unsupported_resolved_model_before_training(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    variable: str,
+    value: str,
+    error: str,
+) -> None:
+    """The worker re-checks what LeRobot will train after config validation."""
+    from physicalai_lerobot_policy_plugin import _worker, policy_support
+
+    assert _worker._SUPPORTED_POLICY_TYPES == policy_support.SUPPORTED_POLICY_TYPES
+    env, output_dir = _fake_lerobot_worker(monkeypatch, tmp_path)
+    monkeypatch.setenv(variable, value)
+
+    with pytest.raises(RuntimeError, match=error):
+        run_worker(env, [], device="cpu", interpreter=sys.executable)
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "exit_code"),
+    [
+        (None, None, 0),
+        ("FAKE_POLICY_TYPE", "groot", 1),
+        ("FAKE_REWARD_MODEL_TYPE", "reward_classifier", 1),
+    ],
+    ids=["supported", "policy", "reward-model"],
+)
+def test_lerobot_cli_checks_what_native_lerobot_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    variable: str | None,
+    value: str | None,
+    exit_code: int,
+) -> None:
+    """``LeRobotEngine.cli`` runs the worker's checks, even when LeRobot resolves a model the host did not see.
+
+    The fake LeRobot stands in for inputs the host does not read, such as a config file's
+    ``policy.path`` or a repeated ``--policy.path``.
+    """
+    from physicalai_lerobot_policy_plugin import engine as lerobot_engine_module
+
+    _, output_dir = _fake_lerobot_worker(monkeypatch, tmp_path)
+    if variable is not None and value is not None:
+        monkeypatch.setenv(variable, value)
+
+    def fake_interpreter_for(env: WorkerEnv, *, accelerator: str, interpreter: str | Path | None) -> Path:
+        del env, accelerator, interpreter
+        return Path(sys.executable)
+
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
+
+    assert LeRobotEngine.cli(["--policy.type=act", "--policy.device=cpu"]) == exit_code
+    assert output_dir.exists() is (exit_code == 0)

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
@@ -143,28 +142,35 @@ def test_uint8_camera_actions_match_native_float_preprocessing(tmp_path: Path) -
         np.testing.assert_allclose(runtime_action, native_action.numpy(), rtol=1e-5, atol=1e-6)
 
 
-def test_groot_package_is_rejected_before_loading_remote_policy_code(
+def test_unsafe_package_is_rejected_before_lerobot_loads_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Reject unsupported Groot, which loads remote code, before the policy factory can load its model class."""
+    """Reject unsupported policies and disallowed processor steps before LeRobot parses config.json."""
     from lerobot.configs.policies import PreTrainedConfig  # ruff: ignore[import-outside-top-level]
     from lerobot.policies import factory  # ruff: ignore[import-outside-top-level]
-    from lerobot.utils import import_utils  # ruff: ignore[import-outside-top-level]
 
-    artifact = tmp_path / "groot-model"
-    artifact.mkdir()
-    (artifact / "config.json").write_text('{"type":"groot"}', encoding="utf-8")
-
-    def fake_config_load(_cls: type, *_args: object, **_kwargs: object) -> SimpleNamespace:
-        return SimpleNamespace(type="groot")
-
-    monkeypatch.setattr(PreTrainedConfig, "from_pretrained", classmethod(fake_config_load))
-    monkeypatch.setattr(import_utils, "register_third_party_plugins", lambda: None)
-    get_policy_class = Mock(side_effect=AssertionError("Groot model factory must not run"))
+    config_load = Mock(side_effect=AssertionError("PreTrainedConfig.from_pretrained must not run"))
+    monkeypatch.setattr(PreTrainedConfig, "from_pretrained", classmethod(config_load))
+    get_policy_class = Mock(side_effect=AssertionError("get_policy_class must not run"))
     monkeypatch.setattr(factory, "get_policy_class", get_policy_class)
 
+    groot = tmp_path / "groot-model"
+    groot.mkdir()
+    (groot / "config.json").write_text('{"type":"groot"}', encoding="utf-8")
     with pytest.raises(ValueError, match="LeRobot policy 'groot' is not supported"):
-        LeRobotRuntimeAdapter().load(artifact)
+        LeRobotRuntimeAdapter().load(groot)
 
+    act = tmp_path / "act-model"
+    act.mkdir()
+    (act / "config.json").write_text('{"type":"act"}', encoding="utf-8")
+    (act / "policy_preprocessor.json").write_text(
+        '{"name":"pre","steps":[{"registry_name":"action_tokenizer_processor"}]}',
+        encoding="utf-8",
+    )
+    (act / "policy_postprocessor.json").write_text('{"name":"post","steps":[]}', encoding="utf-8")
+    with pytest.raises(ValueError, match="disallowed processor step"):
+        LeRobotRuntimeAdapter().load(act)
+
+    config_load.assert_not_called()
     get_policy_class.assert_not_called()
