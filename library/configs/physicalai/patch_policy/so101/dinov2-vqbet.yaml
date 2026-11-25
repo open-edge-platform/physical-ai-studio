@@ -1,0 +1,53 @@
+# DINOv2 VQ-BeT SO101 pick-and-place recipe
+model:
+  class_path: physicalai.policies.PatchPolicy
+  init_args:
+    n_obs_steps: 2
+    chunk_size: 5
+    n_action_steps: 1
+    hidden_dim: 384
+    num_layers: 8
+    num_heads: 8
+    optimizer_lr: 3e-4
+    optimizer_weight_decay: 1e-4
+    vqvae_iters: 1000
+    vqvae_batch_size: 1024
+    compile_model: false
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: alfieroddan/pick-n-place-so101
+    revision: 55331af1d3b589adc5cb54a6196ac0625b601821
+    train_batch_size: 32
+    val_batch_size: 32
+    data_format: physicalai
+    num_workers: 8
+    val_split: 0.1
+    val_split_seed: 42
+
+trainer:
+  max_epochs: 60
+  accelerator: gpu
+  devices: 1
+  precision: 32-true
+  accumulate_grad_batches: 4
+  default_root_dir: output
+  log_every_n_steps: 20
+  check_val_every_n_epoch: 1
+  logger:
+    class_path: lightning.pytorch.loggers.CSVLogger
+    init_args:
+      name: patch-so101
+      save_dir: output
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 5
+        save_last: true
+        save_weights_only: false
+        filename: "patch-so101-{epoch:03d}-{val/loss:.4f}"
+        auto_insert_metric_name: false
+    - class_path: physicalai.train.IterationTimer

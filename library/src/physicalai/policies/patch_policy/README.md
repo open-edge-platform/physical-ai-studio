@@ -51,6 +51,24 @@ physicalai fit --config configs/physicalai/patch_policy/pusht/dinov2-vqbet.yaml
 
 The recipe trains for 400 epochs with five history frames. It logs metrics to W&B and records local rollout videos in `output/rollouts`.
 
+## Train SO101
+
+From `library/`, use the [SO101 DINOv2 VQ-BeT YAML](../../../../configs/physicalai/patch_policy/so101/dinov2-vqbet.yaml):
+
+```bash
+physicalai fit --config configs/physicalai/patch_policy/so101/dinov2-vqbet.yaml
+```
+
+The recipe trains on `alfieroddan/pick-n-place-so101` for 60 epochs with two history frames, five-action chunks,
+and one executed action per prediction. It uses FP32 and an effective batch size of 128 (batch 32, accumulation 4,
+one GPU). Validation uses a 10% held-out episode split with split seed 42, not simulated robot rollouts.
+
+This is a starting recipe, not a replicated SO101 performance result. Predictions use only images, not joint state.
+VQ-BeT uses raw action units with the default `vq_action_scale=500`; verify held-out action errors and supervised robot
+performance before deployment.
+
+## Training Notes
+
 Fresh VQ-BeT tokenizer fitting supports only LeRobot datasets and single-device training. These restrictions are checked when fitting with the lightning trainer.
 
 `PatchPolicy.from_config(config)` initializes pretrained encoder weights by default. Pass `encoder_pretrained=False` to skip weight initialization; checkpoint loading always restores saved weights without downloading encoder artifacts.
