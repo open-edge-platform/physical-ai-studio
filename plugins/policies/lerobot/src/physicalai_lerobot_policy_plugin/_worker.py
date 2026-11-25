@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 _PROTOCOL_VERSION = 1
 _PROTOCOL_PREFIX = bytes([30]) + b"physicalai-worker "
 _NON_METRIC_FIELDS = frozenset({"steps", "samples", "episodes", "epochs"})
+# Mirrors policy_support.SUPPORTED_POLICY_TYPES; kept inline because workers run without the plugin installed.
+_SUPPORTED_POLICY_TYPES = frozenset({"act", "diffusion", "pi05", "smolvla"})
 # How long to wait for the host to accept the handshake; matches the host's startup timeout.
 _ACK_TIMEOUT_SECONDS = 60.0
 _CANCEL_EVENT = threading.Event()
@@ -112,6 +114,11 @@ def _capture_config(total_steps: list[int | None]) -> Iterator[list[TrainPipelin
 
     def capture(config: TrainPipelineConfig) -> None:
         original_validate(config)
+        policy_type = getattr(getattr(config, "policy", None), "type", None)
+        if not isinstance(policy_type, str) or policy_type not in _SUPPORTED_POLICY_TYPES:
+            supported = ", ".join(sorted(_SUPPORTED_POLICY_TYPES))
+            msg = f"LeRobot policy {policy_type!r} is not supported; supported policies: {supported}."
+            raise ValueError(msg)
         configs.append(config)
         steps = getattr(config, "steps", None)
         total_steps[0] = steps if isinstance(steps, int) and not isinstance(steps, bool) else None

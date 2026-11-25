@@ -433,7 +433,7 @@ def test_lerobot_cli_reads_the_policy_type_of_a_local_checkpoint_and_train_confi
     assert LeRobotEngine.cli(["--policy.path", str(checkpoint)]) == 0
     assert LeRobotEngine.cli([f"--config_path={train_config}"]) == 0
     assert LeRobotEngine.cli([f"--policy.path={checkpoint}", "--policy.type=act"]) == 0
-    assert selected == ["pi", "smolvla", "default"]
+    assert selected == ["pi", "smolvla", "pi"]
 
 
 def test_lerobot_cli_reads_the_policy_type_of_a_hub_checkpoint(
@@ -609,6 +609,29 @@ def test_lerobot_help_needs_no_policy_type(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert LeRobotEngine.cli(["--help"]) == 0
     assert selected == ["default"]
+
+
+def test_lerobot_rejects_policy_path_and_help_allowlist_bypasses(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    selected = _capture_cli_environment(monkeypatch)
+    groot = tmp_path / "groot"
+    groot.mkdir()
+    (groot / "config.json").write_text('{"type": "groot"}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="LeRobot policy 'groot' is not supported"):
+        LeRobotEngine.cli(["--policy.type=act", f"--policy.path={groot}", "--policy.device=cpu"])
+    with pytest.raises(ValueError, match="LeRobot policy 'groot' is not supported"):
+        LeRobotEngine.run(
+            {"policy": {"type": "act", "path": str(groot)}},
+            dataset=tmp_path,
+            output_dir=tmp_path,
+            device="cpu",
+        )
+    with pytest.raises(ValueError, match="LeRobot policy 'groot' is not supported"):
+        LeRobotEngine.cli(["--job_name", "--help", "--policy.type=groot"])
+    assert selected == []
 
 
 def test_unsupported_families_keep_their_declared_environments() -> None:

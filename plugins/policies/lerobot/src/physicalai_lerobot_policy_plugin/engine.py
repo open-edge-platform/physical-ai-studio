@@ -168,7 +168,7 @@ class LeRobotEngine(TrainingEngine):
                 msg = "LeRobotEngine requires a worker environment."
                 raise RuntimeError(msg)
             policy_type = _policy_type_from_cli(argv)
-            if not _asks_for_help(argv):
+            if policy_type is not None or not _asks_for_help(argv):
                 require_supported_policy(policy_type)
             env = cls.environment_for_policy(policy_type)
             requested_device = _device_from_cli(argv)
@@ -441,19 +441,20 @@ def _device_from_cli(arguments: Sequence[str]) -> str | None:
 def _policy_type_from_cli(arguments: Sequence[str]) -> str | None:
     """Find the native policy type a ``lerobot-train`` command line will train.
 
-    Precedence follows LeRobot: an explicit ``--policy.type``, then the type stored with a
-    ``--policy.path`` checkpoint (local or on the Hugging Face Hub), then ``--config_path``.
+    Precedence follows LeRobot's ``TrainPipelineConfig._resolve_pretrained_from_cli()``:
+    ``--policy.path`` (local or on the Hugging Face Hub) overwrites ``self.policy`` from its
+    ``config.json``, then ``--policy.type``, then ``--config_path``.
 
     Returns:
         The policy type, or ``None`` when the command line does not determine it.
     """
     options = _cli_options(arguments)
-    policy_type = options.get("--policy.type")
-    if policy_type:
-        return policy_type
     policy_path = options.get("--policy.path")
     if policy_path:
         return _policy_type_from_config(policy_path, policy_config=True) or _hub_policy_type(policy_path)
+    policy_type = options.get("--policy.type")
+    if policy_type:
+        return policy_type
     return _policy_type_from_config(options.get("--config_path"))
 
 
@@ -463,12 +464,12 @@ def _settings_policy_type(flattened: Mapping[str, object]) -> str | None:
     Returns:
         The policy type, or ``None`` when the settings do not determine it.
     """
-    policy_type = flattened.get("policy.type")
-    if isinstance(policy_type, str) and policy_type.strip():
-        return policy_type.strip()
     path = flattened.get("policy.path")
     if isinstance(path, str) and path.strip():
         return _policy_type_from_config(path, policy_config=True) or _hub_policy_type(path)
+    policy_type = flattened.get("policy.type")
+    if isinstance(policy_type, str) and policy_type.strip():
+        return policy_type.strip()
     config_path = flattened.get("config_path")
     return _policy_type_from_config(config_path) if isinstance(config_path, str) and config_path.strip() else None
 

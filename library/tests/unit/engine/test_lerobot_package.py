@@ -218,10 +218,19 @@ def test_export_rejects_unsafe_policy_directory_component(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     ("step_overrides", "error"),
     [
-        ({"registry_name": None, "class": "os.system"}, "names a class outside `lerobot.`"),
-        ({"registry_name": None, "class": "lerobot.processor.normalize.NormalizeStep"}, None),
+        ({"registry_name": "smolvla_new_line_processor"}, None),
+        ({"registry_name": "action_tokenizer_processor"}, "disallowed processor step"),
+        (
+            {"registry_name": None, "class": "lerobot.processor.tokenizer_processor.ActionTokenizerProcessorStep"},
+            "disallowed processor class",
+        ),
+        (
+            {"registry_name": None, "class": "lerobot.processor.normalize_processor.NormalizerProcessorStep"},
+            None,
+        ),
         ({"registry_name": "normalizer_processor", "class": "lerobot.processor.X"}, "not both"),
         ({"state_file": "../outside.safetensors"}, "invalid state file"),
+        ({"state_file": "a..b.safetensors"}, "invalid state file"),
         ({"state_file": "weights.pickle"}, "invalid state file"),
         ({"state_file": "missing.safetensors"}, "state file is missing"),
     ],
@@ -242,6 +251,21 @@ def test_processor_configs_are_checked_before_lerobot_loads_them(
     else:
         with pytest.raises((ValueError, FileNotFoundError), match=error):
             validate_processor_configs(model_dir)
+
+
+def test_processor_validation_rejects_symlinks(tmp_path: Path) -> None:
+    from physicalai_lerobot_policy_plugin.policy_support import validate_processor_configs
+
+    outside = tmp_path / "outside.safetensors"
+    outside.write_bytes(b"stats")
+    model_dir = tmp_path / "pretrained_model"
+    _write_native_checkpoint(model_dir)
+    state_file = model_dir / "policy_preprocessor_step_0_normalizer_processor.safetensors"
+    state_file.unlink()
+    state_file.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        validate_processor_configs(model_dir)
 
 
 def test_export_rejects_an_incomplete_or_unsupported_checkpoint(tmp_path: Path) -> None:
