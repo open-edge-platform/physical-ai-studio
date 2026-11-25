@@ -42,6 +42,10 @@ _MAX_SETTING_DEPTH = 10
 _PLUGIN_DISTRIBUTION = "physicalai-lerobot-policy-plugin"
 _PLUGIN_ROOT = resources.files(__package__)
 _HUB_REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*")
+# Tells the worker script to run lerobot-train with inherited streams instead of the host protocol.
+_NATIVE_CLI_VARIABLE = "PHYSICALAI_LEROBOT_NATIVE_CLI"
+# LeRobot trains `reward_model` instead of `policy` when one is set; the worker also checks this.
+_REWARD_MODEL_UNSUPPORTED = "LeRobot reward-model training is not supported; set only `policy` options."
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +117,15 @@ class LeRobotEngine(TrainingEngine):
         Raises:
             FileNotFoundError: If config serialization does not write ``train_config.json``.
             TypeError: If *config* is not a native serializable LeRobot config.
-            ValueError: If the native device is unsupported by the worker environment.
+            ValueError: If *config* trains a reward model or an unsupported policy, or the native
+                device is unsupported by the worker environment.
         """
         save_pretrained = getattr(config, "save_pretrained", None)
         if not callable(save_pretrained):
             msg = "LeRobotEngine.train() requires a native TrainPipelineConfig with save_pretrained()."
             raise TypeError(msg)
+        if getattr(config, "reward_model", None) is not None:
+            raise ValueError(_REWARD_MODEL_UNSUPPORTED)
 
         policy = getattr(config, "policy", None)
         policy_type = require_supported_policy(getattr(policy, "type", None))
@@ -152,34 +159,48 @@ class LeRobotEngine(TrainingEngine):
     ) -> int:
         """Run ``lerobot-train`` with inherited standard streams and its exact exit code.
 
+        In a managed environment the command runs through the plugin's worker script, which
+        rejects an unsupported policy or reward model once LeRobot has resolved its command
+        line and config file. A user-managed *interpreter* runs ``lerobot-train`` as given.
+
         Returns:
             The native command's exit status.
 
         Raises:
             RuntimeError: If the engine does not declare a worker environment.
-            ValueError: If the native device has no matching worker extra.
+            ValueError: If the command line sets a reward model or an unsupported policy, or the
+                native device has no matching worker extra.
         """
         if interpreter is not None:
             # A user-managed environment: run its LeRobot as given, without choosing a managed
             # environment (no Hub lookups) or checking the device against managed profiles.
             python = Path(interpreter).expanduser()
-        else:
-            if cls.env is None:
-                msg = "LeRobotEngine requires a worker environment."
-                raise RuntimeError(msg)
-            policy_type = _policy_type_from_cli(argv)
-            if policy_type is not None or not _asks_for_help(argv):
-                require_supported_policy(policy_type)
-            env = cls.environment_for_policy(policy_type)
-            requested_device = _device_from_cli(argv)
-            _, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
-            python = interpreter_for(env, accelerator=accelerator, interpreter=None)
-        script_name = "lerobot-train.exe" if os.name == "nt" else "lerobot-train"
-        executable = scripts_dir(python) / script_name
-        return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.  # nosec B603
-            [str(executable), *argv],
-            shell=False,
-        )
+            script_name = "lerobot-train.exe" if os.name == "nt" else "lerobot-train"
+            return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.  # nosec B603
+                [str(scripts_dir(python) / script_name), *argv],
+                shell=False,
+            )
+        if cls.env is None:
+            msg = "LeRobotEngine requires a worker environment."
+            raise RuntimeError(msg)
+        if any(argument.startswith("--reward_model.") for argument in argv):
+            raise ValueError(_REWARD_MODEL_UNSUPPORTED)
+        policy_type = _policy_type_from_cli(argv)
+        if policy_type is not None or not _asks_for_help(argv):
+            require_supported_policy(policy_type)
+        env = cls.environment_for_policy(policy_type)
+        requested_device = _device_from_cli(argv)
+        _, accelerator = _resolve_worker_device(requested_device, allowed=env.accelerators)
+        python = interpreter_for(env, accelerator=accelerator, interpreter=None)
+        # The host only reads the command line to choose an environment. The worker script checks
+        # what LeRobot resolves (a config file's `policy.path`, repeated flags, a Hub revision)
+        # before training. `-P` keeps the plugin folder off the worker's sys.path.
+        with resources.as_file(env.worker) as worker:
+            return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # Native CLI passthrough; arguments are never shell-evaluated.  # nosec B603
+                [str(python), "-P", str(worker), *argv],
+                env={**os.environ, _NATIVE_CLI_VARIABLE: "1"},
+                shell=False,
+            )
 
     @classmethod
     def run(
@@ -199,7 +220,8 @@ class LeRobotEngine(TrainingEngine):
 
         Raises:
             RuntimeError: If the engine does not declare a worker environment.
-            ValueError: If the selected native device is unsupported.
+            ValueError: If the settings set a reward model or an unsupported policy, or the
+                selected native device is unsupported.
         """
         if cls.env is None:
             msg = "LeRobotEngine requires a worker environment."
@@ -208,6 +230,11 @@ class LeRobotEngine(TrainingEngine):
         # settings select the same environment and device.
         flattened: dict[str, object] = {}
         _flatten_settings(settings, "", flattened)
+        if any(
+            value is not None and (name == "reward_model" or name.startswith("reward_model."))
+            for name, value in flattened.items()
+        ):
+            raise ValueError(_REWARD_MODEL_UNSUPPORTED)
         env = cls.environment_for_policy(require_supported_policy(_settings_policy_type(flattened)))
         settings_device = _settings_device(flattened)
         requested_device = (

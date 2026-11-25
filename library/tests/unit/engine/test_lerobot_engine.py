@@ -42,7 +42,8 @@ def test_lerobot_schema_and_policy_catalog_come_from_native_config_types() -> No
 def test_lerobot_cli_uses_native_device_for_worker_extra_and_passes_args_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[list[str], bool]] = []
+    """The managed CLI runs lerobot-train through the worker script's native-CLI mode."""
+    calls: list[tuple[list[str], bool, str | None]] = []
     prepared: list[str] = []
 
     def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
@@ -50,8 +51,8 @@ def test_lerobot_cli_uses_native_device_for_worker_extra_and_passes_args_unchang
         prepared.append(accelerator)
         return Path("/env/bin/python")
 
-    def fake_call(command: list[str], *, shell: bool) -> int:
-        calls.append((command, shell))
+    def fake_call(command: list[str], *, env: dict[str, str], shell: bool) -> int:
+        calls.append((command, shell, env.get("PHYSICALAI_LEROBOT_NATIVE_CLI")))
         return 2
 
     monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
@@ -62,7 +63,7 @@ def test_lerobot_cli_uses_native_device_for_worker_extra_and_passes_args_unchang
 
     assert result == 2
     assert prepared == ["cuda"]
-    assert calls == [(["/env/bin/lerobot-train", *argv], False)]
+    assert calls == [(["/env/bin/python", "-P", str(LeRobotEngine.env.worker), *argv], False, "1")]
 
 
 def test_lerobot_cli_auto_selects_worker_extra_when_device_is_unspecified(
@@ -82,7 +83,7 @@ def test_lerobot_cli_auto_selects_worker_extra_when_device_is_unspecified(
 
     monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
     monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
-    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, **_kwargs: 0)
 
     assert LeRobotEngine.cli(["--policy.type=act", "--steps=2"]) == 0
     assert selected == ["auto"]
@@ -101,7 +102,7 @@ def test_lerobot_cli_uses_native_config_device_to_select_worker_extra(
         return Path("/env/bin/python")
 
     monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
-    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, **_kwargs: 0)
 
     assert LeRobotEngine.cli(["--config_path", str(config)]) == 0
     assert prepared == ["xpu"]
@@ -122,7 +123,7 @@ def test_lerobot_cli_uses_policy_path_config_to_select_worker_extra(
         return Path("/env/bin/python")
 
     monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
-    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, **_kwargs: 0)
 
     assert LeRobotEngine.cli(["--policy.path", str(policy_path)]) == 0
     assert prepared == ["xpu"]
@@ -142,8 +143,7 @@ def test_lerobot_cli_native_flag_overrides_device_in_config_without_rewriting_ar
         prepared.append(accelerator)
         return Path("/env/bin/python")
 
-    def fake_call(command: list[str], *, shell: bool) -> int:
-        del shell
+    def fake_call(command: list[str], **_kwargs: object) -> int:
         calls.append(command)
         return 0
 
@@ -153,7 +153,7 @@ def test_lerobot_cli_native_flag_overrides_device_in_config_without_rewriting_ar
 
     assert LeRobotEngine.cli(argv) == 0
     assert prepared == ["cuda"]
-    assert calls == [["/env/bin/lerobot-train", *argv]]
+    assert calls == [["/env/bin/python", "-P", str(LeRobotEngine.env.worker), *argv]]
 
 
 def test_lerobot_constructor_no_longer_accepts_worker_accelerator() -> None:
@@ -400,7 +400,7 @@ def _capture_cli_environment(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         return Path("/env/bin/python")
 
     monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
-    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, **_kwargs: 0)
     return selected
 
 
@@ -632,6 +632,56 @@ def test_lerobot_rejects_policy_path_and_help_allowlist_bypasses(
     with pytest.raises(ValueError, match="LeRobot policy 'groot' is not supported"):
         LeRobotEngine.cli(["--job_name", "--help", "--policy.type=groot"])
     assert selected == []
+
+
+def test_lerobot_rejects_reward_model_training_before_starting_a_worker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """LeRobot trains a configured reward model instead of the policy, so a reward model is rejected."""
+    cli_environments = _capture_cli_environment(monkeypatch)
+    worker_environments: list[str] = []
+
+    def fake_run_worker(env: WorkerEnv, *_args: object, **_kwargs: object) -> Run:
+        worker_environments.append(env.name)
+        return Run(framework="lerobot", output_dir=tmp_path, checkpoint=None)
+
+    monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
+
+    class _Policy:
+        type = "act"
+        device = "cpu"
+
+    class _Config:
+        policy = _Policy()
+        reward_model = object()
+
+        def save_pretrained(self, directory: Path) -> None:
+            pytest.fail("A reward-model config must not be serialized.")
+
+    match = "reward-model training is not supported"
+    with pytest.raises(ValueError, match=match):
+        LeRobotEngine.cli(["--policy.type=act", "--reward_model.type=reward_classifier", "--policy.device=cpu"])
+    with pytest.raises(ValueError, match=match):
+        LeRobotEngine().train(_Config())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=match):
+        LeRobotEngine.run(
+            {"policy": {"type": "act"}, "reward_model": {"type": "reward_classifier"}},
+            dataset=tmp_path,
+            output_dir=tmp_path,
+            device="cpu",
+        )
+    assert cli_environments == []
+    assert worker_environments == []
+
+    # A schema-driven form may send an unset reward model; that still trains the policy.
+    LeRobotEngine.run(
+        {"policy": {"type": "act"}, "reward_model": None},
+        dataset=tmp_path,
+        output_dir=tmp_path,
+        device="cpu",
+    )
+    assert worker_environments == ["default"]
 
 
 def test_unsupported_families_keep_their_declared_environments() -> None:
