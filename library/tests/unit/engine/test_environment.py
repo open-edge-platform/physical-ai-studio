@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -198,6 +199,22 @@ def test_worker_lock_and_plugin_metadata_are_the_version_sources(
     assert env.supported().contains("0.6.1")
     assert not env.supported().contains("0.7.0")
     assert env.lock_hash() == _environment.lock_hash(env)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="creating symbolic links may need privileges on Windows")
+def test_bundled_worker_lock_must_be_a_regular_file(tmp_path: Path) -> None:
+    env = _worker_env(tmp_path / "project")
+    lock = tmp_path / "project" / "uv.lock"
+    real_lock = tmp_path / "elsewhere.lock"
+    lock.rename(real_lock)
+    lock.symlink_to(real_lock)
+
+    with pytest.raises(ValueError, match="cannot be a symbolic link"):
+        _environment.lock_bytes(env)
+
+    lock.unlink()
+    with pytest.raises(FileNotFoundError, match="does not include uv.lock"):
+        _environment.lock_bytes(env)
 
 
 def _marker(env: WorkerEnv, **overrides: object) -> str:

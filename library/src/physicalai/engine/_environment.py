@@ -263,7 +263,8 @@ def lock_bytes(env: WorkerEnv, project: Path | None = None) -> bytes:
 
     Raises:
         FileNotFoundError: If the project does not include a lock.
-        ValueError: If the source has no lock before preparation and no project was given.
+        ValueError: If the source has no lock before preparation and no project was given, or a
+            bundled lock is a symbolic link.
     """
     if project is not None:
         lock = project / "uv.lock"
@@ -271,12 +272,19 @@ def lock_bytes(env: WorkerEnv, project: Path | None = None) -> bytes:
             msg = f"Worker project for {env.framework!r} does not include uv.lock."
             raise FileNotFoundError(msg)
         return lock.read_bytes()
-    read_lock = getattr(env.source, "lock", None)
-    lock_data = read_lock() if callable(read_lock) else None
-    if lock_data is None:
-        msg = f"The {env.framework!r} {env.name!r} environment's lock is available only after preparation."
-        raise ValueError(msg)
-    return lock_data
+    source = env.source
+    if isinstance(source, isolate.BundledProject):
+        # A bundled project ships its lock, so it can be read before preparation.
+        lock = source.path.joinpath("uv.lock")
+        if isinstance(lock, Path) and lock.is_symlink():
+            msg = f"Bundled worker lock cannot be a symbolic link: {lock}."
+            raise ValueError(msg)
+        if not lock.is_file():
+            msg = f"Bundled worker project for {env.framework!r} does not include uv.lock."
+            raise FileNotFoundError(msg)
+        return lock.read_bytes()
+    msg = f"The {env.framework!r} {env.name!r} environment's lock is available only after preparation."
+    raise ValueError(msg)
 
 
 def lock_hash(env: WorkerEnv, project: Path | None = None) -> str:
