@@ -1,0 +1,50 @@
+# DINOv2 VQ-BeT PushT recipe
+model:
+  class_path: physicalai.policies.PatchPolicy
+  init_args:
+    n_obs_steps: 5
+    hidden_dim: 512
+    optimizer_lr: 5.5e-5
+    optimizer_weight_decay: 2e-4
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: alfieroddan/pushT-224x224
+    revision: c50cea16d2f0884353c9bd65113ee9cc892d094f
+    train_batch_size: 8
+    num_workers: 0 # PushT gym requires single-threaded data loading
+    val_gym:
+      class_path: physicalai.gyms.HistoryGym
+      init_args:
+        gym:
+          class_path: physicalai.gyms.PushTGym
+          dict_kwargs:
+            observation_width: 224
+            observation_height: 224
+        n_obs_steps: 5
+        stride: 1
+        keys: [images.top]
+    num_rollouts_val: 10
+
+trainer:
+  max_epochs: 400
+  accelerator: gpu
+  devices: 1
+  precision: 32-true
+  num_sanity_val_steps: 1
+  check_val_every_n_epoch: 10
+  log_every_n_steps: 100
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      project: pushT-224x224
+      name: dinov2-vqbet-hub224-v2
+      save_dir: output
+  callbacks:
+    - class_path: physicalai.train.RolloutVideoRecorderCallback
+      init_args:
+        output_dir: output/rollouts
+        fps: 10
+        frame_key: top
+        record_mode: all
