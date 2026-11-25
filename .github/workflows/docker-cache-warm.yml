@@ -24,6 +24,7 @@ env:
 
 jobs:
   warm:
+    if: github.ref == 'refs/heads/main'
     name: Warm cache (${{ matrix.device }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
