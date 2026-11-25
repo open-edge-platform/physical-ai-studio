@@ -43,6 +43,8 @@ export const InferenceMode = () => {
     const [threshold, setThreshold] = useState(0.5);
     const [horizon, setHorizon] = useState(RTC_HORIZON);
     const [guidance, setGuidance] = useState(RTC_GUIDANCE);
+    // In ms; 0 lets RTC measure the delay on the first inferences instead.
+    const [latencyMs, setLatencyMs] = useState(0);
     const modelTakesRtc = state?.model?.rtc === true;
     // shortcut: set by hand, upgrade to the model's training fps once exports record it.
     const [hz, setHz] = useState(30);
@@ -78,12 +80,13 @@ export const InferenceMode = () => {
             type: 'model',
             task: selectedTask,
             hz,
-            // Each mode reads its own settings: the threshold for sync and async, the horizon and weight for RTC.
+            // Each mode reads its own settings: the threshold for sync and async, the rest for RTC.
             execution: {
                 mode,
                 request_threshold: threshold,
                 execution_horizon: horizon,
                 max_guidance_weight: guidance,
+                initial_latency_s: latencyMs > 0 ? latencyMs / 1000 : null,
             },
             // The follower eases onto the model's actions, which may start far from where it is.
             grace_s: 3,
@@ -149,6 +152,17 @@ export const InferenceMode = () => {
                         step={0.5}
                         value={guidance}
                         onChange={setGuidance}
+                        isDisabled={isRunning}
+                    />
+                    <Slider
+                        label='Expected inference latency'
+                        width='100%'
+                        minValue={0}
+                        maxValue={1000}
+                        step={10}
+                        value={latencyMs}
+                        onChange={setLatencyMs}
+                        getValueLabel={(value) => (value > 0 ? `${value} ms` : 'Measure')}
                         isDisabled={isRunning}
                     />
                 </>
