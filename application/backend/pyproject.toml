@@ -34,7 +34,7 @@ dependencies = [
   "sse-starlette>=2.0.0",
   "huggingface-hub>=0.27",
   "psutil~=7.2",
-  "physicalai-studio-plugin~=0.5.0",
+  "physicalai-studio-plugin~=0.6.0",
   "physicalai-so101-plugin~=0.3.0",
   'physicalai-trossen-plugin~=0.3.0; sys_platform == "darwin" or sys_platform == "linux"',
   "asyncssh~=2.24",
@@ -91,9 +91,9 @@ xpu = [
 
 # Simulation is off unless a simulation plugin is installed: without one Studio offers no
 # simulated robot types, so nothing about simulation shows.
-mujoco = ["physicalai-mujoco-plugin~=0.5.0"]
+mujoco = ["physicalai-mujoco-plugin~=0.6.0"]
 
-sim-e2e = ["physicalai-mujoco-plugin==0.5.0", "defusedxml>=0.7.1"]
+sim-e2e = ["physicalai-mujoco-plugin==0.6.0", "defusedxml>=0.7.1"]
 
 tests = [
     "defusedxml>=0.7.1",
@@ -139,9 +139,9 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-# Same Runtime as the library: main plus openvinotoolkit/physicalai#490, from the fork until it merges;
-# then move to openvinotoolkit/physicalai, and to PyPI once a release has it.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "d08efb735c76fcd8ec954c9a54a44897484ff766" }
+# Same Runtime as the library: main at the `physicalai.isolate` merge (openvinotoolkit/physicalai#479);
+# move to the PyPI release once one includes isolate.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "c2535de38a38950f4ad0f4b73178ba53429efa16" }
 physicalai-train = { path = "../../library", editable = true }
 torchao = [
     { index = "pytorch-cpu", extra = "cpu" },

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
+
+import pytest
 
 from runtime_session.resolve import project_resolvers
 from schemas.project_camera import IPCamera, SimulationCamera
@@ -85,3 +87,28 @@ async def test_simulation_cameras_stream_from_where_their_simulation_runs_now() 
 
     robot_simulations.resolve_cameras.assert_awaited_once_with(PROJECT_ID, [stored])
     assert environment.cameras == [streaming]
+
+
+async def test_an_autopilot_needs_no_leader_robot() -> None:
+    from schemas.environment import TeleoperatorAutopilotWithRobot
+
+    simulations = SimpleNamespace(is_simulated=Mock(return_value=True), point_leader_at_follower=AsyncMock())
+    draft = EnvironmentDraft.model_validate(
+        {"name": "Bench", "robots": [{"robot_id": str(FOLLOWER_ID), "tele_operator": {"type": "autopilot"}}]}
+    )
+
+    environment = await _resolvers(simulations).environment(draft)
+
+    simulations.is_simulated.assert_called_once_with(FOLLOWER)
+    simulations.point_leader_at_follower.assert_not_awaited()
+    assert environment.robots[0].tele_operator == TeleoperatorAutopilotWithRobot()
+
+
+async def test_an_autopilot_cannot_lead_a_robot_without_a_simulation() -> None:
+    simulations = SimpleNamespace(is_simulated=Mock(return_value=False), point_leader_at_follower=AsyncMock())
+    draft = EnvironmentDraft.model_validate(
+        {"name": "Bench", "robots": [{"robot_id": str(FOLLOWER_ID), "tele_operator": {"type": "autopilot"}}]}
+    )
+
+    with pytest.raises(ValueError, match="no simulation"):
+        await _resolvers(simulations).environment(draft)

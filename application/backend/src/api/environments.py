@@ -8,7 +8,12 @@ from physicalai.config import Config
 
 from api.dependencies import RobotClientFactoryDep, get_environment_service
 from api.robot_simulation import resolve_export_cameras
-from schemas.environment import Environment, EnvironmentWithRelations, TeleoperatorRobotWithRobot
+from schemas.environment import (
+    Environment,
+    EnvironmentWithRelations,
+    TeleoperatorAutopilotWithRobot,
+    TeleoperatorRobotWithRobot,
+)
 from services.environment_service import EnvironmentService
 from services.runtime_export import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
 
@@ -54,18 +59,29 @@ async def get_runtime_config(
     environment_service: Annotated[EnvironmentService, Depends(get_environment_service)],
     robot_client_factory: RobotClientFactoryDep,
 ) -> Response:
-    """Download a runnable physicalai teleoperation configuration."""
+    """Download a runnable physicalai teleoperation configuration.
+
+    Not for an environment the simulation's autopilot leads: it leads only through Studio's automatic
+    recording, which a runtime configuration cannot run.
+    """
     environment = await environment_service.get_environment_by_id(project_id, environment_id)
     if len(environment.robots) != 1:
         raise HTTPException(status_code=400, detail="Runtime export requires exactly one follower robot")
     relation = environment.robots[0]
+    if isinstance(relation.tele_operator, TeleoperatorAutopilotWithRobot):
+        raise HTTPException(
+            status_code=400,
+            detail="The simulation's autopilot leads only through Studio's automatic recording; "
+            "choose a leader robot to export a teleoperation configuration",
+        )
     if not isinstance(relation.tele_operator, TeleoperatorRobotWithRobot) or relation.tele_operator.robot is None:
         raise HTTPException(status_code=400, detail="Runtime teleoperation export requires a leader robot")
+    leader = relation.tele_operator.robot
 
     try:
         document = await build_runtime_config(
             follower=relation.robot,
-            leader=relation.tele_operator.robot,
+            leader=leader,
             cameras=await resolve_export_cameras(request, environment_service.session, project_id, environment.cameras),
             robot_factory=robot_client_factory,
             fps=RUNTIME_FPS,

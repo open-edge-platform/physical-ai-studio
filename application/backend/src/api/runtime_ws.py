@@ -10,6 +10,7 @@ and the store is sampled at ``hz`` into one binary observation per tick. See
 """
 
 import asyncio
+from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -32,6 +33,7 @@ from api.dependencies import (
     RuntimeSessionRegistryDep,
     SimulationManagerDep,
 )
+from exceptions import RuntimeSessionCommandError
 from runtime_session import session as runtime_session
 from runtime_session.bus import STATUSES, Bus, BusRequestError, NoResponderError, Subscription, command_key
 from runtime_session.resolve import project_resolvers
@@ -48,7 +50,7 @@ from schemas.runtime_session import (
     StateMessage,
     StatusMessage,
 )
-from schemas.simulation import SimulationStatus
+from schemas.simulation import SimulationStatus, simulation_run
 from services.simulation_manager import SimulationManager
 from workers.rate import Rate
 
@@ -124,7 +126,7 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
                 await websocket.send_json(StateMessage(data=session.state()).model_dump(mode="json"))
                 # anyio, not asyncio.TaskGroup: Starlette cancels through anyio scopes, which asyncio's group can leak.
                 async with anyio.create_task_group() as tasks:
-                    tasks.start_soon(_forward_commands, websocket, session.bus)
+                    tasks.start_soon(_forward_commands, websocket, session)
                     tasks.start_soon(_forward_events, websocket, events)
                     tasks.start_soon(_forward_events, websocket, statuses)
                     tasks.start_soon(_sample_store, websocket, session, hz)
@@ -136,7 +138,7 @@ async def runtime_session_websocket(  # noqa: PLR0913, D103 - FastAPI dependenci
 
 
 async def _follow_simulations(session: RuntimeSession, simulations: SimulationManager) -> None:
-    """Reload the session's environment when the simulation of its robot runs again on another address."""
+    """Tell the session about every run of its project's simulation: it follows its follower's restarts."""
     async with simulations.subscribe() as states:
         while True:
             state = await states.get()
@@ -146,19 +148,19 @@ async def _follow_simulations(session: RuntimeSession, simulations: SimulationMa
                 and state.robot_id is not None
                 and state.http_url is not None
             ):
-                # A run is told apart by when it started: a new one may serve on an address used before.
-                await session.follow_simulation(state.robot_id, state.http_url, run=str(state.started_at))
+                # A run is told apart by its process and start: a new one may serve on an address used before.
+                await session.follow_simulation(state.robot_id, state.http_url, run=simulation_run(state))
 
 
-async def _forward_commands(websocket: WebSocket, bus: Bus) -> None:
+async def _forward_commands(websocket: WebSocket, session: RuntimeSession) -> None:
     """Put each command onto the bus, one at a time and in order, and ack it with the reply."""
     while True:
         raw = await websocket.receive_text()
-        ack = await _request(bus, raw)
+        ack = await _request(session.bus, raw, session.check_command)
         await websocket.send_json(ack.model_dump(mode="json"))
 
 
-async def _request(bus: Bus, raw: str) -> AckMessage:
+async def _request(bus: Bus, raw: str, check: Callable[[str], None]) -> AckMessage:
     try:
         header = _CommandHeader.model_validate_json(raw)
     except ValidationError as error:
@@ -168,6 +170,11 @@ async def _request(bus: Bus, raw: str) -> AckMessage:
         return AckMessage(
             request_id=header.request_id, ok=False, error=SessionError(message=message, error_code=error_code)
         )
+
+    try:
+        check(header.command)  # the session refuses manual episodes while autopilot recording runs
+    except RuntimeSessionCommandError as error:
+        return failed(error.message, error.error_code)
 
     try:
         result: dict[str, Any] = await bus.request(

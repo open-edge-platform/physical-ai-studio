@@ -1,10 +1,25 @@
 import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from 'react';
 
-import { SchemaEnvironmentInput } from '../../../api/openapi-spec';
+import {
+    SchemaEnvironmentInput,
+    SchemaTeleoperatorAutopilotWithRobot,
+    SchemaTeleoperatorNoneWithRobot,
+    SchemaTeleoperatorRobotWithRobot,
+} from '../../../api/openapi-spec';
+
+/** Who drives a follower: a leader arm, the simulation's autopilot (simulated followers only), or nobody. */
+export type Teleoperator = { type: 'robot'; robot_id: string } | { type: 'autopilot' } | { type: 'none' };
+
+/** A saved environment's teleoperator, without the robot it comes with. */
+export const toTeleoperator = (
+    tele_operator:
+        SchemaTeleoperatorRobotWithRobot | SchemaTeleoperatorAutopilotWithRobot | SchemaTeleoperatorNoneWithRobot
+): Teleoperator =>
+    tele_operator.type === 'robot' ? { type: 'robot', robot_id: tele_operator.robot_id } : { type: tele_operator.type };
 
 export type RobotConfiguration = {
     robot_id: string;
-    teleoperator: { type: 'robot'; robot_id: string } | { type: 'none' };
+    teleoperator: Teleoperator;
 };
 
 export type CameraConfiguration = {
@@ -36,13 +51,7 @@ export const useEnvironmentFormBody = (environment_id: string) => {
         robots: environmentForm.robots.map((robot) => {
             return {
                 robot_id: robot.robot_id,
-                tele_operator:
-                    robot.teleoperator.type === 'robot'
-                        ? {
-                              type: 'robot',
-                              robot_id: robot.teleoperator.robot_id,
-                          }
-                        : { type: 'none' },
+                tele_operator: robot.teleoperator,
             };
         }),
     } satisfies SchemaEnvironmentInput;

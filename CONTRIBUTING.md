@@ -26,7 +26,7 @@ PHYSICALAI_CHECKOUT=/absolute/path/to/physicalai
 
 uv run --frozen --extra xpu \
   --with-editable "$PHYSICALAI_CHECKOUT" \
-  --with-editable "$PHYSICALAI_CHECKOUT/packages/physicalai-so101-plugin" \
+  --with-editable "$PHYSICALAI_CHECKOUT/plugins/robots/physicalai-so101-plugin" \
   physicalai-studio serve
 ```
 
