@@ -17,7 +17,8 @@ import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
-import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
+import { useDatasetEnvironmentQuery } from '../../datasets/recording-environments/use-dataset-environment';
+import { useDatasetQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { PeftBadge } from '../shared/peft-badge';
 import { SnapflowBadge } from '../shared/snapflow-badge';
@@ -45,7 +46,7 @@ export const ModelRow = ({
     const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false);
     const [isRenameDialogOpen, setRenameDialogOpen] = useState(false);
     const { data: dataset } = useDatasetQuery(model.dataset_id);
-    const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
+    const { data: environment } = useDatasetEnvironmentQuery(model.project_id, model.dataset_id);
 
     const trainer = getTrainerLabel(trainingJob?.payload);
 

@@ -50,7 +50,6 @@ def _make_dataset() -> Dataset:
         name="Dataset 1",
         default_task="Task",
         project_id=uuid4(),
-        environment_id=uuid4(),
     )
 
 

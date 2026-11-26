@@ -21,7 +21,7 @@ const InnerCell = ({ robotId }: { robotId: string }) => {
         }
     }, [player, episode]);
 
-    const robot = environment.robots?.find((r) => r.robot.id === robotId)?.robot;
+    const robot = environment?.robots?.find((r) => r.robot.id === robotId)?.robot;
     if (robot === undefined) {
         return <></>;
     }

@@ -21,8 +21,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
-import { SchemaDatasetOutput } from '../../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaRecordingEnvironment } from '../../../api/openapi-spec';
 import { AppFooter } from '../../../components/app-footer/app-footer';
+import { RecordingEnvironmentGate } from '../../../features/datasets/recording-environments/recording-environment-gate';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
 import {
     environmentDraft,
@@ -127,14 +128,14 @@ const FinishRecordingLink = ({ subtitle }: { subtitle: string }) => {
     );
 };
 
-const RecordingSession = ({ dataset }: { dataset: SchemaDatasetOutput }) => (
+const RecordingWorkspace = ({ dataset }: { dataset: SchemaDatasetOutput }) => (
     <SessionWorkspace
         initialMode='record'
         cancelHref={paths.project.datasets.show({ project_id: dataset.project_id, dataset_id: dataset.id! })}
     />
 );
 
-const RecordingPage = () => {
+const RecordingSession = ({ recordingEnvironment }: { recordingEnvironment: SchemaRecordingEnvironment }) => {
     const { project_id, dataset_id } = useDatasetId();
 
     const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
@@ -148,14 +149,7 @@ const RecordingPage = () => {
     const { data: environment } = $api.useSuspenseQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: {
-                path: {
-                    environment_id: dataset.environment_id,
-                    project_id,
-                },
-            },
-        }
+        { params: { path: { project_id, environment_id: recordingEnvironment.environment_id } } }
     );
     return (
         <RuntimeSessionProvider
@@ -194,7 +188,7 @@ const RecordingPage = () => {
                         {/* Inside the provider: anything that suspends while loading must not take the
                             page-level boundary, which would unmount the provider and end the session. */}
                         <Suspense fallback={<Loading mode='inline' />}>
-                            <RecordingSession dataset={dataset} />
+                            <RecordingWorkspace dataset={dataset} />
                         </Suspense>
                     </View>
                 </View>
@@ -205,9 +199,18 @@ const RecordingPage = () => {
 };
 
 export const Index = () => {
+    const { project_id, dataset_id } = useDatasetId();
+    const navigate = useNavigate();
+
     return (
         <Suspense fallback={<Loading mode='overlay' />}>
-            <RecordingPage />
+            <RecordingEnvironmentGate
+                project_id={project_id}
+                dataset_id={dataset_id}
+                onCancel={() => navigate(paths.project.datasets.show({ project_id, dataset_id }))}
+            >
+                {(recordingEnvironment) => <RecordingSession recordingEnvironment={recordingEnvironment} />}
+            </RecordingEnvironmentGate>
         </Suspense>
     );
 };

@@ -16,7 +16,6 @@ def _make_dataset() -> Dataset:
             "path": "/tmp/dataset",
             "default_task": "task",
             "project_id": str(uuid4()),
-            "environment_id": str(uuid4()),
         }
     )
 

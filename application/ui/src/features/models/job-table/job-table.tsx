@@ -20,8 +20,9 @@ import { ElapsedDuration } from '../../../components/elapsed-duration.component'
 import { showIssueError } from '../../../components/notification/issue-toasts';
 import { notify } from '../../../components/notification/notification.component';
 import { Table } from '../../../components/table/table';
+import { useDatasetEnvironmentQuery } from '../../datasets/recording-environments/use-dataset-environment';
 import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
-import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
+import { useDatasetQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { PeftBadge } from '../shared/peft-badge';
 import { SnapflowBadge } from '../shared/snapflow-badge';
@@ -202,7 +203,7 @@ export const TrainingRow = ({
     const loss = trainJob.extra_info && (trainJob.extra_info['train/loss_step'] as number | undefined);
 
     const { data: dataset } = useDatasetQuery(trainJob.payload.dataset_id);
-    const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, dataset?.environment_id);
+    const { data: environment } = useDatasetEnvironmentQuery(trainJob.payload.project_id, trainJob.payload.dataset_id);
 
     if (trainJob.status === 'failed') {
         return (

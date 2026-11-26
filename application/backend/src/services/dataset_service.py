@@ -26,12 +26,12 @@ class DatasetService:
     async def create_dataset(self, dataset: Dataset) -> Dataset:
         return await self.repo.save(dataset)
 
-    async def update_dataset_name(self, dataset_id: UUID, name: str) -> Dataset:
+    async def update_dataset(self, dataset_id: UUID, updates: dict[str, str]) -> Dataset:
         dataset = await self.repo.get_by_id(dataset_id)
         if dataset is None:
             raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
 
-        return await self.repo.update(dataset, {"name": name})
+        return await self.repo.update(dataset, updates)
 
     async def delete_dataset(self, dataset_id: UUID, remove_files: bool = False) -> None:
         dataset = await self.repo.get_by_id(dataset_id)
