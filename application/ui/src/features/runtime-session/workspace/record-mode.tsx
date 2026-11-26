@@ -3,11 +3,11 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Button, Flex, Form, Keyboard, Slider, Text, TextArea, toast } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
-import { SchemaSessionDataset } from '../../../api/openapi-spec';
+import { SchemaSessionDataset, SchemaSessionState } from '../../../api/openapi-spec';
 import { formatKeyCombo, getEffectiveBindings } from '../../hotkeys/key-combo';
 import { useHotkey } from '../../hotkeys/use-hotkey';
 import { TeleopSwitch } from '../cells/robot-cell';
-import { ERROR_TOAST, failureOf, useRuntimeSession } from '../runtime-session-provider';
+import { ERROR_TOAST, failureOf, Statuses, useRuntimeSession } from '../runtime-session-provider';
 
 import classes from './record-mode.module.css';
 
@@ -106,6 +106,24 @@ const RecordingRate = ({ dataset }: { dataset: SchemaSessionDataset }) => {
     );
 };
 
+/**
+ * Why an episode cannot start now, or ``null`` when it can. The backend refuses the same cases; saying so
+ * here keeps Start from looking available while there is nothing to record.
+ */
+export const whyNotRecordable = (state: SchemaSessionState | null | undefined, statuses: Statuses): string | null => {
+    if (state?.dataset == null) {
+        return 'Load a dataset to record into.';
+    }
+    if (state.environment == null) {
+        return 'Load an environment to record.';
+    }
+    const failure = failureOf(statuses, 'environment');
+    if (failure !== null) {
+        return `The environment failed: ${failure}. Reload it to record.`;
+    }
+    return null;
+};
+
 /** Record mode's side bar: teleoperation, the task, and start / accept / discard with their hotkeys. */
 export const RecordMode = () => {
     const { state, statuses } = useRuntimeSession();
@@ -126,18 +144,20 @@ export const RecordMode = () => {
         !isPending &&
         state?.environment != null &&
         failureOf(statuses, 'environment') === null;
+    const notRecordable = whyNotRecordable(state, statuses);
+    const canStart = notRecordable === null && !isPending;
 
     const start = () => void run({ command: 'start_episode', task });
     const save = () => void run({ command: 'save_episode' });
     const discard = () => void run({ command: 'discard_episode' });
 
-    useHotkey(bindings['recording.start_episode'], start, canRecord && !isRecording && task !== '');
+    useHotkey(bindings['recording.start_episode'], start, canStart && !isRecording && task !== '');
     useHotkey(bindings['recording.accept_episode'], save, canRecord && isRecording);
     useHotkey(bindings['recording.discard_episode'], discard, canRecord && isRecording);
 
     const onStart = (event: FormEvent) => {
         event.preventDefault();
-        if (task !== '') {
+        if (task !== '' && canStart) {
             start();
         }
     };
@@ -175,12 +195,24 @@ export const RecordMode = () => {
                             </Button>
                         </Flex>
                     ) : (
-                        <Button type={'submit'} isPending={isPending} isDisabled={dataset === undefined}>
-                            <Text>Start episode</Text>
-                            <Keyboard UNSAFE_className={classes.hotkey}>
-                                {formatKeyCombo(bindings['recording.start_episode'])}
-                            </Keyboard>
-                        </Button>
+                        <>
+                            <Button
+                                type={'submit'}
+                                isPending={isPending}
+                                isDisabled={notRecordable !== null}
+                                aria-describedby={notRecordable !== null ? 'why-not-recordable' : undefined}
+                            >
+                                <Text>Start episode</Text>
+                                <Keyboard UNSAFE_className={classes.hotkey}>
+                                    {formatKeyCombo(bindings['recording.start_episode'])}
+                                </Keyboard>
+                            </Button>
+                            {notRecordable !== null && (
+                                <Text id='why-not-recordable' UNSAFE_className={classes.notRecordable}>
+                                    {notRecordable}
+                                </Text>
+                            )}
+                        </>
                     )}
                 </Flex>
             </Form>
