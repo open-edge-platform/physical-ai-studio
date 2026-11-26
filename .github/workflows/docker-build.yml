@@ -70,7 +70,6 @@ jobs:
               - library/src/**
               - library/pyproject.toml
               - library/uv.lock
-              - library/MANIFEST.in
               - library/.dockerignore
               - application/**
               - .github/actions/docker-build/**
@@ -82,13 +81,11 @@ jobs:
     name: Build (${{ matrix.device }})
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    # All variants run on GitHub-hosted runners: the shared self-hosted GPU
-    # runners added 25-90 min of queue time without speeding up the build.
     runs-on: ubuntu-latest
     timeout-minutes: 120 # To check CUDA builds
     permissions:
       contents: read # Checkout code
-      packages: write # Push/pull registry build cache on GHCR
+      packages: read # Pull registry build cache from GHCR
       pull-requests: write # Post image size comment
 
     strategy:
@@ -127,9 +124,8 @@ jobs:
           device: ${{ matrix.device }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Fork PRs cannot write packages to the upstream org, so disable
-          # cache export to avoid 403 errors from GHCR.
-          cache-write: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          # Cache is written only from main by docker-cache-warm.yml.
+          cache-write: "false"
           enable-compile-model: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL }}
 
       - name: Smoke-test docker image
