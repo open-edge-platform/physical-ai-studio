@@ -19,6 +19,7 @@ import {
     SchemaAckMessage,
     SchemaDiscardEpisodeCommand,
     SchemaEnvironmentDraft,
+    SchemaEnvironmentOutput,
     SchemaEnvironmentWithRelations,
     SchemaErrorMessage,
     SchemaLoadDatasetCommand,
@@ -29,13 +30,16 @@ import {
     SchemaSaveEpisodeCommand,
     SchemaSessionState,
     SchemaSetControlCommand,
+    SchemaStartAutopilotRecordingCommand,
     SchemaStartEpisodeCommand,
     SchemaStateMessage,
     SchemaStatusMessage,
+    SchemaStopAutopilotRecordingCommand,
     SchemaUnloadDatasetCommand,
     SchemaUnloadEnvironmentCommand,
     SchemaUnloadModelCommand,
 } from '../../api/openapi-spec';
+import { toTeleoperator } from '../robots/environment-form/provider';
 import { JointsState } from '../robots/use-robot-observations';
 
 /** Session errors go away by themselves; the parts panel keeps showing what is still failed. */
@@ -55,7 +59,9 @@ type Command =
     | Omit<SchemaUnloadModelCommand, 'request_id'>
     | Omit<SchemaStartEpisodeCommand, 'request_id'>
     | Omit<SchemaSaveEpisodeCommand, 'request_id'>
-    | Omit<SchemaDiscardEpisodeCommand, 'request_id'>;
+    | Omit<SchemaDiscardEpisodeCommand, 'request_id'>
+    | Omit<SchemaStartAutopilotRecordingCommand, 'request_id'>
+    | Omit<SchemaStopAutopilotRecordingCommand, 'request_id'>;
 
 /** A model export to load: which model, and the backend and device it runs on. */
 export type SessionModelToLoad = Omit<SchemaLoadModelCommand, 'request_id' | 'command'>;
@@ -66,10 +72,22 @@ export const environmentDraft = (environment: SchemaEnvironmentWithRelations): S
     name: environment.name,
     robots: (environment.robots ?? []).map(({ robot, tele_operator }) => ({
         robot_id: robot.id,
-        tele_operator:
-            tele_operator.type === 'robot' ? { type: 'robot', robot_id: tele_operator.robot_id } : { type: 'none' },
+        tele_operator: toTeleoperator(tele_operator),
     })),
     cameras: (environment.cameras ?? []).flatMap((camera) => (camera.id ? [{ camera_id: camera.id }] : [])),
+});
+
+/**
+ * The draft a session loads, from a saved environment as the environments list gives it. With
+ * ``autopilot``, the simulation's autopilot leads its follower instead of the saved teleoperator.
+ */
+export const savedEnvironmentDraft = (saved: SchemaEnvironmentOutput, autopilot = false): SchemaEnvironmentDraft => ({
+    id: saved.id,
+    name: saved.name,
+    robots: (saved.robots ?? []).map((robot) =>
+        autopilot ? { ...robot, tele_operator: { type: 'autopilot' } } : robot
+    ),
+    cameras: saved.cameras ?? [],
 });
 
 /** Why ``component`` failed, while it is failed. */
@@ -109,10 +127,19 @@ class Channel<T> {
     }
 }
 
+/** The last environment the session was asked to load, by the page or the workspace, and why it failed if it did. */
+export interface EnvironmentLoad {
+    draft: SchemaEnvironmentDraft;
+    error: SchemaErrorMessage | null;
+}
+
 /** The parts a session loads: the environment, and what records from it or runs on it. */
 export type SessionPartName = 'environment' | 'dataset' | 'model';
 
 interface RuntimeSessionContextValue {
+    /** What the page asked the session to load, which ``retry`` loads again. */
+    draft: SchemaEnvironmentDraft | null;
+    environmentLoad: EnvironmentLoad | null;
     state: SchemaSessionState | null;
     /** The last command or worker error, until the next successful load. */
     error: SchemaErrorMessage | null;
@@ -186,6 +213,8 @@ export const RuntimeSessionProvider = ({
     const [error, setError] = useState<SchemaErrorMessage | null>(null);
     const [statuses, setStatuses] = useState<Statuses>({});
     const [loading, setLoading] = useState<SessionPartName | null>(null);
+    const [environmentLoad, setEnvironmentLoad] = useState<EnvironmentLoad | null>(null);
+    const latestLoad = useRef<string | null>(null);
     const [attempt, setAttempt] = useState(0);
     const retry = useCallback(() => setAttempt((previous) => previous + 1), []);
     const observations = useRef(new Channel<SchemaObservationMessage>()).current;
@@ -215,6 +244,7 @@ export const RuntimeSessionProvider = ({
         onClose: () => {
             latestState.current = null;
             setState(null);
+            setEnvironmentLoad(null);
             setStatuses({});
             pending.forEach((resolve, request_id) =>
                 resolve({
@@ -266,7 +296,25 @@ export const RuntimeSessionProvider = ({
         (command: Command) =>
             new Promise<SchemaAckMessage>((resolve) => {
                 const request_id = uuidv4();
-                pending.set(request_id, resolve);
+                if (command.command === 'load_environment') {
+                    // A newer load replaces what an older one asked for, even before either answers. Loading the
+                    // same environment again keeps why it failed until it answers, so what recovers it stays shown.
+                    latestLoad.current = request_id;
+                    const requested = command.environment;
+                    setEnvironmentLoad((previous) => ({
+                        draft: requested,
+                        error:
+                            previous !== null && JSON.stringify(previous.draft) === JSON.stringify(requested)
+                                ? previous.error
+                                : null,
+                    }));
+                }
+                pending.set(request_id, (ack) => {
+                    if (command.command === 'load_environment' && latestLoad.current === request_id) {
+                        setEnvironmentLoad({ draft: command.environment, error: ack.ok ? null : commandError(ack) });
+                    }
+                    resolve(ack);
+                });
                 sendJsonMessage({ ...command, request_id });
             }),
         [pending, sendJsonMessage]
@@ -320,9 +368,22 @@ export const RuntimeSessionProvider = ({
         };
     }, [environmentKey, dataset_id, modelKey, hasSession, send, attempt]);
 
+    const draft = useMemo(() => JSON.parse(environmentKey) as SchemaEnvironmentDraft | null, [environmentKey]);
     const value = useMemo(
-        () => ({ state, error, statuses, loading, isLoading: loading !== null, observations, frame, send, retry }),
-        [state, error, statuses, loading, observations, frame, send, retry]
+        () => ({
+            draft,
+            environmentLoad,
+            state,
+            error,
+            statuses,
+            loading,
+            isLoading: loading !== null,
+            observations,
+            frame,
+            send,
+            retry,
+        }),
+        [draft, environmentLoad, state, error, statuses, loading, observations, frame, send, retry]
     );
 
     return <RuntimeSessionContext.Provider value={value}>{children}</RuntimeSessionContext.Provider>;

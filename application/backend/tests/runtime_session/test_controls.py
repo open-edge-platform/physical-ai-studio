@@ -81,3 +81,36 @@ async def test_a_control_runs_as_a_thread_until_stopped(store: Store, tmp_path: 
     first = store.read(ACTION).timestamp
     await asyncio.sleep(0.05)
     assert store.read(ACTION).timestamp == first  # stopped writing
+
+
+async def test_teleop_starts_with_a_leader_whose_idle_connection_closed(store: Store, tmp_path: Path) -> None:
+    """The simulation's virtual leader fails one read after idling, then connects again."""
+    leader = _leader(tmp_path)
+    read = leader.get_observation
+    failures = iter([ConnectionError("Remote end closed connection without response")])
+
+    def get_observation():
+        if (error := next(failures, None)) is not None:
+            raise error
+        return read()
+
+    leader.get_observation = get_observation  # type: ignore[method-assign]
+    async with TeleopControl(store, leader, TeleopControlConfig(grace_s=0)) as control:
+        await asyncio.sleep(0.1)
+        assert not control.failure
+    assert store.read(ACTION).value.tolist() == [5.0, 6.0]
+
+
+def test_a_slow_first_reading_does_not_use_up_the_grace_period(store: Store, tmp_path: Path) -> None:
+    leader = _leader(tmp_path)
+    read = leader.get_observation
+
+    def slow_read() -> object:
+        time.sleep(0.2)
+        return read()
+
+    leader.get_observation = slow_read  # type: ignore[method-assign,assignment]
+    control = TeleopControl(store, leader, TeleopControlConfig(grace_s=1.0))
+    before = time.monotonic()
+    control.on_start()
+    assert control.started_at - before >= 0.2  # the grace period starts once the leader read

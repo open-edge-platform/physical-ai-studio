@@ -333,6 +333,12 @@ class SimulationManager:
             return follower, leader
         return stored if stored is not None else (follower, leader)
 
+    def is_simulated(self, robot: Robot | UnavailableRobot) -> bool:
+        """Whether *robot*'s type has a simulation, which its autopilot can lead (through automatic recording)."""
+        if isinstance(robot, UnavailableRobot):
+            return False
+        return getattr(self._registry.get_definition(robot.type), "simulation", None) is not None
+
     def _simulated_by_studio(self, project_id: UUID, robot_id: UUID) -> bool:
         state = self._state
         return state.status in _ACTIVE and state.project_id == project_id and state.robot_id == robot_id

@@ -1,4 +1,4 @@
-import { ReactNode, Suspense, useEffect, useRef, useState } from 'react';
+import { ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button, Flex, Heading, Loading, ProgressCircle, Text, View } from '@geti-ui/ui';
 import {
@@ -10,11 +10,16 @@ import {
 } from 'dockview-react';
 
 import { $api } from '../../api/client';
-import { SchemaSessionEnvironment } from '../../api/openapi-spec';
+import { SchemaEnvironmentDraft, SchemaSessionEnvironment } from '../../api/openapi-spec';
 import { physicalAiTheme } from '../dockview';
 import { useProjectId } from '../projects/use-project';
+import { AvailableSchemaRobot, isUnavailableRobot } from '../robots/robot-types';
 import { InlineAlert } from '../robots/setup-wizard/shared/inline-alert';
 import { useRobotSimulationLaunch } from '../simulation/robot-simulation';
+import { useSimulationDialog } from '../simulation/simulation-dialog';
+import { SimulationNotRunning } from '../simulation/simulation-not-running';
+import { useRobotSimulation } from '../simulation/use-robot-simulation';
+import { useSimulation } from '../simulation/use-simulation';
 import { CameraCell } from './cells/camera-cell';
 import { RobotCell } from './cells/robot-cell';
 import { failureOf, useRuntimeSession } from './runtime-session-provider';
@@ -80,8 +85,155 @@ const SessionDock = ({ environment }: { environment: SchemaSessionEnvironment })
     );
 };
 
-/** Until the environment is up: what it is doing, or a way to load one when the session has none. */
-const Initializing = ({ cancelHref }: { cancelHref: string }) => {
+/**
+ * The simulated follower of an environment that could not load because its simulation does not run
+ * (its simulation cameras stream from it): start it from here, and load that environment again once it runs.
+ *
+ * In place of the dock (with ``cancelHref``) the session has nothing else, so the environment loads
+ * again once the simulation runs, however it was started. Over the dock of another environment it loads
+ * again only when the user starts the simulation from here, or asks to once it runs.
+ */
+const StartSimulation = ({
+    robot,
+    load,
+    cancelHref,
+}: {
+    robot: AvailableSchemaRobot;
+    load: SchemaEnvironmentDraft;
+    cancelHref?: string;
+}) => {
+    const { project_id } = useProjectId();
+    const { draft, retry, isLoading } = useRuntimeSession();
+    const { loadEnvironmentDraft, pendingPart } = usePartControls();
+    const { data: simulation } = useRobotSimulation(project_id, robot.id);
+    const { data: studioSimulation } = useSimulation();
+    const compact = cancelHref === undefined;
+    const isRunning = simulation?.running === true;
+    const isStarting =
+        studioSimulation?.robot_id === robot.id &&
+        (studioSimulation.status === 'starting' || studioSimulation.status === 'stopping');
+    // The page's own environment loads with the page's dataset or model; one loaded from the workspace on its own.
+    const isPageEnvironment = JSON.stringify(load) === JSON.stringify(draft);
+    const latest = useRef({ isPageEnvironment, load, loadEnvironmentDraft });
+    latest.current = { isPageEnvironment, load, loadEnvironmentDraft };
+    const loadAgain = useCallback(() => {
+        if (latest.current.isPageEnvironment) {
+            retry();
+        } else {
+            // As the workspace loaded it: a refusal is shown, and unloading parts that no longer fit is asked first.
+            latest.current.loadEnvironmentDraft(latest.current.load);
+        }
+    }, [retry]);
+    const dialog = useSimulationDialog(robot, compact ? loadAgain : undefined);
+
+    useEffect(() => {
+        if (isRunning && !compact) {
+            loadAgain();
+        }
+    }, [isRunning, compact, loadAgain]);
+
+    if (compact) {
+        return (
+            <View backgroundColor='gray-100' padding='size-100' borderRadius='regular'>
+                <Flex alignItems='center' justifyContent='space-between' gap='size-100'>
+                    <Text>
+                        {load.name} could not load: the simulation of {robot.name} does not run.
+                    </Text>
+                    {isRunning ? (
+                        <Button variant='secondary' onPress={loadAgain}>
+                            Load {load.name}
+                        </Button>
+                    ) : (
+                        <Button variant='accent' onPress={dialog.open}>
+                            {isStarting ? 'Show progress…' : 'Start simulation…'}
+                        </Button>
+                    )}
+                </Flex>
+                {dialog.dialog}
+            </View>
+        );
+    }
+    let content: ReactNode;
+    if (!isRunning) {
+        content = (
+            <SimulationNotRunning
+                robot={robot}
+                isStarting={isStarting}
+                onStart={dialog.open}
+                description={`Start the simulation of ${robot.name} to load ${load.name}.`}
+                actions={
+                    <Button variant='secondary' href={cancelHref}>
+                        Cancel
+                    </Button>
+                }
+            />
+        );
+    } else if (isLoading || pendingPart === 'environment') {
+        content = (
+            <Flex width='100%' height='100%' alignItems='center' justifyContent='center'>
+                <Heading level={2}>
+                    <Text>Loading {load.name}</Text>
+                    <ProgressCircle marginStart='size-200' size='S' isIndeterminate alignSelf='center' />
+                </Heading>
+            </Flex>
+        );
+    } else {
+        // Runs, yet the last load still found it stopped: it started between the two.
+        content = (
+            <SimulationNotRunning
+                robot={robot}
+                title='Simulation running'
+                description={`The simulation of ${robot.name} runs now.`}
+                actions={
+                    <Button variant='accent' onPress={loadAgain}>
+                        Load {load.name}
+                    </Button>
+                }
+            />
+        );
+    }
+    return (
+        <>
+            {content}
+            {dialog.dialog}
+        </>
+    );
+};
+
+/** The simulated follower of the environment the session last failed to load because its simulation does not run. */
+const useFailedSimulation = (): { robot: AvailableSchemaRobot; load: SchemaEnvironmentDraft } | null => {
+    const { project_id } = useProjectId();
+    const { environmentLoad } = useRuntimeSession();
+    const load = environmentLoad?.error?.error_code === 'simulation_not_running' ? environmentLoad.draft : undefined;
+    const follower_id = load?.robots[0]?.robot_id;
+    const { data: robot } = $api.useQuery(
+        'get',
+        '/api/projects/{project_id}/robots/{robot_id}',
+        { params: { path: { project_id, robot_id: follower_id ?? '' } } },
+        { enabled: follower_id !== undefined }
+    );
+    const isSimulated = useRobotSimulationLaunch(robot?.type ?? '') !== null;
+
+    if (
+        load === undefined ||
+        robot === undefined ||
+        robot.id !== follower_id ||
+        isUnavailableRobot(robot) ||
+        !isSimulated
+    ) {
+        return null;
+    }
+    return { robot, load };
+};
+
+/** Over the dock: an environment the workspace could not load over this one, for its simulation does not run. */
+const FailedSimulationBar = () => {
+    const failed = useFailedSimulation();
+    return failed === null ? null : <StartSimulation robot={failed.robot} load={failed.load} />;
+};
+
+/** What the environment is doing, or a way to load one when the session has none. */
+const InitializingStatus = ({ cancelHref }: { cancelHref: string }) => {
     const { state, error, statuses, loading, retry } = useRuntimeSession();
     const { pendingPart, act } = usePartControls();
     const failure = failureOf(statuses, 'environment');
@@ -120,6 +272,23 @@ const Initializing = ({ cancelHref }: { cancelHref: string }) => {
         </Flex>
     );
 };
+
+/** Until the environment is up. When it could not load because its simulation does not run, only how to start it. */
+const InitializingOrStart = ({ cancelHref }: { cancelHref: string }) => {
+    const failed = useFailedSimulation();
+    return failed === null ? (
+        <InitializingStatus cancelHref={cancelHref} />
+    ) : (
+        <StartSimulation robot={failed.robot} load={failed.load} cancelHref={cancelHref} />
+    );
+};
+
+const Initializing = ({ cancelHref }: { cancelHref: string }) => (
+    // The robot catalog may still load: show the status meanwhile.
+    <Suspense fallback={<InitializingStatus cancelHref={cancelHref} />}>
+        <InitializingOrStart cancelHref={cancelHref} />
+    </Suspense>
+);
 
 /**
  * The dock once shown, and before that only for a simulated follower: its cell offers to start the
@@ -182,6 +351,10 @@ export const SessionViewer = ({ toolbar, cancelHref }: { toolbar?: ReactNode; ca
             >
                 <Flex direction={'column'} height={'100%'} gap='size-100'>
                     {toolbar}
+                    {/* An environment the workspace could not load over this one, for its simulation does not run. */}
+                    <Suspense fallback={null}>
+                        <FailedSimulationBar />
+                    </Suspense>
                     {/* The cells suspend while they load; this keeps that inside the viewer. */}
                     <Suspense fallback={<Loading mode='inline' />}>
                         <SessionDock environment={environment} />

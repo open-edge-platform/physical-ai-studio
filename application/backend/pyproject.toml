@@ -34,7 +34,7 @@ dependencies = [
   "sse-starlette>=2.0.0",
   "huggingface-hub>=0.27",
   "psutil~=7.2",
-  "physicalai-studio-plugin~=0.5.0",
+  "physicalai-studio-plugin~=0.6.0",
   "physicalai-so101-plugin~=0.3.0",
   'physicalai-trossen-plugin~=0.3.0; sys_platform == "darwin" or sys_platform == "linux"',
   "asyncssh~=2.24",
@@ -91,9 +91,9 @@ xpu = [
 
 # Simulation is off unless a simulation plugin is installed: without one Studio offers no
 # simulated robot types, so nothing about simulation shows.
-mujoco = ["physicalai-mujoco-plugin~=0.5.0"]
+mujoco = ["physicalai-mujoco-plugin~=0.6.0"]
 
-sim-e2e = ["physicalai-mujoco-plugin==0.5.0", "defusedxml>=0.7.1"]
+sim-e2e = ["physicalai-mujoco-plugin==0.6.0", "defusedxml>=0.7.1"]
 
 tests = [
     "defusedxml>=0.7.1",

@@ -27,7 +27,7 @@ import {
     InferenceDevice,
 } from '../../models/backend-selection/backend-selection';
 import { useProject, useProjectId } from '../../projects/use-project';
-import { SessionPartName, useRuntimeSession } from '../runtime-session-provider';
+import { savedEnvironmentDraft, SessionPartName, useRuntimeSession } from '../runtime-session-provider';
 import { PendingConfirmation, SessionCommand, usePartCommand } from './use-part-command';
 
 export type PartAction = 'reload' | 'swap' | 'unload';
@@ -221,6 +221,8 @@ interface PartControlsValue {
     /** The part a command or the page's own load is busy with. */
     pendingPart: SessionPartName | null;
     act: (part: SessionPartName, action: PartAction) => void;
+    /** Load an environment as a swap does: a refusal is shown, and unloading parts that do not fit is asked first. */
+    loadEnvironmentDraft: (draft: SchemaEnvironmentDraft) => void;
 }
 
 const PartControlsContext = createContext<PartControlsValue | null>(null);
@@ -259,16 +261,14 @@ export const PartControlsProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
+    const loadEnvironmentDraft = (draft: SchemaEnvironmentDraft) => {
+        void runFor('environment', { command: 'load_environment', environment: draft, unload_incompatible: false });
+    };
+
     const loadEnvironment = (environment_id: string) => {
         const saved = environments.find((candidate) => candidate.id === environment_id);
         if (saved !== undefined) {
-            const draft: SchemaEnvironmentDraft = {
-                id: saved.id,
-                name: saved.name,
-                robots: saved.robots ?? [],
-                cameras: saved.cameras ?? [],
-            };
-            void runFor('environment', { command: 'load_environment', environment: draft, unload_incompatible: false });
+            loadEnvironmentDraft(savedEnvironmentDraft(saved));
         }
     };
 
@@ -308,7 +308,7 @@ export const PartControlsProvider = ({ children }: { children: ReactNode }) => {
     const close = () => setSwapping(null);
 
     return (
-        <PartControlsContext.Provider value={{ pendingPart: commandPart ?? loading, act }}>
+        <PartControlsContext.Provider value={{ pendingPart: commandPart ?? loading, act, loadEnvironmentDraft }}>
             {children}
             <DialogContainer onDismiss={close}>
                 {swapping === 'environment' && (

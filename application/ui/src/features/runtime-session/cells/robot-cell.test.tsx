@@ -10,6 +10,7 @@ import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { createQueryClient } from '../../../query-client/query-client';
 import { render } from '../../../test-utils/render';
+import * as actualProvider from '../runtime-session-provider' with { rstest: 'importActual' };
 import { resetRecoveredSimulationRuns, RobotCell } from './robot-cell';
 
 const retry = rs.fn();
@@ -17,16 +18,24 @@ const send = rs.fn(async () => ({ type: 'ack', request_id: '', ok: true }));
 const session = {
     environment_id: null as string | null,
     environmentState: 'failed',
+    autopilot: false,
 };
 
 rs.mock('../runtime-session-provider', () => ({
     ERROR_TOAST: {},
     failureOf: (statuses: Record<string, { state: string; error?: string }>, component: string) =>
         statuses[component]?.state === 'failed' ? (statuses[component].error ?? 'failed') : null,
+    savedEnvironmentDraft: actualProvider.savedEnvironmentDraft,
     useSessionJoints: () => undefined,
     useRuntimeSession: () => ({
         state: {
-            environment: { environment_id: session.environment_id, robot_id: ROBOT_ID, leader_id: null, cameras: [] },
+            environment: {
+                environment_id: session.environment_id,
+                robot_id: ROBOT_ID,
+                leader_id: null,
+                autopilot: session.autopilot,
+                cameras: [],
+            },
         },
         error: null,
         isLoading: false,
@@ -122,6 +131,7 @@ describe('RobotCell of a simulated follower', () => {
         send.mockClear();
         session.environment_id = null;
         session.environmentState = 'failed';
+        session.autopilot = false;
     });
 
     it('offers to start the simulation, and loads the page environment again once it runs', async () => {
@@ -158,6 +168,26 @@ describe('RobotCell of a simulated follower', () => {
             })
         );
         expect(retry).not.toHaveBeenCalled();
+    });
+
+    it('keeps the autopilot chosen for this session when it loads the saved environment again', async () => {
+        mockSimulatedFollower();
+        session.environment_id = ENVIRONMENT_ID;
+        session.autopilot = true;
+        const { setRunning } = renderCell();
+        await screen.findByRole('heading', { name: 'Simulation not running' });
+
+        setRunning(true);
+
+        await waitFor(() =>
+            expect(send).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    environment: expect.objectContaining({
+                        robots: [{ robot_id: ROBOT_ID, tele_operator: { type: 'autopilot' } }],
+                    }),
+                })
+            )
+        );
     });
 
     it('retries once when a running simulation sees the load fail, and again only once it runs again', async () => {

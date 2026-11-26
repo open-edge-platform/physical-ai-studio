@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from physicalai.config import Config
 
 from api.environments import get_runtime_config
+from robots.robot_client_factory import RobotClientFactory
 from schemas.environment import EnvironmentWithRelations
 
 
@@ -84,3 +85,43 @@ async def test_runtime_config_download_requires_leader(mocker) -> None:
             environment_service=environment_service,
             robot_client_factory=mocker.MagicMock(),
         )
+
+
+def _autopilot_environment(http_url: str) -> EnvironmentWithRelations:
+    return EnvironmentWithRelations.model_validate(
+        {
+            "id": str(uuid4()),
+            "name": "Sim bench",
+            "robots": [
+                {
+                    "robot": {
+                        "id": str(uuid4()),
+                        "name": "Sim arm",
+                        "type": "MuJoCo_SO101_Follower",
+                        "payload": {"http_url": http_url},
+                    },
+                    "tele_operator": {"type": "autopilot"},
+                }
+            ],
+            "cameras": [],
+        }
+    )
+
+
+async def test_an_environment_the_autopilot_leads_has_no_runtime_export(mocker) -> None:
+    environment = _autopilot_environment("http://127.0.0.1:50488")
+    environment_service = SimpleNamespace(
+        get_environment_by_id=mocker.AsyncMock(return_value=environment), session=None
+    )
+
+    with pytest.raises(HTTPException) as refused:
+        await get_runtime_config(
+            request=SimpleNamespace(),
+            project_id=uuid4(),
+            environment_id=environment.id,
+            environment_service=environment_service,
+            robot_client_factory=RobotClientFactory(robot_manager=mocker.MagicMock()),
+        )
+
+    assert refused.value.status_code == 400
+    assert "automatic recording" in refused.value.detail
