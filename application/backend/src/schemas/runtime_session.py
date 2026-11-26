@@ -146,8 +146,8 @@ class UnloadDatasetCommand(BaseModel):
 EXPECTED_DATASET = Field(
     None,
     description=(
-        "Refuse unless this dataset is the one recording: for a client whose command may wait behind "
-        "a dataset swap, such as a simulation's automatic recording"
+        "If set, the command is refused unless this dataset is the one recording. "
+        "Automatic recording sets it, since another dataset may be loaded before its command runs"
     ),
 )
 

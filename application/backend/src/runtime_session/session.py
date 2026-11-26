@@ -512,7 +512,7 @@ class RuntimeSession:
             finally:
                 self._camera_claims.release(self.id, generation=generation)
         finally:
-            self._registry.release_robots(self)  # the simulation's claim too
+            self._registry.release_robots(self)
 
     async def set_control(self, config: ControlConfig | None) -> None:
         """Stop the running control, hold the follower where it is, then start ``config``.
