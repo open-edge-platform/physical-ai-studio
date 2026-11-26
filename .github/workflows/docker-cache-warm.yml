@@ -1,0 +1,94 @@
+name: Docker Cache Warm
+
+# Sole writer of the per-device GHCR buildcache; PR builds only read it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - library/src/**
+      - library/pyproject.toml
+      - library/uv.lock
+      - library/.dockerignore
+      - application/**
+      - .github/actions/docker-build/**
+      - .github/workflows/docker-cache-warm.yml
+      - "!**/*.md"
+      - "!**/docs/**"
+  workflow_dispatch:
+
+permissions: {} # No permissions by default on workflow level
+
+env:
+  # Must match docker-build.yml so the warmed target is the one PRs build.
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
+
+jobs:
+  warm:
+    if: github.ref == 'refs/heads/main'
+    name: Warm cache (${{ matrix.device }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: docker-cache-warm-${{ matrix.device }}
+      cancel-in-progress: true
+    permissions:
+      contents: read # Checkout code
+      packages: write # Push registry build cache to GHCR
+
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [cpu, xpu, cuda]
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            auth.docker.io:443
+            centralus.data.mcr.microsoft.com:443
+            deb.debian.org:80
+            developer.download.nvidia.com:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            files.pythonhosted.org:443
+            ghcr.io:443
+            ghcr1production.blob.core.windows.net:443
+            github.com:443
+            gitlab.com:443
+            index.crates.io:443
+            pkg-containers.githubusercontent.com:443
+            ppa.launchpadcontent.net:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
+            registry.npmjs.org:443
+            registry-1.docker.io:443
+            static.crates.io:443
+            static.rust-lang.org:443
+            www.google-analytics.com:443
+            dl-cdn.alpinelinux.org:443
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build to refresh cache
+        uses: $/.github/actions/docker-build # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          device: ${{ matrix.device }}
+          load: "false"
+          cache-write: "true"
+          enable-compile-model: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL }}
