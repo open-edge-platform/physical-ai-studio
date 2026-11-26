@@ -10,6 +10,7 @@ import logging
 import os
 import queue
 import selectors
+import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Pipe constants and TimeoutExpired only; isolate launches workers.  # nosec B404
 import threading
 import time
@@ -199,7 +200,7 @@ def run_worker(
             expected_version = locked_version(env, prepared.project)
     else:
         # A user-managed interpreter keeps the host environment, including PYTHONPATH.
-        target = isolate.ExternalInterpreter(Path(interpreter))
+        target = isolate.ExternalInterpreter(_find_interpreter(interpreter, variables))
     expected = Version(str(expected_version)) if expected_version is not None else None
 
     def launch(child_env: Mapping[str, str]) -> isolate.Session:
@@ -221,6 +222,27 @@ def run_worker(
         expected_version=expected,
         variables=variables,
     )
+
+
+def _find_interpreter(interpreter: str | Path, variables: Mapping[str, str]) -> str | Path:
+    """Look up a bare interpreter name on the worker's ``PATH``, as a shell would.
+
+    Isolate makes any other path absolute against the working directory.
+
+    Returns:
+        The interpreter path found on ``PATH``, or ``interpreter`` unchanged if it has a directory.
+
+    Raises:
+        FileNotFoundError: If a bare name is not on the worker's ``PATH``.
+    """
+    name = os.fspath(interpreter)
+    if not name or os.sep in name:
+        return interpreter
+    found = shutil.which(name, path=variables.get("PATH", os.environ.get("PATH")))
+    if found is None:
+        msg = f"Interpreter {name!r} was not found on PATH."
+        raise FileNotFoundError(msg)
+    return found
 
 
 def _run_process(

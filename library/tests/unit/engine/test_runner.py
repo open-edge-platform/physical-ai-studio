@@ -198,6 +198,48 @@ def test_worker_runner_rejects_a_version_outside_plugin_metadata(
         run_worker(env, [], device="cpu", hooks=None, interpreter=sys.executable)
 
 
+def test_worker_runner_finds_a_bare_interpreter_name_on_the_worker_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A bare name such as ``python3`` is found on the worker's PATH, not in the working directory."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    env = _worker_env(
+        tmp_path,
+        _protocol_writer(
+            "{'type': 'hello', 'protocol': 1, 'framework': 'demo', 'package': 'lerobot', 'version': '0.6.1'}",
+            "{'type': 'result', 'output_dir': None, 'checkpoint': None}",
+        ),
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    wrapper = bin_dir / "custom-python"
+    wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    started: list[object] = []
+    real_start = isolate.start
+
+    def track_start(target: object, **kwargs: object) -> isolate.Session:
+        started.append(target)
+        return real_start(target, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(isolate, "start", track_start)
+    path = os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")])
+
+    result = run_worker(env, [], device="cpu", interpreter="custom-python", extra_env={"PATH": path})
+
+    assert result == Run(framework="demo", output_dir=None, checkpoint=None)
+    assert started == [isolate.ExternalInterpreter(wrapper)]
+
+
+def test_worker_runner_rejects_a_bare_interpreter_name_missing_from_the_worker_path(tmp_path: Path) -> None:
+    env = _worker_env(tmp_path, _protocol_writer())
+
+    with pytest.raises(FileNotFoundError, match="'custom-python' was not found on PATH"):
+        run_worker(env, [], device="cpu", interpreter="custom-python", extra_env={"PATH": str(tmp_path)})
+
+
 def test_worker_runner_delivers_cancellation_and_reports_last_step(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
