@@ -3,6 +3,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+import { keepPreviousData } from '@tanstack/react-query';
+
 import { $api } from '../../api/client';
 import { SchemaRobotSimulation } from '../../api/openapi-spec';
 
@@ -48,3 +50,17 @@ export const useRobotSimulation = (project_id: string, robot_id: string, enabled
 
     return { ...query, data: stable ?? query.data };
 };
+
+/**
+ * The command that starts a robot's simulation in a terminal, outside Studio, for a scene and seed
+ * (null for random layouts). No data when the robot type's plugin offers none. Fetched again on every
+ * open: it carries the robot's address, which Studio's own simulation may have moved.
+ */
+export const useSimulationCommand = (project_id: string, robot_id: string, scene: string, seed: number | null) =>
+    $api.useQuery(
+        'get',
+        '/api/projects/{project_id}/robots/{robot_id}/simulation/command',
+        { params: { path: { project_id, robot_id }, query: seed === null ? { scene } : { scene, seed } } },
+        // The last command stays while the next scene's or seed's loads, so the section does not flicker.
+        { placeholderData: keepPreviousData, staleTime: 0 }
+    );
