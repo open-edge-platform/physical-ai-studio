@@ -49,7 +49,7 @@ include = [
 "src/physicalai_lerobot_policy_plugin/env/uv.lock" = "src/physicalai_lerobot_policy_plugin/env/uv.lock"
 
 [tool.uv.sources]
-physicalai = { git = "https://github.com/n3puiol/physicalai.git", rev = "51c3062820b8a23452e0073f7c7b3fb9fadcba61" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "d08efb735c76fcd8ec954c9a54a44897484ff766" }
 # Keep the optional train extra on this checkout's Runtime source.
 physicalai-train = { path = "../../../library", editable = true }
 

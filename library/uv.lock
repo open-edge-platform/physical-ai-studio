@@ -3609,8 +3609,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.4.1.dev37+g51c3062"
-source = { git = "https://github.com/n3puiol/physicalai.git?rev=51c3062820b8a23452e0073f7c7b3fb9fadcba61#51c3062820b8a23452e0073f7c7b3fb9fadcba61" }
+version = "0.4.1.dev35+gd08efb7"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=d08efb735c76fcd8ec954c9a54a44897484ff766#d08efb735c76fcd8ec954c9a54a44897484ff766" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -3651,7 +3651,7 @@ requires-dist = [
     { name = "diffusers", specifier = ">=0.38.0" },
     { name = "lerobot", extras = ["dataset"], specifier = ">=0.7,<0.8" },
     { name = "lerobot", extras = ["training"], marker = "extra == 'train'" },
-    { name = "physicalai", git = "https://github.com/n3puiol/physicalai.git?rev=51c3062820b8a23452e0073f7c7b3fb9fadcba61" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=d08efb735c76fcd8ec954c9a54a44897484ff766" },
     { name = "physicalai-train", marker = "extra == 'train'", editable = "." },
     { name = "pytest", marker = "extra == 'tests'", specifier = ">=9.0.3" },
 ]
@@ -3847,7 +3847,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'cosmos3'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/n3puiol/physicalai.git?rev=51c3062820b8a23452e0073f7c7b3fb9fadcba61" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=d08efb735c76fcd8ec954c9a54a44897484ff766" },
     { name = "physicalai-lerobot-policy-plugin", extras = ["train"], marker = "extra == 'lerobot'", editable = "../plugins/policies/lerobot" },
     { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
