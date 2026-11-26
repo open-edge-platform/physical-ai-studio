@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from physicalai_studio_plugin import RobotCatalogDefinition
 
@@ -264,3 +266,78 @@ def test_robot_type_with_asset_advertises_its_urdf() -> None:
     assert response.urdf_path == "/api/robots/catalog/SO101_Follower/urdf"
     assert response.package_map == {"SO101": "/api/robots/catalog/SO101_Follower"}
     assert response.joint_map
+
+
+MESH_URL = "/api/robots/catalog/SO101_Follower/assets/mesh.stl"
+
+
+def _serve_mesh_from(monkeypatch: pytest.MonkeyPatch, mesh: Path) -> None:
+    monkeypatch.setattr("api.robot_catalog.resolve_robot_relative_asset_path", lambda _definition, asset_path: mesh)
+
+
+@pytest.mark.parametrize(
+    "if_none_match",
+    ["*", "W/{etag}", '"other", {etag}', 'W/"other", W/{etag}'],
+)
+def test_if_none_match_uses_the_weak_comparison(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, if_none_match: str
+) -> None:
+    mesh = tmp_path / "mesh.stl"
+    mesh.write_bytes(b"solid mesh")
+    _serve_mesh_from(monkeypatch, mesh)
+    client = TestClient(app)
+    etag = client.get(MESH_URL).headers["etag"]
+
+    response = client.get(MESH_URL, headers={"If-None-Match": if_none_match.format(etag=etag)})
+
+    assert response.status_code == 304
+    assert response.headers["etag"] == etag
+    assert response.headers["cache-control"] == "no-cache"
+
+
+def test_if_none_match_without_the_etag_gets_the_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    mesh = tmp_path / "mesh.stl"
+    mesh.write_bytes(b"solid mesh")
+    _serve_mesh_from(monkeypatch, mesh)
+
+    response = TestClient(app).get(MESH_URL, headers={"If-None-Match": 'W/"other", "stale"'})
+
+    assert response.status_code == 200
+    assert response.content == b"solid mesh"
+
+
+def test_a_same_size_replacement_with_its_mtime_restored_is_not_a_304(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The ETag follows the bytes: a new mesh is sent even when its size and mtime match the old one."""
+    mesh = tmp_path / "mesh.stl"
+    mesh.write_bytes(b"old mesh!!")
+    _serve_mesh_from(monkeypatch, mesh)
+    client = TestClient(app)
+    old = client.get(MESH_URL)
+    before = mesh.stat()
+
+    mesh.write_bytes(b"new mesh!!")
+    os.utime(mesh, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert (mesh.stat().st_size, mesh.stat().st_mtime_ns) == (before.st_size, before.st_mtime_ns)
+
+    response = client.get(MESH_URL, headers={"If-None-Match": old.headers["etag"]})
+
+    assert response.status_code == 200
+    assert response.content == b"new mesh!!"
+    assert response.headers["etag"] != old.headers["etag"]
+    assert response.headers["last-modified"] == old.headers["last-modified"]
+
+
+def test_if_modified_since_alone_gets_the_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """An mtime can be set back, so only the content ETag can turn a request into a 304."""
+    mesh = tmp_path / "mesh.stl"
+    mesh.write_bytes(b"solid mesh")
+    _serve_mesh_from(monkeypatch, mesh)
+    client = TestClient(app)
+    last_modified = client.get(MESH_URL).headers["last-modified"]
+
+    response = client.get(MESH_URL, headers={"If-Modified-Since": last_modified})
+
+    assert response.status_code == 200
+    assert response.content == b"solid mesh"
