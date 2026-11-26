@@ -203,7 +203,7 @@ async def test_it_keeps_successes_only_a_regrasp_included(sim_session, rig) -> N
     assert all(event["task"] == TASK for event in recording_log(Path(dataset.path) / "recording.jsonl")[:1])
     assert session.state().dataset.episodes_recorded == 2
     await _until(lambda: session.state().control is None)  # the follower holds once it is done
-    assert not rig.leader.connected
+    await _until(lambda: not rig.leader.connected)  # the control's thread disconnects it after the session lets go
     await session.stop()
 
 
