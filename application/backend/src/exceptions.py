@@ -272,6 +272,17 @@ class DeviceInUseError(BaseException):
         )
 
 
+class CameraExclusiveUseError(BaseException):
+    """A single-owner camera already belongs to another session."""
+
+    def __init__(self, *, project_name: str) -> None:
+        super().__init__(
+            message=f"Camera is already in use by project {project_name!r}; this camera supports one active session.",
+            error_code="camera_exclusive_use",
+            http_status=http.HTTPStatus.LOCKED,
+        )
+
+
 class RuntimeSessionCommandError(BaseException):
     """Raised when a runtime session command does not fit the session's state."""
 

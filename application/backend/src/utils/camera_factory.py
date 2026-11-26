@@ -6,15 +6,17 @@ filters per-driver kwargs so that only constructor-safe parameters reach the cam
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from physicalai.capture import CameraType, ColorMode, SharedCamera
-from physicalai.config import Config
 
+from cameras.registry import get_camera_catalog_registry
 from utils.v4l2_frame_interval import fix_zero_frame_intervals
 
 if TYPE_CHECKING:
+    from physicalai.config import Config
+
     from schemas.project_camera import Camera
 
 MIGRATED_DRIVERS: frozenset[str] = frozenset({"usb_camera", "realsense", "basler", "ipcam"})
@@ -33,50 +35,15 @@ _DRIVER_TO_CAMERA_TYPE: dict[str, CameraType] = {
     "ipcam": CameraType.IP,
 }
 
-_DRIVER_TO_CLASS_PATH: dict[str, str] = {
-    "usb_camera": "physicalai.capture.UVCCamera",
-    "realsense": "physicalai.capture.RealSenseCamera",
-    "basler": "physicalai.capture.BaslerCamera",
-    "ipcam": "physicalai.capture.IPCamera",
-}
-
-# Per-driver kwargs that are safe to pass through to the nested camera recipe.
-_ALLOWED_KWARGS: dict[str, frozenset[str]] = {
-    "usb_camera": frozenset({"width", "height", "fps"}),
-    "realsense": frozenset({"width", "height", "fps"}),
-    "basler": frozenset({"width", "height", "fps"}),
-    "ipcam": frozenset({"width", "height", "fps", "url"}),
-}
-
 
 def build_camera_config(config: Camera) -> Config:
     """Build a camera configuration from a config schema."""
-    class_path = _DRIVER_TO_CLASS_PATH[config.driver]
-    allowed = _ALLOWED_KWARGS.get(config.driver, frozenset())
-
-    payload = config.payload.model_dump()
-    init_args: dict[str, Any] = {k: v for k, v in payload.items() if k in allowed and v is not None}
-    if config.driver == "realsense":
-        init_args["enable_depth"] = payload["output_type"] in {"depth", "both"}
-
-    fingerprint = config.fingerprint
-    if not fingerprint:
-        raise ValueError("Camera must be reselected")
-
-    if config.driver == "usb_camera":
-        init_args["device"] = fingerprint
-    elif config.driver != "ipcam":
-        serial = fingerprint.get("serial")
-        if not isinstance(serial, str) or not serial:
-            raise ValueError(f"Camera fingerprint for {config.driver!r} must include a non-empty 'serial'")
-        init_args["serial_number"] = serial
-
-    return Config(class_path, init_args)
+    return get_camera_catalog_registry().build_camera_config(config)
 
 
 def is_migrated(driver: str) -> bool:
     """Return True if *driver* is supported by physicalai.capture."""
-    return driver in MIGRATED_DRIVERS
+    return get_camera_catalog_registry().supports(driver)
 
 
 def driver_to_camera_type(driver: str) -> CameraType:
@@ -116,7 +83,7 @@ def build_shared_camera(
     Returns:
         A configured (but not yet connected) SharedCamera instance.
     """
-    if config.driver not in _DRIVER_TO_CLASS_PATH:
+    if not is_migrated(config.driver):
         msg = f"unsupported driver {config.driver!r}; expected one of {sorted(MIGRATED_DRIVERS)}"
         raise ValueError(msg)
 

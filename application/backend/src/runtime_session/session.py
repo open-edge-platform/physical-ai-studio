@@ -35,6 +35,8 @@ from uuid import UUID, uuid4
 import anyio
 from loguru import logger
 
+from cameras.catalog import CameraClaimPolicy
+from cameras.registry import get_camera_catalog_registry
 from exceptions import BaseException as AppBaseException
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
 from runtime_session.autopilot_recording import AutopilotRecording
@@ -499,6 +501,10 @@ class RuntimeSession:
                     holder=self.id,
                     project_id=self.project_id,
                     project_name=self.project_name,
+                    exclusive=(
+                        (definition := get_camera_catalog_registry().get_definition(camera.driver)) is not None
+                        and definition.claim_policy is CameraClaimPolicy.EXCLUSIVE
+                    ),
                 )
             )
         self._registry.claim_robots(self, dict(description.robot_names))
