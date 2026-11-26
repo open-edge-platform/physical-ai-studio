@@ -140,7 +140,7 @@ jobs:
       - name: Install dependencies
         working-directory: library
         run: |
-          uv sync --frozen --extra tests --extra libero --extra policies --extra cpu --extra loggers
+          uv sync --frozen --extra tests --extra libero --extra policies --extra cpu --extra loggers --extra lerobot
 
       - name: Run python unit tests
         working-directory: library
@@ -178,7 +178,7 @@ jobs:
       - name: Install dependencies
         working-directory: library
         run: |
-          uv sync --frozen --extra tests --extra libero --extra policies --extra cu132
+          uv sync --frozen --extra tests --extra libero --extra policies --extra cu132 --extra lerobot
 
       - name: Run python integration tests
         working-directory: library

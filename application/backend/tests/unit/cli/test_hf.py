@@ -284,6 +284,27 @@ def test_ambiguous_roots_and_subfolder(environment):
     assert json.loads(result.stdout)["importable"]
 
 
+@pytest.mark.parametrize("version", ["1.0", "1.1", "1.0.0", "1.1.0", "1.0.1"])
+def test_inspection_accepts_supported_manifest_versions(tmp_path, version):
+    files = model_files()
+    filename = "exports/torch/manifest.json"
+    files[filename] = json.dumps({**json.loads(files[filename]), "version": version}).encode()
+    put_files(tmp_path, files)
+    report = inspection.inspect_local_model(tmp_path)
+    assert report.importable, report.errors
+
+
+@pytest.mark.parametrize("version", [None, 1.1, [], "", "invalid", "0.9", "1.2", "2.0", "1.1rc1", "1.1.post1"])
+def test_inspection_rejects_invalid_or_unsupported_manifest_versions(tmp_path, version):
+    files = model_files()
+    filename = "exports/torch/manifest.json"
+    files[filename] = json.dumps({**json.loads(files[filename]), "version": version}).encode()
+    put_files(tmp_path, files)
+    report = inspection.inspect_local_model(tmp_path)
+    assert not report.importable
+    assert report.errors
+
+
 @pytest.mark.parametrize("bad", ["../model", "/model", "a\\b", "a/../b", "a/*", "C:/model"])
 def test_unsafe_paths(bad):
     with pytest.raises(ValueError, match="Unsafe"):

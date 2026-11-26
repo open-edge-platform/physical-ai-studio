@@ -15,6 +15,11 @@ question of what to pass to :class:`physicalai.train.Trainer`.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from physicalai.devices import SingleXPUStrategy
+
 ACCELERATOR_PREFERENCE: tuple[str, ...] = ("xpu", "cuda", "mps", "cpu")
 """Auto-detection order. XPU first: this is the primary supported accelerator."""
 
@@ -48,23 +53,30 @@ def resolve_accelerator(device_type: str | None = None) -> str:
     return "cpu"
 
 
-def resolve_strategy(device_type: str | None = None) -> str:
-    """Return the Lightning strategy string for a training run.
+def resolve_strategy(device_type: str | None = None, device_index: int | None = None) -> str | SingleXPUStrategy:
+    """Return the Lightning strategy for a training run.
 
     XPU needs its own single-device strategy; everything else is covered by
     ``"auto"``.
 
     Args:
         device_type: Explicit accelerator, or None to auto-detect.
+        device_index: Zero-based XPU index, or None to use XPU 0.
 
     Returns:
-        The strategy name to pass to the trainer.
+        An indexed XPU strategy, or ``"auto"`` for other accelerators.
 
     Example:
         >>> resolve_strategy("cpu")
         'auto'
     """
-    return "xpu_single" if resolve_accelerator(device_type) == "xpu" else "auto"
+    if resolve_accelerator(device_type) != "xpu":
+        return "auto"
+
+    from physicalai.devices import SingleXPUStrategy
+
+    # Lightning does not apply `devices` to a single-device strategy's root device.
+    return SingleXPUStrategy(device=f"xpu:{device_index or 0}")
 
 
 def resolve_devices(device_index: int | None = None) -> list[int] | int:

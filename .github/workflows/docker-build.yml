@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
-      matrix: ${{ steps.set_matrix.outputs.matrix }}
     permissions:
       contents: read
     steps:
@@ -79,26 +78,13 @@ jobs:
               - '!**/*.md'
               - '!**/docs/**'
 
-      - name: Set build matrix
-        id: set_matrix
-        # Only same-repo PRs in upstream can use the self-hosted GPU runner.
-        # Fork paths build CUDA on ubuntu-latest without a GPU smoke test.
-        env:
-          CAN_USE_SELF_HOSTED_CUDA: ${{ github.repository_owner == 'open-edge-platform' && github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          CPU_XPU='{"device":"cpu","runner":["ubuntu-latest"]},{"device":"xpu","runner":["ubuntu-latest"]}'
-          if [ "${CAN_USE_SELF_HOSTED_CUDA}" = "true" ]; then
-            MATRIX="{\"include\":[${CPU_XPU},{\"device\":\"cuda\",\"runner\":[\"self-hosted\",\"linux\",\"x64\"]}]}"
-          else
-            MATRIX="{\"include\":[${CPU_XPU},{\"device\":\"cuda\",\"runner\":[\"ubuntu-latest\"]}]}"
-          fi
-          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
-
   build:
     name: Build (${{ matrix.device }})
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: ${{ matrix.runner }}
+    # All variants run on GitHub-hosted runners: the shared self-hosted GPU
+    # runners added 25-90 min of queue time without speeding up the build.
+    runs-on: ubuntu-latest
     timeout-minutes: 120 # To check CUDA builds
     permissions:
       contents: read # Checkout code
@@ -107,7 +93,8 @@ jobs:
 
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.check-paths.outputs.matrix) }}
+      matrix:
+        device: [cpu, xpu, cuda]
 
     steps:
       - *harden-runner
@@ -146,7 +133,6 @@ jobs:
           enable-compile-model: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL }}
 
       - name: Smoke-test docker image
-        if: matrix.device != 'cuda' || (github.repository_owner == 'open-edge-platform' && github.event.pull_request.head.repo.full_name == github.repository)
         env:
           IMAGE: ${{ steps.docker_build.outputs.image-name }}
           DEVICE: ${{ matrix.device }}
@@ -161,8 +147,9 @@ jobs:
           # in use".
           docker rm -f "${SERVICE_NAME}" > /dev/null 2>&1 || true
 
-          # CUDA requires GPU hardware, test with docker run instead of compose
-          # CPU and XPU test via compose to validate the full deployment config
+          # The CUDA compose profile reserves GPUs, so start it with plain docker
+          # run (no GPU) instead. CPU and XPU test via compose to validate the
+          # full deployment config.
           if [ "${DEVICE}" = "cuda" ]; then
             docker run -d --name "${SERVICE_NAME}" -p 7860:7860 "${IMAGE}"
             CLEANUP_CMD="docker rm -f ${SERVICE_NAME}"
