@@ -12,7 +12,7 @@ Read these first:
 
 - `application/docs/robot-plugins.md`
 - `application/docs/explanation/robot-plugin-architecture.md`
-- `physicalai/packages/physicalai-studio-plugin/src/physicalai_studio_plugin/ui_schema.py`
+- `physicalai/plugins/physicalai-studio-plugin/src/physicalai_studio_plugin/ui_schema.py`
 - `application/ui/src/features/robots/robot-form/robot-schema/schema-form.tsx`
 
 ## Workflow
@@ -26,7 +26,7 @@ Read these first:
 
 2. **Add SDK typing + validation for the new item kind.**
 
-   - Edit `physicalai/packages/physicalai-studio-plugin/src/physicalai_studio_plugin/ui_schema.py`:
+   - Edit `physicalai/plugins/physicalai-studio-plugin/src/physicalai_studio_plugin/ui_schema.py`:
      - add a new `TypedDict` for the item kind,
      - include it in `RobotUiItem` union,
      - validate required fields and field type constraints,
@@ -68,7 +68,7 @@ Read these first:
    - Feature-level tests where used (example bimanual forms):
      - `application/ui/src/features/robots/robot-form/catalog/*.test.tsx`
    - Plugin SDK contract tests:
-     - `physicalai/packages/physicalai-studio-plugin/tests/test_contracts.py`
+     - `physicalai/plugins/physicalai-studio-plugin/tests/test_contracts.py`
      - cover valid item metadata, type errors, missing fields, and ownership conflicts.
    - Done when: all changed test suites pass locally.
 
@@ -99,7 +99,7 @@ npm run test:unit -- src/features/robots/robot-form/robot-schema/schema-form.tes
 From the runtime repo root (or environment where plugin tests run):
 
 ```bash
-uv run python -m pytest packages/physicalai-studio-plugin/tests/test_contracts.py
+uv run python -m pytest plugins/physicalai-studio-plugin/tests/test_contracts.py
 ```
 
 When skill files changed:
@@ -115,5 +115,5 @@ python3 .github/scripts/skills/agent_skills.py validate
 - `application/ui/src/features/robots/robot-form/robot-schema/components/connection-field.tsx`
 - `application/ui/src/features/robots/robot-form/robot-schema/components/ip-address-field.tsx`
 - `application/ui/src/features/robots/robot-form/robot-schema/components/calibration-field.tsx`
-- `physicalai/packages/physicalai-studio-plugin/src/physicalai_studio_plugin/ui_schema.py`
-- `physicalai/packages/physicalai-studio-plugin/tests/test_contracts.py`
+- `physicalai/plugins/physicalai-studio-plugin/src/physicalai_studio_plugin/ui_schema.py`
+- `physicalai/plugins/physicalai-studio-plugin/tests/test_contracts.py`
