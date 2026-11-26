@@ -275,6 +275,27 @@ def test_prune_removes_only_stale_engine_managed_environments(
     assert sorted(entry.path for entry in removed_entries) == removed
 
 
+def test_prune_reads_labels_without_measuring_environments(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Measuring walks every file of an environment, and pruning needs only its labels."""
+    from physicalai.engine import Engine  # ruff: ignore[import-outside-top-level]
+
+    cache = tmp_path / "cache"
+    env = _worker_env(tmp_path / "project")
+    current = _isolate_entry(cache / ("1" * 64), _engine_labels(env))
+    stale = _isolate_entry(cache / ("2" * 64), _engine_labels(env, key="0" * 64))
+    removed_entries: list[isolate.PreparedEnvironment] = []
+    monkeypatch.setattr(isolate, "list_prepared", lambda: [current, stale])
+    monkeypatch.setattr(isolate, "remove_prepared", removed_entries.append)
+    monkeypatch.setattr(Engine, "get", Mock(return_value=Mock(environments=Mock(return_value=[env]))))
+    monkeypatch.setattr(_environment, "_directory_size", Mock(side_effect=AssertionError("measured an environment")))
+
+    assert _environment.prune() == [stale.path]
+    assert removed_entries == [stale]
+
+
 def test_list_prepared_reports_engine_metadata_for_isolate_cache_entries(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -327,6 +348,7 @@ def test_environment_keys_are_pinned_for_a_fixed_project(tmp_path: Path) -> None
         "cuda": "f27a1f30d1e0fb19607614b68dd828a570ad22a9b941017c387eebc1c6d18e43",
         "xpu": "9c4e643abadf5e651179f0843b64b76fec36c6b50e83139c16adacae291e86fd",
     }
+
 
 def test_single_profile_environments_skip_hardware_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": True})

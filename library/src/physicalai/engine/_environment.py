@@ -384,11 +384,9 @@ def list_prepared() -> list[PreparedEnvironment]:
     Returns:
         Environments sorted by framework, name, accelerator, and path.
     """
-    prepared = []
-    for environment in isolate.list_prepared():
-        engine_environment = _engine_environment(environment)
-        if engine_environment is not None:
-            prepared.append(replace(engine_environment, size_bytes=_directory_size(environment.path)))
+    prepared = [
+        replace(environment, size_bytes=_directory_size(environment.path)) for environment in _engine_environments()
+    ]
     return sorted(prepared, key=lambda item: (item.framework, item.name, item.accelerator, str(item.path)))
 
 
@@ -405,7 +403,7 @@ def prune_prepared(current: Iterable[WorkerEnv]) -> list[Path]:
     """
     current_keys = {(env.framework, env.name): env.key() for env in current}
     removed = []
-    for environment in list_prepared():
+    for environment in _engine_environments():
         if current_keys.get((environment.framework, environment.name)) != environment.key:
             isolate.remove_prepared(environment.isolate)
             removed.append(environment.path)
@@ -421,12 +419,18 @@ def prune() -> list[Path]:
     from . import Engine  # ruff: ignore[import-outside-top-level]  # Discovery imports this module during package initialization.
 
     current: list[WorkerEnv] = []
-    for name in {environment.framework for environment in list_prepared()}:
+    for name in {environment.framework for environment in _engine_environments()}:
         try:
             current.extend(Engine.get(name).environments())
         except ValueError:
             continue
     return prune_prepared(current)
+
+
+def _engine_environments() -> list[PreparedEnvironment]:
+    # Without sizes: measuring walks every file of every environment, and pruning needs only the labels.
+    listed = (_engine_environment(environment) for environment in isolate.list_prepared())
+    return [environment for environment in listed if environment is not None]
 
 
 def _engine_environment(environment: isolate.PreparedEnvironment) -> PreparedEnvironment | None:
