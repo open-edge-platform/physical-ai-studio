@@ -175,6 +175,11 @@ class Recording:
             episodes_recorded=self.status.episodes_recorded,
         )
 
+    @property
+    def failure(self) -> str | None:
+        """Why the worker failed, if it did; once it has stopped, also why finishing failed (copying back)."""
+        return self._worker.failure
+
     async def __aenter__(self) -> Self:
         """Start the worker and wait until it answers.
 

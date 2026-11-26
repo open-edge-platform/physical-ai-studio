@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from internal_datasets.mutations.recording_mutation import RecordingCleanupError, RecordingNotSavedError
 from workers.dataset_worker import DatasetWorker
 
 
@@ -47,12 +48,25 @@ class FakeMutation:
         self.frames = 0
 
     def teardown(self) -> None:
+        if self._fails("teardown"):  # as RecordingMutation reports a failed copy back
+            raise RecordingNotSavedError(
+                "Copying back failed (No space left on device). The recorded episodes are left in /cache/x"
+            )
+        if self._fails("worker"):  # something else breaks: nobody can say whether the copy landed
+            raise ValueError("the worker broke")
         self._write("teardown")
+        if self._fails("cleanup"):
+            raise RecordingCleanupError("its cache /cache/x could not be removed (Permission denied)")
 
 
 class FakeDatasetWorker(DatasetWorker):
     def open_mutation(self) -> FakeMutation:  # type: ignore[override]
         return FakeMutation(Path(self.dataset.path) / "recording.jsonl")
+
+    def free_bytes(self) -> int:
+        """What a test wrote to ``free_bytes`` next to the log, or plenty."""
+        free = Path(self.dataset.path) / "free_bytes"
+        return int(free.read_text()) if free.exists() else 100 * 1024**3
 
 
 def recording_log(path: Path) -> list[dict]:

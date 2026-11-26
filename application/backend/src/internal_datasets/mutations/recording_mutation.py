@@ -3,6 +3,14 @@ from loguru import logger
 from internal_datasets.dataset_client import DatasetClient
 
 
+class RecordingNotSavedError(RuntimeError):
+    """Finalizing or copying back failed: the recording is not in the dataset. The message says where it was left."""
+
+
+class RecordingCleanupError(RuntimeError):
+    """The recording was copied back into the dataset, but its cache could not be removed."""
+
+
 class RecordingMutation:
     """This is a mutation wrapper to handle dataset recording.
 
@@ -37,15 +45,32 @@ class RecordingMutation:
         self.cache_dataset.discard_buffer()
 
     def teardown(self) -> None:
-        """If mutation exists apply and then remove cache."""
+        """If mutation exists apply and then remove cache.
+
+        Raises:
+            RecordingNotSavedError: Finalizing or copying back failed; the message says where the recording is.
+            RecordingCleanupError: The recording is in the dataset, but the cache could not be removed.
+        """
         logger.debug(f"Teardown recording mutation. Has mutation {self.has_mutation}")
+        cache = getattr(self.cache_dataset, "path", "the cache")
         try:
             self.cache_dataset.finalize()
-        except Exception:
-            # The cache is left as it is: it holds every episode of this recording, none copied back yet.
-            cache = getattr(self.cache_dataset, "path", "the cache")
-            logger.error(f"Could not finalize the recording; its episodes are still in {cache}")
-            raise
+        except Exception as error:
+            # The cache is left as it is: it holds what this recording wrote, none copied back yet.
+            logger.error(f"Could not finalize the recording; what it recorded is left in {cache}")
+            raise RecordingNotSavedError(
+                f"Finalizing failed ({error}). What was recorded is left in {cache}"
+            ) from error
         if self.has_mutation:
-            self.source_dataset.overwrite(self.cache_dataset)
-        self.cache_dataset.delete()
+            try:
+                self.source_dataset.overwrite(self.cache_dataset)
+            except Exception as error:
+                logger.error(f"Could not copy the recording back; its episodes are still in {cache}")
+                raise RecordingNotSavedError(
+                    f"Copying back failed ({error}). The recorded episodes are left in {cache}"
+                ) from error
+        try:
+            self.cache_dataset.delete()
+        except Exception as error:
+            logger.error(f"The recording was saved, but its cache {cache} could not be removed")
+            raise RecordingCleanupError(f"its cache {cache} could not be removed ({error})") from error
