@@ -61,6 +61,59 @@ export interface LogEntry {
     record: LogRecord;
 }
 
+const describe = (value: unknown): string => {
+    if (typeof value === 'string') {
+        return value;
+    }
+    try {
+        return JSON.stringify(value) ?? '';
+    } catch {
+        return '';
+    }
+};
+
+/**
+ * The traceback in a record's `text`. Loguru appends `\n{exception}` to the log format, so the traceback is
+ * everything after the line that holds the message, whatever the format puts before or after the message.
+ * The record's `exception` has only the type and value, not the traceback.
+ */
+const getTraceback = (text: unknown, message: string): string | null => {
+    if (typeof text !== 'string') {
+        return null;
+    }
+    const start = text.indexOf(message);
+    if (start === -1) {
+        return null;
+    }
+    const lineEnd = text.indexOf('\n', start + message.length);
+    if (lineEnd === -1) {
+        return null;
+    }
+    const traceback = text.slice(lineEnd + 1).trimEnd();
+    return traceback === '' ? null : traceback;
+};
+
+/**
+ * The exception of a record: the traceback in its `text`, or else the exception's type and value.
+ * `null` when the record has none. It never throws on a malformed record.
+ */
+export const getExceptionText = (entry: LogEntry): string | null => {
+    const { exception, message } = entry.record;
+    if (exception === null || typeof exception !== 'object') {
+        return null;
+    }
+    const traceback = getTraceback(entry.text, typeof message === 'string' ? message : '');
+    if (traceback !== null) {
+        return traceback;
+    }
+    const { type, value } = exception as { type?: unknown; value?: unknown };
+    if (typeof type !== 'string') {
+        return null;
+    }
+    const description = describe(value);
+    return description === '' ? type : `${type}: ${description}`;
+};
+
 export interface LogFilters {
     levels: Set<LogLevelName>;
     searchQuery: string;

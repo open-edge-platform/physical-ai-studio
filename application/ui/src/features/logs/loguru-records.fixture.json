@@ -1,0 +1,290 @@
+[
+    {
+        "format": "default",
+        "message": "Worker ModelWorker-demo failed",
+        "entry": {
+            "text": "2026-11-27 04:30:27.516 +01:00 | ERROR    | __main__:<module>:29 - Worker ModelWorker-demo failed\nTraceback (most recent call last):\n\n> File \"/app/gen_records.py\", line 27, in <module>\n    open_model()\n    └ <function open_model at 0x100dd5440>\n\n  File \"/app/gen_records.py\", line 17, in open_model\n    raise RuntimeError(\"the export does not load\")\n\nRuntimeError: the export does not load\n",
+            "record": {
+                "elapsed": {
+                    "repr": "0:00:00.004726",
+                    "seconds": 0.004726
+                },
+                "exception": {
+                    "type": "RuntimeError",
+                    "value": "the export does not load",
+                    "traceback": true
+                },
+                "extra": {
+                    "worker": "ModelWorker"
+                },
+                "file": {
+                    "name": "gen_records.py",
+                    "path": "/app/gen_records.py"
+                },
+                "function": "<module>",
+                "level": {
+                    "icon": "❌",
+                    "name": "ERROR",
+                    "no": 40
+                },
+                "line": 29,
+                "message": "Worker ModelWorker-demo failed",
+                "module": "gen_records",
+                "name": "__main__",
+                "process": {
+                    "id": 61538,
+                    "name": "MainProcess"
+                },
+                "template": "Worker ModelWorker-demo failed",
+                "thread": {
+                    "id": 8224440192,
+                    "name": "MainThread"
+                },
+                "time": {
+                    "repr": "2026-11-27 04:30:27.516181+01:00",
+                    "timestamp": 1795750227.516181
+                }
+            }
+        }
+    },
+    {
+        "format": "default",
+        "message": "ERROR",
+        "entry": {
+            "text": "2026-11-27 04:30:27.518 +01:00 | ERROR    | __main__:<module>:29 - ERROR\nTraceback (most recent call last):\n\n> File \"/app/gen_records.py\", line 27, in <module>\n    open_model()\n    └ <function open_model at 0x100dd5440>\n\n  File \"/app/gen_records.py\", line 17, in open_model\n    raise RuntimeError(\"the export does not load\")\n\nRuntimeError: the export does not load\n",
+            "record": {
+                "elapsed": {
+                    "repr": "0:00:00.006996",
+                    "seconds": 0.006996
+                },
+                "exception": {
+                    "type": "RuntimeError",
+                    "value": "the export does not load",
+                    "traceback": true
+                },
+                "extra": {
+                    "worker": "ModelWorker"
+                },
+                "file": {
+                    "name": "gen_records.py",
+                    "path": "/app/gen_records.py"
+                },
+                "function": "<module>",
+                "level": {
+                    "icon": "❌",
+                    "name": "ERROR",
+                    "no": 40
+                },
+                "line": 29,
+                "message": "ERROR",
+                "module": "gen_records",
+                "name": "__main__",
+                "process": {
+                    "id": 61538,
+                    "name": "MainProcess"
+                },
+                "template": "ERROR",
+                "thread": {
+                    "id": 8224440192,
+                    "name": "MainThread"
+                },
+                "time": {
+                    "repr": "2026-11-27 04:30:27.518451+01:00",
+                    "timestamp": 1795750227.518451
+                }
+            }
+        }
+    },
+    {
+        "format": "default",
+        "message": "",
+        "entry": {
+            "text": "2026-11-27 04:30:27.520 +01:00 | ERROR    | __main__:<module>:29 - \nTraceback (most recent call last):\n\n> File \"/app/gen_records.py\", line 27, in <module>\n    open_model()\n    └ <function open_model at 0x100dd5440>\n\n  File \"/app/gen_records.py\", line 17, in open_model\n    raise RuntimeError(\"the export does not load\")\n\nRuntimeError: the export does not load\n",
+            "record": {
+                "elapsed": {
+                    "repr": "0:00:00.008931",
+                    "seconds": 0.008931
+                },
+                "exception": {
+                    "type": "RuntimeError",
+                    "value": "the export does not load",
+                    "traceback": true
+                },
+                "extra": {
+                    "worker": "ModelWorker"
+                },
+                "file": {
+                    "name": "gen_records.py",
+                    "path": "/app/gen_records.py"
+                },
+                "function": "<module>",
+                "level": {
+                    "icon": "❌",
+                    "name": "ERROR",
+                    "no": 40
+                },
+                "line": 29,
+                "message": "",
+                "module": "gen_records",
+                "name": "__main__",
+                "process": {
+                    "id": 61538,
+                    "name": "MainProcess"
+                },
+                "template": "",
+                "thread": {
+                    "id": 8224440192,
+                    "name": "MainThread"
+                },
+                "time": {
+                    "repr": "2026-11-27 04:30:27.520386+01:00",
+                    "timestamp": 1795750227.520386
+                }
+            }
+        }
+    },
+    {
+        "format": "default",
+        "message": "Worker failed\nwhile loading",
+        "entry": {
+            "text": "2026-11-27 04:30:27.522 +01:00 | ERROR    | __main__:<module>:29 - Worker failed\nwhile loading\nTraceback (most recent call last):\n\n> File \"/app/gen_records.py\", line 27, in <module>\n    open_model()\n    └ <function open_model at 0x100dd5440>\n\n  File \"/app/gen_records.py\", line 17, in open_model\n    raise RuntimeError(\"the export does not load\")\n\nRuntimeError: the export does not load\n",
+            "record": {
+                "elapsed": {
+                    "repr": "0:00:00.010842",
+                    "seconds": 0.010842
+                },
+                "exception": {
+                    "type": "RuntimeError",
+                    "value": "the export does not load",
+                    "traceback": true
+                },
+                "extra": {
+                    "worker": "ModelWorker"
+                },
+                "file": {
+                    "name": "gen_records.py",
+                    "path": "/app/gen_records.py"
+                },
+                "function": "<module>",
+                "level": {
+                    "icon": "❌",
+                    "name": "ERROR",
+                    "no": 40
+                },
+                "line": 29,
+                "message": "Worker failed\nwhile loading",
+                "module": "gen_records",
+                "name": "__main__",
+                "process": {
+                    "id": 61538,
+                    "name": "MainProcess"
+                },
+                "template": "Worker failed\nwhile loading",
+                "thread": {
+                    "id": 8224440192,
+                    "name": "MainThread"
+                },
+                "time": {
+                    "repr": "2026-11-27 04:30:27.522297+01:00",
+                    "timestamp": 1795750227.522297
+                }
+            }
+        }
+    },
+    {
+        "format": "suffix",
+        "message": "Worker ModelWorker-demo failed",
+        "entry": {
+            "text": "ERROR - Worker ModelWorker-demo failed [gen_records]\nTraceback (most recent call last):\n\n> File \"/app/gen_records.py\", line 27, in <module>\n    open_model()\n    └ <function open_model at 0x100dd5440>\n\n  File \"/app/gen_records.py\", line 17, in open_model\n    raise RuntimeError(\"the export does not load\")\n\nRuntimeError: the export does not load\n",
+            "record": {
+                "elapsed": {
+                    "repr": "0:00:00.012986",
+                    "seconds": 0.012986
+                },
+                "exception": {
+                    "type": "RuntimeError",
+                    "value": "the export does not load",
+                    "traceback": true
+                },
+                "extra": {
+                    "worker": "ModelWorker"
+                },
+                "file": {
+                    "name": "gen_records.py",
+                    "path": "/app/gen_records.py"
+                },
+                "function": "<module>",
+                "level": {
+                    "icon": "❌",
+                    "name": "ERROR",
+                    "no": 40
+                },
+                "line": 29,
+                "message": "Worker ModelWorker-demo failed",
+                "module": "gen_records",
+                "name": "__main__",
+                "process": {
+                    "id": 61538,
+                    "name": "MainProcess"
+                },
+                "template": "Worker ModelWorker-demo failed",
+                "thread": {
+                    "id": 8224440192,
+                    "name": "MainThread"
+                },
+                "time": {
+                    "repr": "2026-11-27 04:30:27.524441+01:00",
+                    "timestamp": 1795750227.524441
+                }
+            }
+        }
+    },
+    {
+        "format": "message first",
+        "message": "Worker ModelWorker-demo failed",
+        "entry": {
+            "text": "Worker ModelWorker-demo failed | ERROR\nTraceback (most recent call last):\n\n> File \"/app/gen_records.py\", line 27, in <module>\n    open_model()\n    └ <function open_model at 0x100dd5440>\n\n  File \"/app/gen_records.py\", line 17, in open_model\n    raise RuntimeError(\"the export does not load\")\n\nRuntimeError: the export does not load\n",
+            "record": {
+                "elapsed": {
+                    "repr": "0:00:00.015189",
+                    "seconds": 0.015189
+                },
+                "exception": {
+                    "type": "RuntimeError",
+                    "value": "the export does not load",
+                    "traceback": true
+                },
+                "extra": {
+                    "worker": "ModelWorker"
+                },
+                "file": {
+                    "name": "gen_records.py",
+                    "path": "/app/gen_records.py"
+                },
+                "function": "<module>",
+                "level": {
+                    "icon": "❌",
+                    "name": "ERROR",
+                    "no": 40
+                },
+                "line": 29,
+                "message": "Worker ModelWorker-demo failed",
+                "module": "gen_records",
+                "name": "__main__",
+                "process": {
+                    "id": 61538,
+                    "name": "MainProcess"
+                },
+                "template": "Worker ModelWorker-demo failed",
+                "thread": {
+                    "id": 8224440192,
+                    "name": "MainThread"
+                },
+                "time": {
+                    "repr": "2026-11-27 04:30:27.526644+01:00",
+                    "timestamp": 1795750227.526644
+                }
+            }
+        }
+    }
+]

@@ -8,7 +8,12 @@ import { AriaListBox, AriaListBoxItem, Flex, ListLayout, Text, View, Virtualizer
 import { JumpToLatestButton } from './jump-to-latest-button';
 import { LogEntry } from './log-entry';
 import { LogFilters } from './log-filters';
-import { DEFAULT_LOG_FILTERS, type LogEntry as LogEntryType, type LogFilters as LogFiltersType } from './log-types';
+import {
+    DEFAULT_LOG_FILTERS,
+    getExceptionText,
+    type LogEntry as LogEntryType,
+    type LogFilters as LogFiltersType,
+} from './log-types';
 
 import styles from './log-viewer.module.css';
 
@@ -16,7 +21,9 @@ const formatLogForCopy = (log: LogEntryType): string => {
     const timestamp = new Date(log.record.time.timestamp * 1000).toISOString();
     const level = log.record.level.name.padEnd(8);
     const source = `${log.record.module}:${log.record.function}:${log.record.line}`;
-    return `[${timestamp}] ${level} ${source} - ${log.record.message}`;
+    const line = `[${timestamp}] ${level} ${source} - ${log.record.message}`;
+    const exceptionText = getExceptionText(log);
+    return exceptionText === null ? line : `${line}\n${exceptionText}`;
 };
 
 const getLogFilter = (filters: LogFiltersType) => {
@@ -32,8 +39,14 @@ const getLogFilter = (filters: LogFiltersType) => {
             const message = log.record.message.toLowerCase();
             const module = log.record.module.toLowerCase();
             const func = log.record.function.toLowerCase();
+            const exceptionText = (getExceptionText(log) ?? '').toLowerCase();
 
-            if (!message.includes(query) && !module.includes(query) && !func.includes(query)) {
+            if (
+                !message.includes(query) &&
+                !module.includes(query) &&
+                !func.includes(query) &&
+                !exceptionText.includes(query)
+            ) {
                 return false;
             }
         }

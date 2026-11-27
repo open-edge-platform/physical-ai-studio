@@ -3,6 +3,7 @@
 
 import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
 import { http } from '../../api/utils';
@@ -10,6 +11,7 @@ import { server } from '../../msw-node-setup';
 import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { LogsDialog } from './logs-dialog';
+import LOGURU_RECORDS from './loguru-records.fixture.json';
 
 /**
  * jsdom does not implement `EventSource`. `LogsDialog` streams via `fetchSSE`,
@@ -116,6 +118,139 @@ describe('LogsDialog', () => {
         expect(await screen.findByText('after reopening')).toBeInTheDocument();
         reopened.unmount();
         queryClient.clear();
+    });
+
+    const TRACEBACK = [
+        'Traceback (most recent call last):',
+        '  File "workers/model_worker.py", line 125, in lifecycle',
+        'RuntimeError: the export does not load',
+    ].join('\n');
+
+    const failedRecord = ({ message = 'Worker ModelWorker-1 failed', text = '' } = {}) =>
+        JSON.stringify({
+            // What the backend's serialized file sink writes: the traceback follows the message in `text`.
+            text: text || `2026-11-26 10:29:28.336 | ERROR    | workers.base:_main:153 - ${message}\n${TRACEBACK}\n`,
+            record: {
+                message,
+                name: 'workers.base',
+                module: 'base',
+                function: '_main',
+                line: 153,
+                level: { name: 'ERROR', no: 40, icon: '❌' },
+                time: { timestamp: 1_700_000_000, repr: '2023-11-14 22:13:20' },
+                exception: { type: 'RuntimeError', value: 'the export does not load', traceback: true },
+                extra: { worker: 'ModelWorker' },
+            },
+        });
+
+    // Written by Loguru 0.8 with serialize=True, as the backend's file sinks write them, after logging an exception
+    // under the default format and two custom LOGURU_FORMAT values. Only the script path was shortened to /app.
+    it.each(LOGURU_RECORDS)(
+        'shows the whole traceback of a real Loguru record, format $format, message $message',
+        async ({ entry }) => {
+            stubEventSourceWith(JSON.stringify(entry));
+
+            render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+
+            const exception = (await screen.findByLabelText('Exception')).textContent ?? '';
+            expect(exception.startsWith('Traceback (most recent call last):')).toBe(true);
+            expect(exception).toContain('in open_model');
+            expect(exception.endsWith('RuntimeError: the export does not load')).toBe(true);
+        }
+    );
+
+    it('finds a record by its traceback in the search', async () => {
+        const user = userEvent.setup();
+        stubEventSourceWith(failedRecord());
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+        await screen.findByText('Worker ModelWorker-1 failed');
+        await user.type(screen.getByRole('searchbox', { name: 'Search logs' }), 'model_worker.py');
+
+        expect(screen.getByText('Worker ModelWorker-1 failed')).toBeInTheDocument();
+        await user.type(screen.getByRole('searchbox', { name: 'Search logs' }), ' nowhere');
+        expect(await screen.findByText('No logs match the current filters')).toBeInTheDocument();
+    });
+
+    it('shows a malformed exception without breaking the log stream', async () => {
+        stubEventSourceWith(
+            JSON.stringify({
+                record: {
+                    message: 'Worker failed',
+                    module: 'base',
+                    function: '_main',
+                    line: 153,
+                    level: { name: 'ERROR', no: 40, icon: '❌' },
+                    time: { timestamp: 1_700_000_000, repr: '2023-11-14 22:13:20' },
+                    exception: { type: 'RuntimeError', value: { toString: null, valueOf: null } },
+                    extra: {},
+                },
+            }),
+            JSON.stringify({
+                record: {
+                    message: 'the next record',
+                    module: 'base',
+                    function: '_main',
+                    line: 154,
+                    level: { name: 'INFO', no: 20, icon: 'ℹ' },
+                    time: { timestamp: 1_700_000_001, repr: '2023-11-14 22:13:21' },
+                    exception: { type: 7 },
+                },
+            })
+        );
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+
+        expect(await screen.findByText('the next record')).toBeInTheDocument();
+        expect(screen.getByLabelText('Exception')).toHaveTextContent('RuntimeError: {"toString":null,"valueOf":null}');
+        expect(screen.queryByText('Something went wrong while displaying these logs')).not.toBeInTheDocument();
+    });
+
+    it('shows the traceback of a record that has one', async () => {
+        stubEventSourceWith(failedRecord());
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+
+        expect(await screen.findByText('Worker ModelWorker-1 failed')).toBeInTheDocument();
+        const exception = screen.getByLabelText('Exception');
+        expect(exception).toHaveTextContent('Traceback (most recent call last):');
+        expect(exception).toHaveTextContent('RuntimeError: the export does not load');
+    });
+
+    it('copies the traceback with its record', async () => {
+        const user = userEvent.setup();
+        const writeText = rs.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+        stubEventSourceWith(failedRecord());
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+        await screen.findByText('Worker ModelWorker-1 failed');
+        await user.click(screen.getByRole('button', { name: 'Copy logs to clipboard' }));
+
+        expect(writeText).toHaveBeenCalledTimes(1);
+        const copied = writeText.mock.calls[0][0] as string;
+        expect(copied).toContain('- Worker ModelWorker-1 failed\nTraceback (most recent call last):');
+        expect(copied).toContain('RuntimeError: the export does not load');
+    });
+
+    it('shows the exception type and value when the text has no traceback', async () => {
+        stubEventSourceWith(
+            JSON.stringify({
+                record: {
+                    message: 'Worker failed',
+                    module: 'base',
+                    function: '_main',
+                    line: 153,
+                    level: { name: 'ERROR', no: 40, icon: '❌' },
+                    time: { timestamp: 1_700_000_000, repr: '2023-11-14 22:13:20' },
+                    exception: { type: 'ValueError', value: 'lost device', traceback: true },
+                },
+            })
+        );
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+
+        expect(await screen.findByLabelText('Exception')).toHaveTextContent('ValueError: lost device');
     });
 
     // Regression test: a just-started job's log source can briefly surface
