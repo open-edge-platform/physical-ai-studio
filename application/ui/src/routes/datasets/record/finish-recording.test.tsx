@@ -42,8 +42,8 @@ const notSaved: SchemaAckMessage = {
     error: {
         error_code: 'recording_not_saved',
         message:
-            "The recording was not saved into dataset 'Blocks': RuntimeError: Copying back failed (No space " +
-            'left on device). The recorded episodes are left in /cache/3f2a',
+            "The recording was not saved into dataset 'Blocks': Finalizing failed (No space left on device). " +
+            'What was recorded is left in /cache/3f2a',
     },
 };
 
@@ -74,7 +74,7 @@ describe('Finishing a recording', () => {
         reply = async () => notSaved;
         fireEvent.click(await renderPage());
 
-        expect(await screen.findByText(/The recorded episodes are left in \/cache\/3f2a/)).toBeInTheDocument();
+        expect(await screen.findByText(/What was recorded is left in \/cache\/3f2a/)).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'The recording was not saved into the dataset' })).toBeVisible();
         // The session is gone, as on main when Finish left the page: no workspace, no controls.
         expect(screen.queryByTestId('runtime-session')).not.toBeInTheDocument();

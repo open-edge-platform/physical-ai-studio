@@ -107,8 +107,9 @@ const RecordingRate = ({ dataset }: { dataset: SchemaSessionDataset }) => {
 };
 
 /**
- * Why an episode cannot start now, or ``null`` when it can. The backend refuses the same cases; saying so
- * here keeps Start from looking available while there is nothing to record.
+ * Why an episode cannot start now, or ``null`` when it can. The backend refuses a start without a dataset
+ * or on a failed environment. Without an environment it still accepts one on a dataset kept loaded, as on
+ * main; only the UI keeps Start off then, as there is nothing to record from.
  */
 export const whyNotRecordable = (state: SchemaSessionState | null | undefined, statuses: Statuses): string | null => {
     if (state?.dataset == null) {
