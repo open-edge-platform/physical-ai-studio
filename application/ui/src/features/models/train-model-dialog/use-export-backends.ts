@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { $api } from '../../../api/client';
-import type { SchemaExportBackendOutput } from '../../../api/openapi-spec';
+import type { SchemaExportBackendOutput, SchemaRemoteTrainJobPayload } from '../../../api/openapi-spec';
+import { getSupportedInferenceDevices } from '../backend-selection/backend-selection';
 import { INFERENCE_BACKENDS, InferenceBackendConfig, isExportBackend } from '../inference-backends';
+
+export type ExecuTorchDelegate = SchemaRemoteTrainJobPayload['executorch_delegate'];
 
 export interface ExportSelection {
     /** Export formats this policy can produce, in the order the backend reports them. */
@@ -10,6 +13,13 @@ export interface ExportSelection {
     /** Formats to export after training, as the train payload takes them. */
     selectedBackends: SchemaExportBackendOutput[];
     setSelectedBackends: (backends: SchemaExportBackendOutput[]) => void;
+    executorchDelegate: ExecuTorchDelegate;
+    setExecutorchDelegate: (delegate: ExecuTorchDelegate) => void;
+    /** OpenVINO device compiled into the ExecuTorch program; fixed once exported. */
+    executorchDevice: string;
+    setExecutorchDevice: (device: string) => void;
+    /** OpenVINO devices the training machine can compile for. */
+    executorchDevices: { device: string; name: string }[];
     isLoading: boolean;
     /** Why the selection can't be trained with, or null when it is fine. */
     error: string | null;
@@ -40,6 +50,22 @@ export const useExportBackends = (policy: string, remoteTrainerId?: string): Exp
     );
 
     const [selectedBackends, setSelectedBackends] = useState<SchemaExportBackendOutput[]>([]);
+    const [executorchDelegate, setExecutorchDelegate] = useState<ExecuTorchDelegate>('openvino');
+    const [executorchDevice, setExecutorchDevice] = useState('CPU');
+
+    // The OpenVINO device is compiled in at export, which runs on the training
+    // machine. Local devices are known; a remote trainer's are not, so offer the
+    // generic ones OpenVINO resolves there.
+    const { data: inferenceDevices = [] } = $api.useQuery('get', '/api/system/devices/inference', undefined, {
+        enabled: remoteTrainerId === undefined,
+    });
+    const executorchDevices =
+        remoteTrainerId === undefined
+            ? getSupportedInferenceDevices(inferenceDevices, 'openvino')
+            : [
+                  { device: 'CPU', name: 'CPU' },
+                  { device: 'GPU', name: 'GPU' },
+              ];
 
     // Every supported format is exported by default, which is what training did
     // before the formats could be chosen at all. A policy switch changes the
@@ -59,6 +85,11 @@ export const useExportBackends = (policy: string, remoteTrainerId?: string): Exp
         backends,
         selectedBackends,
         setSelectedBackends,
+        executorchDelegate,
+        setExecutorchDelegate,
+        executorchDevice,
+        setExecutorchDevice,
+        executorchDevices,
         isLoading,
         error,
     };

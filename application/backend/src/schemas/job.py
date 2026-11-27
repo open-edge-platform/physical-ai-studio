@@ -196,6 +196,19 @@ class TrainJobPayloadBase(BaseModel):
             "formats the policy does not support are ignored."
         ),
     )
+    executorch_delegate: Literal["openvino", "xnnpack", "portable"] = Field(
+        default="openvino",
+        description="ExecuTorch delegate used when exporting to ExecuTorch.",
+    )
+    executorch_device: str = Field(
+        default="CPU",
+        pattern=r"^[A-Z]+(\.\d+)?$",
+        max_length=16,
+        description=(
+            "OpenVINO device compiled into the ExecuTorch program (e.g. 'CPU', 'GPU.0'). "
+            "Fixed at export time and must exist on the training machine. Ignored for other delegates."
+        ),
+    )
     augment_images: bool = Field(
         default=False,
         description="Apply the default image augmentation pipeline to training images",

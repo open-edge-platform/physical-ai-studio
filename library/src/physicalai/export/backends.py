@@ -85,11 +85,11 @@ class ExecuTorchExportParameters(ExportParameters):
 
     Attributes:
         delegate: The delegate backend to use for ExecuTorch export.
-            Supported values: ``"portable"`` (default), ``"xnnpack"``, ``"openvino"``.
+            Supported values: ``"openvino"`` (default), ``"xnnpack"``, ``"portable"``.
         output_names: Names for model outputs stored in the manifest for inference.
     """
 
-    delegate: ExecuTorchDelegate = "portable"
+    delegate: ExecuTorchDelegate = "openvino"
     output_names: list[str] = field(default_factory=lambda: ["action"])
 
 

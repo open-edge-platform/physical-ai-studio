@@ -3,6 +3,7 @@
 
 """Unit tests for mixin_export module."""
 
+import json
 import logging
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
@@ -740,7 +741,7 @@ class TestToExecutorch:
         with patch.dict("sys.modules", mocks["modules"]), patch("torch.export.export") as mock_torch_export:
             mock_torch_export.return_value = MagicMock()
 
-            wrapper.to_executorch(tmp_path / "model.pte", delegate=None)
+            wrapper.to_executorch(tmp_path / "model.pte", delegate="portable")
 
             # Assert to_edge_transform_and_lower was called without partitioner kwarg
             mocks["mock_to_edge"].assert_called_once()
@@ -762,6 +763,11 @@ class TestToExecutorch:
 
             # Assert CompileSpec was called with ("device", b"GPU")
             mock_compile_spec.assert_called_once_with("device", b"GPU")
+
+        # The device is baked into the .pte, so the manifest must record it.
+        raw = json.loads((tmp_path / "manifest.json").read_text())
+        assert raw["delegate"] == "openvino"
+        assert raw["delegate_device"] == "GPU"
 
     @pytest.mark.parametrize(
         ("delegate", "delegate_config", "expect_compress"),

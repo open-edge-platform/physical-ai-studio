@@ -17,5 +17,6 @@ export const getMockedModel = (overrides: Partial<SchemaModel> = {}): SchemaMode
     lora_enabled: false,
     lora_use_dora: false,
     snapflow_enabled: false,
+    executorch_target: null,
     ...overrides,
 });

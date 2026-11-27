@@ -12,6 +12,7 @@ import {
     getDefaultInferenceDevice,
     getSupportedInferenceDevices,
     InferenceDevice,
+    withExecuTorchDevice,
 } from '../backend-selection/backend-selection';
 
 const getDefaultbackend = (model: SchemaModel) => {
@@ -31,7 +32,8 @@ export const StartInferenceDialog = ({ close, model }: StartInferenceDialogProps
     const initialBackend = getDefaultbackend(model);
     const [selectedInferenceDevice, setSelectedInferenceDevice] = useState<InferenceDevice | undefined>();
 
-    const { data: inferenceDevices = [], isLoading } = $api.useQuery('get', '/api/system/devices/inference');
+    const { data: systemDevices = [], isLoading } = $api.useQuery('get', '/api/system/devices/inference');
+    const inferenceDevices = withExecuTorchDevice(systemDevices, model);
     const backend = selectedInferenceDevice?.backend ?? initialBackend;
 
     const selectedDevice = getSupportedInferenceDevices(inferenceDevices, backend).find(

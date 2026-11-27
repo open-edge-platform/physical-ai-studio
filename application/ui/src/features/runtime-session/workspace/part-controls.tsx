@@ -25,6 +25,7 @@ import {
     getDefaultInferenceDevice,
     getSupportedInferenceDevices,
     InferenceDevice,
+    withExecuTorchDevice,
 } from '../../models/backend-selection/backend-selection';
 import { useProject, useProjectId } from '../../projects/use-project';
 import { savedEnvironmentDraft, SessionPartName, useRuntimeSession } from '../runtime-session-provider';
@@ -110,13 +111,14 @@ const LoadModelDialog = ({
     const [inferenceDevice, setInferenceDevice] = useState<InferenceDevice | undefined>(
         current ? { backend: current.backend as InferenceDevice['backend'], device: current.device } : undefined
     );
-    const { data: inferenceDevices = [], isLoading } = $api.useQuery('get', '/api/system/devices/inference');
+    const { data: systemDevices = [], isLoading } = $api.useQuery('get', '/api/system/devices/inference');
 
     // A model without an export has nothing to run.
     const choices = models
         .filter((model) => model.id && model.available_backends.length > 0)
         .toSorted((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
     const picked = choices.find((model) => model.id === selected);
+    const inferenceDevices = withExecuTorchDevice(systemDevices, picked);
     const backend =
         inferenceDevice?.backend ??
         (picked?.available_backends.includes(defaultBackend) ? defaultBackend : picked?.available_backends.at(0)) ??
