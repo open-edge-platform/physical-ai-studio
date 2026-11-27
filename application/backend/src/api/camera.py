@@ -142,12 +142,11 @@ async def camera_websocket(
         await asyncio.to_thread(shared_camera.connect)
         try:
             rate = Rate(camera.payload.fps, name=f"camera-preview-{camera.name}")
-            sent: int | None = None
             while True:
-                frame = await asyncio.to_thread(shared_camera.read_latest)
-                if frame.sequence != sent:
-                    await websocket.send_bytes(await asyncio.to_thread(encode_jpeg_rgb, frame.data))
-                    sent = frame.sequence
+                # read() waits for a new frame and raises once frames stop (e.g. the publisher died on a
+                # USB replug); read_latest() would repeat the last frame and never notice a closed socket.
+                frame = await asyncio.to_thread(shared_camera.read)
+                await websocket.send_bytes(await asyncio.to_thread(encode_jpeg_rgb, frame.data))
                 await rate.sleep()
         finally:
             # Shielded: a cancelled socket task must still detach from the publisher.
