@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VLA Language Bench</title>
+<style>
+/* Layout: camera feeds left, instruction console right, run log full width below. */
+:root{
+  --bg:#f4f5f2; --panel:#ffffff; --panel-2:#eceee9; --ink:#14160f; --ink-2:#4d5146; --muted:#767a6e;
+  --line:#d6d9d0; --accent:#2f6fd0; --accent-ink:#ffffff;
+  --good:#0ca30c; --warn:#b97a00; --bad:#d03b3b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121411; --panel:#1b1d19; --panel-2:#23261f; --ink:#eef0ea; --ink-2:#c3c6bb; --muted:#9a9e92;
+  --line:#33372f; --accent:#4b8ae8; --accent-ink:#0b0d09; --good:#2fbf2f; --warn:#e0a52a; --bad:#e66767; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}
+header{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:18px;margin:0;letter-spacing:-0.01em}
+header .meta{font-size:13px;color:var(--muted);font-family:var(--mono)}
+main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);gap:16px;padding:16px 20px;max-width:1500px;margin:0 auto}
+@media (max-width:980px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.cams{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.cam{position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:4/3}
+.cam img{width:100%;height:100%;object-fit:cover;display:block}
+.cam span{position:absolute;left:8px;top:6px;font-size:11px;font-family:var(--mono);color:#fff;background:rgba(0,0,0,.55);padding:1px 6px;border-radius:4px}
+.layoutbar{display:flex;gap:6px;align-items:center;margin-top:10px;font-size:13px;color:var(--ink-2);flex-wrap:wrap}
+.chipb{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);font-weight:600;font-size:12.5px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block;border:1px solid var(--line)}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px;font-weight:650}
+textarea{width:100%;min-height:62px;resize:vertical;font:15px/1.45 var(--sans);padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+textarea:focus,input:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+button{font:inherit;font-size:14px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);padding:7px 13px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:disabled{opacity:.5;cursor:default}
+input[type=number]{width:110px;font:14px var(--mono);padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.status{display:flex;align-items:center;gap:8px;font-weight:650;margin-bottom:6px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.dot.running{background:var(--accent);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot.running{animation:none}}
+.objs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.obj{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--panel-2);font-size:13px}
+.obj b{display:block;font-size:13.5px}
+.obj .where{color:var(--ink-2)}
+.sugs{display:flex;flex-wrap:wrap;gap:6px}
+.sug{font-size:13px;font-weight:500;padding:4px 10px;border-radius:999px;background:var(--panel-2)}
+.sug.probe{border:1px dashed var(--accent);background:transparent}
+.sec{margin-top:16px}
+.note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.log{grid-column:1/-1}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:620px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+td.mono{font-family:var(--mono);font-size:12.5px}
+.assist{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:14px;font-weight:600}
+.assist input{width:16px;height:16px}
+.err{color:var(--bad);font-size:13px;min-height:1em;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>VLA Language Bench</h1>
+  <span class="meta" id="ckpt">loading…</span>
+  <span class="meta">bucket_sort · Franka FR3 · 30 Hz closed loop</span>
+</header>
+<main>
+  <section class="panel">
+    <div class="cams">
+      <div class="cam"><img src="/stream/overview" alt="Overview camera"><span>overview</span></div>
+      <div class="cam"><img src="/stream/wrist" alt="Wrist camera"><span>wrist</span></div>
+    </div>
+    <div class="layoutbar">Buckets, left to right from behind the robot: <span id="buckets"></span></div>
+    <div class="layoutbar">Training data wording for this layout: <i id="sceneInstr"></i></div>
+  </section>
+
+  <section class="panel">
+    <h2>Instruction</h2>
+    <textarea id="instr" placeholder="e.g. Put the resistor in the red bucket"></textarea>
+    <div class="row">
+      <button class="primary" id="runBtn" title="Reset to this layout, then run">Run on fresh layout</button>
+      <button id="contBtn" title="Run from where things are now">Run from here</button>
+      <button id="stopBtn">Stop</button>
+    </div>
+    <label class="assist"><input type="checkbox" id="assist"> Grip assist: hold the gripper fully shut once it closes on an object</label>
+    <p class="note">Test only. The training data recorded the fingers' measured width instead of the "close" command, so the policy barely squeezes. Toggle this to compare the same layout with and without a firm grip.</p>
+    <div class="err" id="err"></div>
+
+    <div class="sec">
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">idle</span></div>
+      <div class="note" id="statusNote"></div>
+      <div class="objs" id="objs"></div>
+    </div>
+
+    <div class="sec">
+      <h2>Layout</h2>
+      <div class="row">
+        <label for="seed">Seed</label><input type="number" id="seed" min="0" step="1">
+        <button id="seedBtn">Load seed</button>
+        <button id="newBtn">New random layout</button>
+      </div>
+      <p class="note">Keep the seed and change only the words to test what the policy understands. Seeds 100000–100029 are the evaluation layouts.</p>
+    </div>
+
+    <div class="sec">
+      <h2>Try</h2>
+      <div class="sugs" id="sugs"></div>
+      <p class="note">Solid: phrasings like the training data. Dashed: probes outside it (synonyms, spatial words, objects or colors that are not there).</p>
+    </div>
+  </section>
+
+  <section class="panel log">
+    <h2>Runs</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Seed</th><th>Instruction</th><th>Result</th><th>Grip assist</th><th>Objects in buckets</th><th>Time</th><th>Inference</th></tr></thead>
+      <tbody id="hist"><tr><td colspan="7" class="note">No runs yet. Type an instruction and press Run.</td></tr></tbody>
+    </table></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const COLORS = {black:'#222', blue:'#2563d9', red:'#d63b3b'};
+const OBJ = {resistor:'resistor', battery:'9 V battery', cpu:'CPU (microchip)'};
+let lastSeed = null;
+
+async function post(path, body){
+  const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+  const j = await r.json(); $('err').textContent = j.ok === false ? j.error : ''; return j;
+}
+function run(restart){ post('/api/run', {instruction: $('instr').value, restart}); }
+$('runBtn').onclick = () => run(true);
+$('contBtn').onclick = () => run(false);
+$('stopBtn').onclick = () => post('/api/stop');
+$('assist').onchange = e => post('/api/assist', {grip_assist: e.target.checked});
+$('newBtn').onclick = () => post('/api/reset', {});
+$('seedBtn').onclick = () => { const s = parseInt($('seed').value, 10); if (!isNaN(s)) post('/api/reset', {seed:s}); };
+$('instr').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); run(true); } });
+
+function sw(c){ return `<span class="chipb"><span class="sw" style="background:${COLORS[c]||'#888'}"></span>${c}</span>`; }
+
+function suggestions(buckets){
+  const [l, m, r] = buckets;
+  const base = [
+    'Put the resistor in the red bucket', 'Move the 9 V battery to the blue bin',
+    'Drop the CPU in the black box', 'Put the battery in the red container',
+    'Sort the resistor into the black tub.', 'Pick up the CPU and place it in the blue bucket',
+  ];
+  const probes = [
+    'Put the microchip in the red bucket', 'Put the striped component in the blue bucket',
+    `Put the resistor in the bucket on the left`, `Put the battery in the middle bucket`,
+    'Put the resistor in the green bucket', 'Put the screwdriver in the red bucket',
+    'Do not move anything', 'Put the CPU in the same bucket as the battery',
+    'Mettez la résistance dans le seau rouge',
+  ];
+  $('sugs').innerHTML = base.map(t => `<button class="sug">${t}</button>`).join('') +
+    probes.map(t => `<button class="sug probe">${t}</button>`).join('');
+  document.querySelectorAll('.sug').forEach(b => b.onclick = () => { $('instr').value = b.textContent; $('instr').focus(); });
+}
+
+function render(s){
+  $('ckpt').textContent = s.checkpoint;
+  if (document.activeElement !== $('assist')) $('assist').checked = s.grip_assist;
+  $('buckets').innerHTML = s.buckets_left_to_right.map(sw).join(' ');
+  $('sceneInstr').textContent = s.scene_instruction ? `"${s.scene_instruction}"` : '';
+  if (s.seed !== lastSeed){ lastSeed = s.seed; $('seed').value = s.seed; suggestions(s.buckets_left_to_right); }
+  const running = s.status === 'running';
+  $('dot').className = 'dot' + (running ? ' running' : '');
+  $('statusText').textContent = running ? `running: ${s.instruction}` : 'idle';
+  $('statusNote').textContent = running ? `${s.elapsed.toFixed(1)} s of ${s.max_s} s` + (s.infer_ms ? ` · ${s.infer_ms} ms per action chunk` : '') : '';
+  $('objs').innerHTML = Object.entries(s.in_bucket).map(([o, b]) =>
+    `<div class="obj"><b>${OBJ[o]||o}</b><span class="where">${b ? 'in ' + sw(b) : 'not in a bucket'}</span></div>`).join('');
+  $('hist').innerHTML = s.history.length ? s.history.map(h => `<tr>
+      <td class="mono">${h.seed}</td><td>${esc(h.instruction)}</td><td>${h.outcome}</td><td>${h.assist ? 'on' : 'off'}</td>
+      <td>${Object.keys(h.placed).length ? Object.entries(h.placed).map(([o,b]) => `${OBJ[o]||o} → ${sw(b)}`).join('<br>') : 'none'}</td>
+      <td class="mono">${h.seconds} s</td><td class="mono">${h.infer_ms ?? ''} ms</td></tr>`).join('')
+    : '<tr><td colspan="7" class="note">No runs yet. Type an instruction and press Run.</td></tr>';
+}
+async function poll(){
+  try { render(await (await fetch('/api/state')).json()); } catch(e) {}
+  setTimeout(poll, 400);
+}
+poll();
+</script>
+</body>
+</html>
