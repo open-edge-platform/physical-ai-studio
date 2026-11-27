@@ -10,6 +10,8 @@ import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
+from physicalai.isolate import BundledProject, ProjectSource
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from importlib.resources.abc import Traversable  # nosemgrep  # Python 3.10+ only.
@@ -17,8 +19,6 @@ if TYPE_CHECKING:
 
     from packaging.specifiers import SpecifierSet
     from packaging.version import Version
-
-    from ._sources import ProjectSource
 
 
 class TrainingCancelledError(RuntimeError):
@@ -115,8 +115,6 @@ class WorkerEnv:
     @property
     def source(self) -> ProjectSource:
         """The project source, wrapping a plain directory as a bundled project."""
-        from ._sources import BundledProject, ProjectSource  # ruff: ignore[import-outside-top-level]  # Avoid an import cycle.
-
         if isinstance(self.project, ProjectSource):
             return self.project
         return BundledProject(self.project)
@@ -168,12 +166,6 @@ class WorkerEnv:
         from ._environment import locked_version  # ruff: ignore[import-outside-top-level]  # Lazy to avoid an import cycle.
 
         return locked_version(self)
-
-    def lock_hash(self) -> str:
-        """Return the SHA-256 digest of a bundled worker lock."""
-        from ._environment import lock_hash  # ruff: ignore[import-outside-top-level]  # Lazy to avoid an import cycle.
-
-        return lock_hash(self)
 
 
 __all__ = [

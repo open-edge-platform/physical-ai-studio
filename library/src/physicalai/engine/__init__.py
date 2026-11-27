@@ -17,10 +17,19 @@ from abc import ABC, abstractmethod
 from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar, Literal, overload
 
+from physicalai.isolate import (
+    BundledPatches,
+    BundledProject,
+    GitProject,
+    PatchFile,
+    PatchSeries,
+    ProjectSource,
+    PublishedPatches,
+)
+
 from . import _registry
 from ._environment import (
     PreparedEnvironment,
-    engine_cache_root,
     interpreter_for,
     list_prepared,
     locked_version,
@@ -34,15 +43,6 @@ from ._environment import (
     to_isolate_environment,
 )
 from ._runner import run_worker
-from ._sources import (
-    BundledPatches,
-    BundledProject,
-    GitProject,
-    PatchFile,
-    PatchSeries,
-    ProjectSource,
-    PublishedPatches,
-)
 from ._types import Capabilities, Enablement, Run, TrainHooks, TrainingCancelledError, WorkerEnv
 
 if TYPE_CHECKING:
@@ -306,7 +306,6 @@ __all__ = [
     "TrainingCancelledError",
     "TrainingEngine",
     "WorkerEnv",
-    "engine_cache_root",
     "interpreter_for",
     "list_prepared",
     "locked_version",

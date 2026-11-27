@@ -108,15 +108,15 @@ Conflicting framework and Runtime dependencies are never installed into one inte
 | `python`, `extras` | uv `--python` version and the uv extras for each accelerator profile (`cpu`, `cuda`, `xpu`), for example `{"cuda": ("cu132",)}`.                   |
 | `worker`           | Worker script; `run_worker(..., worker=...)` selects another, such as an export worker.                                                            |
 
-Environments are cached by source and sync profile under `~/.cache/physicalai/isolate/<key>` (`PHYSICALAI_ISOLATE_CACHE` overrides it). A bundled project's lock must be current (`uv sync --locked`); an upstream Git project's lock is installed as is (`uv sync --frozen`). The worker reports its framework version, which must match the lock and the plugin's declared range; the host then acknowledges, and only then does training start.
+Environments are cached by source and sync profile under `~/.cache/physicalai/isolate/<key>` (`PHYSICALAI_ISOLATE_CACHE` overrides it), a cache Studio shares with Runtime. The engine records its framework, environment name and accelerator on each environment it prepares, so `engine list` and `engine prune` see only those. A bundled project's lock must be current (`uv sync --locked`); an upstream Git project's lock is installed as is (`uv sync --frozen`). The worker reports its framework version, which must match the lock and the plugin's declared range; the host then acknowledges, and only then does training start.
 
 The LeRobot plugin ships one worker project, `env/`, built for CPU, CUDA 13.2 (`cu132`) and XPU, matching Studio's host build. Policy families with their own LeRobot extras (`smolvla`, the `pi` family, `molmoact2`) are mutually exclusive extras of that project: each trains in its own environment, every other policy uses the project without one, and all share one lock.
 
 ```bash
 pai engine prepare lerobot --accelerator cuda   # pre-provision an environment
 pai engine prepare lerobot --policy smolvla     # a policy family's environment
-pai engine list                                 # show cached environments
-pai engine prune                                # remove environments no engine declares
+pai engine list                                 # show the engine's cached environments
+pai engine prune                                # remove those no installed engine declares
 ```
 
 ## Runtime packages
