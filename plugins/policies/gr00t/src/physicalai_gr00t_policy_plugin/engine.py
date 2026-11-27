@@ -28,6 +28,8 @@ from .package import POLICY, IoSpec, read_run_info, write_native_package, write_
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from .package import BinaryGripper
+
 BACKBONE_SOURCE_ENV = "PHYSICALAI_GR00T_BACKBONE_SOURCE"
 _EXPORT_RECORD = "physicalai_export.json"
 _RUN_INFO = "physicalai_run.json"
@@ -148,8 +150,23 @@ class Gr00tEngine(TrainingEngine):
         return cls(interpreter=interpreter, device=device).train(config, hooks)
 
     @classmethod
-    def export(cls, source: Run | str | Path, output_path: str | Path, backend: str | None = FORMAT_NATIVE) -> Path:
+    def export(
+        cls,
+        source: Run | str | Path,
+        output_path: str | Path,
+        backend: str | None = FORMAT_NATIVE,
+        *,
+        n_action_steps: int | None = None,
+        gripper: BinaryGripper | None = None,
+    ) -> Path:
         """Package a native checkpoint for Runtime, natively or through OpenVINO.
+
+        Args:
+            source: Native run or checkpoint directory.
+            output_path: New Runtime package directory.
+            backend: ``native`` (default) or ``openvino``.
+            n_action_steps: Run only the first *n* actions of each predicted chunk.
+            gripper: Binary gripper command to send in place of the gripper prediction.
 
         Returns:
             The Runtime package directory.
@@ -158,9 +175,9 @@ class Gr00tEngine(TrainingEngine):
             ValueError: If *backend* is not ``native`` or ``openvino``.
         """
         if backend in {None, FORMAT_NATIVE}:
-            return cls.export_native(source, output_path)
+            return cls.export_native(source, output_path, n_action_steps=n_action_steps, gripper=gripper)
         if backend == FORMAT_OPENVINO:
-            return cls.export_openvino(source, output_path)
+            return cls.export_openvino(source, output_path, n_action_steps=n_action_steps, gripper=gripper)
         msg = f"GR00T exports 'native' or 'openvino', got {backend!r}."
         raise ValueError(msg)
 
@@ -172,6 +189,8 @@ class Gr00tEngine(TrainingEngine):
         *,
         dataset_path: str | Path | None = None,
         embodiment_tag: str | None = None,
+        n_action_steps: int | None = None,
+        gripper: BinaryGripper | None = None,
     ) -> Path:
         """Package the native checkpoint for PyTorch inference through Runtime.
 
@@ -181,6 +200,10 @@ class Gr00tEngine(TrainingEngine):
             dataset_path: Dataset whose ``meta/modality.json`` defines the I/O mapping;
                 defaults to the training dataset.
             embodiment_tag: Required for checkpoints not trained by this plugin.
+            n_action_steps: Run only the first *n* actions of each predicted chunk, then predict
+                again; by default Runtime runs the whole chunk.
+            gripper: Binary gripper command to send in place of the gripper prediction, such as
+                :data:`~physicalai_gr00t_policy_plugin.package.LIBERO_GRIPPER`.
 
         Returns:
             The Runtime package directory.
@@ -193,6 +216,8 @@ class Gr00tEngine(TrainingEngine):
             io=_io_spec(run_info, dataset_path),
             run_info=run_info,
             environment=environments.provenance(environments.NATIVE),
+            n_action_steps=n_action_steps,
+            gripper=gripper,
         )
 
     @classmethod
@@ -207,6 +232,8 @@ class Gr00tEngine(TrainingEngine):
         embodiment_tag: str | None = None,
         interpreter: str | Path | None = None,
         project: str | Path | None = None,
+        n_action_steps: int | None = None,
+        gripper: BinaryGripper | None = None,
     ) -> Path:
         """Export with the Robotics AI Suite single-IR OpenVINO path.
 
@@ -220,6 +247,10 @@ class Gr00tEngine(TrainingEngine):
             embodiment_tag: Required for checkpoints not trained by this plugin.
             interpreter: User-managed interpreter for the patched environment.
             project: Patched checkout used by *interpreter*.
+            n_action_steps: Run only the first *n* actions of each predicted chunk, then predict
+                again; by default Runtime runs the whole chunk.
+            gripper: Binary gripper command to send in place of the gripper prediction, such as
+                :data:`~physicalai_gr00t_policy_plugin.package.LIBERO_GRIPPER`.
 
         Returns:
             The Runtime package directory.
@@ -267,6 +298,8 @@ class Gr00tEngine(TrainingEngine):
             io=io,
             run_info=run_info,
             environment=environments.provenance(environments.OPENVINO),
+            n_action_steps=n_action_steps,
+            gripper=gripper,
         )
 
     @classmethod

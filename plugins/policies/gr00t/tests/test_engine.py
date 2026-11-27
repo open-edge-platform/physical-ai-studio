@@ -16,6 +16,7 @@ from physicalai.isolate import ExternalInterpreter
 from physicalai_gr00t_policy_plugin import engine, environments
 from physicalai_gr00t_policy_plugin.config import Gr00tTrainConfig
 from physicalai_gr00t_policy_plugin.engine import Gr00tEngine
+from physicalai_gr00t_policy_plugin.package import LIBERO_GRIPPER
 
 from .test_package import LIBERO_MODALITY
 
@@ -164,6 +165,20 @@ def test_openvino_export_runs_the_patched_environment_and_packages_its_record(
     assert descriptor["export"]["verification"] == {"cosine": 1.0}
     assert descriptor["backbone_source"] == "nvidia/Cosmos-Reason2-2B"
     assert not (artifact / "openvino" / "physicalai_export.json").exists()
+
+
+@pytest.mark.parametrize(("backend", "method"), [("native", "export_native"), ("openvino", "export_openvino")])
+def test_export_passes_runtime_options_to_each_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    method: str,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(Gr00tEngine, method, classmethod(lambda _cls, *_args, **kwargs: calls.append(kwargs)))
+
+    Gr00tEngine.export("/runs/a", "/exports/a", backend=backend, n_action_steps=8, gripper=LIBERO_GRIPPER)
+
+    assert calls == [{"n_action_steps": 8, "gripper": LIBERO_GRIPPER}]
 
 
 def test_unknown_export_backends_are_rejected() -> None:

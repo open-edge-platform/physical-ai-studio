@@ -6,9 +6,13 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
+from physicalai.inference.component_factory import instantiate_component
+from physicalai.inference.manifest import Manifest
+from physicalai.inference.postprocessors.base import Postprocessor
 
 from physicalai_gr00t_policy_plugin import environments, package
 from physicalai_gr00t_policy_plugin.package import IoSpec
@@ -109,11 +113,80 @@ def test_native_package_copies_only_allowlisted_model_files(checkpoint: Path, da
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["model"]["artifacts"] == {"gr00t": package.ARTIFACT_NAME}
     assert manifest["model"]["callbacks"][0]["class_path"].endswith("Gr00tResetCallback")
+    assert not manifest["model"].get("postprocessors")  # Runtime runs the whole chunk and passes the gripper through.
     descriptor = package.load_descriptor(artifact)
     assert descriptor["format"] == package.FORMAT_NATIVE
     assert descriptor["embodiment_tag"] == "libero_sim"
     assert descriptor["environment"] == NATIVE
     assert descriptor["environment"]["source"]["patches"] == []
+
+
+def test_packages_declare_runtime_postprocessors_for_the_gripper_and_chunk(
+    checkpoint: Path,
+    dataset: Path,
+    tmp_path: Path,
+) -> None:
+    output = package.write_native_package(
+        checkpoint,
+        tmp_path / "native",
+        io=IoSpec.from_modality(dataset / "meta" / "modality.json"),
+        run_info=package.read_run_info(checkpoint),
+        environment=NATIVE,
+        n_action_steps=8,
+        gripper=package.LIBERO_GRIPPER,
+    )
+
+    manifest = Manifest.load(output / "manifest.json")
+    postprocessors = [instantiate_component(Postprocessor, spec) for spec in manifest.model.postprocessors]
+    assert [type(stage).__name__ for stage in postprocessors] == ["BinaryGripperPostprocessor", "ActionChunkTrimmer"]
+    chunk = np.tile(np.arange(7, dtype=np.float32), (1, 16, 1))
+    chunk[0, :3, 6] = [0.9, 0.1, 0.5]  # Open, closed, and undecided predictions (RLDS: 1 = open).
+    outputs = {"action": chunk.copy()}
+    for stage in postprocessors:
+        outputs = stage(outputs)
+    actions = outputs["action"]
+    assert actions.shape == (1, 8, 7)
+    np.testing.assert_array_equal(actions[0, :3, 6], [-1.0, 1.0, 0.0])  # LIBERO: -1 = open, +1 = close.
+    np.testing.assert_array_equal(actions[0, :, :6], chunk[0, :8, :6])
+    np.testing.assert_array_equal(chunk[0, :3, 6], np.float32([0.9, 0.1, 0.5]))  # The prediction is not modified.
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"n_action_steps": 0}, "must be positive"),
+        ({"gripper": package.BinaryGripper(0.5, -1.0, 1.0, key="hand")}, "'hand' is not a single action column"),
+    ],
+)
+def test_invalid_runtime_options_are_rejected_before_packaging(
+    checkpoint: Path,
+    dataset: Path,
+    tmp_path: Path,
+    options: dict[str, Any],
+    message: str,
+) -> None:
+    io = IoSpec.from_modality(dataset / "meta" / "modality.json")
+    with pytest.raises(ValueError, match=message):
+        package.write_native_package(
+            checkpoint,
+            tmp_path / "native",
+            io=io,
+            run_info={},
+            environment=NATIVE,
+            **options,
+        )
+    with pytest.raises(ValueError, match=message):
+        package.write_openvino_package(
+            pytest.fail,  # The minutes-long export must not start.
+            tmp_path / "openvino",
+            checkpoint=checkpoint,
+            io=io,
+            run_info={},
+            environment=OPENVINO,
+            **options,
+        )
+    assert not (tmp_path / "native").exists()
+    assert not (tmp_path / "openvino").exists()
 
 
 def test_openvino_package_records_export_and_completes_processor_config(

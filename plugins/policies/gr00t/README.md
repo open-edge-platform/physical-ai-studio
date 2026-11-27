@@ -97,11 +97,26 @@ Gr00tEngine.export_openvino("GR00T-N1.7-LIBERO/libero_10", "exports/libero",
                             dataset_path="/data/libero_demo", embodiment_tag="LIBERO_PANDA")
 ```
 
+Two export options decide what Runtime sends the robot; every export method takes them:
+
+- `n_action_steps` runs only the first _n_ actions of each predicted chunk before predicting again (Runtime's `action_chunk_trimmer`). By default Runtime runs the whole chunk.
+- `gripper` sends a binary command in place of the gripper prediction, for a model that learned another gripper convention than the robot or simulator takes.
+
+NVIDIA's own LIBERO evaluation runs the released checkpoints with 8 actions per chunk and converts their gripper (learned in [0, 1] with 1 = open) to LIBERO's -1 = open, +1 = close. `LIBERO_GRIPPER` does the same:
+
+```python
+from physicalai_gr00t_policy_plugin.package import LIBERO_GRIPPER
+
+Gr00tEngine.export_native("GR00T-N1.7-LIBERO/libero_spatial", "exports/libero_spatial",
+                          dataset_path="/data/libero_demo", embodiment_tag="LIBERO_PANDA",
+                          n_action_steps=8, gripper=LIBERO_GRIPPER)
+```
+
 ## Runtime packages
 
 ```text
 <package>/
-├── manifest.json            backend "gr00t", reset callback
+├── manifest.json            backend "gr00t", reset callback, postprocessors from the export options
 └── gr00t_n1d7.gr00t/
     ├── package.json         format, embodiment, I/O mapping, pins, export verification
     ├── model/               native checkpoint (safetensors and JSON only)

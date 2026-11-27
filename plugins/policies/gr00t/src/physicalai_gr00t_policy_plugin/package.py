@@ -39,6 +39,7 @@ FORMAT_NATIVE = "native"
 FORMAT_OPENVINO = "openvino"
 _FORMAT_VERSION = 1
 _RESET_CALLBACK = "physicalai_gr00t_policy_plugin.runtime.Gr00tResetCallback"
+_BINARY_GRIPPER = "physicalai_gr00t_policy_plugin.postprocessors.BinaryGripperPostprocessor"
 _NATIVE_FILES = (
     "config.json",
     "model.safetensors.index.json",
@@ -119,6 +120,36 @@ class IoSpec:
         )
 
 
+@dataclass(frozen=True)
+class BinaryGripper:
+    """Send the robot a binary gripper command instead of the model's gripper prediction.
+
+    Runtime applies it to every predicted action: a prediction above *threshold* becomes
+    *open_command*, one below it *close_command*. Use it when the model predicts the gripper in a
+    different convention than the robot or simulator takes, such as GR00T's released LIBERO
+    checkpoints (see :data:`LIBERO_GRIPPER`).
+
+    Attributes:
+        threshold: Boundary between closed and open predictions.
+        open_command: Command sent for an open prediction.
+        close_command: Command sent for a closed prediction.
+        key: GR00T action key of the gripper.
+    """
+
+    threshold: float
+    open_command: float
+    close_command: float
+    key: str = "gripper"
+
+
+LIBERO_GRIPPER = BinaryGripper(threshold=0.5, open_command=-1.0, close_command=1.0)
+"""GR00T's released LIBERO checkpoints in LIBERO's simulator, as NVIDIA's own evaluation runs them.
+
+The checkpoints learned the gripper from RLDS-converted data, in [0, 1] with 1 = open; LIBERO
+takes -1 = open and +1 = close.
+"""
+
+
 def read_run_info(checkpoint: Path) -> dict[str, Any]:
     """Read the plugin's training record next to a native checkpoint.
 
@@ -136,6 +167,8 @@ def write_native_package(
     io: IoSpec,
     run_info: Mapping[str, Any],
     environment: Mapping[str, Any],
+    n_action_steps: int | None = None,
+    gripper: BinaryGripper | None = None,
 ) -> Path:
     """Package a native checkpoint for the plugin's PyTorch Runtime path.
 
@@ -145,6 +178,8 @@ def write_native_package(
         io: Runtime I/O mapping.
         run_info: Training record of the checkpoint.
         environment: Provenance of the environment that runs the package.
+        n_action_steps: Run only the first *n* actions of each predicted chunk.
+        gripper: Binary gripper command to send in place of the gripper prediction.
 
     Returns:
         The completed package directory.
@@ -154,7 +189,13 @@ def write_native_package(
         _copy_allowlisted(checkpoint, artifact / "model", _NATIVE_FILES)
         return {"format": FORMAT_NATIVE, "model_dir": "model", "environment": dict(environment)}
 
-    return _write_package(output, io=io, run_info=run_info, populate=populate)
+    return _write_package(
+        output,
+        io=io,
+        run_info=run_info,
+        populate=populate,
+        postprocessors=_postprocessors(io, n_action_steps, gripper),
+    )
 
 
 def write_openvino_package(
@@ -165,6 +206,8 @@ def write_openvino_package(
     io: IoSpec,
     run_info: Mapping[str, Any],
     environment: Mapping[str, Any],
+    n_action_steps: int | None = None,
+    gripper: BinaryGripper | None = None,
 ) -> Path:
     """Package an OpenVINO export produced by *export* into ``openvino/``.
 
@@ -176,10 +219,14 @@ def write_openvino_package(
         io: Runtime I/O mapping.
         run_info: Training record of the checkpoint.
         environment: Provenance of the patched environment that exported and runs the package.
+        n_action_steps: Run only the first *n* actions of each predicted chunk.
+        gripper: Binary gripper command to send in place of the gripper prediction.
 
     Returns:
         The completed package directory.
     """
+    # Check the options before the export runs: it takes minutes.
+    postprocessors = _postprocessors(io, n_action_steps, gripper)
 
     def populate(artifact: Path) -> dict[str, Any]:
         ov_dir = artifact / "openvino"
@@ -198,7 +245,7 @@ def write_openvino_package(
             },
         }
 
-    return _write_package(output, io=io, run_info=run_info, populate=populate)
+    return _write_package(output, io=io, run_info=run_info, populate=populate, postprocessors=postprocessors)
 
 
 def load_descriptor(artifact: Path) -> dict[str, Any]:
@@ -239,6 +286,7 @@ def _write_package(
     io: IoSpec,
     run_info: Mapping[str, Any],
     populate: Callable[[Path], dict[str, Any]],
+    postprocessors: list[dict[str, Any]],
 ) -> Path:
     destination = Path(output).expanduser()
     if destination.exists() or destination.is_symlink():
@@ -261,12 +309,46 @@ def _write_package(
             **details,
         }
         (artifact / DESCRIPTOR_NAME).write_text(json.dumps(descriptor, indent=2) + "\n", encoding="utf-8")
-        _write_manifest(staged)
+        _write_manifest(staged, postprocessors)
         staged.rename(destination)
     return destination
 
 
-def _write_manifest(package: Path) -> None:
+def _postprocessors(io: IoSpec, n_action_steps: int | None, gripper: BinaryGripper | None) -> list[dict[str, Any]]:
+    """Describe the Runtime postprocessors for the export options, in manifest form.
+
+    Returns:
+        ``class_path`` or ``type`` component descriptions, applied in order.
+
+    Raises:
+        ValueError: If *n_action_steps* is not positive, or *gripper* names an action key that is
+            not one column of the I/O mapping.
+    """
+    specs: list[dict[str, Any]] = []
+    if gripper is not None:
+        bounds = io.action.get(gripper.key)
+        if bounds is None or bounds[1] - bounds[0] != 1:
+            msg = f"Gripper key {gripper.key!r} is not a single action column of {sorted(io.action)}."
+            raise ValueError(msg)
+        specs.append({
+            "class_path": _BINARY_GRIPPER,
+            "init_args": {
+                "index": bounds[0],
+                "threshold": gripper.threshold,
+                "open_command": gripper.open_command,
+                "close_command": gripper.close_command,
+            },
+        })
+    if n_action_steps is not None:
+        if n_action_steps < 1:
+            msg = f"n_action_steps must be positive, got {n_action_steps}."
+            raise ValueError(msg)
+        # Runtime's own trimmer, declared like the library's ACT, SmolVLA and Pi0.5 exports.
+        specs.append({"type": "action_chunk_trimmer", "n_action_steps": n_action_steps})
+    return specs
+
+
+def _write_manifest(package: Path, postprocessors: list[dict[str, Any]]) -> None:
     from physicalai.inference.manifest import (  # ruff: ignore[import-outside-top-level]  # Runtime import only when packaging.
         ComponentSpec,
         Manifest,
@@ -280,6 +362,7 @@ def _write_manifest(package: Path) -> None:
         policy=PolicySpec(name=POLICY, source=PolicySource()),
         model=ModelSpec(
             artifacts={BACKEND: ARTIFACT_NAME},
+            postprocessors=[ComponentSpec(**spec) for spec in postprocessors],
             callbacks=[ComponentSpec(class_path=_RESET_CALLBACK, init_args={})],
         ),
         metadata=MetadataSpec(created_by="physicalai-gr00t-policy-plugin"),
