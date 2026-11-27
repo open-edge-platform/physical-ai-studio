@@ -144,6 +144,24 @@ class Inference:
         }
 
 
+def check_graph(model: Predictor, rtc_chunk: tuple[int, int] | None) -> None:
+    """Refuse an export whose manifest lists RTC inputs its graph does not take, where its adapter says.
+
+    The Runtime drops inputs the graph lacks, so such an export would run unguided without a word.
+
+    Raises:
+        ValueError: The graph lacks one of the RTC inputs.
+    """
+    names = getattr(getattr(model, "adapter", None), "input_names", None)
+    if rtc_chunk is None or not names:
+        return
+    if missing := [name for name in RTC_INPUTS if name not in names]:
+        raise ValueError(
+            f"The export's manifest lists RTC inputs, but its graph does not take {', '.join(missing)}: "
+            "re-export the policy with RTC enabled, or without RTC inputs in its manifest"
+        )
+
+
 class ModelWorker(ProcessWorker[Inference]):
     ready_timeout_s = 300.0
     """Loading compiles or moves the model onto its device, which can take minutes."""
@@ -183,7 +201,9 @@ class ModelWorker(ProcessWorker[Inference]):
         store = Store.attach(self.spec, self.store_name)
         try:
             with Bus.join(self.session_id) as bus:
-                inference = Inference(self.open_model(), store, self.images, self.rtc_chunk, self.rtc_dtypes)
+                model = self.open_model()
+                check_graph(model, self.rtc_chunk)
+                inference = Inference(model, store, self.images, self.rtc_chunk, self.rtc_dtypes)
                 bus.serve(INFER, InferRequest, inference.infer)
                 bus.serve(RESET, Empty, inference.reset)
                 bus.serve(READY, Empty, lambda _request: CommandDone())

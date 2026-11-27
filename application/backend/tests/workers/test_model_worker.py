@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
 
-from workers.model_worker import RTC_INPUTS, Inference, InferRequest, RtcInputs
+from workers.model_worker import RTC_INPUTS, Inference, InferRequest, RtcInputs, check_graph
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -183,3 +184,15 @@ def test_the_worker_sends_rank_zero_arrays_of_the_declared_dtypes() -> None:
         assert isinstance(sent, np.ndarray)
         assert sent.dtype == np.dtype(dtype)
         assert sent.ndim == (3 if name == "prev_chunk_left_over" else 0)
+
+
+def test_a_manifest_that_lists_rtc_inputs_its_graph_lacks_is_refused(tmp_path: Path) -> None:
+    from physicalai.inference.adapters.onnx import ONNXAdapter
+
+    stale, rtc = ONNXAdapter(), ONNXAdapter()
+    stale.load(_tiny_rtc_onnx(tmp_path / "plain.onnx", rtc=False))
+    rtc.load(_tiny_rtc_onnx(tmp_path / "rtc.onnx"))
+    with pytest.raises(ValueError, match="graph does not take prev_chunk_left_over"):
+        check_graph(cast("Any", SimpleNamespace(adapter=stale)), (10, 2))
+    check_graph(cast("Any", SimpleNamespace(adapter=rtc)), (10, 2))
+    check_graph(cast("Any", SimpleNamespace(adapter=stale)), None)  # a plain export without RTC is fine
