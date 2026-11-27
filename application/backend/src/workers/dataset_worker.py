@@ -5,10 +5,10 @@ which works on a copy of the dataset in the cache. While an episode is open it
 samples the store at the dataset's fps and appends a frame. It owns its
 commands and its state: it serves ``save_episode`` and ``discard_episode`` on
 the bus (see ``command_key``), and ``START`` for the session, which serves
-``start_episode`` once it has checked the environment and the control. It
+``start_episode`` once it has checked the environment. It
 replies with its new status, and publishes every change on ``evt/dataset`` for
-the session to show, with a reason when the user must know something: an
-episode lost, or a camera whose frame has gone stale.
+the session to show, with a reason when the user must know an episode was
+lost.
 
 Its own process, because lerobot writes parquet and encodes video in Python,
 which would otherwise compete with the API process for the GIL.
@@ -31,7 +31,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from exceptions import RuntimeSessionCommandError
-from runtime_session.bus import Bus, command_key, status_key
+from runtime_session.bus import DEADLINE, Bus, command_key, status_key
 from runtime_session.store import ACTION, STATE, FeatureSpec, Store
 from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand, StatusMessage
 from workers.base import ProcessWorker
@@ -41,7 +41,6 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterable
 
     from internal_datasets.mutations.recording_mutation import RecordingMutation
-    from runtime_session.store import Sample
     from schemas.dataset import Dataset
 
 STATUS = "rpc/dataset/status"
@@ -52,11 +51,6 @@ MIN_EPISODE_FRAMES = 2
 """lerobot's streaming encoder gives a 1-frame episode no video stats; it saves, then closing the dataset fails."""
 MIN_FREE_BYTES_TO_START = 2 * 1024**3
 """An episode starts only with this much free on the disks the recording writes to, measured when it starts."""
-STALE_FRAME_WARN_S = 0.2
-"""How long a camera's frame may stay the same while recording before the user is warned. A frame recorded on two
-ticks is normal when the camera and the recording run at about the same rate; this long is a stall. After
-``CameraWorker.stale_after_s`` (0.5 s) the camera is reconnected and the episode discarded, as before."""
-_EPSILON_S = 1e-6
 
 
 def _gib(size: int) -> str:
@@ -72,8 +66,7 @@ class RecordingStatus(BaseModel):
     episodes_recorded: int
     """Episodes saved by this worker, not yet copied back into the dataset."""
     error: str | None = None
-    """What the user must know, on the event announcing it: why an episode was discarded, or that a camera's
-    frame has gone stale."""
+    """Why an episode was automatically discarded, on the event announcing that discard."""
 
 
 @dataclass
@@ -91,17 +84,10 @@ class Recorder:
     """In the open episode."""
     free_bytes: Callable[[], int] | None = None
     """Free space on the disks the recording writes to; ``None`` skips the check at Start."""
-    clock: Callable[[], float] = time.monotonic
     _open: bool = field(default=False, repr=False)
     _uncleared: str | None = field(default=None, repr=False)
     """Why clearing a lost episode's frames failed, until a later clear works: no episode starts meanwhile, or it
     would carry those frames."""
-    _frame_time: dict[str, float] = field(default_factory=dict, repr=False)
-    """Capture time of the frame each camera had on the last recorded tick."""
-    _frame_since: dict[str, float] = field(default_factory=dict, repr=False)
-    """When that frame was first recorded."""
-    _warned: set[str] = field(default_factory=set, repr=False)
-    """Cameras already warned about in their current stall."""
 
     def status(self, _request: Empty | None = None) -> RecordingStatus:
         return RecordingStatus(is_recording=self._open, episodes_recorded=self.episodes_recorded)
@@ -123,8 +109,10 @@ class Recorder:
                 f"Free at least {_gib(MIN_FREE_BYTES_TO_START)} before recording.",
                 error_code="low_disk",
             )
+        if (deadline := DEADLINE.get()) is not None and time.monotonic() >= deadline:
+            # The client has stopped waiting and was told the start timed out: do not open an episode behind it.
+            raise RuntimeSessionCommandError("start_episode did not finish in time", error_code="command_timeout")
         self.task, self._open, self.frames = request.task, True, 0
-        self._frame_time, self._frame_since, self._warned = {}, {}, set()
         return self._changed()
 
     def _free(self) -> int | None:
@@ -194,20 +182,18 @@ class Recorder:
         """Append the store's current values, if an episode is open and every feature has one."""
         if not self._open or self.task is None:
             return
-        now = self.clock()  # when the frames were read, not when writing them finished
         state, action = self.store.read(STATE), self.store.read(ACTION)
-        frames: dict[str, Sample] = {}
-        for key in self.store.spec.observations:
-            if (frame := self.store.read_observation(key)) is None:
+        frames = {key: self.store.read_observation(key) for key in self.store.spec.observations}
+        for key, frame in frames.items():
+            if frame is None:
                 self._camera_lost(key)
                 return
-            frames[key] = frame
         if state is None or action is None:
             # A row is all or nothing: a default where a measurement belongs would be indistinguishable from data.
             self.skipped += 1
             return
         observation: dict[str, Any] = state.named_values()
-        observation.update({key: frame.value for key, frame in frames.items()})
+        observation.update({key: frame.value for key, frame in frames.items() if frame is not None})
         try:
             self.mutation.add_frame(observation, action.named_values(), self.task)
         except Exception as error:
@@ -225,7 +211,6 @@ class Recorder:
             self._changed(message)
             return
         self.frames += 1
-        self._watch_staleness(frames, now)
 
     def _clear(self) -> bool:
         """Clear the episode buffer; whether that worked. A failure is kept in ``_uncleared``."""
@@ -237,23 +222,6 @@ class Recorder:
             return False
         self._uncleared = None
         return True
-
-    def _watch_staleness(self, frames: dict[str, Sample], now: float) -> None:
-        """Warn once per camera per stall: its frame was first recorded ``STALE_FRAME_WARN_S`` ago."""
-        for key, frame in frames.items():
-            if self._frame_time.get(key) != frame.timestamp:
-                self._frame_time[key], self._frame_since[key] = frame.timestamp, now
-                self._warned.discard(key)  # a new frame ends the stall
-                continue
-            stale = now - self._frame_since[key]
-            if stale + _EPSILON_S >= STALE_FRAME_WARN_S and key not in self._warned:
-                self._warned.add(key)
-                warning = (
-                    f'Camera "{key}" sent no new frame for {stale:.1f} s, so this episode repeats one frame. '
-                    "Check the camera, and discard the episode if the scene moved."
-                )
-                logger.warning(warning)
-                self._changed(warning)
 
     def finish(self) -> None:
         """Discard an open episode, then copy the recording back over the dataset."""

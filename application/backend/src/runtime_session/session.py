@@ -42,9 +42,19 @@ from internal_datasets.mutations.recording_mutation import (
     RecordingCleanupError,
     RecordingNotSavedError,
     RecordingOutcomeUnknownError,
+    UnconfirmedCleanupError,
     UnusedCacheCleanupError,
 )
-from runtime_session.bus import EVENTS, Bus, BusRequestError, NoResponderError, command_key, publish_status, status_key
+from runtime_session.bus import (
+    DEADLINE,
+    EVENTS,
+    Bus,
+    BusRequestError,
+    NoResponderError,
+    command_key,
+    publish_status,
+    status_key,
+)
 from runtime_session.controls import build_control
 from runtime_session.controls.base import CHANGED as CONTROL_CHANGED
 from runtime_session.dataset import COMPONENT as DATASET
@@ -727,7 +737,7 @@ class RuntimeSession:
 
         Returns:
             When only removing the cache failed, a result with that ``warning``: after the recording was saved,
-            or when there was nothing to save.
+            after it was copied following a failed Accept (not confirmed), or when there was nothing to save.
 
         Raises:
             RuntimeSessionCommandError: ``recording_not_saved`` when finalizing failed, before anything was copied
@@ -740,6 +750,10 @@ class RuntimeSession:
         name = recording.dataset.name
         if _failed_with(failure, RecordingCleanupError):
             warning = f"The recording was saved into dataset {name!r}, but {_message(failure)}"
+            logger.warning(warning)
+            return UnloadDatasetResult(warning=warning)
+        if _failed_with(failure, UnconfirmedCleanupError):
+            warning = f"The recording was copied into dataset {name!r}, but {_message(failure)}. Check the dataset."
             logger.warning(warning)
             return UnloadDatasetResult(warning=warning)
         if _failed_with(failure, UnusedCacheCleanupError):
@@ -798,9 +812,11 @@ class RuntimeSession:
                 error_code="environment_failed",
             )
         try:
-            # As long as a client waits for any command: the start is passed on, not given a deadline of its own.
-            # Without a thread of its own, so the start takes one executor thread (the socket's), as on main.
-            return await self.bus.request_in_loop(dataset_rpc.START, command, RecordingStatus, timeout=_COMMAND_WAIT_S)
+            # Within the client's own deadline, which the worker checks again just before it opens the episode,
+            # and without a thread of its own, so the start takes one executor thread (the socket's), as on main.
+            return await self.bus.request_in_loop(
+                dataset_rpc.START, command, RecordingStatus, timeout=_COMMAND_WAIT_S, deadline=DEADLINE.get()
+            )
         except BusRequestError as error:
             raise RuntimeSessionCommandError(error.message, error_code=error.error_code) from error
         except NoResponderError as error:

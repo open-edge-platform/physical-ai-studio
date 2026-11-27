@@ -12,6 +12,7 @@ from pathlib import Path
 from internal_datasets.mutations.recording_mutation import (
     RecordingCleanupError,
     RecordingNotSavedError,
+    UnconfirmedCleanupError,
     UnusedCacheCleanupError,
 )
 from workers.dataset_worker import DatasetWorker
@@ -21,7 +22,8 @@ class FakeMutation:
     def __init__(self, log: Path) -> None:
         self.log = log
         self.frames = 0
-        self.saved = False
+        self.attempted = False
+        self.save_failed = False
 
     def _write(self, event: str, **fields: object) -> None:
         with self.log.open("a") as log:
@@ -41,11 +43,12 @@ class FakeMutation:
         self.frames += 1
 
     def save_episode(self) -> None:
+        self.attempted = True
         if self._fails("save"):
+            self.save_failed = True
             raise OSError("the disk is full")
         self._write("save", frames=self.frames)
         self.frames = 0
-        self.saved = True
 
     def discard_buffer(self) -> None:
         if self._fails("discard"):
@@ -61,10 +64,15 @@ class FakeMutation:
         if self._fails("worker"):  # something else breaks: nobody can say whether the copy landed
             raise ValueError("the worker broke")
         self._write("teardown")
-        if self._fails("cleanup"):  # as RecordingMutation: whether anything was copied before
-            if self.saved:
-                raise RecordingCleanupError("its cache /cache/x could not be removed (Permission denied)")
-            raise UnusedCacheCleanupError("the cache /cache/x could not be removed (Permission denied)")
+        if self._fails("cleanup"):  # as RecordingMutation: whether anything was copied, and confirmed
+            if not self.attempted:
+                raise UnusedCacheCleanupError("the cache /cache/x could not be removed (Permission denied)")
+            if self.save_failed:
+                raise UnconfirmedCleanupError(
+                    "an Accept failed while recording, so what it holds is not confirmed, and the cache /cache/x "
+                    "could not be removed (Permission denied)"
+                )
+            raise RecordingCleanupError("its cache /cache/x could not be removed (Permission denied)")
 
 
 class FakeDatasetWorker(DatasetWorker):

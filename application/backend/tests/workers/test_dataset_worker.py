@@ -1,4 +1,5 @@
 import shutil
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -13,8 +14,10 @@ from internal_datasets.mutations.recording_mutation import (
     RecordingMutation,
     RecordingNotSavedError,
     RecordingOutcomeUnknownError,
+    UnconfirmedCleanupError,
     UnusedCacheCleanupError,
 )
+from runtime_session.bus import DEADLINE
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
 from schemas.runtime_session import SaveEpisodeCommand, StartEpisodeCommand, StatusMessage
 from workers.dataset_worker import Recorder, lowest_free_bytes
@@ -89,53 +92,8 @@ def test_camera_loss_while_idle_does_not_discard_or_notify(recorder):
     recorder.mutation.discard_buffer.assert_not_called()
 
 
-class Clock:
-    def __init__(self) -> None:
-        self.now = 100.0
-
-    def __call__(self) -> float:
-        return self.now
-
-
-def _frame(recorder, timestamp: float) -> None:
-    recorder.store.write_observation("cam", np.zeros((2, 2, 3), dtype=np.uint8), timestamp=timestamp)
-
-
 def _messages(recorder) -> list[str]:
     return [call.args[0].error for call in recorder.publish.call_args_list if call.args[0].error]
-
-
-@pytest.mark.parametrize("fps", [10, 30])
-def test_a_stalled_camera_warns_once_per_stall_after_0_2_s(recorder, fps):
-    clock = recorder.clock = Clock()
-    period = 1 / fps
-
-    def tick(new_frame: bool) -> None:
-        clock.now += period
-        if new_frame:
-            _frame(recorder, clock.now)
-        recorder.record_frame()
-
-    tick(True)
-    tick(False)  # one frame on two ticks: normal when the rates are close
-    tick(True)
-    for _ in range(round(0.2 * fps) - 1):
-        tick(False)
-    assert _messages(recorder) == []  # not yet 0.2 s stale
-    tick(False)
-    assert _messages(recorder) == [
-        'Camera "cam" sent no new frame for 0.2 s, so this episode repeats one frame. '
-        "Check the camera, and discard the episode if the scene moved."
-    ]
-    for _ in range(fps):  # the same stall, a second longer: no second warning
-        tick(False)
-    assert len(_messages(recorder)) == 1
-    assert recorder.status().is_recording  # a warning, not a discard
-
-    tick(True)  # the stall ends; the next one warns again, once
-    for _ in range(round(0.2 * fps) + 3):
-        tick(False)
-    assert len(_messages(recorder)) == 2
 
 
 def test_an_episode_does_not_start_on_a_nearly_full_disk(recorder):
@@ -145,6 +103,25 @@ def test_an_episode_does_not_start_on_a_nearly_full_disk(recorder):
         recorder.start(StartEpisodeCommand(request_id="start", task="pick"))
     assert refused.value.error_code == "low_disk"
     assert not recorder.status().is_recording
+
+
+def test_an_episode_does_not_open_once_the_client_stopped_waiting(recorder):
+    recorder.discard()
+    start = StartEpisodeCommand(request_id="start", task="pick")
+    token = DEADLINE.set(time.monotonic() - 0.01)  # as the bus sets it for the request being answered
+    try:
+        with pytest.raises(RuntimeSessionCommandError) as refused:
+            recorder.start(start)
+    finally:
+        DEADLINE.reset(token)
+    assert refused.value.error_code == "command_timeout"
+    assert not recorder.status().is_recording
+
+    token = DEADLINE.set(time.monotonic() + 10)
+    try:
+        assert recorder.start(start).is_recording
+    finally:
+        DEADLINE.reset(token)
 
 
 def test_a_failing_disk_probe_does_not_block_a_start(recorder):
@@ -249,6 +226,22 @@ def test_a_cache_that_stays_after_nothing_was_copied_does_not_claim_a_save(tmp_p
     assert not source.exists()
 
 
+def test_a_failed_accept_then_a_cache_that_stays_does_not_claim_a_save(tmp_path):
+    """The real mutation: an Accept that failed is attempted, not confirmed; the cache is still copied, as on main."""
+    mutation, source, cache = _lerobot_mutation(tmp_path)
+    mutation.cache_dataset.save_episode = MagicMock(side_effect=OSError("No space left on device"))  # type: ignore[method-assign]
+    mutation.cache_dataset.delete = MagicMock(side_effect=PermissionError("Permission denied"))  # type: ignore[method-assign]
+    with pytest.raises(OSError, match="No space left"):
+        mutation.save_episode()
+    with pytest.raises(UnconfirmedCleanupError) as failed:
+        mutation.teardown()
+    assert str(failed.value) == (
+        f"an Accept failed while recording, so what it holds is not confirmed, and the cache {cache} could not be "
+        "removed (Permission denied)"
+    )
+    assert (source / "meta" / "episodes.txt").exists()  # copied back, as on main
+
+
 def test_a_cache_that_stays_after_the_copy_is_a_saved_recording(tmp_path):
     mutation, source, _cache = _lerobot_mutation(tmp_path)
     mutation.cache_dataset.delete = MagicMock(side_effect=PermissionError("Permission denied"))  # type: ignore[method-assign]
@@ -274,26 +267,6 @@ def test_a_lost_episode_whose_frames_could_not_be_cleared_blocks_the_next_start(
 
     recorder.mutation.discard_buffer.side_effect = None  # clearing works again: the start clears first
     assert recorder.start(StartEpisodeCommand(request_id="again", task="pick")).is_recording
-
-
-def test_a_slow_write_is_not_taken_for_a_stalled_camera(recorder):
-    clock = recorder.clock = Clock()
-    slow = [False]
-
-    def write(*_args) -> None:
-        if slow[0]:
-            clock.now += 0.5  # writing this frame takes long; the camera is fine
-
-    recorder.mutation.add_frame.side_effect = write
-    for _ in range(6):
-        clock.now += 1 / 30
-        _frame(recorder, clock.now)  # a new frame, written quickly
-        slow[0] = False
-        recorder.record_frame()
-        clock.now += 1 / 30  # the same frame read once more a tick later, an ordinary duplicate, written slowly
-        slow[0] = True
-        recorder.record_frame()
-    assert _messages(recorder) == []
 
 
 def test_one_unreadable_disk_does_not_hide_a_full_one(monkeypatch, tmp_path):

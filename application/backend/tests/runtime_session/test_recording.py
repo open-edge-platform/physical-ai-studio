@@ -547,6 +547,27 @@ async def test_a_start_from_the_socket_takes_one_executor_thread(
     assert session.state().dataset.is_recording
 
 
+async def test_a_start_the_client_gave_up_on_does_not_open_an_episode(
+    new_session, fake_cameras, fake_worker, monkeypatch
+) -> None:
+    """One deadline, from the socket's request to the worker: a stalled session loop does not get a fresh one."""
+    from api import runtime_ws
+
+    monkeypatch.setattr(runtime_ws, "_COMMAND_TIMEOUT_S", 1.0)
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(_dataset())
+
+    start = json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"})
+    acked = asyncio.ensure_future(runtime_ws._request(session.bus, start))
+    # Right after the request is sent, the loop the session answers on stalls past the client's deadline.
+    asyncio.get_running_loop().call_soon(time.sleep, 1.5)
+    ack = await acked
+    assert ack.error is not None and ack.error.error_code == "command_timeout"
+    await asyncio.sleep(1.0)  # whatever the session does with the start late
+    assert not session.state().dataset.is_recording
+
+
 async def test_an_episode_starts_without_a_control(new_session, fake_cameras, fake_worker) -> None:
     """Stationary capture, or an environment without a leader: recording does not need a control."""
     session = await new_session()
@@ -619,6 +640,29 @@ async def test_finishing_with_no_accepted_episode_does_not_claim_a_save(new_sess
     assert result.warning == (
         "No episode was accepted, so nothing was copied into dataset 'Blocks', "
         "but the cache /cache/x could not be removed (Permission denied)"
+    )
+
+
+async def test_a_failed_accept_then_a_failed_cleanup_does_not_claim_a_save(
+    new_session, fake_cameras, fake_worker
+) -> None:
+    """The only Accept failed; the cache is still copied back, as on main, but nothing is confirmed saved."""
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    await _start(session, "pick")
+    await asyncio.sleep(0.2)
+    (Path(dataset.path) / "fail_save").touch()
+    with pytest.raises(BusRequestError, match="disk is full"):
+        await _save(session)
+    (Path(dataset.path) / "fail_cleanup").touch()
+    result = await session.unload_dataset()
+    assert result is not None
+    assert "saved" not in result.warning
+    assert result.warning == (
+        "The recording was copied into dataset 'Blocks', but an Accept failed while recording, so what it holds is "
+        "not confirmed, and the cache /cache/x could not be removed (Permission denied). Check the dataset."
     )
 
 
