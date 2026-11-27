@@ -7,6 +7,7 @@ def test_worker_log_info_references_existing_worker_classes() -> None:
     worker_modules = {
         "TrainingWorker": "workers.training_worker",
         "DatasetImportWorker": "workers.dataset_import_worker",
+        "ModelWorker": "workers.model_worker",
     }
 
     for worker_name in LogConfig.worker_log_info:

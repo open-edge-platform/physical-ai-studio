@@ -14,7 +14,7 @@ import logging
 import os
 import pathlib
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -77,6 +77,9 @@ def setup_logging(config: LogConfig | None = None) -> None:
             logger.warning(f"Failed to create log directory {log_path}: {e}")
             continue
 
+        # Only the listed workers turn `diagnose` off; the others keep Loguru's default (LOGURU_DIAGNOSE).
+        sink_options: dict[str, Any] = {"diagnose": False} if worker_name in config.workers_without_locals else {}
+
         try:
             logger.add(
                 log_path,
@@ -86,6 +89,7 @@ def setup_logging(config: LogConfig | None = None) -> None:
                 filter=worker_log_filter,
                 serialize=config.serialize,
                 enqueue=True,
+                **sink_options,
             )
         except Exception as e:
             logger.error(f"Failed to add log sink for {worker_name}: {e}")

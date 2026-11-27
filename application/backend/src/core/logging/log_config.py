@@ -27,5 +27,8 @@ class LogConfig:
     worker_log_info: ClassVar[dict[str | None, str]] = {
         "TrainingWorker": "training.log",
         "DatasetImportWorker": "dataset_import.log",
+        "ModelWorker": "inference.log",
         None: "app.log",
     }
+    # Workers whose file leaves out the values of local variables in tracebacks (Loguru's `diagnose`).
+    workers_without_locals: ClassVar[frozenset[str]] = frozenset({"ModelWorker"})

@@ -3,7 +3,7 @@
 
 import { Flex, Text, Tooltip, TooltipTrigger, View } from '@geti-ui/ui';
 
-import { LOG_LEVEL_COLORS, type LogEntry as LogEntryType, type LogLevelName } from './log-types';
+import { getExceptionText, LOG_LEVEL_COLORS, type LogEntry as LogEntryType, type LogLevelName } from './log-types';
 
 import styles from './log-viewer.module.css';
 
@@ -102,15 +102,33 @@ const LogMessage = ({ message, level }: { message: string; level: LogLevelName }
     );
 };
 
+const LogException = ({ text, level }: { text: string; level: LogLevelName }) => {
+    return (
+        <View UNSAFE_className={styles.messagePreformatted}>
+            <pre className={styles.messagePre} style={{ color: getMessageColor(level) }} aria-label='Exception'>
+                {text}
+            </pre>
+        </View>
+    );
+};
+
 export const LogEntry = ({ entry }: { entry: LogEntryType }) => {
     const { record } = entry;
+    const exceptionText = getExceptionText(entry);
 
     return (
         <Flex UNSAFE_className={styles.logEntry} gap='size-75' alignItems='start'>
             <LogTimestamp timestamp={record.time.timestamp} repr={record.time.repr} />
             <LogLevelText level={record.level.name} />
             <LogSource module={record.module} func={record.function} line={record.line} />
-            <LogMessage message={record.message} level={record.level.name} />
+            {exceptionText === null ? (
+                <LogMessage message={record.message} level={record.level.name} />
+            ) : (
+                <Flex direction='column' gap='size-50' UNSAFE_className={styles.message}>
+                    <LogMessage message={record.message} level={record.level.name} />
+                    <LogException text={exceptionText} level={record.level.name} />
+                </Flex>
+            )}
         </Flex>
     );
 };
