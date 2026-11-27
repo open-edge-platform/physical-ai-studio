@@ -128,9 +128,10 @@ class _RTCQueue(RTCActionQueue):
     """``RTCActionQueue`` that remembers how many actions of its last chunk it dropped on the merge.
 
     ``RTCExecution`` reports every chunk with offset 0, though the merge drops the actions played while it was
-    inferred; Rerun would plot those as still to come. Known limit: RTC reports the chunk after the merge, and the
-    control may play its first kept action in between, so the plot can start one tick late. Exact steps need the
-    Runtime to report the merge itself (a follow-up to openvinotoolkit/physicalai#482).
+    inferred; Rerun would plot those as still to come. RTC's prediction plots are approximate in time: they are
+    placed at the control step when RTC reports the chunk, not when the merge or the first pop happened, so they
+    can sit early or late by an unbounded number of ticks. Exact steps need the Runtime to report the merge itself
+    (a follow-up to openvinotoolkit/physicalai#482).
     """
 
     def __init__(self) -> None:

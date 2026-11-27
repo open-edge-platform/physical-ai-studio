@@ -101,6 +101,7 @@ class _ModelEvents:
     ready_at: float
     step: int = 0
     dropped_from: Callable[[np.ndarray], int | None] | None = None
+    # RTC's plots are approximate in time; see _RTCQueue in controls/model.py.
     """How many leading actions of a chunk its queue dropped, where the executor reports offset 0 regardless (RTC)."""
 
     def emit_inference(self, event: InferenceEvent) -> None:
