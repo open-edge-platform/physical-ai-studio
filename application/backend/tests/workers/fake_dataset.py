@@ -9,7 +9,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from internal_datasets.mutations.recording_mutation import RecordingCleanupError, RecordingNotSavedError
+from internal_datasets.mutations.recording_mutation import (
+    RecordingCleanupError,
+    RecordingNotSavedError,
+    UnusedCacheCleanupError,
+)
 from workers.dataset_worker import DatasetWorker
 
 
@@ -17,6 +21,7 @@ class FakeMutation:
     def __init__(self, log: Path) -> None:
         self.log = log
         self.frames = 0
+        self.saved = False
 
     def _write(self, event: str, **fields: object) -> None:
         with self.log.open("a") as log:
@@ -40,6 +45,7 @@ class FakeMutation:
             raise OSError("the disk is full")
         self._write("save", frames=self.frames)
         self.frames = 0
+        self.saved = True
 
     def discard_buffer(self) -> None:
         if self._fails("discard"):
@@ -48,15 +54,17 @@ class FakeMutation:
         self.frames = 0
 
     def teardown(self) -> None:
-        if self._fails("teardown"):  # as RecordingMutation reports a failed copy back
+        if self._fails("teardown"):  # as RecordingMutation reports a failed finalize, before any copy
             raise RecordingNotSavedError(
-                "Copying back failed (No space left on device). The recorded episodes are left in /cache/x"
+                "Finalizing failed (No space left on device). What was recorded is left in /cache/x"
             )
         if self._fails("worker"):  # something else breaks: nobody can say whether the copy landed
             raise ValueError("the worker broke")
         self._write("teardown")
-        if self._fails("cleanup"):
-            raise RecordingCleanupError("its cache /cache/x could not be removed (Permission denied)")
+        if self._fails("cleanup"):  # as RecordingMutation: whether anything was copied before
+            if self.saved:
+                raise RecordingCleanupError("its cache /cache/x could not be removed (Permission denied)")
+            raise UnusedCacheCleanupError("the cache /cache/x could not be removed (Permission denied)")
 
 
 class FakeDatasetWorker(DatasetWorker):
@@ -71,3 +79,16 @@ class FakeDatasetWorker(DatasetWorker):
 
 def recording_log(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+class DatasetThatWillNotReopenWorker(DatasetWorker):
+    """The real worker and mutation through lerobot; once every file is copied back, the dataset will not open."""
+
+    def open_mutation(self):  # type: ignore[override]
+        mutation = super().open_mutation()
+
+        def unreadable() -> None:
+            raise OSError("meta/info.json is unreadable")
+
+        mutation.source_dataset.load_dataset = unreadable  # type: ignore[method-assign]
+        return mutation

@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -6,7 +7,14 @@ import numpy as np
 import pytest
 
 from exceptions import RuntimeSessionCommandError
-from internal_datasets.mutations.recording_mutation import RecordingMutation
+from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
+from internal_datasets.mutations.recording_mutation import (
+    RecordingCleanupError,
+    RecordingMutation,
+    RecordingNotSavedError,
+    RecordingOutcomeUnknownError,
+    UnusedCacheCleanupError,
+)
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
 from schemas.runtime_session import SaveEpisodeCommand, StartEpisodeCommand, StatusMessage
 from workers.dataset_worker import Recorder, lowest_free_bytes
@@ -160,22 +168,94 @@ def test_a_failed_frame_tells_the_user_the_episode_was_discarded(recorder):
 
 
 @pytest.mark.parametrize(
-    ("fails", "says"),
+    ("fails", "kind", "says"),
     [
-        ("finalize", "Finalizing failed (No space left on device). What was recorded is left in /cache/3f2a"),
-        ("overwrite", "Copying back failed (No space left on device). The recorded episodes are left in /cache/3f2a"),
+        (
+            "finalize",
+            RecordingNotSavedError,
+            "Finalizing failed (No space left on device). What was recorded is left in /cache/3f2a",
+        ),
+        (
+            "overwrite",
+            RecordingOutcomeUnknownError,
+            "Copying back stopped part way (No space left on device), so the dataset may be incomplete. "
+            "The recorded episodes are kept in /cache/3f2a",
+        ),
     ],
 )
-def test_a_failed_teardown_names_the_cache_it_left(fails, says):
+def test_a_failed_teardown_names_the_cache_it_left(fails, kind, says):
     source, cache = MagicMock(), MagicMock()
     cache.path = "/cache/3f2a"
     {"finalize": cache.finalize, "overwrite": source.overwrite}[fails].side_effect = OSError("No space left on device")
     mutation = RecordingMutation(source, cache)
     mutation.save_episode()
-    with pytest.raises(RuntimeError) as failed:
+    with pytest.raises(kind) as failed:
         mutation.teardown()
     assert str(failed.value) == says
     cache.delete.assert_not_called()  # the cache stays, for recovery
+
+
+def _lerobot_mutation(tmp_path: Path) -> tuple[RecordingMutation, Path, Path]:
+    """The real mutation and copy back over two folders; lerobot's own writing is left out."""
+    source, cache = tmp_path / "dataset", tmp_path / "cache"
+    (cache / "meta").mkdir(parents=True)
+    (cache / "meta" / "episodes.txt").write_text("episode 0")
+    (cache / "data.bin").write_bytes(b"frames")
+    cache_dataset = InternalLeRobotDataset(cache)
+    cache_dataset.prepare_for_writing = lambda: None  # type: ignore[method-assign]
+    cache_dataset.finalize = lambda: None  # type: ignore[method-assign]
+    cache_dataset.save_episode = lambda: None  # type: ignore[method-assign]
+    mutation = RecordingMutation(InternalLeRobotDataset(source), cache_dataset)
+    return mutation, source, cache
+
+
+def test_a_dataset_that_will_not_open_after_a_complete_copy_is_unknown_not_lost(tmp_path):
+    mutation, source, cache = _lerobot_mutation(tmp_path)
+    mutation.source_dataset.load_dataset = MagicMock(side_effect=OSError("meta/info.json is unreadable"))
+    mutation.save_episode()
+    with pytest.raises(RecordingOutcomeUnknownError) as failed:
+        mutation.teardown()
+    assert str(failed.value) == (
+        f"Every file was copied to {source}, but it could not be opened (meta/info.json is unreadable). "
+        f"The recorded episodes are also kept in {cache}"
+    )
+    assert (source / "meta" / "episodes.txt").read_text() == "episode 0"  # it landed
+    assert (cache / "data.bin").exists()  # and the cache stays
+
+
+def test_a_copy_back_that_stops_part_way_is_unknown_and_keeps_the_cache(tmp_path, monkeypatch):
+    mutation, source, cache = _lerobot_mutation(tmp_path)
+
+    def copies_one_file(src, dst):
+        Path(dst).mkdir()
+        shutil.copy(Path(src) / "data.bin", dst)
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr("internal_datasets.lerobot.lerobot_dataset.shutil.copytree", copies_one_file)
+    mutation.save_episode()
+    with pytest.raises(RecordingOutcomeUnknownError, match=r"stopped part way .* may be incomplete"):
+        mutation.teardown()
+    assert (source / "data.bin").exists() and not (source / "meta").exists()
+    assert (cache / "meta" / "episodes.txt").exists()
+
+
+def test_a_cache_that_stays_after_nothing_was_copied_does_not_claim_a_save(tmp_path, monkeypatch):
+    """A new dataset with no accepted episode: nothing is copied, so a failed cache removal is not a save."""
+    mutation, source, cache = _lerobot_mutation(tmp_path)
+    mutation.cache_dataset.delete = MagicMock(side_effect=PermissionError("Permission denied"))  # type: ignore[method-assign]
+    with pytest.raises(UnusedCacheCleanupError) as failed:
+        mutation.teardown()
+    assert str(failed.value) == f"the cache {cache} could not be removed (Permission denied)"
+    assert not source.exists()
+
+
+def test_a_cache_that_stays_after_the_copy_is_a_saved_recording(tmp_path):
+    mutation, source, _cache = _lerobot_mutation(tmp_path)
+    mutation.cache_dataset.delete = MagicMock(side_effect=PermissionError("Permission denied"))  # type: ignore[method-assign]
+    mutation.save_episode()
+    with pytest.raises(RecordingCleanupError):
+        mutation.teardown()
+    assert (source / "meta" / "episodes.txt").exists()
 
 
 def test_a_lost_episode_whose_frames_could_not_be_cleared_blocks_the_next_start(recorder):

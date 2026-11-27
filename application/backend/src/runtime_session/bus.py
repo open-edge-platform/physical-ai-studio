@@ -13,6 +13,7 @@ See the "Event bus" section of docs/feature_plans/runtime-inhousing-plan.md.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import tempfile
@@ -224,20 +225,43 @@ class Bus:
         """
         payload = message if isinstance(message, str) else message.model_dump_json()
         replies = list(self._session.get(self._prefix + key, payload=payload, timeout=timeout))
-        # zenoh reports its own timeout as an error reply without a replier
-        answered = [reply for reply in replies if reply.ok is not None or reply.replier_id is not None]
-        if not answered:
-            if replies:
-                raise TimeoutError(f"No reply on {key} within {timeout}s")
-            raise NoResponderError(f"Nothing serves {key}")
-        reply = answered[0]
-        if reply.ok is None:
-            error = json.loads(reply.err.payload.to_string()) if reply.err else {}
-            raise BusRequestError(
-                error.get("message", ""), error.get("error_code", "command_failed"), error.get("data")
-            )
-        adapter: TypeAdapter[R] = TypeAdapter(response)
-        return adapter.validate_json(reply.ok.payload.to_bytes())
+        return _answer(key, replies, response, timeout)
+
+    async def request_in_loop[R](
+        self,
+        key: str,
+        message: BaseModel | str,
+        response: type[R] | Any,
+        *,
+        timeout: float,  # noqa: ASYNC109 - zenoh enforces it
+    ) -> R:
+        """:meth:`request` without taking a thread from the loop's executor, for a handler that passes a request on.
+
+        Its own requester (the socket, say) may hold the executor's last thread while it waits for the handler;
+        a second thread for the handler's request would then wait for the first request to time out.
+
+        Raises:
+            BusRequestError: The handler raised; carries its message and error code.
+            NoResponderError: Nothing serves ``key``.
+            TimeoutError: The handler did not reply in time.
+        """
+        loop = asyncio.get_running_loop()
+        finished: asyncio.Future[None] = loop.create_future()
+        replies: list[zenoh.Reply] = []
+
+        def finish() -> None:
+            if not finished.done():
+                finished.set_result(None)
+
+        def done() -> None:  # zenoh thread, after the last reply or the timeout
+            with contextlib.suppress(RuntimeError):  # the loop is closed: nobody waits any more
+                loop.call_soon_threadsafe(finish)
+
+        payload = message if isinstance(message, str) else message.model_dump_json()
+        handler = zenoh.handlers.Callback(replies.append, done)
+        self._session.get(self._prefix + key, handler, payload=payload, timeout=timeout)
+        await finished
+        return _answer(key, replies, response, timeout)
 
     def serve[M](
         self, key: str, model: type[M] | Any, handler: Callable[[M], BaseModel | Awaitable[BaseModel]]
@@ -303,6 +327,22 @@ async def until_serving[R](bus: Bus, key: str, message: BaseModel, response: typ
             if time.monotonic() > deadline:
                 raise
             await asyncio.sleep(0.05)
+
+
+def _answer[R](key: str, replies: list[zenoh.Reply], response: type[R] | Any, timeout: float) -> R:
+    """The reply to a request, or what went wrong with it."""
+    # zenoh reports its own timeout as an error reply without a replier
+    answered = [reply for reply in replies if reply.ok is not None or reply.replier_id is not None]
+    if not answered:
+        if replies:
+            raise TimeoutError(f"No reply on {key} within {timeout}s")
+        raise NoResponderError(f"Nothing serves {key}")
+    reply = answered[0]
+    if reply.ok is None:
+        error = json.loads(reply.err.payload.to_string()) if reply.err else {}
+        raise BusRequestError(error.get("message", ""), error.get("error_code", "command_failed"), error.get("data"))
+    adapter: TypeAdapter[R] = TypeAdapter(response)
+    return adapter.validate_json(reply.ok.payload.to_bytes())
 
 
 def _error_code(error: Exception) -> str:

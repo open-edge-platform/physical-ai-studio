@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -20,7 +22,7 @@ from runtime_session.session import RuntimeSession
 from runtime_session.store import FeatureSpecMismatchError, ImageSpec
 from schemas.dataset import Dataset
 from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand, TeleopControlConfig
-from tests.workers.fake_dataset import FakeDatasetWorker, recording_log
+from tests.workers.fake_dataset import DatasetThatWillNotReopenWorker, FakeDatasetWorker, recording_log
 from workers.dataset_worker import RecordingStatus
 
 from .fixtures import make_environment, next_status, subscribe_statuses
@@ -517,6 +519,34 @@ async def test_an_episode_does_not_start_on_a_failed_environment(new_session, fa
     assert not session.state().dataset.is_recording
 
 
+async def test_a_start_from_the_socket_takes_one_executor_thread(
+    new_session, fake_cameras, fake_worker, monkeypatch
+) -> None:
+    """The socket's request holds an executor thread while the session passes the start on, as on main.
+
+    With a second thread for the forward and only one in the pool, the forward waited for the socket's request to
+    time out, and the episode opened after the client was told ``command_timeout``.
+    """
+    from api import runtime_ws
+
+    monkeypatch.setattr(runtime_ws, "_COMMAND_TIMEOUT_S", 5.0)
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(_dataset())
+
+    loop = asyncio.get_running_loop()
+    one_thread = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(one_thread)
+    try:
+        start = json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"})
+        ack = await runtime_ws._request(session.bus, start)
+    finally:
+        loop.set_default_executor(ThreadPoolExecutor())  # the session's teardown uses threads too
+        one_thread.shutdown(wait=False)
+    assert ack.ok, ack.error
+    assert session.state().dataset.is_recording
+
+
 async def test_an_episode_starts_without_a_control(new_session, fake_cameras, fake_worker) -> None:
     """Stationary capture, or an environment without a leader: recording does not need a control."""
     session = await new_session()
@@ -559,8 +589,8 @@ async def test_a_recording_that_could_not_be_saved_says_where_it_was_left(
         await _finish_with(session, dataset, "fail_teardown")
     assert refused.value.error_code == "recording_not_saved"
     assert refused.value.message == (
-        "The recording was not saved into dataset 'Blocks': Copying back failed (No space left on device). "
-        "The recorded episodes are left in /cache/x"
+        "The recording was not saved into dataset 'Blocks': Finalizing failed (No space left on device). "
+        "What was recorded is left in /cache/x"
     )
     assert session.state().dataset is None  # unloaded, as on main
 
@@ -575,6 +605,52 @@ async def test_a_saved_recording_whose_cache_stayed_is_saved_with_a_warning(
     assert result.warning == (
         "The recording was saved into dataset 'Blocks', but its cache /cache/x could not be removed (Permission denied)"
     )
+
+
+async def test_finishing_with_no_accepted_episode_does_not_claim_a_save(new_session, fake_cameras, fake_worker) -> None:
+    """Nothing is copied without an accepted episode; a cache that stays is only a cleanup warning."""
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    (Path(dataset.path) / "fail_cleanup").touch()
+    result = await session.unload_dataset()
+    assert result is not None
+    assert result.warning == (
+        "No episode was accepted, so nothing was copied into dataset 'Blocks', "
+        "but the cache /cache/x could not be removed (Permission denied)"
+    )
+
+
+async def test_a_dataset_that_will_not_open_after_the_copy_is_unknown_not_lost(new_session, fake_cameras) -> None:
+    """Through lerobot, the real mutation and the socket: every file landed, so this is not reported as lost."""
+    from api.runtime_ws import _request
+
+    dataset = _dataset()
+    session = await new_session()
+    with patch("runtime_session.dataset.DatasetWorker", DatasetThatWillNotReopenWorker):
+        await session.load_environment(make_environment())
+        await session.load_dataset(dataset)
+        await _start(session, "pick the block")
+        await asyncio.sleep(0.4)
+        await _save(session)
+        ack = await _request(session.bus, json.dumps({"command": "unload_dataset", "request_id": "1"}))
+
+    assert ack.error is not None
+    assert ack.error.error_code == "recording_outcome_unknown"
+    message = ack.error.message
+    assert message.startswith(
+        f"Studio could not tell whether the recording into dataset 'Blocks' was saved: Every file was copied to "
+        f"{dataset.path}, but it could not be opened (meta/info.json is unreadable). "
+        "The recorded episodes are also kept in "
+    )
+    assert message.endswith(". Check the dataset.")
+    # The files did land, and the cache is kept.
+    assert json.loads((Path(dataset.path) / "meta" / "info.json").read_text())["total_episodes"] == 1
+    cache = Path(message.removesuffix(". Check the dataset.").rpartition(" kept in ")[2])
+    assert (cache / "meta" / "info.json").is_file()
+    shutil.rmtree(cache)
+    assert session.state().dataset is None
 
 
 async def test_a_worker_that_broke_otherwise_leaves_the_outcome_unknown(new_session, fake_cameras, fake_worker) -> None:

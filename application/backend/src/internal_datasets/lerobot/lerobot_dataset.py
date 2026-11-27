@@ -18,7 +18,7 @@ from lerobot.utils.feature_utils import build_dataset_frame
 from loguru import logger
 
 from internal_datasets.access_mode import DatasetAccessMode
-from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.dataset_client import DatasetClient, DatasetReopenError
 from internal_datasets.lerobot.episode_task import set_episode_task
 from internal_datasets.lerobot.video_encoding_settings import VideoEncodingSettings
 from internal_datasets.mutations.recording_mutation import RecordingMutation
@@ -209,7 +209,12 @@ class InternalLeRobotDataset(DatasetClient):
             shutil.rmtree(self.path)
 
         shutil.copytree(source.path, self.path)
-        self.load_dataset()
+        try:
+            self.load_dataset()
+        except Exception as error:
+            raise DatasetReopenError(
+                f"Every file was copied to {self.path}, but it could not be opened ({error})"
+            ) from error
 
     def get_episodes(self) -> list[Episode]:
         """Get episodes of dataset."""

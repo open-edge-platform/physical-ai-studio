@@ -1,14 +1,28 @@
 from loguru import logger
 
-from internal_datasets.dataset_client import DatasetClient
+from internal_datasets.dataset_client import DatasetClient, DatasetReopenError
 
 
 class RecordingNotSavedError(RuntimeError):
-    """Finalizing or copying back failed: the recording is not in the dataset. The message says where it was left."""
+    """Finalizing failed, before anything was copied: the dataset is as it was.
+
+    The message says where the recording is.
+    """
+
+
+class RecordingOutcomeUnknownError(RuntimeError):
+    """Copying back started but did not end cleanly: the dataset may or may not hold the recording.
+
+    The cache is kept. The message says how far the copy got and where the cache is.
+    """
 
 
 class RecordingCleanupError(RuntimeError):
     """The recording was copied back into the dataset, but its cache could not be removed."""
+
+
+class UnusedCacheCleanupError(RuntimeError):
+    """No episode was accepted, so nothing was copied into the dataset, and the cache could not be removed."""
 
 
 class RecordingMutation:
@@ -48,8 +62,12 @@ class RecordingMutation:
         """If mutation exists apply and then remove cache.
 
         Raises:
-            RecordingNotSavedError: Finalizing or copying back failed; the message says where the recording is.
+            RecordingNotSavedError: Finalizing failed, before anything was copied; the message says where the
+                recording is.
+            RecordingOutcomeUnknownError: Copying back failed part way, or every file was copied but the dataset
+                could not be opened again; the cache is kept.
             RecordingCleanupError: The recording is in the dataset, but the cache could not be removed.
+            UnusedCacheCleanupError: Nothing was copied (no episode was accepted), and the cache could not be removed.
         """
         logger.debug(f"Teardown recording mutation. Has mutation {self.has_mutation}")
         cache = getattr(self.cache_dataset, "path", "the cache")
@@ -64,13 +82,25 @@ class RecordingMutation:
         if self.has_mutation:
             try:
                 self.source_dataset.overwrite(self.cache_dataset)
+            except DatasetReopenError as error:
+                logger.error(
+                    f"The recording was copied back, but the dataset did not open again; cache kept in {cache}"
+                )
+                raise RecordingOutcomeUnknownError(
+                    f"{error}. The recorded episodes are also kept in {cache}"
+                ) from error
             except Exception as error:
-                logger.error(f"Could not copy the recording back; its episodes are still in {cache}")
-                raise RecordingNotSavedError(
-                    f"Copying back failed ({error}). The recorded episodes are left in {cache}"
+                # The dataset may be missing, partly copied or complete: the copy did not say how far it got.
+                logger.error(f"Copying the recording back stopped part way; its episodes are still in {cache}")
+                raise RecordingOutcomeUnknownError(
+                    f"Copying back stopped part way ({error}), so the dataset may be incomplete. "
+                    f"The recorded episodes are kept in {cache}"
                 ) from error
         try:
             self.cache_dataset.delete()
         except Exception as error:
+            if not self.has_mutation:
+                logger.error(f"Nothing was recorded to copy back, and the cache {cache} could not be removed")
+                raise UnusedCacheCleanupError(f"the cache {cache} could not be removed ({error})") from error
             logger.error(f"The recording was saved, but its cache {cache} could not be removed")
             raise RecordingCleanupError(f"its cache {cache} could not be removed ({error})") from error

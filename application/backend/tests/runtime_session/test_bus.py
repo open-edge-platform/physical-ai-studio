@@ -38,25 +38,27 @@ async def test_pubsub_in_one_process_decodes_the_union(session_id: str) -> None:
         assert await asyncio.wait_for(commands.next(), 1) == Stop()
 
 
-async def test_request_replies_and_reports_handler_errors(session_id: str) -> None:
+@pytest.mark.parametrize("in_loop", [False, True], ids=["request", "request_in_loop"])
+async def test_request_replies_and_reports_handler_errors(session_id: str, in_loop: bool) -> None:
     async def slow(message: Say) -> Heard:
         await asyncio.sleep(1)
         return upper(message)
 
     with Bus.host(session_id) as bus:
+        request = bus.request_in_loop if in_loop else bus.request
         bus.serve("rpc/echo/upper", Say, upper)
         bus.serve("rpc/echo/slow", Say, slow)
-        assert await bus.request("rpc/echo/upper", Say(text="hi"), Heard, timeout=1) == Heard(text="HI")
+        assert await request("rpc/echo/upper", Say(text="hi"), Heard, timeout=1) == Heard(text="HI")
         with pytest.raises(BusRequestError, match="nothing to say") as failed:
-            await bus.request("rpc/echo/upper", Say(text=""), Heard, timeout=1)
+            await request("rpc/echo/upper", Say(text=""), Heard, timeout=1)
         assert failed.value.error_code == "command_failed"
         with pytest.raises(BusRequestError) as invalid:
-            await bus.request("rpc/echo/upper", '{"kind": "say"}', Heard, timeout=1)
+            await request("rpc/echo/upper", '{"kind": "say"}', Heard, timeout=1)
         assert invalid.value.error_code == "invalid_command"
         with pytest.raises(TimeoutError):
-            await bus.request("rpc/echo/slow", Say(text="hi"), Heard, timeout=0.2)
+            await request("rpc/echo/slow", Say(text="hi"), Heard, timeout=0.2)
         with pytest.raises(NoResponderError):
-            await bus.request("rpc/nobody/home", Say(text="hi"), Heard, timeout=0.2)
+            await request("rpc/nobody/home", Say(text="hi"), Heard, timeout=0.2)
 
 
 async def test_worker_process_on_the_bus(session_id: str) -> None:

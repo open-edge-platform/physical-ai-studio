@@ -38,7 +38,12 @@ from pydantic import BaseModel
 
 from exceptions import BaseException as AppBaseException
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
-from internal_datasets.mutations.recording_mutation import RecordingCleanupError, RecordingNotSavedError
+from internal_datasets.mutations.recording_mutation import (
+    RecordingCleanupError,
+    RecordingNotSavedError,
+    RecordingOutcomeUnknownError,
+    UnusedCacheCleanupError,
+)
 from runtime_session.bus import EVENTS, Bus, BusRequestError, NoResponderError, command_key, publish_status, status_key
 from runtime_session.controls import build_control
 from runtime_session.controls.base import CHANGED as CONTROL_CHANGED
@@ -721,12 +726,13 @@ class RuntimeSession:
         Unloading is as before; only what the dataset worker reports about it is read afterwards.
 
         Returns:
-            When the recording was saved but its cache could not be removed, a result with that ``warning``.
+            When only removing the cache failed, a result with that ``warning``: after the recording was saved,
+            or when there was nothing to save.
 
         Raises:
-            RuntimeSessionCommandError: ``recording_not_saved`` when finalizing or copying back failed (the
-                message names where the recording was left); ``recording_outcome_unknown`` when the worker failed
-                for another reason. The dataset is unloaded either way.
+            RuntimeSessionCommandError: ``recording_not_saved`` when finalizing failed, before anything was copied
+                (the message names where the recording was left); ``recording_outcome_unknown`` when copying back
+                did not end cleanly or the worker failed for another reason. The dataset is unloaded either way.
         """
         recording, failure = await self._unload_dataset()
         if recording is None or failure is None:
@@ -736,10 +742,20 @@ class RuntimeSession:
             warning = f"The recording was saved into dataset {name!r}, but {_message(failure)}"
             logger.warning(warning)
             return UnloadDatasetResult(warning=warning)
+        if _failed_with(failure, UnusedCacheCleanupError):
+            warning = f"No episode was accepted, so nothing was copied into dataset {name!r}, but {_message(failure)}"
+            logger.warning(warning)
+            return UnloadDatasetResult(warning=warning)
         if _failed_with(failure, RecordingNotSavedError):
             raise RuntimeSessionCommandError(
                 f"The recording was not saved into dataset {name!r}: {_message(failure)}",
                 error_code="recording_not_saved",
+            )
+        if _failed_with(failure, RecordingOutcomeUnknownError):
+            raise RuntimeSessionCommandError(
+                f"Studio could not tell whether the recording into dataset {name!r} was saved: {_message(failure)}. "
+                "Check the dataset.",
+                error_code="recording_outcome_unknown",
             )
         raise RuntimeSessionCommandError(
             f"Studio could not tell whether the recording into dataset {name!r} was saved; its worker failed "
@@ -783,7 +799,8 @@ class RuntimeSession:
             )
         try:
             # As long as a client waits for any command: the start is passed on, not given a deadline of its own.
-            return await self.bus.request(dataset_rpc.START, command, RecordingStatus, timeout=_COMMAND_WAIT_S)
+            # Without a thread of its own, so the start takes one executor thread (the socket's), as on main.
+            return await self.bus.request_in_loop(dataset_rpc.START, command, RecordingStatus, timeout=_COMMAND_WAIT_S)
         except BusRequestError as error:
             raise RuntimeSessionCommandError(error.message, error_code=error.error_code) from error
         except NoResponderError as error:
