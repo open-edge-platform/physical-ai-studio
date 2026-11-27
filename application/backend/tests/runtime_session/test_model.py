@@ -13,14 +13,18 @@ import numpy as np
 import pytest
 
 from exceptions import RuntimeSessionCommandError
+from runtime_session.bus import command_key
 from runtime_session.controls.model import ModelControl
 from runtime_session.model import ModelInputs, model_inputs
 from runtime_session.session import RuntimeSession
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
+from schemas.dataset import Dataset
 from schemas.model import Model
-from schemas.runtime_session import ExecutionConfig, ModelControlConfig
+from schemas.runtime_session import ExecutionConfig, ModelControlConfig, StartEpisodeCommand
+from tests.workers.fake_dataset import FakeDatasetWorker
 from tests.workers.fake_model import CHUNK, FakeModelWorker
 from workers.base import WorkerStartupError
+from workers.dataset_worker import RecordingStatus
 
 from .fixtures import make_environment
 
@@ -220,6 +224,36 @@ async def test_rtc_refuses_an_export_without_rtc_inputs(new_session, fake_camera
     with pytest.raises(ValueError, match="without RTC inputs"):
         await session.set_control(ModelControlConfig(execution=ExecutionConfig(mode="rtc")))
     assert session.state().control is None
+
+
+@pytest.mark.parametrize(("rtc_chunk", "horizon"), [(None, 5), (CHUNK, 6)])
+async def test_a_refused_rtc_request_keeps_the_running_control_and_episode(
+    new_session, fake_cameras, fake_model_worker, tmp_path, rtc_chunk, horizon
+) -> None:
+    dataset = Dataset(id=uuid4(), name="Blocks", default_task="pick", project_id=uuid4(), environment_id=uuid4())
+    Path(dataset.path).mkdir(parents=True)
+    session: RuntimeSession = await new_session()
+    with patch("runtime_session.dataset.DatasetWorker", FakeDatasetWorker):
+        await session.load_environment(make_environment())
+        await session.load_dataset(dataset)
+        await session.load_model(_model(tmp_path, rtc_chunk=rtc_chunk), "torch", "cpu")
+        running = ModelControlConfig(task="pick", hz=50, execution=ExecutionConfig(mode="sync"), grace_s=0)
+        await session.set_control(running)
+        command = StartEpisodeCommand(request_id="", task="pick")
+        await session.bus.request(command_key("start_episode"), command, RecordingStatus, timeout=10)
+        await _until(lambda: session.state().dataset.is_recording)
+
+        refused = ModelControlConfig(
+            task="pick", hz=50, execution=ExecutionConfig(mode="rtc", execution_horizon=horizon)
+        )
+        with pytest.raises(ValueError, match=r"without RTC inputs|at most half the chunk"):
+            await session.set_control(refused)
+
+        assert session.state().control == running
+        assert session.state().dataset.is_recording
+        start = session.store.read(STATE).value.copy()
+        await _until(lambda: session.store.read(STATE).value[0] > start[0] + 3)
+        await session.set_control(None)
 
 
 async def test_rtc_refuses_a_horizon_past_half_the_chunk(

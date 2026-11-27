@@ -41,6 +41,7 @@ from runtime_session.autopilot_recording import AutopilotRecording
 from runtime_session.bus import EVENTS, Bus, BusRequestError, command_key, publish_status, status_key
 from runtime_session.controls import build_control
 from runtime_session.controls.base import CHANGED as CONTROL_CHANGED
+from runtime_session.controls.model import check_execution
 from runtime_session.dataset import COMPONENT as DATASET
 from runtime_session.dataset import Recording, dataset_spec
 from runtime_session.environment import COMPONENT as ENVIRONMENT
@@ -531,6 +532,9 @@ class RuntimeSession:
             )
         async with self._lock:
             loaded = self._environment.require("Load an environment first.")
+            if isinstance(config, ModelControlConfig) and self._model.value is not None:
+                # Before the running control and an open episode are stopped for a request that cannot run.
+                check_execution(self._model.value, config)
             try:
                 await self._switch_control(loaded.environment, config)
             finally:

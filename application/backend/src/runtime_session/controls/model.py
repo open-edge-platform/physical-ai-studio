@@ -112,8 +112,8 @@ class ModelControl(Control):
         self.step += 1
 
 
-def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Execution, ActionQueue]:
-    """The executor and queue for ``config``'s mode.
+def check_execution(model: ProcessModel, config: ModelControlConfig) -> None:
+    """Refuse an execution mode the loaded export cannot run, before anything is stopped for it.
 
     Raises:
         ValueError: ``rtc`` with an export that takes no RTC inputs, which would run unguided without a word,
@@ -121,8 +121,7 @@ def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Executi
     """
     settings = config.execution
     if settings.mode != "rtc":
-        cls = AsyncExecution if settings.mode == "async" else SyncExecution
-        return cls(request_threshold=settings.request_threshold), ChunkedActionQueue(smoother=LerpSmoother())
+        return
     if model.inputs.rtc_chunk is None:
         raise ValueError(
             f"Model {model.model.name!r} ({model.backend}) was exported without RTC inputs, so it cannot run with "
@@ -131,8 +130,22 @@ def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Executi
     chunk_size = model.inputs.rtc_chunk[0]
     if settings.execution_horizon > chunk_size // 2:
         raise ValueError(f"The RTC horizon is at most half the chunk: {settings.execution_horizon} > {chunk_size // 2}")
+
+
+def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Execution, ActionQueue]:
+    """The executor and queue for ``config``'s mode.
+
+    Raises:
+        ValueError: See ``check_execution``.
+    """
+    check_execution(model, config)
+    settings = config.execution
+    if settings.mode != "rtc":
+        cls = AsyncExecution if settings.mode == "async" else SyncExecution
+        return cls(request_threshold=settings.request_threshold), ChunkedActionQueue(smoother=LerpSmoother())
+    rtc_chunk = cast("tuple[int, int]", model.inputs.rtc_chunk)  # check_execution refused an export without it
     execution = RTCExecution(
-        chunk_size=chunk_size,
+        chunk_size=rtc_chunk[0],
         execution_horizon=settings.execution_horizon,
         fps=config.hz,
         max_guidance_weight=settings.max_guidance_weight,
