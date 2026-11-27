@@ -84,11 +84,14 @@ What runs where follows from one rule: **anything that holds hardware or holds t
 
 `runtime_session/bus.py`. The session hosts a zenoh router on a Unix socket (`pai-<session id>.sock`), with scouting off, and its worker processes join it as clients. Nothing listens on the network, and two sessions cannot hear each other.
 
-- **Everything that must arrive is a request.** Every websocket command becomes a `request` on `cmd/<command>`, and whoever serves it replies: the session for loads and `set_control`, the dataset worker for `start_episode`, `save_episode` and `discard_episode`. A command for a part that is not loaded finds no responder and comes back as `command_unavailable`, so the socket needs to know nothing about which part serves what.
+- **Everything that must arrive is a request.** Every websocket command becomes a `request` on `cmd/<command>`, and whoever serves it replies: the session for loads, `set_control`, `start_episode` and `unload_dataset`, the dataset worker for `save_episode` and `discard_episode`. A command for a part that is not loaded finds no responder and comes back as `command_unavailable`, so the socket needs to know nothing about which part serves what.
+- **The session gates `start_episode`.** It refuses one without a dataset (`command_unavailable`) or on a failed environment (`environment_failed`), then passes it on to the dataset worker's private `rpc/dataset/start_episode`, which checks the task, the free disk and the episode buffer.
 - **Pub/sub is for status only.** Each part publishes its status on `evt/status/<part>` (`environment`, `environment/<device>`, `dataset`, `model`, `control`), and the session publishes its state and errors on `evt/session`. A publication sent before a subscriber reached the router is lost, which is acceptable for status and not for a save.
 - **Handler errors cross the bus.** A handler's exception reaches the requester as `BusRequestError` with its error code and data, which the socket spreads into the ack (`incompatible_parts` carries the parts that would be unloaded).
 - **A worker that just started takes a moment to be reachable.** Its queryables need to reach the router, so a parent waits with `until_serving` instead of sending its first request straight away.
 - **`request_sync`** blocks the calling thread instead of the event loop, for `ModelControl`'s executor thread. The async `request` is the same call on a worker thread.
+- **`request_in_loop`** waits on a zenoh callback instead of a thread, for a handler that passes a request on: the socket's request already holds an executor thread, so the session's forward of `start_episode` takes none.
+- **One deadline per request.** Every request carries how long its requester waits. A handler sees it as `DEADLINE`, counted from when the request reached its process, and a forward hands down what is left instead of starting a new wait. The dataset worker checks it just before it opens an episode, so a start the client has given up on does not open one.
 
 ## Parts and slots
 
