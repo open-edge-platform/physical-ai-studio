@@ -34,11 +34,28 @@ from uuid import UUID, uuid4
 
 import anyio
 from loguru import logger
+from pydantic import BaseModel
 
 from exceptions import BaseException as AppBaseException
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
+from internal_datasets.mutations.recording_mutation import (
+    RecordingCleanupError,
+    RecordingNotSavedError,
+    RecordingOutcomeUnknownError,
+    UnconfirmedCleanupError,
+    UnusedCacheCleanupError,
+)
 from runtime_session.autopilot_recording import AutopilotRecording
-from runtime_session.bus import EVENTS, Bus, BusRequestError, command_key, publish_status, status_key
+from runtime_session.bus import (
+    DEADLINE,
+    EVENTS,
+    Bus,
+    BusRequestError,
+    NoResponderError,
+    command_key,
+    publish_status,
+    status_key,
+)
 from runtime_session.controls import build_control
 from runtime_session.controls.base import CHANGED as CONTROL_CHANGED
 from runtime_session.dataset import COMPONENT as DATASET
@@ -66,6 +83,7 @@ from schemas.runtime_session import (
     SessionState,
     SetControlCommand,
     StartAutopilotRecordingCommand,
+    StartEpisodeCommand,
     StateMessage,
     StatusMessage,
     StopAutopilotRecordingCommand,
@@ -87,7 +105,6 @@ if TYPE_CHECKING:
 
     import httpx
     from physicalai.robot import Robot
-    from pydantic import BaseModel
 
     from robots.robot_client_factory import RobotClientFactory
     from runtime_session.autopilot_recording import AutopilotControl
@@ -110,6 +127,9 @@ _RELEASE_S = 10.0
 
 _PARK_S = RobotWorker.stop_timeout_s + 5.0
 """How long a load waits for a closing session that holds one of its robots, which may park first."""
+
+_COMMAND_WAIT_S = 600.0
+"""How long a command passed on to a worker may take: as long as the socket waits for any command."""
 
 _CONTROL = "control"
 """What the session reports a control as: a control is a thread in the session, not on the bus itself."""
@@ -264,12 +284,14 @@ class RuntimeSession:
                 LoadDatasetCommand,
                 lambda command: self._load_dataset_by_id(command.dataset_id, command.fps),
             ),
-            "unload_dataset": (UnloadDatasetCommand, lambda _command: self.unload_dataset()),
             "load_model": (LoadModelCommand, self._load_model_command),
             "unload_model": (UnloadModelCommand, lambda _command: self.unload_model()),
         }
         for name, (model, run) in commands.items():
             bus.serve(command_key(name), model, _as_command(name, run))
+        # The dataset worker serves the other episode commands; whether to start one needs what the session knows.
+        bus.serve(command_key("start_episode"), StartEpisodeCommand, self.start_episode)
+        bus.serve(command_key("unload_dataset"), UnloadDatasetCommand, self._unload_dataset_command)
 
     def _listen(self, bus: Bus) -> None:
         """Deal with what the parts report about themselves on the bus."""
@@ -872,6 +894,7 @@ class RuntimeSession:
                 await self._control.unload()
                 await self._stop_recording()
                 loaded.environment.store.invalidate_all()
+                loaded.environment.failure = message  # what Start checks, as for a device that failed
                 publish_status(self.bus, ENVIRONMENT, "failed", message)
                 self._emit(StateMessage(data=self.state()))
                 return
@@ -883,6 +906,7 @@ class RuntimeSession:
             message = f"The simulation of {name!r} started again at {target}: {_command_error(error).message}"
             logger.warning("Session {} could not follow: {}", self.id, message)
             if not self.closed.is_set():  # a stop waits for this lookup; the closing session reports nothing
+                loaded.environment.failure = message  # what Start checks, as for a device that failed
                 publish_status(self.bus, ENVIRONMENT, "failed", message)
 
         try:
@@ -967,12 +991,103 @@ class RuntimeSession:
             await self._switch_control(environment, None)
         await self._model.unload()
 
-    async def unload_dataset(self) -> None:
-        """Stop recording and copy what was recorded back into the dataset. A no-op when none is loaded."""
+    async def unload_dataset(self) -> UnloadDatasetResult | None:
+        """Stop recording and copy what was recorded back into the dataset. A no-op when none is loaded.
+
+        Unloading is as before; only what the dataset worker reports about it is read afterwards.
+
+        Returns:
+            When only removing the cache failed, a result with that ``warning``: after the recording was saved,
+            after it was copied following a failed Accept (not confirmed), or when there was nothing to save.
+
+        Raises:
+            RuntimeSessionCommandError: ``recording_not_saved`` when finalizing failed, before anything was copied
+                (the message names where the recording was left); ``recording_outcome_unknown`` when copying back
+                did not end cleanly or the worker failed for another reason. The dataset is unloaded either way.
+        """
+        recording, failure = await self._unload_dataset()
+        if recording is None or failure is None:
+            return None
+        name = recording.dataset.name
+        if _failed_with(failure, RecordingCleanupError):
+            warning = f"The recording was saved into dataset {name!r}, but {_message(failure)}"
+            logger.warning(warning)
+            return UnloadDatasetResult(warning=warning)
+        if _failed_with(failure, UnconfirmedCleanupError):
+            warning = f"The recording was copied into dataset {name!r}, but {_message(failure)}. Check the dataset."
+            logger.warning(warning)
+            return UnloadDatasetResult(warning=warning)
+        if _failed_with(failure, UnusedCacheCleanupError):
+            warning = f"No episode was accepted, so nothing was copied into dataset {name!r}, but {_message(failure)}"
+            logger.warning(warning)
+            return UnloadDatasetResult(warning=warning)
+        if _failed_with(failure, RecordingNotSavedError):
+            raise RuntimeSessionCommandError(
+                f"The recording was not saved into dataset {name!r}: {_message(failure)}",
+                error_code="recording_not_saved",
+            )
+        if _failed_with(failure, RecordingOutcomeUnknownError):
+            raise RuntimeSessionCommandError(
+                f"Studio could not tell whether the recording into dataset {name!r} was saved: {_message(failure)}.",
+                error_code="recording_outcome_unknown",
+            )
+        raise RuntimeSessionCommandError(
+            f"Studio could not tell whether the recording into dataset {name!r} was saved; its worker failed "
+            f"({failure}).",
+            error_code="recording_outcome_unknown",
+        )
+
+    async def _unload_dataset(self) -> tuple[Recording | None, str | None]:
+        """Unload the dataset as before; what was loaded, and why its worker failed, if it did."""
         async with self._lock:
             await self._stop_autopilot("The dataset was unloaded.")
+            recording = self._dataset.value
             await self._dataset.unload()
         self._emit(StateMessage(data=self.state()))
+        return recording, recording.failure if recording is not None else None
+
+    async def _unload_dataset_command(self, _command: UnloadDatasetCommand) -> BaseModel:
+        """``unload_dataset`` for a client: the ack carries a cleanup warning, when there is one."""
+        try:
+            return await self.unload_dataset() or CommandDone()
+        except Exception as error:
+            raise _command_error(error) from error
+
+    async def start_episode(self, command: StartEpisodeCommand) -> RecordingStatus:
+        """Open an episode, unless the environment has failed: it would record nothing that moves.
+
+        Only reads the session's state; the dataset worker then checks the task and the free disk, as before.
+
+        Raises:
+            RuntimeSessionCommandError: ``command_unavailable`` without a dataset, as before, ``environment_failed``,
+                or what the dataset worker refused (``task_required``, ``episode_open``, ``low_disk``, ...).
+        """
+        if self._dataset.value is None:
+            raise RuntimeSessionCommandError(
+                "Nothing can start_episode right now; load what it needs first.", error_code="command_unavailable"
+            )
+        loaded = self._environment.value
+        if loaded is not None and loaded.environment.failure is not None:
+            raise RuntimeSessionCommandError(
+                f"The environment failed ({loaded.environment.failure}). Reload it, then start the episode.",
+                error_code="environment_failed",
+            )
+        try:
+            # Within the client's own deadline, which the worker checks again just before it opens the episode,
+            # and without a thread of its own, so the start takes one executor thread (the socket's), as on main.
+            return await self.bus.request_in_loop(
+                dataset_rpc.START, command, RecordingStatus, timeout=_COMMAND_WAIT_S, deadline=DEADLINE.get()
+            )
+        except BusRequestError as error:
+            raise RuntimeSessionCommandError(error.message, error_code=error.error_code) from error
+        except NoResponderError as error:
+            raise RuntimeSessionCommandError(
+                "Nothing can start_episode right now; load what it needs first.", error_code="command_unavailable"
+            ) from error
+        except TimeoutError as error:
+            raise RuntimeSessionCommandError(
+                "start_episode did not finish in time", error_code="command_timeout"
+            ) from error
 
     async def _stop_recording(self) -> None:
         """Hold the lock. Discard the episode being recorded, when what it records from changes or fails."""
@@ -1039,7 +1154,7 @@ class RuntimeSession:
     async def _on_dataset(self, status: StatusMessage) -> None:
         """A failed dataset is unloaded."""
         if status.state == "failed":
-            await self.unload_dataset()
+            await self._unload_dataset()  # it reported why itself
 
     def _on_recording(self, status: RecordingStatus) -> None:
         """The dataset worker owns its recording state; show whatever it last announced."""
@@ -1106,3 +1221,19 @@ def _command_error(error: Exception) -> AppBaseException:
         logger.opt(exception=error).error("Runtime session command failed")
         code = "internal_error"
     return RuntimeSessionCommandError(str(error) or type(error).__name__, error_code=code)
+
+
+class UnloadDatasetResult(BaseModel):
+    """What the ack of ``unload_dataset`` carries when the recording was saved with something to say."""
+
+    warning: str
+
+
+def _failed_with(failure: str, kind: type[Exception]) -> bool:
+    """Whether a worker's reported failure is an exception of ``kind``: the report starts with its full name."""
+    return failure.startswith(f"{kind.__module__}.{kind.__qualname__}:")
+
+
+def _message(failure: str) -> str:
+    """A reported failure without the exception's name in front."""
+    return failure.partition(": ")[2] or failure

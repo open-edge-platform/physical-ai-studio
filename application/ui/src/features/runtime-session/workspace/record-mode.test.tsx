@@ -6,12 +6,14 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
+import { SchemaSessionState } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { render } from '../../../test-utils/render';
 import { describeAutopilot } from '../../simulation/autopilot-status';
+import { Statuses } from '../runtime-session-provider';
 import * as actualProvider from '../runtime-session-provider' with { rstest: 'importActual' };
-import { RecordMode } from './record-mode';
+import { RecordMode, whyNotRecordable } from './record-mode';
 
 const PROJECT_ID = 'project-1';
 const ROBOT_ID = 'robot-1';
@@ -30,15 +32,18 @@ const session: {
     autopilot: boolean;
     dataset: typeof DATASET | null;
     autopilot_recording: Record<string, unknown> | null;
+    statuses: Statuses;
 } = {
     autopilot: false,
     dataset: null,
     autopilot_recording: null,
+    statuses: {},
 };
 
 rs.mock('../runtime-session-provider', () => ({
     ERROR_TOAST: {},
-    failureOf: () => null,
+    failureOf: (statuses: Statuses, component: string) =>
+        statuses[component]?.state === 'failed' ? (statuses[component].error ?? 'Failed') : null,
     savedEnvironmentDraft: actualProvider.savedEnvironmentDraft,
     useRuntimeSession: () => ({
         state: {
@@ -55,7 +60,7 @@ rs.mock('../runtime-session-provider', () => ({
             dataset: session.dataset,
             autopilot_recording: session.autopilot_recording,
         },
-        statuses: {},
+        statuses: session.statuses,
         send,
     }),
 }));
@@ -68,6 +73,7 @@ beforeEach(() => {
     session.autopilot = false;
     session.dataset = null;
     session.autopilot_recording = null;
+    session.statuses = {};
     support = SUPPORTED;
     server.use(
         http.get('/api/settings', () => HttpResponse.json({ hotkeys: { bindings: {} } } as never)),
@@ -115,6 +121,59 @@ beforeEach(() => {
 
 const renderMode = () =>
     render(<RecordMode />, { route: `/projects/${PROJECT_ID}/record`, path: '/projects/:project_id/record' });
+
+const failed: Statuses = {
+    environment: { type: 'status', component: 'environment', state: 'failed', error: 'cam 0: unplugged' },
+};
+
+describe('whyNotRecordable', () => {
+    const environment = {
+        name: 'Bench',
+        robot_id: 'r',
+        leader_id: null,
+        autopilot: false,
+        joint_names: [],
+        cameras: [],
+        environment_id: null,
+    };
+    const teleop = { type: 'teleop' as const, hz: 30, grace_s: 3 };
+    const state = (overrides: Partial<SchemaSessionState>): SchemaSessionState => ({
+        session_id: 's',
+        environment,
+        dataset: DATASET,
+        control: teleop,
+        ...overrides,
+    });
+
+    it('lets an episode start on a working environment, with or without a control', () => {
+        expect(whyNotRecordable(state({}), {})).toBeNull();
+        expect(whyNotRecordable(state({ control: null }), {})).toBeNull(); // stationary capture
+        expect(whyNotRecordable(state({ dataset: null }), {})).toMatch(/Load a dataset/);
+        expect(whyNotRecordable(state({ environment: null }), {})).toMatch(/Load an environment/);
+        expect(whyNotRecordable(state({}), failed)).toBe(
+            'The environment failed: cam 0: unplugged. Reload it to record.'
+        );
+    });
+});
+
+describe('RecordMode', () => {
+    it('disables Start and says why while the environment has failed', async () => {
+        session.dataset = DATASET;
+        session.statuses = failed;
+        renderMode();
+
+        const start = await screen.findByRole('button', { name: /Start episode/ });
+        expect(start).toBeDisabled();
+        expect(screen.getByText(/The environment failed: cam 0: unplugged/)).toBeInTheDocument();
+    });
+
+    it('enables Start without a control, for stationary capture', async () => {
+        session.dataset = DATASET;
+        renderMode();
+
+        expect(await screen.findByRole('button', { name: /Start episode/ })).toBeEnabled();
+    });
+});
 
 describe('RecordMode with a simulated follower', () => {
     it('lets the autopilot lead this session without editing the saved environment', async () => {

@@ -5,6 +5,11 @@
     margin-right: 10px;
 }
 
+.notRecordable {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-700);
+}
+
 .toolbarStatus {
     display: flex;
     align-items: center;

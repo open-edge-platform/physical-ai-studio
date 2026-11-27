@@ -17,7 +17,7 @@ from physicalai_studio_plugin.autopilot import AutopilotSpec
 from api.runtime_ws import _request
 from exceptions import DeviceInUseError, RuntimeSessionCommandError
 from runtime_session import autopilot_recording
-from runtime_session.bus import command_key
+from runtime_session.bus import BusRequestError, command_key
 from runtime_session.session import Resolvers, RuntimeSession, SimulationEndpoint
 from runtime_session.store import ACTION
 from schemas.dataset import Dataset
@@ -418,6 +418,9 @@ async def test_a_simulation_restart_ends_the_recording(sim_session, rig) -> None
     assert session.state().control is None and _events(dataset)[-1] == "discard"
     status = await next_status(statuses, "environment")
     assert status.state == "failed" and "reload the environment" in status.error
+    with pytest.raises(BusRequestError) as refused_by_hand:  # nor by hand: Start checks the same failure
+        await _manual_start(session)
+    assert refused_by_hand.value.error_code == "environment_failed"
     rig.run = RUN_2
     with pytest.raises(RuntimeSessionCommandError) as refused:  # only after a reload
         await _start(session, dataset)

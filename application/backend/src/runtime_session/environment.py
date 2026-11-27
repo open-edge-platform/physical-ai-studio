@@ -183,6 +183,8 @@ class Environment:
         self.store = store
         self.leader: Robot | None = None
         """Connected, for controls to borrow; ``None`` while the devices are not connected."""
+        self.failure: str | None = None
+        """Why the devices are not running, from when one failed until the next connect."""
         self._bus: Bus | None = None
         self._devices: AsyncExitStack | None = None
 
@@ -234,6 +236,7 @@ class Environment:
             WorkerStartupError: A device failed to connect.
         """
         description, store = self.description, self.store
+        self.failure = None
         publish_status(self.bus, COMPONENT, "starting")
         async with AsyncExitStack() as stack:
             try:
@@ -261,7 +264,8 @@ class Environment:
                     managers["leader"] = _connected_driver(description.leader)
                 started = await _enter_concurrently(stack, self.bus, managers, optional=_OPTIONAL)
             except Exception as error:
-                publish_status(self.bus, COMPONENT, "failed", _reason(error))
+                self.failure = _reason(error)
+                publish_status(self.bus, COMPONENT, "failed", self.failure)
                 raise
             handler = asyncio.create_task(self._handle_failures(devices))
             stack.callback(handler.cancel)
@@ -284,7 +288,8 @@ class Environment:
                 if device in _OPTIONAL:
                     continue
                 logger.error("Environment {!r}: {} failed: {}", self.description.name, device, status.error)
-                publish_status(self.bus, COMPONENT, "failed", f"{device}: {status.error}")
+                self.failure = f"{device}: {status.error}"
+                publish_status(self.bus, COMPONENT, "failed", self.failure)
                 return
 
 

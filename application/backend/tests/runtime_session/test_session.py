@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 
@@ -333,6 +334,39 @@ async def test_a_simulation_the_environment_cannot_follow_fails_it_and_says_why(
     assert failed.state == "failed"
     assert SIM_B in (failed.error or "") and reason in (failed.error or "")
     assert session.environment is not None  # still loaded, to reload
+    await session.stop()
+
+
+async def test_a_simulation_that_cannot_be_followed_refuses_episodes_over_the_socket(new_session, fake_cameras) -> None:
+    """The failure the UI shows is the one Start checks, so a socket client is refused too."""
+    from pathlib import Path
+    from unittest.mock import patch
+    from uuid import uuid4
+
+    from api.runtime_ws import _request
+    from schemas.dataset import Dataset
+    from tests.workers.fake_dataset import FakeDatasetWorker
+
+    simulations = Simulations()
+    session = await _session_on(new_session, simulations)
+    dataset = Dataset(id=uuid4(), name="Blocks", default_task="pick", project_id=uuid4(), environment_id=uuid4())
+    Path(dataset.path).mkdir(parents=True)
+    statuses = subscribe_statuses(session)
+    with patch("runtime_session.dataset.DatasetWorker", FakeDatasetWorker):
+        await session.load_dataset(dataset)
+        simulations.url = SIM_B
+        simulations.error = SimulationNotRunningError("Start the simulation", robot_name="Follower")
+        await session.follow_simulation(FOLLOWER_ID, SIM_B, run="2")
+        assert (await next_status(statuses, "environment")).state == "failed"
+
+        ack = await _request(
+            session.bus,
+            json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"}),
+            session.check_command,
+        )
+        assert ack.error is not None and ack.error.error_code == "environment_failed"
+        assert "Start the simulation" in ack.error.message
+        assert not session.state().dataset.is_recording
     await session.stop()
 
 

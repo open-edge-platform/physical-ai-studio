@@ -13,6 +13,8 @@ See the "Event bus" section of docs/feature_plans/runtime-inhousing-plan.md.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import contextvars
 import inspect
 import json
 import tempfile
@@ -34,6 +36,16 @@ _ROOT = "pai"
 EVENTS = "evt/session"
 """The session's general channel, which its socket forwards: ``SessionEvent`` messages from the session."""
 
+
+DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar("bus_deadline", default=None)
+"""While a handler answers a request: when its requester stops waiting, in this process's ``time.monotonic()``.
+
+Every request carries how long its requester waits; the deadline is counted from when the request reaches this
+process, before its handler gets the event loop, so a busy loop does not extend it. A handler that passes the
+request on hands the rest down (``request_in_loop(..., deadline=DEADLINE.get())``)."""
+
+_BUDGET = "budget_s"
+"""The attachment a request carries: how many seconds its requester waits, as text."""
 
 STATUSES = "evt/status/**"
 """Every part's and device's ``StatusMessage``, which the socket forwards."""
@@ -223,21 +235,54 @@ class Bus:
             TimeoutError: The handler did not reply in time.
         """
         payload = message if isinstance(message, str) else message.model_dump_json()
-        replies = list(self._session.get(self._prefix + key, payload=payload, timeout=timeout))
-        # zenoh reports its own timeout as an error reply without a replier
-        answered = [reply for reply in replies if reply.ok is not None or reply.replier_id is not None]
-        if not answered:
-            if replies:
-                raise TimeoutError(f"No reply on {key} within {timeout}s")
-            raise NoResponderError(f"Nothing serves {key}")
-        reply = answered[0]
-        if reply.ok is None:
-            error = json.loads(reply.err.payload.to_string()) if reply.err else {}
-            raise BusRequestError(
-                error.get("message", ""), error.get("error_code", "command_failed"), error.get("data")
-            )
-        adapter: TypeAdapter[R] = TypeAdapter(response)
-        return adapter.validate_json(reply.ok.payload.to_bytes())
+        replies = list(
+            self._session.get(self._prefix + key, payload=payload, timeout=timeout, attachment=_budget(timeout))
+        )
+        return _answer(key, replies, response, timeout)
+
+    async def request_in_loop[R](
+        self,
+        key: str,
+        message: BaseModel | str,
+        response: type[R] | Any,
+        *,
+        timeout: float,  # noqa: ASYNC109 - zenoh enforces it
+        deadline: float | None = None,
+    ) -> R:
+        """:meth:`request` without taking a thread from the loop's executor, for a handler that passes a request on.
+
+        Its own requester (the socket, say) may hold the executor's last thread while it waits for the handler;
+        a second thread for the handler's request would then wait for the first request to time out.
+
+        With ``deadline`` (see :data:`DEADLINE`), the request waits at most until then and carries what is left,
+        so it does not get a fresh wait of its own; past it, nothing is sent.
+
+        Raises:
+            BusRequestError: The handler raised; carries its message and error code.
+            NoResponderError: Nothing serves ``key``.
+            TimeoutError: The handler did not reply in time.
+        """
+        if deadline is not None:
+            timeout = min(timeout, deadline - time.monotonic())
+            if timeout <= 0:
+                raise TimeoutError(f"The requester of {key} stopped waiting before it was sent")
+        loop = asyncio.get_running_loop()
+        finished: asyncio.Future[None] = loop.create_future()
+        replies: list[zenoh.Reply] = []
+
+        def finish() -> None:
+            if not finished.done():
+                finished.set_result(None)
+
+        def done() -> None:  # zenoh thread, after the last reply or the timeout
+            with contextlib.suppress(RuntimeError):  # the loop is closed: nobody waits any more
+                loop.call_soon_threadsafe(finish)
+
+        payload = message if isinstance(message, str) else message.model_dump_json()
+        handler = zenoh.handlers.Callback(replies.append, done)
+        self._session.get(self._prefix + key, handler, payload=payload, timeout=timeout, attachment=_budget(timeout))
+        await finished
+        return _answer(key, replies, response, timeout)
 
     def serve[M](
         self, key: str, model: type[M] | Any, handler: Callable[[M], BaseModel | Awaitable[BaseModel]]
@@ -251,7 +296,8 @@ class Bus:
         loop = asyncio.get_running_loop()
         adapter: TypeAdapter[M] = TypeAdapter(model)
 
-        async def answer(query: zenoh.Query) -> None:
+        async def answer(query: zenoh.Query, deadline: float | None) -> None:
+            DEADLINE.set(deadline)  # this task's own context: only this request's handler sees it
             try:
                 result = handler(adapter.validate_json(query.payload.to_bytes() if query.payload else b""))
                 if inspect.isawaitable(result):
@@ -269,8 +315,8 @@ class Bus:
             finally:
                 query.drop()
 
-        def on_query(query: zenoh.Query) -> None:  # zenoh thread
-            asyncio.run_coroutine_threadsafe(answer(query), loop)
+        def on_query(query: zenoh.Query) -> None:  # zenoh thread, as the request arrives
+            asyncio.run_coroutine_threadsafe(answer(query, _deadline(query)), loop)
 
         served = Declaration(self._declared)
         served._entity = self._session.declare_queryable(self._prefix + key, on_query)
@@ -303,6 +349,35 @@ async def until_serving[R](bus: Bus, key: str, message: BaseModel, response: typ
             if time.monotonic() > deadline:
                 raise
             await asyncio.sleep(0.05)
+
+
+def _budget(timeout: float) -> str:
+    return json.dumps({_BUDGET: timeout})
+
+
+def _deadline(query: zenoh.Query) -> float | None:
+    """When the requester of ``query`` stops waiting, from the budget it carries; ``None`` without one."""
+    try:
+        budget = json.loads(query.attachment.to_string())[_BUDGET] if query.attachment else None
+    except (ValueError, KeyError, TypeError):
+        return None
+    return time.monotonic() + float(budget) if isinstance(budget, int | float) else None
+
+
+def _answer[R](key: str, replies: list[zenoh.Reply], response: type[R] | Any, timeout: float) -> R:
+    """The reply to a request, or what went wrong with it."""
+    # zenoh reports its own timeout as an error reply without a replier
+    answered = [reply for reply in replies if reply.ok is not None or reply.replier_id is not None]
+    if not answered:
+        if replies:
+            raise TimeoutError(f"No reply on {key} within {timeout}s")
+        raise NoResponderError(f"Nothing serves {key}")
+    reply = answered[0]
+    if reply.ok is None:
+        error = json.loads(reply.err.payload.to_string()) if reply.err else {}
+        raise BusRequestError(error.get("message", ""), error.get("error_code", "command_failed"), error.get("data"))
+    adapter: TypeAdapter[R] = TypeAdapter(response)
+    return adapter.validate_json(reply.ok.payload.to_bytes())
 
 
 def _error_code(error: Exception) -> str:

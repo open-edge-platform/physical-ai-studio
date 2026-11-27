@@ -10,6 +10,12 @@ import json
 import time
 from pathlib import Path
 
+from internal_datasets.mutations.recording_mutation import (
+    RecordingCleanupError,
+    RecordingNotSavedError,
+    UnconfirmedCleanupError,
+    UnusedCacheCleanupError,
+)
 from workers.dataset_worker import DatasetWorker
 
 
@@ -17,6 +23,8 @@ class FakeMutation:
     def __init__(self, log: Path) -> None:
         self.log = log
         self.frames = 0
+        self.attempted = False
+        self.save_failed = False
 
     def _write(self, event: str, **fields: object) -> None:
         with self.log.open("a") as log:
@@ -36,7 +44,9 @@ class FakeMutation:
         self.frames += 1
 
     def save_episode(self) -> None:
+        self.attempted = True
         if self._fails("save"):
+            self.save_failed = True
             raise OSError("the disk is full")
         slow = self.log.parent / "slow_save"
         if slow.exists():  # a test makes saving take this many seconds, as encoding a long video does
@@ -51,13 +61,48 @@ class FakeMutation:
         self.frames = 0
 
     def teardown(self) -> None:
+        if self._fails("teardown"):  # as RecordingMutation reports a failed finalize, before any copy
+            raise RecordingNotSavedError(
+                "Finalizing failed (No space left on device). What was recorded is left in /cache/x"
+            )
+        if self._fails("worker"):  # something else breaks: nobody can say whether the copy landed
+            raise ValueError("the worker broke")
+        if self._fails("hang"):  # copying back takes longer than the parent waits, so it kills the worker
+            time.sleep(60)
         self._write("teardown")
+        if self._fails("cleanup"):  # as RecordingMutation: whether anything was copied, and confirmed
+            if not self.attempted:
+                raise UnusedCacheCleanupError("the cache /cache/x could not be removed (Permission denied)")
+            if self.save_failed:
+                raise UnconfirmedCleanupError(
+                    "an Accept failed while recording, so what it holds is not confirmed, and the cache /cache/x "
+                    "could not be removed (Permission denied)"
+                )
+            raise RecordingCleanupError("its cache /cache/x could not be removed (Permission denied)")
 
 
 class FakeDatasetWorker(DatasetWorker):
     def open_mutation(self) -> FakeMutation:  # type: ignore[override]
         return FakeMutation(Path(self.dataset.path) / "recording.jsonl")
 
+    def free_bytes(self) -> int:
+        """What a test wrote to ``free_bytes`` next to the log, or plenty."""
+        free = Path(self.dataset.path) / "free_bytes"
+        return int(free.read_text()) if free.exists() else 100 * 1024**3
+
 
 def recording_log(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+class DatasetThatWillNotReopenWorker(DatasetWorker):
+    """The real worker and mutation through lerobot; once every file is copied back, the dataset will not open."""
+
+    def open_mutation(self):  # type: ignore[override]
+        mutation = super().open_mutation()
+
+        def unreadable() -> None:
+            raise OSError("meta/info.json is unreadable")
+
+        mutation.source_dataset.load_dataset = unreadable  # type: ignore[method-assign]
+        return mutation

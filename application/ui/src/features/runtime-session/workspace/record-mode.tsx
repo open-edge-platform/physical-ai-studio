@@ -3,7 +3,12 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Button, Flex, Form, Item, Keyboard, Picker, Slider, Text, TextArea, toast } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
-import { SchemaRobotSimulation, SchemaSessionDataset, SchemaSessionEnvironment } from '../../../api/openapi-spec';
+import {
+    SchemaRobotSimulation,
+    SchemaSessionDataset,
+    SchemaSessionEnvironment,
+    SchemaSessionState,
+} from '../../../api/openapi-spec';
 import { formatKeyCombo, getEffectiveBindings } from '../../hotkeys/key-combo';
 import { useHotkey } from '../../hotkeys/use-hotkey';
 import { useProjectId } from '../../projects/use-project';
@@ -13,7 +18,13 @@ import { AutopilotStatus } from '../../simulation/autopilot-status';
 import { useRobotSimulationLaunch } from '../../simulation/robot-simulation';
 import { useRobotSimulation } from '../../simulation/use-robot-simulation';
 import { TeleopSwitch } from '../cells/robot-cell';
-import { ERROR_TOAST, failureOf, savedEnvironmentDraft, useRuntimeSession } from '../runtime-session-provider';
+import {
+    ERROR_TOAST,
+    failureOf,
+    savedEnvironmentDraft,
+    Statuses,
+    useRuntimeSession,
+} from '../runtime-session-provider';
 
 import classes from './record-mode.module.css';
 
@@ -110,6 +121,25 @@ const RecordingRate = ({ dataset, isLocked = false }: { dataset: SchemaSessionDa
             width='100%'
         />
     );
+};
+
+/**
+ * Why an episode cannot start now, or ``null`` when it can. The backend refuses a start without a dataset
+ * or on a failed environment. Without an environment it still accepts one on a dataset kept loaded, as on
+ * main; only the UI keeps Start off then, as there is nothing to record from.
+ */
+export const whyNotRecordable = (state: SchemaSessionState | null | undefined, statuses: Statuses): string | null => {
+    if (state?.dataset == null) {
+        return 'Load a dataset to record into.';
+    }
+    if (state.environment == null) {
+        return 'Load an environment to record.';
+    }
+    const failure = failureOf(statuses, 'environment');
+    if (failure !== null) {
+        return `The environment failed: ${failure}. Reload it to record.`;
+    }
+    return null;
 };
 
 /**
@@ -240,19 +270,21 @@ export const RecordMode = () => {
         !isPending &&
         state?.environment != null &&
         failureOf(statuses, 'environment') === null;
+    const notRecordable = whyNotRecordable(state, statuses);
+    const canStart = notRecordable === null && !isPending;
 
     const start = () => void run({ command: 'start_episode', task });
     const save = () => void run({ command: 'save_episode' });
     const discard = () => void run({ command: 'discard_episode' });
 
     const manual = canRecord && !autopilot;
-    useHotkey(bindings['recording.start_episode'], start, manual && !isRecording && task !== '');
+    useHotkey(bindings['recording.start_episode'], start, canStart && !autopilot && !isRecording && task !== '');
     useHotkey(bindings['recording.accept_episode'], save, manual && isRecording);
     useHotkey(bindings['recording.discard_episode'], discard, manual && isRecording);
 
     const onStart = (event: FormEvent) => {
         event.preventDefault();
-        if (task !== '') {
+        if (task !== '' && canStart) {
             start();
         }
     };
@@ -305,12 +337,24 @@ export const RecordMode = () => {
                             </Button>
                         </Flex>
                     ) : (
-                        <Button type={'submit'} isPending={isPending} isDisabled={dataset === undefined}>
-                            <Text>Start episode</Text>
-                            <Keyboard UNSAFE_className={classes.hotkey}>
-                                {formatKeyCombo(bindings['recording.start_episode'])}
-                            </Keyboard>
-                        </Button>
+                        <>
+                            <Button
+                                type={'submit'}
+                                isPending={isPending}
+                                isDisabled={notRecordable !== null}
+                                aria-describedby={notRecordable !== null ? 'why-not-recordable' : undefined}
+                            >
+                                <Text>Start episode</Text>
+                                <Keyboard UNSAFE_className={classes.hotkey}>
+                                    {formatKeyCombo(bindings['recording.start_episode'])}
+                                </Keyboard>
+                            </Button>
+                            {notRecordable !== null && (
+                                <Text id='why-not-recordable' UNSAFE_className={classes.notRecordable}>
+                                    {notRecordable}
+                                </Text>
+                            )}
+                        </>
                     )}
                 </Flex>
             </Form>

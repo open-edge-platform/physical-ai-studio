@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from pathlib import Path
 
 import pytest
 
-from runtime_session.bus import Bus, BusRequestError, NoResponderError, _config, socket_path
+from runtime_session.bus import DEADLINE, Bus, BusRequestError, NoResponderError, _config, socket_path
 
 from .bus_fakes import Command, EchoWorker, Heard, Say, Stop, upper
 
@@ -38,25 +39,53 @@ async def test_pubsub_in_one_process_decodes_the_union(session_id: str) -> None:
         assert await asyncio.wait_for(commands.next(), 1) == Stop()
 
 
-async def test_request_replies_and_reports_handler_errors(session_id: str) -> None:
+@pytest.mark.parametrize("in_loop", [False, True], ids=["request", "request_in_loop"])
+async def test_request_replies_and_reports_handler_errors(session_id: str, in_loop: bool) -> None:
     async def slow(message: Say) -> Heard:
         await asyncio.sleep(1)
         return upper(message)
 
     with Bus.host(session_id) as bus:
+        request = bus.request_in_loop if in_loop else bus.request
         bus.serve("rpc/echo/upper", Say, upper)
         bus.serve("rpc/echo/slow", Say, slow)
-        assert await bus.request("rpc/echo/upper", Say(text="hi"), Heard, timeout=1) == Heard(text="HI")
+        assert await request("rpc/echo/upper", Say(text="hi"), Heard, timeout=1) == Heard(text="HI")
         with pytest.raises(BusRequestError, match="nothing to say") as failed:
-            await bus.request("rpc/echo/upper", Say(text=""), Heard, timeout=1)
+            await request("rpc/echo/upper", Say(text=""), Heard, timeout=1)
         assert failed.value.error_code == "command_failed"
         with pytest.raises(BusRequestError) as invalid:
-            await bus.request("rpc/echo/upper", '{"kind": "say"}', Heard, timeout=1)
+            await request("rpc/echo/upper", '{"kind": "say"}', Heard, timeout=1)
         assert invalid.value.error_code == "invalid_command"
         with pytest.raises(TimeoutError):
-            await bus.request("rpc/echo/slow", Say(text="hi"), Heard, timeout=0.2)
+            await request("rpc/echo/slow", Say(text="hi"), Heard, timeout=0.2)
         with pytest.raises(NoResponderError):
-            await bus.request("rpc/nobody/home", Say(text="hi"), Heard, timeout=0.2)
+            await request("rpc/nobody/home", Say(text="hi"), Heard, timeout=0.2)
+
+
+async def test_a_handler_sees_its_requester_s_deadline_and_passes_on_the_rest(session_id: str) -> None:
+    seen: dict[str, float | None] = {}
+
+    async def inner(message: Say) -> Heard:
+        seen["inner"] = DEADLINE.get()
+        return upper(message)
+
+    async def outer(message: Say) -> Heard:
+        seen["outer"] = DEADLINE.get()
+        return await bus.request_in_loop("rpc/echo/inner", message, Heard, timeout=600, deadline=DEADLINE.get())
+
+    with Bus.host(session_id) as bus:
+        bus.serve("rpc/echo/inner", Say, inner)
+        bus.serve("rpc/echo/outer", Say, outer)
+        sent = time.monotonic()
+        assert await bus.request("rpc/echo/outer", Say(text="hi"), Heard, timeout=5) == Heard(text="HI")
+        outer_deadline, inner_deadline = seen["outer"], seen["inner"]
+        assert outer_deadline is not None and inner_deadline is not None
+        assert sent + 4 < outer_deadline <= time.monotonic() + 5  # the requester's 5 s, not the forward's 600 s
+        assert inner_deadline <= outer_deadline + 0.05  # handed down, not extended
+
+        with pytest.raises(TimeoutError, match="stopped waiting before it was sent"):
+            await bus.request_in_loop("rpc/echo/inner", Say(text="hi"), Heard, timeout=1, deadline=time.monotonic())
+        assert DEADLINE.get() is None  # outside a handler
 
 
 async def test_worker_process_on_the_bus(session_id: str) -> None:

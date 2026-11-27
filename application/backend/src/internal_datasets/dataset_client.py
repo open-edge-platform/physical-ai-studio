@@ -12,6 +12,10 @@ class EpisodeNotFoundError(LookupError):
     """The dataset has no episode with the given index."""
 
 
+class DatasetReopenError(RuntimeError):
+    """``overwrite`` copied every file, but the dataset could not be opened again from them."""
+
+
 class DatasetClient(ABC):
     type: str
     has_episodes: bool = False

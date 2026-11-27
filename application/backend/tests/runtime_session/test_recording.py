@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -14,13 +16,13 @@ import pytest
 from exceptions import IncompatiblePartsError, RuntimeSessionCommandError
 from internal_datasets.utils import get_internal_read_dataset
 from runtime_session import dataset as session_dataset
-from runtime_session.bus import BusRequestError, NoResponderError, command_key, publish_status
+from runtime_session.bus import BusRequestError, command_key, publish_status
 from runtime_session.dataset import DEFAULT_RECORDING_FPS, dataset_fps, dataset_spec, editing, sessions_recording_into
 from runtime_session.session import RuntimeSession
 from runtime_session.store import FeatureSpecMismatchError, ImageSpec
 from schemas.dataset import Dataset
-from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand
-from tests.workers.fake_dataset import FakeDatasetWorker, recording_log
+from schemas.runtime_session import DiscardEpisodeCommand, SaveEpisodeCommand, StartEpisodeCommand, TeleopControlConfig
+from tests.workers.fake_dataset import DatasetThatWillNotReopenWorker, FakeDatasetWorker, recording_log
 from workers.dataset_worker import RecordingStatus
 
 from .fixtures import make_environment, next_status, subscribe_statuses
@@ -62,9 +64,20 @@ async def _until(condition, within: float = 5.0) -> None:
         await asyncio.sleep(0.02)
 
 
-async def _start(session: RuntimeSession, task: str) -> RecordingStatus:
+async def _start(session: RuntimeSession, task: str, *, drive: bool = True) -> RecordingStatus:
+    """Start an episode; with ``drive``, turn teleoperation on first if nothing drives the robot."""
+    if drive and session.state().control is None:
+        await session.set_control(TeleopControlConfig())
     command = StartEpisodeCommand(request_id="", task=task)
     return await session.bus.request(command_key("start_episode"), command, RecordingStatus, timeout=10)
+
+
+async def _dataset_message(statuses, within: float = 10.0) -> str:
+    """The next message the dataset shows the user, as the socket forwards it."""
+    async with asyncio.timeout(within):
+        while (status := await statuses.next()).component != "dataset" or status.error is None:
+            pass
+    return status.error
 
 
 async def _save(session: RuntimeSession) -> RecordingStatus:
@@ -216,7 +229,12 @@ async def test_a_frame_that_fails_to_record_loses_its_episode_not_the_recording(
     await session.load_environment(make_environment())
     await session.load_dataset(dataset)
     fail.touch()
-    await _start(session, "pick")
+    with subscribe_statuses(session) as statuses:
+        await _start(session, "pick")
+        message = await _dataset_message(statuses)  # the user is told, not only the log
+    assert message == (
+        "Episode discarded because recording a frame failed: a frame of the wrong shape. Start a new episode."
+    )
     await _until(lambda: "discard" in [event["event"] for event in recording_log(log)])
     await _until(lambda: not session.state().dataset.is_recording)
     fail.unlink()
@@ -261,8 +279,9 @@ async def test_recording_commands_are_refused_out_of_order(new_session, fake_cam
     with pytest.raises(RuntimeSessionCommandError, match="Load an environment"):
         await session.load_dataset(_dataset())
     await session.load_environment(make_environment())
-    with pytest.raises(NoResponderError):  # nothing records until a dataset is loaded
+    with pytest.raises(BusRequestError) as refused:  # nothing records without a dataset
         await _start(session, "pick")
+    assert refused.value.error_code == "command_unavailable"  # as on main
     await session.load_dataset(_dataset())
     with pytest.raises(BusRequestError, match="No episode") as error:
         await _save(session)
@@ -426,6 +445,7 @@ async def test_a_failed_environment_keeps_its_dataset_loaded_but_not_recording(
     store = session.store
     await _start(session, "pick")
     await _until(lambda: session.state().dataset.is_recording)
+    frames = fake_cameras.return_value.read_latest.side_effect
     fake_cameras.return_value.read_latest.side_effect = RuntimeError("camera unplugged")
 
     # Failed: the open episode is discarded; the environment and the dataset stay loaded.
@@ -434,7 +454,7 @@ async def test_a_failed_environment_keeps_its_dataset_loaded_but_not_recording(
     assert session.state().dataset.dataset_id == dataset.id
     assert session.store is store
 
-    fake_cameras.return_value.read_latest.side_effect = None
+    fake_cameras.return_value.read_latest.side_effect = frames  # the camera is back
     await session.load_environment(environment)
     # The same spec: the store and the dataset carry on.
     assert session.store is store
@@ -483,3 +503,224 @@ async def test_a_saved_episode_reaches_the_dataset_when_the_recording_finishes(n
 
     await session.unload_dataset()
     assert get_internal_read_dataset(dataset).find_episode(0) is not None
+
+
+async def test_an_episode_does_not_start_on_a_failed_environment(new_session, fake_cameras, fake_worker) -> None:
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(_dataset())
+
+    # A device that is not a camera fails: only the session knows; the camera frames stay fresh.
+    publish_status(session.bus, "environment/follower", "failed", "motor bus lost")
+    await _until(lambda: session._environment.value.environment.failure is not None)
+    with pytest.raises(BusRequestError, match=r"The environment failed \(follower: motor bus lost\)") as refused:
+        await _start(session, "pick", drive=False)
+    assert refused.value.error_code == "environment_failed"
+    assert not session.state().dataset.is_recording
+
+
+async def test_a_start_from_the_socket_takes_one_executor_thread(
+    new_session, fake_cameras, fake_worker, monkeypatch
+) -> None:
+    """The socket's request holds an executor thread while the session passes the start on, as on main.
+
+    With a second thread for the forward and only one in the pool, the forward waited for the socket's request to
+    time out, and the episode opened after the client was told ``command_timeout``.
+    """
+    from api import runtime_ws
+
+    monkeypatch.setattr(runtime_ws, "_COMMAND_TIMEOUT_S", 5.0)
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(_dataset())
+
+    loop = asyncio.get_running_loop()
+    one_thread = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(one_thread)
+    try:
+        start = json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"})
+        ack = await runtime_ws._request(session.bus, start, session.check_command)
+    finally:
+        loop.set_default_executor(ThreadPoolExecutor())  # the session's teardown uses threads too
+        one_thread.shutdown(wait=False)
+    assert ack.ok, ack.error
+    assert session.state().dataset.is_recording
+
+
+async def test_a_start_the_client_gave_up_on_does_not_open_an_episode(
+    new_session, fake_cameras, fake_worker, monkeypatch
+) -> None:
+    """One deadline, from the socket's request to the worker: a stalled session loop does not get a fresh one."""
+    from api import runtime_ws
+
+    monkeypatch.setattr(runtime_ws, "_COMMAND_TIMEOUT_S", 1.0)
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(_dataset())
+
+    start = json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"})
+    acked = asyncio.ensure_future(runtime_ws._request(session.bus, start, session.check_command))
+    # Right after the request is sent, the loop the session answers on stalls past the client's deadline.
+    asyncio.get_running_loop().call_soon(time.sleep, 1.5)
+    ack = await acked
+    assert ack.error is not None and ack.error.error_code == "command_timeout"
+    await asyncio.sleep(1.0)  # whatever the session does with the start late
+    assert not session.state().dataset.is_recording
+
+
+async def test_an_episode_starts_without_a_control(new_session, fake_cameras, fake_worker) -> None:
+    """Stationary capture, or an environment without a leader: recording does not need a control."""
+    session = await new_session()
+    await session.load_environment(make_environment(leader=False))
+    await session.load_dataset(_dataset())
+    assert (await _start(session, "pick", drive=False)).is_recording
+
+
+async def test_an_episode_does_not_start_on_a_nearly_full_disk(new_session, fake_cameras, fake_worker) -> None:
+    dataset = _dataset()
+    (Path(dataset.path) / "free_bytes").write_text(str(1024**3))
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+
+    with pytest.raises(BusRequestError, match=r"Only 1\.0 GB is free") as refused:
+        await _start(session, "pick")
+    assert refused.value.error_code == "low_disk"
+
+    (Path(dataset.path) / "free_bytes").write_text(str(10 * 1024**3))
+    assert (await _start(session, "pick")).is_recording
+
+
+async def _finish_with(session: RuntimeSession, dataset: Dataset, fault: str):
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    await _start(session, "pick")
+    await asyncio.sleep(0.2)
+    await _save(session)
+    (Path(dataset.path) / fault).touch()
+    return await session.unload_dataset()
+
+
+async def test_a_recording_that_could_not_be_saved_says_where_it_was_left(
+    new_session, fake_cameras, fake_worker
+) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    with pytest.raises(RuntimeSessionCommandError) as refused:
+        await _finish_with(session, dataset, "fail_teardown")
+    assert refused.value.error_code == "recording_not_saved"
+    assert refused.value.message == (
+        "The recording was not saved into dataset 'Blocks': Finalizing failed (No space left on device). "
+        "What was recorded is left in /cache/x"
+    )
+    assert session.state().dataset is None  # unloaded, as on main
+
+
+async def test_a_saved_recording_whose_cache_stayed_is_saved_with_a_warning(
+    new_session, fake_cameras, fake_worker
+) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    result = await _finish_with(session, dataset, "fail_cleanup")
+    assert result is not None
+    assert result.warning == (
+        "The recording was saved into dataset 'Blocks', but its cache /cache/x could not be removed (Permission denied)"
+    )
+
+
+async def test_finishing_with_no_accepted_episode_does_not_claim_a_save(new_session, fake_cameras, fake_worker) -> None:
+    """Nothing is copied without an accepted episode; a cache that stays is only a cleanup warning."""
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    (Path(dataset.path) / "fail_cleanup").touch()
+    result = await session.unload_dataset()
+    assert result is not None
+    assert result.warning == (
+        "No episode was accepted, so nothing was copied into dataset 'Blocks', "
+        "but the cache /cache/x could not be removed (Permission denied)"
+    )
+
+
+async def test_a_failed_accept_then_a_failed_cleanup_does_not_claim_a_save(
+    new_session, fake_cameras, fake_worker
+) -> None:
+    """The only Accept failed; the cache is still copied back, as on main, but nothing is confirmed saved."""
+    dataset = _dataset()
+    session = await new_session()
+    await session.load_environment(make_environment())
+    await session.load_dataset(dataset)
+    await _start(session, "pick")
+    await asyncio.sleep(0.2)
+    (Path(dataset.path) / "fail_save").touch()
+    with pytest.raises(BusRequestError, match="disk is full"):
+        await _save(session)
+    (Path(dataset.path) / "fail_cleanup").touch()
+    result = await session.unload_dataset()
+    assert result is not None
+    assert "saved" not in result.warning
+    assert result.warning == (
+        "The recording was copied into dataset 'Blocks', but an Accept failed while recording, so what it holds is "
+        "not confirmed, and the cache /cache/x could not be removed (Permission denied). Check the dataset."
+    )
+
+
+async def test_a_dataset_that_will_not_open_after_the_copy_is_unknown_not_lost(new_session, fake_cameras) -> None:
+    """Through lerobot, the real mutation and the socket: every file landed, so this is not reported as lost."""
+    from api.runtime_ws import _request
+
+    dataset = _dataset()
+    session = await new_session()
+    with patch("runtime_session.dataset.DatasetWorker", DatasetThatWillNotReopenWorker):
+        await session.load_environment(make_environment())
+        await session.load_dataset(dataset)
+        await _start(session, "pick the block")
+        await asyncio.sleep(0.4)
+        await _save(session)
+        ack = await _request(
+            session.bus, json.dumps({"command": "unload_dataset", "request_id": "1"}), session.check_command
+        )
+
+    assert ack.error is not None
+    assert ack.error.error_code == "recording_outcome_unknown"
+    message = ack.error.message
+    assert message.startswith(
+        f"Studio could not tell whether the recording into dataset 'Blocks' was saved: Every file was copied to "
+        f"{dataset.path}, but it could not be opened (meta/info.json is unreadable). "
+        "The recorded episodes are also kept in "
+    )
+    assert message.endswith(".")  # the page adds what to do
+    # The files did land, and the cache is kept.
+    assert json.loads((Path(dataset.path) / "meta" / "info.json").read_text())["total_episodes"] == 1
+    cache = Path(message.removesuffix(".").rpartition(" kept in ")[2])
+    assert (cache / "meta" / "info.json").is_file()
+    shutil.rmtree(cache)
+    assert session.state().dataset is None
+
+
+async def test_a_worker_that_broke_otherwise_leaves_the_outcome_unknown(new_session, fake_cameras, fake_worker) -> None:
+    dataset = _dataset()
+    session = await new_session()
+    with pytest.raises(RuntimeSessionCommandError) as refused:
+        await _finish_with(session, dataset, "fail_worker")
+    assert refused.value.error_code == "recording_outcome_unknown"
+    assert "could not tell whether the recording into dataset 'Blocks' was saved" in refused.value.message
+    assert refused.value.message.endswith("(ValueError: the worker broke).")
+
+
+async def test_a_worker_killed_while_finishing_leaves_the_outcome_unknown(
+    new_session, fake_cameras, fake_worker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Killed after ``stop_timeout_s``, the worker reports nothing; Finish must not read that as saved."""
+    monkeypatch.setattr(FakeDatasetWorker, "stop_timeout_s", 1.0)
+    dataset = _dataset()
+    session = await new_session()
+    with pytest.raises(RuntimeSessionCommandError) as refused:
+        await _finish_with(session, dataset, "fail_hang")
+    assert refused.value.error_code == "recording_outcome_unknown"
+    assert refused.value.message == (
+        "Studio could not tell whether the recording into dataset 'Blocks' was saved; its worker failed "
+        "(it exited with code -9 before it reported how finishing went)."
+    )
+    assert session.state().dataset is None
