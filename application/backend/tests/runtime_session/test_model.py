@@ -164,6 +164,7 @@ async def test_the_model_drives_the_follower(
     await session.load_model(model, "torch", "cpu")
     assert session.state().model.name == "Picker"
     assert session.state().model.rtc is rtc_export
+    assert session.state().model.rtc_max_horizon == (CHUNK // 2 if rtc_export else None)
 
     start = session.store.read(STATE).value.copy()
     execution = ExecutionConfig(mode=mode, execution_horizon=5)

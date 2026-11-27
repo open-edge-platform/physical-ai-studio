@@ -53,6 +53,33 @@ describe('InferenceMode', () => {
         );
     });
 
+    it('keeps the horizon within half the chunk of a short-chunk export', async () => {
+        model = {
+            model_id: 'p',
+            name: 'short',
+            backend: 'openvino',
+            device: 'CPU',
+            tasks: [],
+            rtc: true,
+            rtc_max_horizon: 5,
+        };
+        render(<InferenceMode />);
+
+        await chooseRtc();
+        const horizon = screen.getByRole('slider', { name: 'Guided actions (horizon)' });
+        expect(horizon).toHaveAttribute('max', '5');
+        expect(horizon).toHaveValue('5');
+        fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+        expect(send).toHaveBeenCalledWith(
+            expect.objectContaining({
+                control: expect.objectContaining({
+                    execution: expect.objectContaining({ mode: 'rtc', execution_horizon: 5 }),
+                }),
+            })
+        );
+    });
+
     it('will not run RTC on an export without RTC inputs, and says why', async () => {
         render(<InferenceMode />);
 

@@ -322,6 +322,8 @@ class SessionModel(BaseModel):
     """The tasks the model takes, when it only knows a fixed set; empty if it takes any text."""
     rtc: bool = False
     """The loaded export takes RTC inputs, so it can run with ``rtc`` execution."""
+    rtc_max_horizon: int | None = None
+    """The longest RTC horizon the export's chunk has room for (half of it), when it takes RTC inputs."""
 
 
 AutopilotRecordingPhase = Literal[

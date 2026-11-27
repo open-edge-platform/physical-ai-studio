@@ -41,7 +41,9 @@ export const InferenceMode = () => {
     const [task, setTask] = useState(defaultTask);
     const [mode, setMode] = useState<SchemaExecutionConfig['mode']>('sync');
     const [threshold, setThreshold] = useState(0.5);
-    const [horizon, setHorizon] = useState(RTC_HORIZON);
+    // An export guides at most half its chunk; the default is the reBot trials' 25 when the chunk has room.
+    const maxHorizon = state?.model?.rtc_max_horizon ?? RTC_HORIZON;
+    const [horizon, setHorizon] = useState(Math.min(RTC_HORIZON, maxHorizon));
     const [guidance, setGuidance] = useState(RTC_GUIDANCE);
     // In ms; 0 lets RTC measure the delay on the first inferences instead.
     const [latencyMs, setLatencyMs] = useState(0);
@@ -51,6 +53,7 @@ export const InferenceMode = () => {
     const [isPending, setIsPending] = useState(false);
 
     useEffect(() => setTask(defaultTask), [defaultTask]);
+    useEffect(() => setHorizon(Math.min(RTC_HORIZON, maxHorizon)), [maxHorizon]);
 
     // A model trained on a fixed set of tasks only takes one of them.
     const tasks = state?.model?.tasks ?? [];
@@ -138,7 +141,7 @@ export const InferenceMode = () => {
                         label='Guided actions (horizon)'
                         width='100%'
                         minValue={1}
-                        maxValue={25}
+                        maxValue={maxHorizon}
                         step={1}
                         value={horizon}
                         onChange={setHorizon}

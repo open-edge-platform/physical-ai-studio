@@ -165,6 +165,7 @@ class ProcessModel:
             device=self.device,
             tasks=list(self.inputs.tasks),
             rtc=self.inputs.rtc_chunk is not None,
+            rtc_max_horizon=self.inputs.rtc_chunk[0] // 2 if self.inputs.rtc_chunk is not None else None,
         )
 
     @property
