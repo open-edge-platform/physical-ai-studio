@@ -292,52 +292,60 @@ _GATED_RUN = ModelControlConfig(
 )
 
 
-async def _next_run_plays_only_its_own_chunks(session: RuntimeSession, export: Path, gated: int) -> None:
-    await session.set_control(_GATED_RUN)
-    late = _rows_of(_received(export), gated)
-    seen: list[np.ndarray] = []
+async def _restart_then_release(session: RuntimeSession, export: Path, gated: int) -> tuple[list, list]:
+    """Start the next run while inference ``gated`` is still held, then release it. What the run's queue merged
+    and what the store got, over 1.5 s; the run must also play chunks of its own."""
+    # The new run's start resets the model, an RPC that waits behind the held inference: release it meanwhile.
+    starting = asyncio.create_task(session.set_control(_GATED_RUN))
+    await asyncio.sleep(0.5)
+    assert not starting.done()
+    (export / f"release_{gated}").touch()
+    await starting
+    queue = session._control.value._queue
+    merged: list[np.ndarray] = []
+    actions: list[np.ndarray] = []
     deadline = time.monotonic() + 1.5
     while time.monotonic() < deadline:
-        seen.append(session.store.read(ACTION).value.copy())
+        if queue._last is not None:
+            merged.append(np.asarray(queue._last[0]).copy())
+        actions.append(session.store.read(ACTION).value.copy())
         await asyncio.sleep(0.01)
     await session.set_control(None)
-    assert not any(_played(action, late) for action in seen)
     later = [_rows_of(_received(export), row["n"]) for row in _received(export) if row["n"] > gated]
-    assert any(_played(action, chunk) for action in seen for chunk in later)
+    assert any(_played(action, chunk) for action in actions for chunk in later)
+    return merged, actions
 
 
-async def test_stopping_rtc_mid_refill_keeps_the_late_chunk_out_of_its_queue_and_the_next_run(
+def _holds(chunks: list[np.ndarray], late: np.ndarray) -> bool:
+    return any(chunk.shape == late.shape and np.allclose(chunk, late) for chunk in chunks)
+
+
+async def test_restarting_rtc_mid_refill_keeps_the_late_chunk_out_of_both_queues_and_the_store(
     new_session, fake_cameras, fake_model_worker, tmp_path
 ) -> None:
     session: RuntimeSession = await new_session()
     export, stopped, took = await _stop_mid_inference(session, tmp_path, gated=2)
     # Only RTC's own thread is blocked; the control leaves it after RTC's 5 s join.
     assert took < 8
-    queue = stopped._queue
-    merged_before = queue._last
-    held = session.store.read(ACTION).value.copy()
-    (export / "release_2").touch()
-    await _until(lambda: any(row["n"] == 2 for row in _received(export)))
-    await asyncio.sleep(0.5)
-    # The stopped queue never took the late chunk, and nothing wrote it over the hold.
-    assert queue._last is merged_before
-    assert not np.allclose(queue._last[0], _rows_of(_received(export), 2))
-    np.testing.assert_allclose(session.store.read(ACTION).value, held)
-    await _next_run_plays_only_its_own_chunks(session, export, gated=2)
+    old_queue, merged_before = stopped._queue, stopped._queue._last
+    merged, actions = await _restart_then_release(session, export, gated=2)
+    late = _rows_of(_received(export), 2)
+    assert old_queue._last is merged_before  # the stopped queue never took it
+    assert not _holds(merged, late)  # nor the new run's queue
+    assert not any(_played(action, late) for action in actions)  # nor the follower
 
 
-async def test_stopping_rtc_mid_warmup_times_out_and_the_late_chunk_misses_the_next_run(
+async def test_restarting_rtc_mid_warmup_keeps_the_late_chunk_out_of_the_new_queue(
     new_session, fake_cameras, fake_model_worker, tmp_path
 ) -> None:
     session: RuntimeSession = await new_session()
     export, _stopped, took = await _stop_mid_inference(session, tmp_path, gated=1)
     # The warmup blocks the control's own thread, which the session gives up on after its 10 s stop timeout, as
-    # for Sync and Async. Its late write over the hold is the session-level issue the control-switch fix closes.
+    # for Sync and Async. That thread then writes its late chunk to the store once, in every mode (on main too;
+    # the control-switch fix closes it), so only the new run's queue is checked here.
     assert 10 <= took < 12
-    (export / "release_1").touch()
-    await _until(lambda: any(row["n"] == 1 for row in _received(export)))
-    await asyncio.sleep(0.5)
-    await _next_run_plays_only_its_own_chunks(session, export, gated=1)
+    merged, _actions = await _restart_then_release(session, export, gated=1)
+    assert not _holds(merged, _rows_of(_received(export), 1))
 
 
 @pytest.mark.parametrize("mode", ["sync", "async", "rtc"])
