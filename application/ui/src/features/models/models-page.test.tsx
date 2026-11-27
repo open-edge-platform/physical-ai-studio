@@ -5,6 +5,7 @@ import { HttpResponse } from 'msw';
 import { SchemaTrainJob } from '../../api/openapi-spec';
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
+import { getMockedPolicyTrainingConfiguration } from '../../test-utils/mocks/mock-policy-training-configuration';
 import { getMockedTrainJob } from '../../test-utils/mocks/mock-train-job';
 import { render } from '../../test-utils/render';
 import { JobsButton } from '../jobs/footer/jobs-button';
@@ -80,6 +81,9 @@ const mockApi = (initialJobs: SchemaTrainJob[]) => {
             HttpResponse.json([{ id: 'act', name: 'ACT', description: 'ACT policy', min_vram: null }])
         ),
         http.get('/api/policies/backends', () => HttpResponse.json({ act: ['torch'] })),
+        http.get('/api/policies/{policy}/default-training-config', () =>
+            HttpResponse.json(getMockedPolicyTrainingConfiguration())
+        ),
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
                 id: projectId,

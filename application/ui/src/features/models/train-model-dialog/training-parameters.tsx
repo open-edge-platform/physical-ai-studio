@@ -13,6 +13,8 @@ import {
     Text,
 } from '@geti-ui/ui';
 
+import { SchemaPolicyTrainingConfiguration } from '../../../api/openapi-spec';
+
 import classes from './train-model-dialog.module.css';
 
 export const MIN_BATCH_SIZE_EXPONENT = 0;
@@ -45,6 +47,7 @@ export const PRECISION_LABELS: Record<string, string> = {
 };
 
 interface TrainingParametersProps {
+    help?: SchemaPolicyTrainingConfiguration['help'];
     maxEpochs: number;
     onMaxEpochsChange: (value: number) => void;
     batchSize: number;
@@ -62,6 +65,7 @@ interface TrainingParametersProps {
     onAugmentImagesChange: (value: boolean) => void;
     isAutoScaleBatchDisabled: boolean;
     deviceType: string | undefined;
+    recommendedPrecision?: string | null;
     /** False for policies without a LoRA/DoRA mixin; hides the LoRA controls entirely. */
     isLoraSupported: boolean;
     loraEnabled: boolean;
@@ -83,6 +87,7 @@ interface TrainingParametersProps {
 }
 
 export const TrainingParameters = ({
+    help = {},
     maxEpochs,
     onMaxEpochsChange,
     batchSize,
@@ -100,6 +105,7 @@ export const TrainingParameters = ({
     onAugmentImagesChange,
     isAutoScaleBatchDisabled,
     deviceType,
+    recommendedPrecision,
     isLoraSupported,
     loraEnabled,
     onLoraEnabledChange,
@@ -132,13 +138,17 @@ export const TrainingParameters = ({
                 isFilled
                 isDisabled={autoScaleBatchSize}
                 contextualHelp={
-                    <ContextualHelp variant='info'>
+                    <ContextualHelp variant='info' aria-label='Batch size help'>
                         <Heading>Batch size</Heading>
                         <Content>
                             <Text>
-                                Number of samples processed in each training step. Larger batches use the device more
-                                efficiently and give smoother gradient updates, but need more memory and a much larger
-                                batch may need a higher learning rate to train as well.
+                                {help['batch_size'] ?? (
+                                    <>
+                                        Number of samples processed in each training step. Larger batches use the device
+                                        more efficiently and give smoother gradient updates, but need more memory and a
+                                        much larger batch may need a higher learning rate to train as well.
+                                    </>
+                                )}
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -157,8 +167,12 @@ export const TrainingParameters = ({
                     <Heading>Auto scale batch size</Heading>
                     <Content>
                         <Text>
-                            Automatically finds the largest batch size that fits in GPU memory before training starts,
-                            so the batch size slider is ignored. On XPU auto batch size is disabled.
+                            {help['auto_scale_batch_size'] ?? (
+                                <>
+                                    Automatically finds the largest batch size that fits in GPU memory before training
+                                    starts, so the batch size slider is ignored. On XPU auto batch size is disabled.
+                                </>
+                            )}
                         </Text>
                     </Content>
                 </ContextualHelp>
@@ -185,8 +199,12 @@ export const TrainingParameters = ({
                         <Heading>Max epochs</Heading>
                         <Content>
                             <Text>
-                                Total number of training epochs. Training will stop after this many full passes through
-                                the dataset. We recommend training for 5 to 10 epochs.
+                                {help['max_epochs'] ?? (
+                                    <>
+                                        Total number of training epochs. Training will stop after this many full passes
+                                        through the dataset. We recommend training for 5 to 10 epochs.
+                                    </>
+                                )}
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -202,8 +220,13 @@ export const TrainingParameters = ({
                         <Heading>Data workers</Heading>
                         <Content>
                             <Text>
-                                Number of parallel processes for loading training data. Auto selects a value based on
-                                available CPU cores. More workers can speed up training but use more memory.
+                                {help['num_workers'] ?? (
+                                    <>
+                                        Number of parallel processes for loading training data. Auto selects a value
+                                        based on available CPU cores. More workers can speed up training but use more
+                                        memory.
+                                    </>
+                                )}
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -221,11 +244,14 @@ export const TrainingParameters = ({
                 width='100%'
                 label='Precision'
                 description={
-                    deviceType
-                        ? `${
-                              PRECISION_LABELS[RECOMMENDED_PRECISION[deviceType] ?? '32-true']
-                          } recommended for ${deviceType.toUpperCase()}`
-                        : undefined
+                    recommendedPrecision
+                        ? `${PRECISION_LABELS[recommendedPrecision] ?? recommendedPrecision} recommended by ` +
+                          `this policy's defaults`
+                        : deviceType
+                          ? `${
+                                PRECISION_LABELS[RECOMMENDED_PRECISION[deviceType] ?? '32-true']
+                            } recommended for ${deviceType.toUpperCase()}`
+                          : undefined
                 }
                 selectedKey={precision}
                 onSelectionChange={onPrecisionChange}
@@ -234,9 +260,14 @@ export const TrainingParameters = ({
                         <Heading>Training precision</Heading>
                         <Content>
                             <Text>
-                                Controls numerical precision during training. BF16 Mixed uses half-precision where safe
-                                for faster training and lower memory usage. BF16 True runs entirely in BF16 for maximum
-                                speed. 32-bit uses full precision for maximum numerical stability.
+                                {help['precision'] ?? (
+                                    <>
+                                        Controls numerical precision during training. BF16 Mixed uses half-precision
+                                        where safe for faster training and lower memory usage. BF16 True runs entirely
+                                        in BF16 for maximum speed. 32-bit uses full precision for maximum numerical
+                                        stability.
+                                    </>
+                                )}
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -257,8 +288,12 @@ export const TrainingParameters = ({
                     <Heading>Compile model</Heading>
                     <Content>
                         <Text>
-                            Enables torch.compile for all policies. Can significantly speed up training after an initial
-                            compilation warmup, but increases startup time.
+                            {help['compile_model'] ?? (
+                                <>
+                                    Enables torch.compile for all policies. Can significantly speed up training after an
+                                    initial compilation warmup, but increases startup time.
+                                </>
+                            )}
                         </Text>
                     </Content>
                 </ContextualHelp>
@@ -271,11 +306,16 @@ export const TrainingParameters = ({
                     <Heading>Augment images</Heading>
                     <Content>
                         <Text>
-                            Randomly varies brightness, contrast, saturation, hue, sharpness and small rotations on
-                            training images, so the policy is less tied to the exact lighting and camera placement it
-                            was recorded under. This could help when your dataset is small or was recorded in one fixed
-                            setup but the robot will run somewhere more varied. It does not always improve results and
-                            makes each epoch slightly slower. Validation images are left untouched.
+                            {help['augment_images'] ?? (
+                                <>
+                                    Randomly varies brightness, contrast, saturation, hue, sharpness and small rotations
+                                    on training images, so the policy is less tied to the exact lighting and camera
+                                    placement it was recorded under. This could help when your dataset is small or was
+                                    recorded in one fixed setup but the robot will run somewhere more varied. It does
+                                    not always improve results and makes each epoch slightly slower. Validation images
+                                    are left untouched.
+                                </>
+                            )}
                         </Text>
                     </Content>
                 </ContextualHelp>
@@ -290,10 +330,14 @@ export const TrainingParameters = ({
                             <Heading>LoRA fine-tuning</Heading>
                             <Content>
                                 <Text>
-                                    Freezes the base model and trains small low-rank adapters instead of every
-                                    parameter. Uses far less memory and trains faster, at the cost of some capacity
-                                    versus full fine-tuning. The learning rate is automatically scaled up to suit
-                                    adapter training.
+                                    {help['lora'] ?? (
+                                        <>
+                                            Freezes the base model and trains small low-rank adapters instead of every
+                                            parameter. Uses far less memory and trains faster, at the cost of some
+                                            capacity versus full fine-tuning. The learning rate is automatically scaled
+                                            up to suit adapter training.
+                                        </>
+                                    )}
                                 </Text>
                             </Content>
                         </ContextualHelp>
@@ -313,9 +357,14 @@ export const TrainingParameters = ({
                                         <Heading>LoRA rank</Heading>
                                         <Content>
                                             <Text>
-                                                Dimension of the low-rank decomposition. Higher rank means more
-                                                trainable parameters and closer to full fine-tuning. 16 is lighter, 32
-                                                is a reasonable default, 64 gives more capacity for larger datasets.
+                                                {help['lora.rank'] ?? (
+                                                    <>
+                                                        Dimension of the low-rank decomposition. Higher rank means more
+                                                        trainable parameters and closer to full fine-tuning. 16 is
+                                                        lighter, 32 is a reasonable default, 64 gives more capacity for
+                                                        larger datasets.
+                                                    </>
+                                                )}
                                             </Text>
                                         </Content>
                                     </ContextualHelp>
@@ -332,8 +381,13 @@ export const TrainingParameters = ({
                                         <Heading>LoRA alpha</Heading>
                                         <Content>
                                             <Text>
-                                                Scaling numerator (scaling = alpha / rank). Leave empty to default to
-                                                the rank (scaling = 1.0). Increase for a stronger adaptation signal.
+                                                {help['lora.alpha'] ?? (
+                                                    <>
+                                                        Scaling numerator (scaling = alpha / rank). Leave empty to
+                                                        default to the rank (scaling = 1.0). Increase for a stronger
+                                                        adaptation signal.
+                                                    </>
+                                                )}
                                             </Text>
                                         </Content>
                                     </ContextualHelp>
@@ -351,7 +405,10 @@ export const TrainingParameters = ({
                                     <ContextualHelp variant='info'>
                                         <Heading>LoRA dropout</Heading>
                                         <Content>
-                                            <Text>Dropout probability applied to LoRA adapter inputs.</Text>
+                                            <Text>
+                                                {help['lora.dropout'] ??
+                                                    'Dropout probability applied to LoRA adapter inputs.'}
+                                            </Text>
                                         </Content>
                                     </ContextualHelp>
                                 }
@@ -364,9 +421,13 @@ export const TrainingParameters = ({
                                     <Heading>Use DoRA</Heading>
                                     <Content>
                                         <Text>
-                                            Weight-Decomposed Low-Rank Adaptation: learns a per-column magnitude vector
-                                            on top of the LoRA update. Typically improves quality at low ranks at the
-                                            cost of slightly more compute/memory.
+                                            {help['lora.use_dora'] ?? (
+                                                <>
+                                                    Weight-Decomposed Low-Rank Adaptation: learns a per-column magnitude
+                                                    vector on top of the LoRA update. Typically improves quality at low
+                                                    ranks at the cost of slightly more compute/memory.
+                                                </>
+                                            )}
                                         </Text>
                                     </Content>
                                 </ContextualHelp>
@@ -391,10 +452,14 @@ export const TrainingParameters = ({
                             <Heading>SnapFlow distillation</Heading>
                             <Content>
                                 <Text>
-                                    Trains normally for the full max epochs, then spends additional epochs distilling
-                                    the policy so it generates an action chunk in a single denoising step instead of
-                                    ten. The exported model is the distilled one, which runs several times faster on the
-                                    robot at comparable task success.
+                                    {help['snapflow'] ?? (
+                                        <>
+                                            Trains normally for the full max epochs, then spends additional epochs
+                                            distilling the policy so it generates an action chunk in a single denoising
+                                            step instead of ten. The exported model is the distilled one, which runs
+                                            several times faster on the robot at comparable task success.
+                                        </>
+                                    )}
                                 </Text>
                             </Content>
                         </ContextualHelp>
@@ -416,8 +481,9 @@ export const TrainingParameters = ({
                                         <Heading>Distillation epochs</Heading>
                                         <Content>
                                             <Text>
-                                                How many additional epochs to perform distilling after normal
-                                                finetuning. We recommend 2-5 epochs.
+                                                {help['snapflow.distill_epochs'] ??
+                                                    'How many additional epochs to perform distilling after normal ' +
+                                                        'finetuning. We recommend 2-5 epochs.'}
                                             </Text>
                                         </Content>
                                     </ContextualHelp>

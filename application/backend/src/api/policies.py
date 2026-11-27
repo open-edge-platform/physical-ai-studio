@@ -11,8 +11,15 @@ from pydantic import BaseModel
 from api.dependencies import get_remote_trainer_service
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_backends.local import resolve_hf_token
-from training.policy_catalog import AvailablePolicy, available_policy_classes, policy_catalog
+from training.policy_catalog import (
+    DEFAULT_POLICY_TRAINING_CONFIGURATION,
+    POLICY_TRAINING_CONFIGURATIONS,
+    AvailablePolicy,
+    available_policy_classes,
+    policy_catalog,
+)
 from training.policy_catalog import missing_policy_dependencies as _missing_policy_dependencies
+from training.policy_training_configuration import PolicyTrainingConfiguration
 
 router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
@@ -79,6 +86,12 @@ async def get_supported_backends_per_policy(
     if remote_trainer_id is not None:
         return (await service.get_policy_catalog(remote_trainer_id)).backends
     return policy_catalog(_available_policy_classes()).backends
+
+
+@router.get("/{policy}/default-training-config")
+async def get_default_training_configuration(policy: str) -> PolicyTrainingConfiguration:
+    """Return editable Studio defaults without loading policy dependencies."""
+    return POLICY_TRAINING_CONFIGURATIONS.get(policy, DEFAULT_POLICY_TRAINING_CONFIGURATION)
 
 
 @router.get("/{policy}/huggingface-access")

@@ -7,6 +7,13 @@ from loguru import logger
 from packaging.requirements import Requirement
 from pydantic import BaseModel
 
+from training.policy_training_configuration import PolicyTrainingConfiguration, PolicyTrainingDefaults
+
+POLICY_TRAINING_CONFIGURATIONS: dict[str, PolicyTrainingConfiguration] = {}
+"""Per-policy recipe overrides. Empty means every policy uses the shared defaults."""
+
+DEFAULT_POLICY_TRAINING_CONFIGURATION = PolicyTrainingConfiguration.from_defaults(PolicyTrainingDefaults())
+
 
 class AvailablePolicy(BaseModel):
     id: str
