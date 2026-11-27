@@ -300,8 +300,9 @@ async def test_stopping_rtc_mid_inference_keeps_its_late_chunk_out(
     assert any(_played(action, chunk) for action in seen for chunk in later)
 
 
-async def test_a_failed_rtc_inference_reports_the_models_own_error(
-    new_session, fake_cameras, fake_model_worker, tmp_path
+@pytest.mark.parametrize("mode", ["sync", "async", "rtc"])
+async def test_a_failed_inference_reports_the_models_own_error(
+    new_session, fake_cameras, fake_model_worker, tmp_path, mode
 ) -> None:
     session: RuntimeSession = await new_session()
     await session.load_environment(make_environment())
@@ -309,7 +310,7 @@ async def test_a_failed_rtc_inference_reports_the_models_own_error(
     (Path(model.path) / "exports" / "torch" / "fail").touch()
     await session.load_model(model, "torch", "cpu")
     statuses = subscribe_statuses(session)
-    execution = ExecutionConfig(mode="rtc", execution_horizon=5)
+    execution = ExecutionConfig(mode=mode, execution_horizon=5)
     await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
     status = await next_status(statuses, "control")
     assert status.state == "failed"
@@ -460,6 +461,26 @@ async def test_a_dead_model_worker_unloads_the_model_and_holds(
     await _until(lambda: session.state().model is None and session.state().control is None)
     # The environment is untouched.
     assert session.state().environment is not None
+
+
+async def test_a_failed_async_refill_keeps_the_runtimes_own_report(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path)
+    await session.load_model(model, "torch", "cpu")
+    statuses = subscribe_statuses(session)
+    await session.set_control(
+        ModelControlConfig(task="pick", hz=50, execution=ExecutionConfig(mode="async"), grace_s=0)
+    )
+    start = session.store.read(STATE).value.copy()
+    await _until(lambda: session.store.read(STATE).value[0] > start[0] + 1)
+    (Path(model.path) / "exports" / "torch" / "fail").touch()
+    status = await next_status(statuses, "control")
+    assert status.state == "failed"
+    assert "Inference thread died" in (status.error or "")
+    assert NO_FRAME in (status.error or "")
 
 
 class _FarModel:

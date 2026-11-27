@@ -68,6 +68,7 @@ class ModelControl(Control):
         super().__init__(store, config, name="ModelControl", hz=config.hz)
         self.model = model
         execution, queue = _execution(model, config)
+        self._rtc = isinstance(execution, RTCExecution)
         self._queue = queue
         self.source = PolicySource(cast("Any", model), execution, queue, task=config.task or None)
         self.step = 0
@@ -99,7 +100,8 @@ class ModelControl(Control):
             action = self.source.update(observation, {}, self.step)
         except Exception as error:
             # RTC runs the model on its own thread and fails with its own summary; say what the model said.
-            if (cause := self.model.last_error) is not None and cause is not error:
+            # Sync and Async report the model's error themselves, so theirs is left as it is.
+            if self._rtc and (cause := self.model.last_error) is not None and cause is not error:
                 raise cause from error
             raise
         due = max(time.monotonic() + 1 / self.hz, self.started_at + self.grace_s)
