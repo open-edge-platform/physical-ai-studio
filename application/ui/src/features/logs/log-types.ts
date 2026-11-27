@@ -72,25 +72,53 @@ const describe = (value: unknown): string => {
     }
 };
 
+// The first line of the exception block Loguru appends, an exception group's included.
+const EXCEPTION_START = /[ +]*(?:Exception Group )?Traceback \(most recent call last\):/y;
+
+const startsException = (text: string, lineStart: number): boolean => {
+    EXCEPTION_START.lastIndex = lineStart;
+    return EXCEPTION_START.test(text);
+};
+
+const tracebackAfter = (text: string, lineEnd: number): string | null => {
+    const traceback = text.slice(lineEnd + 1).trimEnd();
+    return traceback === '' ? null : traceback;
+};
+
 /**
  * The traceback in a record's `text`. Loguru appends `\n{exception}` to the log format, so the traceback is
  * everything after the line that holds the message, whatever the format puts before or after the message.
+ * The message can also appear earlier in the text (a message "ERROR" under a "{level}\n{message}" format), so
+ * the occurrence followed by the start of the exception block wins, and else the first one.
  * The record's `exception` has only the type and value, not the traceback.
  */
 const getTraceback = (text: unknown, message: string): string | null => {
     if (typeof text !== 'string') {
         return null;
     }
-    const start = text.indexOf(message);
-    if (start === -1) {
+    if (message === '') {
+        // An empty message is on every line, so only the start of the exception block marks where it ends.
+        for (let lineEnd = text.indexOf('\n'); lineEnd !== -1; lineEnd = text.indexOf('\n', lineEnd + 1)) {
+            if (startsException(text, lineEnd + 1)) {
+                return tracebackAfter(text, lineEnd);
+            }
+        }
         return null;
     }
-    const lineEnd = text.indexOf('\n', start + message.length);
-    if (lineEnd === -1) {
-        return null;
+    let firstLineEnd = -1;
+    for (let start = text.indexOf(message); start !== -1; start = text.indexOf(message, start + 1)) {
+        const lineEnd = text.indexOf('\n', start + message.length);
+        if (lineEnd === -1) {
+            break;
+        }
+        if (startsException(text, lineEnd + 1)) {
+            return tracebackAfter(text, lineEnd);
+        }
+        if (firstLineEnd === -1) {
+            firstLineEnd = lineEnd;
+        }
     }
-    const traceback = text.slice(lineEnd + 1).trimEnd();
-    return traceback === '' ? null : traceback;
+    return firstLineEnd === -1 ? null : tracebackAfter(text, firstLineEnd);
 };
 
 /**

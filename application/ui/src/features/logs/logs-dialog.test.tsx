@@ -144,7 +144,8 @@ describe('LogsDialog', () => {
         });
 
     // Written by Loguru 0.8 with serialize=True, as the backend's file sinks write them, after logging an exception
-    // under the default format and two custom LOGURU_FORMAT values. Only the script path was shortened to /app.
+    // under the default format and three custom LOGURU_FORMAT values. Only the script path was shortened to /app.
+    // Under the "level line" format ("{level}\n{message}") a message "ERROR" is also the text's first line.
     it.each(LOGURU_RECORDS)(
         'shows the whole traceback of a real Loguru record, format $format, message $message',
         async ({ entry }) => {
@@ -231,6 +232,45 @@ describe('LogsDialog', () => {
         const copied = writeText.mock.calls[0][0] as string;
         expect(copied).toContain('- Worker ModelWorker-1 failed\nTraceback (most recent call last):');
         expect(copied).toContain('RuntimeError: the export does not load');
+    });
+
+    it('copies the traceback without the level line that equals the message', async () => {
+        const user = userEvent.setup();
+        const writeText = rs.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+        const [{ entry }] = LOGURU_RECORDS.filter(
+            (record) => record.format === 'level line' && record.message === 'ERROR'
+        );
+        stubEventSourceWith(JSON.stringify(entry));
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+        await screen.findByLabelText('Exception');
+        await user.click(screen.getByRole('button', { name: 'Copy logs to clipboard' }));
+
+        const copied = writeText.mock.calls[0][0] as string;
+        expect(copied).toContain(' - ERROR\nTraceback (most recent call last):');
+        expect(copied).not.toContain('ERROR\nERROR');
+    });
+
+    it('takes no traceback from an empty message when the text has no exception block', async () => {
+        stubEventSourceWith(
+            JSON.stringify({
+                text: 'ERROR\n\nnot a traceback\n',
+                record: {
+                    message: '',
+                    module: 'base',
+                    function: '_main',
+                    line: 153,
+                    level: { name: 'ERROR', no: 40, icon: '❌' },
+                    time: { timestamp: 1_700_000_000, repr: '2023-11-14 22:13:20' },
+                    exception: { type: 'ValueError', value: 'lost device', traceback: true },
+                },
+            })
+        );
+
+        render(<LogsDialog close={rs.fn()} initialSourceId='inference' />);
+
+        expect(await screen.findByLabelText('Exception')).toHaveTextContent(/^ValueError: lost device$/);
     });
 
     it('shows the exception type and value when the text has no traceback', async () => {
