@@ -118,3 +118,25 @@ def test_stream_releases_the_robot_on_close(client: TestClient, driver: FakeRobo
 
     with claim_robot(RobotRecipe.from_driver(ROBOT_ID, driver)):
         pass
+
+
+def test_control_drives_the_robot_to_a_client_target(client: TestClient, tmp_path: Path) -> None:
+    with client.websocket_connect(f"{_url()}&control=true") as websocket:
+        websocket.receive_json()  # the first frame: the worker has written its first action
+        websocket.send_json({"event": "action", "data": {"shoulder_lift.pos": 9.0}})
+        websocket.send_json({"event": "action", "data": {"no_such_joint.pos": 1.0}})  # ignored
+        websocket.send_text("not json")  # ignored
+        data: dict[str, float] = {}
+        for _ in range(200):
+            message = websocket.receive_json()
+            if message["event"] == "observation":
+                data = message["data"]
+                if data["shoulder_lift.pos"] == 9.0:
+                    break
+
+    assert data == {"shoulder_pan.pos": 12.3, "shoulder_lift.pos": 9.0}
+    # Eased toward the target (some steps in between), never past it.
+    lifts = [action["action"][1] for action in sent_actions(tmp_path / "actions.jsonl")]
+    assert lifts == sorted(lifts)
+    assert lifts[-1] == 9.0
+    assert any(0.0 < lift < 9.0 for lift in lifts)

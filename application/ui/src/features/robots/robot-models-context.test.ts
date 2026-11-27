@@ -2,7 +2,7 @@ import { describe, expect, it } from '@rstest/core';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFJoint, URDFRobot } from 'urdf-loader/src/URDFClasses.js';
 
-import { mapJointToURDFJoint } from './robot-models-context';
+import { featureRange, mapJointToURDFJoint } from './robot-models-context';
 
 const createModel = (jointType: URDFJoint['jointType'] = 'revolute') => {
     const model = new URDFRobot();
@@ -98,5 +98,36 @@ describe('mapJointToURDFJoint', () => {
         mapJointToURDFJoint({ name: 'shoulder_pan.pos', value: 45 }, model, { 'shoulder_pan.pos': ['missing'] });
 
         expect(model.joints.arm.angle).toBe(0);
+    });
+});
+
+describe('featureRange', () => {
+    const jointMap = { 'arm.pos': ['arm'], 'gripper.pos': ['arm'] };
+
+    it('gives revolute limits in degrees', () => {
+        const range = featureRange('arm.pos', createModel(), jointMap, { type: 'trossen_wxai' });
+
+        expect(range?.min).toBeCloseTo(-57.2958);
+        expect(range?.max).toBeCloseTo(114.5916);
+    });
+
+    it('gives the normalized SO101 ranges', () => {
+        const robot = { type: 'SO101_Follower', payload: { unit: 'normalized' } };
+
+        expect(featureRange('arm.pos', createModel(), jointMap, robot)).toEqual({ min: -100, max: 100 });
+        expect(featureRange('gripper.pos', createModel(), jointMap, robot)).toEqual({ min: 0, max: 100 });
+    });
+
+    it('gives prismatic limits as they are', () => {
+        expect(featureRange('arm.pos', createModel('prismatic'), jointMap)).toEqual({ min: -1, max: 2 });
+    });
+
+    it('has no range for an unmapped, unlimited or non-position feature', () => {
+        expect(featureRange('elbow.pos', createModel(), jointMap)).toBeUndefined();
+        expect(featureRange('arm.vel', createModel(), { 'arm.vel': ['arm'] })).toBeUndefined();
+        const unlimited = createModel('continuous');
+        unlimited.joints.arm.limit.lower = 0;
+        unlimited.joints.arm.limit.upper = 0;
+        expect(featureRange('arm.pos', unlimited, jointMap)).toBeUndefined();
     });
 });

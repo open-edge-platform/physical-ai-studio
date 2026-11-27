@@ -2,7 +2,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useState 
 
 import { useQuery } from '@tanstack/react-query';
 import * as THREE from 'three';
-import { clamp, degToRad, lerp } from 'three/src/math/MathUtils.js';
+import { clamp, degToRad, lerp, radToDeg } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
 import { SchemaRobotCatalogDefinitionResponse } from '../../api/openapi-spec';
@@ -65,6 +65,34 @@ export const mapJointToURDFJoint = (
 
         model.setJointValue(modelJointName, isRevolute ? degToRad(joint.value) : joint.value);
     });
+};
+
+/**
+ * A joint feature's range in the robot's own units, the inverse of `mapJointToURDFJoint`.
+ * Undefined when the model has no limited joint for it.
+ */
+export const featureRange = (
+    name: string,
+    model: URDFRobot,
+    jointMap: Record<string, string[]>,
+    robot?: RobotModelConfig
+): { min: number; max: number } | undefined => {
+    const modelJoint = model.joints[jointMap[name]?.[0] ?? ''];
+    if (!modelJoint || !name.endsWith('.pos')) {
+        return undefined;
+    }
+    const lower = Number(modelJoint.limit.lower);
+    const upper = Number(modelJoint.limit.upper);
+    if (!(lower < upper)) {
+        return undefined; // continuous or unlimited joints
+    }
+    if (modelJoint.jointType !== 'revolute') {
+        return { min: lower, max: upper };
+    }
+    if (isNormalizedSO101Robot(robot)) {
+        return name === 'gripper.pos' ? { min: 0, max: 100 } : { min: -100, max: 100 };
+    }
+    return { min: radToDeg(lower), max: radToDeg(upper) };
 };
 
 /**
