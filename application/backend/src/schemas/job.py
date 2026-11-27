@@ -89,22 +89,20 @@ _DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3
 
 
 class TrainJobPayloadBase(BaseModel):
-    """Fields shared by every training execution target.
+    """Saved training configuration, independent of the currently installed policies.
 
-    Concrete payloads are `LocalTrainJobPayload` and `RemoteTrainJobPayload`
-    below: each adds only the fields meaningful for its
-    target and forbids the rest (`extra="forbid"`), so a payload can never
-    express two targets at once.
+    Extra fields survive branch changes and missing plugins. Request-only
+    capability checks and normalization live in `TrainJobRequestPayloadBase`.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
 
     project_id: UUID
     dataset_id: UUID
     policy: str
     model_name: str
     max_epochs: int | None = Field(
-        default=None,
+        default=_DEFAULT_MAX_EPOCHS,
         ge=1,
         le=10_000,
         description="Number of training epochs (preferred over max_steps when both are provided)",
@@ -116,41 +114,6 @@ class TrainJobPayloadBase(BaseModel):
         description="Number of training steps (legacy; ignored when max_epochs is provided)",
     )
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
-
-    @field_validator("image_key_reorder_map")
-    @classmethod
-    def strip_observation_prefix(cls, value: dict[str, int]) -> dict[str, int]:
-        """Accept a dataset feature key where a camera name is expected.
-
-        A dataset stores its cameras as ``observation.images.<name>`` while the
-        policy reads them as ``images.<name>`` and prefixes ``images.`` onto
-        whatever mapping it is handed. Stripping the dataset's ``observation.``
-        here means either spelling resolves to the same key instead of failing
-        minutes into a run with a mapping that matches nothing.
-
-        Returns:
-            The mapping keyed the way the policy reads its images.
-        """
-        return {key.removeprefix("observation."): slot for key, slot in value.items()}
-
-    @model_validator(mode="after")
-    def resolve_training_limit(self) -> "TrainJobPayloadBase":
-        """Resolve training-limit fields, applying precedence and defaults.
-
-        Rules (in order of priority):
-        1. If ``max_epochs`` is set, use it (``max_steps`` is ignored).
-        2. If ``max_epochs`` is not set (including legacy ``max_steps``-only payloads),
-           default to ``_DEFAULT_MAX_EPOCHS`` epochs.
-
-        ``max_steps`` is retained only for backward-compatible payload parsing.
-        """
-        if self.max_epochs is not None:
-            # max_epochs wins; clear max_steps to avoid ambiguity downstream
-            self.max_steps = None
-        else:
-            # No epoch value provided (including legacy max_steps-only payloads)
-            self.max_epochs = _DEFAULT_MAX_EPOCHS
-        return self
 
     num_workers: int | Literal["auto"] = Field(default="auto", description="DataLoader workers ('auto' or 0-16)")
     auto_scale_batch_size: bool = Field(
@@ -251,45 +214,6 @@ class TrainJobPayloadBase(BaseModel):
             "max_epochs teacher run. Ignored when snapflow_enabled is false."
         ),
     )
-
-    @model_validator(mode="after")
-    def validate_lora(self) -> "TrainJobPayloadBase":
-        """Reject a LoRA request the policy cannot honour, and DoRA requested without LoRA."""
-        if self.lora_use_dora and not self.lora_enabled:
-            msg = "lora_use_dora requires lora_enabled; DoRA is a variant of LoRA, not a standalone mode."
-            raise ValueError(msg)
-        if not self.lora_enabled:
-            return self
-        if self.policy.lower() not in PEFT_POLICIES:
-            msg = (
-                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
-                f"it requires one of {sorted(PEFT_POLICIES)}."
-            )
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def validate_snapflow(self) -> "TrainJobPayloadBase":
-        """Reject a distillation request the policy cannot honour.
-
-        Runs after ``resolve_training_limit``, so ``max_epochs`` is resolved.
-
-        Returns:
-            The validated payload.
-
-        Raises:
-            ValueError: If the policy has no SnapFlow implementation.
-        """
-        if not self.snapflow_enabled:
-            return self
-
-        if self.policy.lower() not in SNAPFLOW_POLICIES:
-            msg = (
-                f"SnapFlow distillation is not available for policy {self.policy!r}; "
-                f"it requires a flow-matching policy ({sorted(SNAPFLOW_POLICIES)})."
-            )
-            raise ValueError(msg)
-        return self
 
     @property
     def snapflow_start_epoch(self) -> int | None:
@@ -395,6 +319,67 @@ TrainJobPayload = Annotated[
 # variant, since `TrainJobPayload` is a type alias (not a class) and has no
 # `model_validate`/`model_dump` of its own.
 TrainJobPayloadAdapter: TypeAdapter[LocalTrainJobPayload | RemoteTrainJobPayload] = TypeAdapter(TrainJobPayload)
+
+
+class TrainJobRequestPayloadBase(TrainJobPayloadBase):
+    """Validate new training requests without revalidating historical capabilities."""
+
+    model_config = ConfigDict(extra="forbid")
+    max_epochs: int | None = Field(
+        default=None,
+        ge=1,
+        le=10_000,
+        description="Number of training epochs (preferred over max_steps when both are provided)",
+    )
+
+    @field_validator("image_key_reorder_map")
+    @classmethod
+    def strip_observation_prefix(cls, value: dict[str, int]) -> dict[str, int]:
+        """Accept dataset feature keys where policy image keys are expected."""
+        return {key.removeprefix("observation."): slot for key, slot in value.items()}
+
+    @model_validator(mode="after")
+    def resolve_training_limit(self) -> "TrainJobRequestPayloadBase":
+        """Resolve defaults for new requests; keep saved limits untouched on reads."""
+        if self.max_epochs is not None:
+            self.max_steps = None
+        else:
+            self.max_epochs = _DEFAULT_MAX_EPOCHS
+        return self
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> "TrainJobRequestPayloadBase":
+        """Reject unsupported LoRA and DoRA requests."""
+        if self.lora_use_dora and not self.lora_enabled:
+            raise ValueError("lora_use_dora requires lora_enabled; DoRA is a variant of LoRA, not a standalone mode.")
+        if self.lora_enabled and self.policy.lower() not in PEFT_POLICIES:
+            raise ValueError(
+                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
+                f"it requires one of {sorted(PEFT_POLICIES)}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_snapflow(self) -> "TrainJobRequestPayloadBase":
+        """Reject distillation requests for policies without a SnapFlow implementation."""
+        if self.snapflow_enabled and self.policy.lower() not in SNAPFLOW_POLICIES:
+            raise ValueError(
+                f"SnapFlow distillation is not available for policy {self.policy!r}; "
+                f"it requires a flow-matching policy ({sorted(SNAPFLOW_POLICIES)})."
+            )
+        return self
+
+
+class LocalTrainJobRequest(LocalTrainJobPayload, TrainJobRequestPayloadBase):
+    """Strict request for a new local training job."""
+
+
+class RemoteTrainJobRequest(RemoteTrainJobPayload, TrainJobRequestPayloadBase):
+    """Strict request for a new remote training job."""
+
+
+TrainJobRequest = Annotated[LocalTrainJobRequest | RemoteTrainJobRequest, Field(discriminator="training_target")]
+TrainJobRequestAdapter: TypeAdapter[LocalTrainJobRequest | RemoteTrainJobRequest] = TypeAdapter(TrainJobRequest)
 
 
 class TrainJob(BaseJob):

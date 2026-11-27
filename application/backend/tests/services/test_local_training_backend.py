@@ -136,8 +136,9 @@ class TestBuildSpec:
         )
         spec = build_spec(_context(tmp_path, payload))
 
-        # The payload normalizes a dataset feature key to what the policy matches on.
+        # The execution spec normalizes feature keys without changing saved configuration.
         assert spec.image_key_reorder_map == {"images.top": 0, "images.wrist": 1}
+        assert payload.image_key_reorder_map == {"observation.images.top": 0, "observation.images.wrist": 1}
         assert spec.num_cameras == 3
 
     def test_export_backends_are_forwarded_as_plain_names(self, tmp_path):

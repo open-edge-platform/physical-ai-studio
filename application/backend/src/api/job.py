@@ -10,7 +10,7 @@ from api.dependencies import get_event_processor_ws, get_job_service, get_model_
 from core.scheduler import Scheduler
 from core.security import require_aws_feature_active
 from schemas import Job
-from schemas.job import RemoteTrainJobPayload, TrainJob, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, TrainJob, TrainJobRequest
 from schemas.job_response import JobResponse, job_response
 from schemas.operational_issue import OperationalIssue
 from services import JobService, ModelMetricsService
@@ -49,7 +49,7 @@ async def delete_job(
 @router.post(":train", response_model=JobResponse, responses={400: {"model": OperationalIssue}})
 async def submit_train_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
-    payload: Annotated[TrainJobPayload, Body()],
+    payload: Annotated[TrainJobRequest, Body()],
 ) -> Job | JSONResponse:
     """Endpoint to submit a training job"""
     try:

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-    SchemaLocalTrainJobPayloadOutput,
+    SchemaLocalTrainJobPayload,
     SchemaRemoteTrainJobPayloadResponse,
     SchemaTrainJob,
 } from '../../api/openapi-spec';
@@ -42,8 +42,8 @@ type BaseKeys = keyof typeof basePayload;
 type VariantOverrides<T> = Partial<Pick<T, Extract<keyof T, BaseKeys>>> & Omit<T, BaseKeys>;
 
 export function getMockedTrainJobPayload(
-    overrides?: Partial<VariantOverrides<SchemaLocalTrainJobPayloadOutput>>
-): SchemaLocalTrainJobPayloadOutput;
+    overrides?: Partial<VariantOverrides<SchemaLocalTrainJobPayload>>
+): SchemaLocalTrainJobPayload;
 export function getMockedTrainJobPayload(
     overrides: VariantOverrides<SchemaRemoteTrainJobPayloadResponse>
 ): SchemaRemoteTrainJobPayloadResponse;

@@ -17,6 +17,7 @@ from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
 from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingPrecision, TrainJobPayload
 from schemas.model import Model
+from services.event_processor import EventType
 from services.snapshot_service import SnapshotService
 
 if TYPE_CHECKING:
@@ -536,6 +537,46 @@ class TestTraining:
 
 
 class TestAssignedJob:
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("reattaching", [False, True])
+    async def test_remote_execution_does_not_silently_discard_unknown_configuration(self, worker, reattaching) -> None:
+        payload = _make_remote_payload()
+        data = payload.model_dump()
+        data["remote_job_id"] = uuid4() if reattaching else None
+        data["future_plugin_option"] = {"mode": "custom"}
+        payload = RemoteTrainJobPayload.model_validate(data)
+        job = _make_job(payload)
+        worker.job_id = job.id
+        with (
+            patch(f"{MODULE}.JobService.claim_pending_train_job", AsyncMock(return_value=job)),
+            patch(f"{MODULE}.JobService.update_job_status", AsyncMock()) as update,
+            patch.object(worker, "_run_training_job", AsyncMock()) as run,
+            patch(f"{MODULE}.LocalTrainingTargetHandler.prepare", AsyncMock()) as local_prepare,
+        ):
+            await worker.run_loop()
+        local_prepare.assert_not_awaited()
+        assert run.await_count == int(reattaching)
+        assert update.await_count == int(not reattaching)
+
+    @pytest.mark.anyio
+    async def test_policy_removed_after_scheduling_fails_before_dataset_preparation(self, worker) -> None:
+        payload = _make_payload()
+        payload.policy = "removed_plugin_policy"
+        job = _make_job(payload)
+        worker.job_id = job.id
+        failed = MagicMock()
+        with (
+            patch(f"{MODULE}.JobService.claim_pending_train_job", AsyncMock(return_value=job)),
+            patch(f"{MODULE}.JobService.update_job_status", AsyncMock(return_value=failed)) as update,
+            patch.object(worker, "_run_training_job", AsyncMock()) as run,
+        ):
+            await worker.run_loop()
+        run.assert_not_awaited()
+        assert update.await_args is not None
+        assert update.await_args.args == (job.id, JobStatus.FAILED)
+        assert "not available" in update.await_args.kwargs["message"]
+        assert worker.queue.get_nowait() == (EventType.JOB_UPDATE, failed)
+
     @pytest.mark.anyio
     async def test_concurrent_jobs_use_distinct_snapshot_paths(self, worker, tmp_path) -> None:
         payload = _make_payload()

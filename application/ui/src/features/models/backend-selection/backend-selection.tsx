@@ -73,8 +73,10 @@ export const BackendSelection = ({
     const backend = inferenceDevice?.backend ?? defaultBackend;
     const device = inferenceDevice?.device;
 
-    const backends: Array<string> =
-        policyBackends?.[model.policy].filter((modelBackend) => ['openvino', 'torch'].includes(modelBackend)) ?? [];
+    // An export's runtime does not require its training policy to be installed.
+    const backends = [...new Set([...model.available_backends, ...(policyBackends?.[model.policy] ?? [])])].filter(
+        (modelBackend) => ['openvino', 'torch'].includes(modelBackend)
+    );
     const devices = getSupportedInferenceDevices(inferenceDevices, backend);
     const selectedDevice =
         devices.find((availableDevice) => availableDevice.device === device) ??

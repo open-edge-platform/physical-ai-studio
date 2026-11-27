@@ -17,6 +17,7 @@ from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import ImportStep
 from schemas.job import DatasetImportJob, RemoteTrainJobPayload, TrainingTarget, TrainJobPayloadAdapter
 from services.training_targets import target_key
+from training.policy_catalog import is_local_policy_available
 
 if TYPE_CHECKING:
     import multiprocessing as mp
@@ -114,6 +115,13 @@ class TrainingJobHandler(JobHandler):
     job_type = JobType.TRAINING
     label = "Training"
     supports_running_cancel = True
+
+    def is_runnable(self, job: Job) -> bool:
+        """Keep missing local policies queued without blocking other jobs or remote reattachment."""
+        if not super().is_runnable(job):
+            return False
+        payload = TrainJobPayloadAdapter.validate_python(job.payload)
+        return isinstance(payload, RemoteTrainJobPayload) or is_local_policy_available(payload.policy)
 
     def resource_key(self, job: Job) -> str:
         return target_key(TrainJobPayloadAdapter.validate_python(job.payload))
