@@ -688,10 +688,10 @@ async def test_a_dataset_that_will_not_open_after_the_copy_is_unknown_not_lost(n
         f"{dataset.path}, but it could not be opened (meta/info.json is unreadable). "
         "The recorded episodes are also kept in "
     )
-    assert message.endswith(". Check the dataset.")
+    assert message.endswith(".")  # the page adds what to do
     # The files did land, and the cache is kept.
     assert json.loads((Path(dataset.path) / "meta" / "info.json").read_text())["total_episodes"] == 1
-    cache = Path(message.removesuffix(". Check the dataset.").rpartition(" kept in ")[2])
+    cache = Path(message.removesuffix(".").rpartition(" kept in ")[2])
     assert (cache / "meta" / "info.json").is_file()
     shutil.rmtree(cache)
     assert session.state().dataset is None
@@ -704,4 +704,4 @@ async def test_a_worker_that_broke_otherwise_leaves_the_outcome_unknown(new_sess
         await _finish_with(session, dataset, "fail_worker")
     assert refused.value.error_code == "recording_outcome_unknown"
     assert "could not tell whether the recording into dataset 'Blocks' was saved" in refused.value.message
-    assert "Check the dataset." in refused.value.message
+    assert refused.value.message.endswith("(ValueError: the worker broke).")

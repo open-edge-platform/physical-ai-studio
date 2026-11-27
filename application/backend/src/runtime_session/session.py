@@ -767,13 +767,12 @@ class RuntimeSession:
             )
         if _failed_with(failure, RecordingOutcomeUnknownError):
             raise RuntimeSessionCommandError(
-                f"Studio could not tell whether the recording into dataset {name!r} was saved: {_message(failure)}. "
-                "Check the dataset.",
+                f"Studio could not tell whether the recording into dataset {name!r} was saved: {_message(failure)}.",
                 error_code="recording_outcome_unknown",
             )
         raise RuntimeSessionCommandError(
             f"Studio could not tell whether the recording into dataset {name!r} was saved; its worker failed "
-            f"({failure}). Check the dataset.",
+            f"({failure}).",
             error_code="recording_outcome_unknown",
         )
 
