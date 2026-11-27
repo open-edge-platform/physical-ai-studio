@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
@@ -52,6 +52,8 @@ class ModelInputs:
     """The only tasks a policy trained on a fixed set takes, such as a multi-task ACT; empty if any text goes."""
     rtc_chunk: tuple[int, int] | None = None
     """``prev_chunk_left_over``'s shape, ``(chunk_size, action_dim)``, when the export takes RTC inputs."""
+    rtc_dtypes: dict[str, str] = field(default_factory=dict)
+    """Each RTC input's dtype, as the export declares it, when it takes RTC inputs."""
 
 
 def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
@@ -66,6 +68,7 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     state_size = 0
     images: dict[str, str] = {}
     rtc_chunk = _rtc_chunk(features, len(spec.joint_names))
+    rtc_dtypes = _rtc_dtypes(features) if rtc_chunk is not None else {}
     for feature in features:
         name: str = feature["name"]
         if feature["ftype"] == "STATE":
@@ -84,7 +87,7 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     tasks = next(
         (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
     )
-    return ModelInputs(state_size, images, tuple(tasks), rtc_chunk)
+    return ModelInputs(state_size, images, tuple(tasks), rtc_chunk, rtc_dtypes)
 
 
 _REEXPORT = "re-export the policy with RTC enabled, or export it without RTC inputs to run it synchronously"
@@ -129,6 +132,29 @@ def _rtc_chunk(features: list[dict[str, Any]], joints: int) -> tuple[int, int] |
     return chunk_size, action_dim
 
 
+def _rtc_dtypes(features: list[dict[str, Any]]) -> dict[str, str]:
+    """Each RTC input's dtype as the export declares it, or the usual one where it does not say.
+
+    Raises:
+        ValueError: A declared dtype is not one RTC can fill: whole numbers for the delay and horizon, floats else.
+    """
+    dtypes = dict(model_rpc.RTC_DTYPES)
+    for feature in features:
+        name = feature["name"]
+        if name not in dtypes or "dtype" not in feature:
+            continue
+        declared = feature["dtype"]
+        kind = "iu" if name in {model_rpc.INFERENCE_DELAY, model_rpc.EXECUTION_HORIZON} else "f"
+        try:
+            valid = isinstance(declared, str) and np.dtype(declared).kind in kind
+        except TypeError:
+            valid = False
+        if not valid:
+            raise ValueError(f"The export takes {name} as {declared!r}, which RTC cannot fill: {_REEXPORT}")
+        dtypes[name] = declared
+    return dtypes
+
+
 class ProcessModel:
     """A model's export loaded in a ``ModelWorker``.
 
@@ -154,6 +180,7 @@ class ProcessModel:
             spec=store.spec,
             images=self.inputs.images,
             rtc_chunk=self.inputs.rtc_chunk,
+            rtc_dtypes=self.inputs.rtc_dtypes or None,
         )
         self._session_id = session_id
         self._bus: Bus | None = None

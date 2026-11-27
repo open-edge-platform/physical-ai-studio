@@ -159,6 +159,21 @@ def test_an_export_with_broken_rtc_inputs_is_refused_with_a_reason(
     assert "re-export" in str(refused.value)
 
 
+def test_an_rtc_export_says_the_dtypes_of_its_rtc_inputs(tmp_path: Path) -> None:
+    features = _rtc_features([50, 2])
+    for feature in features:
+        feature["init_args"]["dtype"] = {"inference_delay": "int32", "max_guidance_weight": "float16"}.get(
+            feature["init_args"]["name"],
+            "float32" if feature["init_args"]["name"] == "prev_chunk_left_over" else "int64",
+        )
+    inputs = model_inputs(_rtc_export(tmp_path / "a", features), SPEC)
+    assert inputs.rtc_dtypes["inference_delay"] == "int32"
+    assert inputs.rtc_dtypes["max_guidance_weight"] == "float16"
+    features[1]["init_args"]["dtype"] = "float32"  # a delay that is not a whole number
+    with pytest.raises(ValueError, match=r"inference_delay as 'float32'.*re-export"):
+        model_inputs(_rtc_export(tmp_path / "b", features), SPEC)
+
+
 @pytest.mark.parametrize(
     ("mode", "rtc_export"), [("sync", False), ("async", False), ("sync", True), ("async", True), ("rtc", True)]
 )

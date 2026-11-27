@@ -19,7 +19,7 @@ GIL for long stretches, which would stall the API process's event loop.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
@@ -47,6 +47,13 @@ MAX_GUIDANCE_WEIGHT = "max_guidance_weight"
 EXECUTION_HORIZON = "execution_horizon"
 RTC_INPUTS = (PREV_CHUNK_LEFT_OVER, INFERENCE_DELAY, MAX_GUIDANCE_WEIGHT, EXECUTION_HORIZON)
 """The inputs an RTC export takes besides the observation."""
+RTC_DTYPES = {
+    PREV_CHUNK_LEFT_OVER: "float32",
+    INFERENCE_DELAY: "int64",
+    MAX_GUIDANCE_WEIGHT: "float32",
+    EXECUTION_HORIZON: "int64",
+}
+"""Each RTC input's dtype where the manifest does not say, as RTC exports take them."""
 
 
 class Empty(BaseModel):
@@ -91,6 +98,8 @@ class Inference:
     """Model input name to the store camera it reads, such as ``images.gripper`` to ``gripper``."""
     rtc_chunk: tuple[int, int] | None = None
     """``prev_chunk_left_over``'s shape when the export takes RTC inputs."""
+    rtc_dtypes: Mapping[str, str] = field(default_factory=lambda: dict(RTC_DTYPES))
+    """Each RTC input's dtype, as the export declares it."""
 
     def infer(self, request: InferRequest) -> ActionChunk:
         observation: dict[str, Any] = {STATE: np.array([request.state], dtype=np.float32)}
@@ -117,20 +126,21 @@ class Inference:
         # Sync or async: what RTC sends for a first chunk, which leaves the chunk unguided. Drop this once the
         # runtime's InferenceModel fills these itself (physicalai branch fix/inference-rtc-inputs-any-mode, not merged).
         if rtc is None:
-            return {
-                PREV_CHUNK_LEFT_OVER: np.zeros((1, *self.rtc_chunk), dtype=np.float32),
-                INFERENCE_DELAY: np.int64(0),
-                MAX_GUIDANCE_WEIGHT: np.float32(1e-8),
-                EXECUTION_HORIZON: np.int64(1),
-            }
-        left_over = np.asarray(rtc.prev_chunk_left_over, dtype=np.float32)
+            rtc = RtcInputs(
+                prev_chunk_left_over=np.zeros(self.rtc_chunk).tolist(),
+                inference_delay=0,
+                max_guidance_weight=1e-8,
+                execution_horizon=1,
+            )
+        left_over = np.asarray(rtc.prev_chunk_left_over, dtype=self.rtc_dtypes[PREV_CHUNK_LEFT_OVER])
         if left_over.shape != self.rtc_chunk:
             raise ValueError(f"prev_chunk_left_over is {left_over.shape}; the export takes {self.rtc_chunk}")
+        # Rank-0 arrays, not NumPy scalars: ONNX Runtime refuses scalars, and ExecuTorch hands inputs to from_numpy.
         return {
             PREV_CHUNK_LEFT_OVER: left_over[np.newaxis],
-            INFERENCE_DELAY: np.int64(rtc.inference_delay),
-            MAX_GUIDANCE_WEIGHT: np.float32(rtc.max_guidance_weight),
-            EXECUTION_HORIZON: np.int64(rtc.execution_horizon),
+            INFERENCE_DELAY: np.array(rtc.inference_delay, dtype=self.rtc_dtypes[INFERENCE_DELAY]),
+            MAX_GUIDANCE_WEIGHT: np.array(rtc.max_guidance_weight, dtype=self.rtc_dtypes[MAX_GUIDANCE_WEIGHT]),
+            EXECUTION_HORIZON: np.array(rtc.execution_horizon, dtype=self.rtc_dtypes[EXECUTION_HORIZON]),
         }
 
 
@@ -149,6 +159,7 @@ class ModelWorker(ProcessWorker[Inference]):
         spec: FeatureSpec,
         images: Mapping[str, str],
         rtc_chunk: tuple[int, int] | None = None,
+        rtc_dtypes: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(name=f"ModelWorker-{export_dir.parent.parent.name}")
         self.export_dir = export_dir
@@ -159,6 +170,7 @@ class ModelWorker(ProcessWorker[Inference]):
         self.spec = spec
         self.images = dict(images)
         self.rtc_chunk = rtc_chunk
+        self.rtc_dtypes = dict(rtc_dtypes or RTC_DTYPES)
 
     def open_model(self) -> Predictor:
         """Runs in the child. Tests replace this to infer without a real export."""
@@ -171,7 +183,7 @@ class ModelWorker(ProcessWorker[Inference]):
         store = Store.attach(self.spec, self.store_name)
         try:
             with Bus.join(self.session_id) as bus:
-                inference = Inference(self.open_model(), store, self.images, self.rtc_chunk)
+                inference = Inference(self.open_model(), store, self.images, self.rtc_chunk, self.rtc_dtypes)
                 bus.serve(INFER, InferRequest, inference.infer)
                 bus.serve(RESET, Empty, inference.reset)
                 bus.serve(READY, Empty, lambda _request: CommandDone())
