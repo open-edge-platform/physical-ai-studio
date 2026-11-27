@@ -252,9 +252,9 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-# Runtime main at the `physicalai.isolate` merge (openvinotoolkit/physicalai#479), which also has the
-# task_index preprocessor (openvinotoolkit/physicalai#477); move to the PyPI release once one includes isolate.
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "c2535de38a38950f4ad0f4b73178ba53429efa16" }
+# TESTING ONLY: the RTC timing fixes of openvinotoolkit/physicalai#482 (fork branch fix/rtc-execution-timing-sps2026-r2).
+# Studio's RTC mode needs them. Replace with the merged openvinotoolkit rev.
+physicalai = { git = "https://github.com/maxxgx/physicalai.git", rev = "5554316891660b6e857aeb80e89489e7d3f1acd8" }
 physicalai-lerobot-policy-plugin = { path = "../plugins/policies/lerobot", editable = true }
 torchcodec = [
     { index = "pytorch-cpu", extra = "cpu" },
