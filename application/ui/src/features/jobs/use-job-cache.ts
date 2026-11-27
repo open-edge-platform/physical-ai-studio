@@ -3,9 +3,9 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 
-import { SchemaDatasetImportJob, SchemaTrainJob } from '../../api/openapi-spec';
+import { SchemaDatasetImportJob, SchemaModelExportJob, SchemaTrainJob } from '../../api/openapi-spec';
 
-export type SchemaJob = SchemaTrainJob | SchemaDatasetImportJob;
+export type SchemaJob = SchemaTrainJob | SchemaDatasetImportJob | SchemaModelExportJob;
 
 export const JOBS_QUERY_KEY = ['get', '/api/jobs'] as const;
 

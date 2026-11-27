@@ -148,6 +148,7 @@ async def test_delete_model_deletes_snapshot_when_snapshot_id_set() -> None:
         patch("services.model_service.SnapshotRepository", return_value=mock_snapshot_repo),
         patch("services.model_service.shutil.rmtree"),
     ):
+        mock_session.scalar.return_value = None
         await ModelService(mock_session).delete_model(model)
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)
@@ -169,6 +170,7 @@ async def test_delete_model_skips_snapshot_delete_when_no_snapshot_id() -> None:
         patch("services.model_service.SnapshotRepository", return_value=mock_snapshot_repo),
         patch("services.model_service.shutil.rmtree"),
     ):
+        mock_session.scalar.return_value = None
         await ModelService(mock_session).delete_model(model)
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)
