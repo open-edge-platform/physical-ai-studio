@@ -24,56 +24,55 @@ from pathlib import Path
 import numpy as np
 import openvino as ov
 from physicalai.engine import Engine
-from physicalai_lerobot_policy_plugin.engine import LeRobotEngine, LeRobotExportOptions
 
-CASE_CATALOG: dict[str, tuple[str, str, str, LeRobotExportOptions]] = {
+CASE_CATALOG: dict[str, tuple[str, str, str, dict[str, object]]] = {
     "smolvla_ov": (
         "smolvla",
         "lerobot/smolvla_base",
         "openvino",
-        LeRobotExportOptions(task="pick up the red cube"),
+        {"task": "pick up the red cube"},
     ),
     "smolvla_ov_fp16": (
         "smolvla",
         "lerobot/smolvla_base",
         "openvino",
-        LeRobotExportOptions(task="pick up the red cube", quantize="fp16", tolerance=0.15),
+        {"task": "pick up the red cube", "quantize": "fp16", "tolerance": 0.15},
     ),
     "smolvla_ov_int8": (
         "smolvla",
         "lerobot/smolvla_base",
         "openvino",
-        LeRobotExportOptions(task="pick up the red cube", quantize="int8", tolerance=0.25),
+        {"task": "pick up the red cube", "quantize": "int8", "tolerance": 0.25},
     ),
     "smolvla_et": (
         "smolvla",
         "lerobot/smolvla_base",
         "executorch_openvino",
-        LeRobotExportOptions(task="pick up the red cube"),
+        {"task": "pick up the red cube"},
     ),
     "xvla_ov": (
         "xvla",
         "lerobot/xvla-libero",
         "openvino",
-        LeRobotExportOptions(task="pick up the red cube", dtype="bfloat16", trust_remote_code=True),
+        {"task": "pick up the red cube", "dtype": "bfloat16", "trust_remote_code": True},
     ),
     "xvla_et": (
         "xvla",
         "lerobot/xvla-libero",
         "executorch_openvino",
-        LeRobotExportOptions(task="pick up the red cube", dtype="bfloat16", trust_remote_code=True),
+        {"task": "pick up the red cube", "dtype": "bfloat16", "trust_remote_code": True},
     ),
     "pi05_ov": (
         "pi05",
         "lerobot/pi05_libero",
         "openvino",
-        LeRobotExportOptions(task="pick up the black bowl", dtype="bfloat16"),
+        {"task": "pick up the black bowl", "dtype": "bfloat16"},
     ),
     "pi05_ov_int4": (
         "pi05",
         "lerobot/pi05_libero",
         "openvino",
-        LeRobotExportOptions(task="pick up the black bowl", dtype="bfloat16", quantize="int4", tolerance=0.5),
+        {"task": "pick up the black bowl", "dtype": "bfloat16", "quantize": "int4", "tolerance": 0.5},
     ),
 }
 
@@ -131,6 +130,7 @@ def main() -> None:
     export_root = args.keep_exports.expanduser().resolve() if args.keep_exports is not None else Path(temp_ctx.name)
     export_root.mkdir(parents=True, exist_ok=True)
 
+    engine = Engine.create("lerobot")
     results: list[dict[str, object]] = []
     try:
         for case_name in args.cases:
@@ -141,8 +141,8 @@ def main() -> None:
                 "policy": policy_name,
                 "repo_id": repo_id,
                 "backend": backend,
-                "quantize": opts.quantize,
-                "dtype": opts.dtype,
+                "quantize": opts.get("quantize"),
+                "dtype": opts.get("dtype"),
                 "export_status": "FAIL",
                 "export_s": None,
                 "parts": [],
@@ -152,7 +152,10 @@ def main() -> None:
                 "devices": {},
                 "error": None,
             }
-            print(f"\n>>> [{case_name}] {repo_id} ({backend}, dtype={opts.dtype}, quantize={opts.quantize})", flush=True)
+            print(
+                f"\n>>> [{case_name}] {repo_id} ({backend}, dtype={opts.get('dtype')}, quantize={opts.get('quantize')})",
+                flush=True,
+            )
             t0 = time.monotonic()
             try:
                 if out_dir.exists() and (out_dir / "manifest.json").is_file():
@@ -160,7 +163,7 @@ def main() -> None:
                     pkg = out_dir
                     entry["export_s"] = 0.0
                 else:
-                    pkg = LeRobotEngine.export(repo_id, out_dir, backend=backend, options=opts)
+                    pkg = engine.export(repo_id, out_dir, backend=backend, **opts)
                     entry["export_s"] = round(time.monotonic() - t0, 1)
                 entry["export_status"] = "PASS"
 
@@ -193,8 +196,9 @@ def main() -> None:
                             if hasattr(ex, "torch_loaded"):
                                 dev_entry["worker_torch_loaded"] = ex.torch_loaded
                             obs = {k: np.zeros(s, dtype=ex.frame_dtypes[k]) for k, s in ex.frame_shapes.items()}
-                            if opts.task:
-                                obs["task"] = opts.task
+                            task_str = str(opts.get("task") or "")
+                            if task_str:
+                                obs["task"] = task_str
                             # Warmup
                             chunk = model.predict_action_chunk(obs)
                             assert np.isfinite(chunk).all()
@@ -214,7 +218,7 @@ def main() -> None:
                                 dev_entry["dynamic_task"] = True
                         if backend == "openvino" and dev == run_devices[0]:
                             dev_entry["tier3_torch_free"] = _verify_torch_free_tier3(
-                                pkg, dev, args.cache_dir / dev.lower(), opts.task
+                                pkg, dev, args.cache_dir / dev.lower(), task_str
                             )
                         dev_entry["status"] = "PASS"
                     except Exception as exc:

@@ -24,7 +24,6 @@ from pathlib import Path
 import numpy as np
 import openvino as ov
 from physicalai.engine import Engine, prepare_environment
-from physicalai_lerobot_policy_plugin.engine import LeRobotEngine, LeRobotExportOptions
 from physicalai_lerobot_policy_plugin.environments import LEROBOT_EXPORT_UPSTREAM_REV, export_worker_env
 
 ALL_LOCAL_POLICIES = (
@@ -134,6 +133,7 @@ def main() -> None:
 
         export_root = tmp_root / "exports"
         export_root.mkdir()
+        engine = Engine.create("lerobot")
         results: list[dict[str, object]] = []
 
         for policy_name in args.policies:
@@ -158,8 +158,13 @@ def main() -> None:
                 }
                 t0 = time.monotonic()
                 try:
-                    opts = LeRobotExportOptions(task=task, trust_remote_code=trust_remote)
-                    pkg = LeRobotEngine.export(ckpt_path, out_dir, backend=backend, options=opts)
+                    pkg = engine.export(
+                        ckpt_path,
+                        out_dir,
+                        backend=backend,
+                        task=task,
+                        trust_remote_code=trust_remote,
+                    )
                     entry["export_s"] = round(time.monotonic() - t0, 1)
                     entry["export_status"] = "PASS"
 
