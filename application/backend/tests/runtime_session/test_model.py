@@ -108,6 +108,44 @@ def test_an_export_with_rtc_inputs_says_its_chunk(tmp_path: Path) -> None:
     assert model_inputs(_export(tmp_path / "b"), SPEC).rtc_chunk is None
 
 
+def _rtc_export(path: Path, features: list[dict]) -> Path:
+    """An export whose RTC features are ``features``, after a 2-joint state and one camera."""
+    base = [
+        {"init_args": {"ftype": "STATE", "shape": [2], "name": "state"}},
+        {"init_args": {"ftype": "VISUAL", "shape": [3, 120, 160], "name": "images.cam 0"}},
+    ]
+    path.mkdir(parents=True)
+    (path / "manifest.json").write_text(json.dumps({"model": {"input_features": base + features}}))
+    return path
+
+
+def _rtc_features(tail: list[int], scalar: list[int] | None = None, *, drop: str | None = None) -> list[dict]:
+    features = [{"init_args": {"ftype": "COMMON", "shape": tail, "name": "prev_chunk_left_over"}}]
+    features += [
+        {"init_args": {"ftype": "COMMON", "shape": scalar or [], "name": name}}
+        for name in ("inference_delay", "max_guidance_weight", "execution_horizon")
+    ]
+    return [feature for feature in features if feature["init_args"]["name"] != drop]
+
+
+@pytest.mark.parametrize(
+    ("features", "message"),
+    [
+        (_rtc_features([50]), "prev_chunk_left_over.*\\(chunk_size, action_dim\\)"),
+        (_rtc_features([50, 7]), "7 actions per step.*follower has 2 joints"),
+        (_rtc_features([1, 2]), "chunk of 1"),
+        (_rtc_features([50, 2], [1]), "inference_delay.*a scalar"),
+        (_rtc_features([50, 2], drop="execution_horizon"), "missing execution_horizon"),
+    ],
+)
+def test_an_export_with_broken_rtc_inputs_is_refused_with_a_reason(
+    tmp_path: Path, features: list[dict], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message) as refused:
+        model_inputs(_rtc_export(tmp_path / "a", features), SPEC)
+    assert "re-export" in str(refused.value)
+
+
 @pytest.mark.parametrize(
     ("mode", "rtc_export"), [("sync", False), ("async", False), ("sync", True), ("async", True), ("rtc", True)]
 )

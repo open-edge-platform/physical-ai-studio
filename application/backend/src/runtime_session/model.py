@@ -65,12 +65,9 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     reasons: list[str] = []
     state_size = 0
     images: dict[str, str] = {}
-    names = {feature["name"] for feature in features}
-    rtc_chunk: tuple[int, int] | None = None
+    rtc_chunk = _rtc_chunk(features, len(spec.joint_names))
     for feature in features:
         name: str = feature["name"]
-        if name == model_rpc.PREV_CHUNK_LEFT_OVER and names.issuperset(RTC_INPUTS):
-            rtc_chunk = (int(feature["shape"][0]), int(feature["shape"][1]))
         if feature["ftype"] == "STATE":
             state_size = int(feature["shape"][0])
             if state_size != len(spec.joint_names):
@@ -88,6 +85,42 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
         (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
     )
     return ModelInputs(state_size, images, tuple(tasks), rtc_chunk)
+
+
+_REEXPORT = "re-export the policy with RTC enabled, or export it without RTC inputs to run it synchronously"
+
+
+def _rtc_chunk(features: list[dict[str, Any]], joints: int) -> tuple[int, int] | None:
+    """``(chunk_size, action_dim)`` of an export that takes all four RTC inputs, or ``None`` if it takes none.
+
+    Raises:
+        ValueError: The export lists only some RTC inputs, or shapes RTC cannot fill for this follower.
+    """
+    shapes = {
+        feature["name"]: list(feature.get("shape") or []) for feature in features if feature["name"] in RTC_INPUTS
+    }
+    if not shapes:
+        return None
+    if missing := [name for name in RTC_INPUTS if name not in shapes]:
+        raise ValueError(f"The export takes some RTC inputs but is missing {', '.join(missing)}: {_REEXPORT}")
+    tail = shapes[model_rpc.PREV_CHUNK_LEFT_OVER]
+    if len(tail) != 2:
+        raise ValueError(
+            f"The export's {model_rpc.PREV_CHUNK_LEFT_OVER} has shape {tail}, not (chunk_size, action_dim): {_REEXPORT}"
+        )
+    chunk_size, action_dim = int(tail[0]), int(tail[1])
+    if action_dim != joints:
+        raise ValueError(
+            f"The export's RTC tail has {action_dim} actions per step, but the follower has {joints} joints: "
+            f"{_REEXPORT} for this robot"
+        )
+    if chunk_size < 2:
+        raise ValueError(f"The export's RTC tail has a chunk of {chunk_size}, too short to guide: {_REEXPORT}")
+    if scalars := [name for name in RTC_INPUTS[1:] if shapes[name]]:
+        raise ValueError(
+            f"The export takes {', '.join(scalars)} with shape {shapes[scalars[0]]}, not a scalar: {_REEXPORT}"
+        )
+    return chunk_size, action_dim
 
 
 class ProcessModel:
