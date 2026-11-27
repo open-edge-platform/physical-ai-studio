@@ -80,6 +80,30 @@ describe('InferenceMode', () => {
         );
     });
 
+    it('never offers or sends a horizon above what the API takes, even for a long-chunk export', async () => {
+        model = {
+            model_id: 'p',
+            name: 'long',
+            backend: 'openvino',
+            device: 'CPU',
+            tasks: [],
+            rtc: true,
+            rtc_max_horizon: 120,
+        };
+        render(<InferenceMode />);
+
+        await chooseRtc();
+        const horizon = screen.getByRole('slider', { name: 'Guided actions (horizon)' });
+        expect(horizon).toHaveAttribute('max', '100');
+        fireEvent.keyDown(horizon, { key: 'End' });
+        fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+        const sent = (
+            send.mock.calls.at(-1) as unknown as [{ control: { execution: { execution_horizon: number } } }]
+        )[0];
+        expect(sent.control.execution.execution_horizon).toBeLessThanOrEqual(100);
+    });
+
     it('will not run RTC on an export without RTC inputs, and says why', async () => {
         render(<InferenceMode />);
 

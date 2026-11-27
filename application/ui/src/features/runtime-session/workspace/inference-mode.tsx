@@ -15,6 +15,8 @@ const EXECUTION_MODES: { key: SchemaExecutionConfig['mode']; label: string }[] =
 // The settings the RTC trials on the reBot ran with: guide 25 of a 50-action chunk, weight 5.
 const RTC_HORIZON = 25;
 const RTC_GUIDANCE = 5;
+// The API's own bound on execution_horizon (ExecutionConfig).
+const API_MAX_HORIZON = 100;
 
 /** The default task of the dataset the loaded model was trained on, or none. */
 const useDefaultTask = (model_id: string | undefined) => {
@@ -42,7 +44,7 @@ export const InferenceMode = () => {
     const [mode, setMode] = useState<SchemaExecutionConfig['mode']>('sync');
     const [threshold, setThreshold] = useState(0.5);
     // An export guides at most half its chunk; the default is the reBot trials' 25 when the chunk has room.
-    const maxHorizon = state?.model?.rtc_max_horizon ?? RTC_HORIZON;
+    const maxHorizon = Math.min(state?.model?.rtc_max_horizon ?? RTC_HORIZON, API_MAX_HORIZON);
     const [horizon, setHorizon] = useState(Math.min(RTC_HORIZON, maxHorizon));
     const [guidance, setGuidance] = useState(RTC_GUIDANCE);
     // In ms; 0 lets RTC measure the delay on the first inferences instead.
@@ -87,7 +89,7 @@ export const InferenceMode = () => {
             execution: {
                 mode,
                 request_threshold: threshold,
-                execution_horizon: horizon,
+                execution_horizon: Math.min(horizon, maxHorizon),
                 max_guidance_weight: guidance,
                 initial_latency_s: latencyMs > 0 ? latencyMs / 1000 : null,
             },
