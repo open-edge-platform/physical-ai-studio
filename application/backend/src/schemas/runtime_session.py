@@ -54,11 +54,14 @@ class ExecutionConfig(BaseModel):
         le=1,
         description="Request the next chunk once this fraction of the current one is left (sync and async)",
     )
-    execution_horizon: int = Field(
-        default=25,
+    execution_horizon: int | None = Field(
+        default=None,
         ge=1,
         le=100,
-        description="RTC: how many of the queued actions the new chunk is guided to continue; at most half the chunk",
+        description=(
+            "RTC: how many of the queued actions the new chunk is guided to continue; at most half the chunk. "
+            "Empty: 25, or half the chunk if that is less"
+        ),
     )
     max_guidance_weight: float = Field(
         default=5.0, ge=0, le=100, description="RTC: how strongly the new chunk is pulled towards the queued actions"

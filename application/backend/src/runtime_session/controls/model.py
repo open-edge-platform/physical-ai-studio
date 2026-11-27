@@ -124,6 +124,9 @@ class ModelControl(Control):
         self.step += 1
 
 
+_DEFAULT_HORIZON = 25
+
+
 class _RTCQueue(RTCActionQueue):
     """``RTCActionQueue`` that remembers how many actions of its last chunk it dropped on the merge.
 
@@ -167,8 +170,14 @@ def check_execution(model: ProcessModel, config: ModelControlConfig) -> None:
             "real-time chunking: choose Synchronous or Asynchronous, or load an RTC export"
         )
     chunk_size = model.inputs.rtc_chunk[0]
-    if settings.execution_horizon > chunk_size // 2:
+    if settings.execution_horizon is not None and settings.execution_horizon > chunk_size // 2:
         raise ValueError(f"The RTC horizon is at most half the chunk: {settings.execution_horizon} > {chunk_size // 2}")
+
+
+def rtc_horizon(model: ProcessModel, config: ModelControlConfig) -> int:
+    """The RTC horizon ``config`` asks for, or 25 (the reBot trials'), capped at half the export's chunk."""
+    chunk_size = cast("tuple[int, int]", model.inputs.rtc_chunk)[0]
+    return config.execution.execution_horizon or min(_DEFAULT_HORIZON, chunk_size // 2)
 
 
 def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Execution, ActionQueue]:
@@ -185,7 +194,7 @@ def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Executi
     rtc_chunk = cast("tuple[int, int]", model.inputs.rtc_chunk)  # check_execution refused an export without it
     execution = RTCExecution(
         chunk_size=rtc_chunk[0],
-        execution_horizon=settings.execution_horizon,
+        execution_horizon=rtc_horizon(model, config),
         fps=config.hz,
         max_guidance_weight=settings.max_guidance_weight,
         queue_threshold=None,  # the horizon plus the measured delay

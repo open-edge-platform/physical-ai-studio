@@ -484,6 +484,23 @@ async def test_a_refused_rtc_request_keeps_the_running_control_and_episode(
         await session.set_control(None)
 
 
+async def test_rtc_without_a_horizon_guides_up_to_half_the_chunk(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path, rtc_chunk=CHUNK)
+    export = Path(model.path) / "exports" / "torch"
+    (export / "record").touch()
+    await session.load_model(model, "torch", "cpu")
+    # Only the mode, as an API client might send it: the horizon is min(25, 10 // 2).
+    await session.set_control(ModelControlConfig(task="pick", hz=50, execution=ExecutionConfig(mode="rtc"), grace_s=0))
+    await _until(lambda: len(_received(export)) >= 3)
+    await session.set_control(None)
+    guided = [row["rtc"] for row in _received(export)[1:]]
+    assert max(rtc["execution_horizon"] for rtc in guided) == CHUNK // 2
+
+
 async def test_rtc_refuses_a_horizon_past_half_the_chunk(
     new_session, fake_cameras, fake_model_worker, tmp_path
 ) -> None:
