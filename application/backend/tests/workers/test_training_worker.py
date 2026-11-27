@@ -497,6 +497,31 @@ class TestTraining:
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(
+        ("trainer_url", "remote_job_id"),
+        [("aws-batch://trainer", uuid4()), ("modal://trainer", "fc-test")],
+    )
+    async def test_persist_cloud_job_id_does_not_overwrite_cancellation(self, worker, trainer_url, remote_job_id):
+        payload = _make_remote_payload()
+        payload.remote_trainer_url = trainer_url
+        payload.snapshot_id = uuid4()
+        payload.cancel_requested = False
+        job = _make_job(payload)
+
+        with patch(f"{MODULE}.JobService") as MockJobService:
+            service = MockJobService.return_value
+            service.update_remote_job_state = AsyncMock()
+            service.update_job_payload = AsyncMock()
+
+            await worker._persist_remote_job_id(job, payload, remote_job_id)
+
+        assert payload.remote_job_id == remote_job_id
+        service.update_remote_job_state.assert_awaited_once_with(
+            job.id, remote_job_id=remote_job_id, snapshot_id=payload.snapshot_id
+        )
+        service.update_job_payload.assert_not_awaited()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
         ("lora_enabled", "lora_use_dora"),
         [(False, False), (True, False), (True, True)],
     )

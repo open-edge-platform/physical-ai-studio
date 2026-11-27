@@ -8,11 +8,13 @@ from fastapi.testclient import TestClient
 from schemas.base_job import JobStatus
 from schemas.job import RemoteTrainJobPayload, TrainJob
 from schemas.job_response import JobResponse, job_response
+from schemas.remote_trainer import ModalGpu
 from services.aws_auth_service import authentication_issue, operational_authentication_issue
 
 
 @pytest.mark.parametrize("status", list(JobStatus))
-def test_public_snapshot_preserves_storage_and_matches_http(status: JobStatus) -> None:
+@pytest.mark.parametrize("modal_gpu", [None, "A10G", "A100-80GB", "H100"])
+def test_public_snapshot_preserves_storage_and_matches_http(status: JobStatus, modal_gpu: ModalGpu | None) -> None:
     issue = authentication_issue(SSOTokenLoadError(error_msg="expired"), "studio")
     assert issue is not None
     job = TrainJob(
@@ -24,6 +26,7 @@ def test_public_snapshot_preserves_storage_and_matches_http(status: JobStatus) -
             remote_trainer_id=uuid4(),
             policy="act",
             model_name="model",
+            modal_gpu=modal_gpu,
             authentication_issue=issue,
         ),
     )
@@ -31,6 +34,7 @@ def test_public_snapshot_preserves_storage_and_matches_http(status: JobStatus) -
     restored = TrainJob.model_validate_json(stored)
     snapshot = job_response(restored).model_dump(mode="json")
     assert "authentication_issue" not in snapshot["payload"]
+    assert snapshot["payload"]["modal_gpu"] == modal_gpu
     assert snapshot["issues"] == (
         [operational_authentication_issue(issue).model_dump()]
         if status in {JobStatus.PENDING, JobStatus.RUNNING}

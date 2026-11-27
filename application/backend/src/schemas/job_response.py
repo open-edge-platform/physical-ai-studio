@@ -10,6 +10,7 @@ from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.job import Job as InternalJob
 from schemas.job import LocalTrainJobPayload, TrainingTarget, TrainJobPayloadBase
 from schemas.operational_issue import OperationalIssue
+from schemas.remote_trainer import ModalGpu
 
 
 class RemoteTrainJobPayloadResponse(TrainJobPayloadBase):
@@ -17,6 +18,7 @@ class RemoteTrainJobPayloadResponse(TrainJobPayloadBase):
 
     training_target: Literal[TrainingTarget.REMOTE] = TrainingTarget.REMOTE  # type: ignore[valid-type]
     remote_trainer_id: UUID
+    modal_gpu: ModalGpu | None = None
     remote_trainer_url: str | None = None
     remote_trainer_name: str | None = None
     cancel_requested: bool | None = None

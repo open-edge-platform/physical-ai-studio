@@ -73,8 +73,11 @@ type RemoteTrainerDetailProps = {
 export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: RemoteTrainerDetailProps) => {
     const batchConnection =
         remoteTrainer.connection.connection_mode === 'aws_batch' ? remoteTrainer.connection : undefined;
+    const modalConnection = remoteTrainer.connection.connection_mode === 'modal' ? remoteTrainer.connection : undefined;
+    const isOnDemand = !!batchConnection || !!modalConnection;
     const types = deviceTypes(health);
     const state = healthVariant(health, isChecking);
+    const statusLabel = health?.status === 'starting' ? 'Starting' : healthLabel(health, isChecking);
     const deviceReportIsInvalid = health?.reason_code === 'invalid_devices_response';
     const trainerHealthState = deviceReportIsInvalid ? 'positive' : state;
     const capabilityState = getCapabilityState(health, isChecking);
@@ -96,32 +99,52 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                         <Heading level={3} UNSAFE_className={classes.sectionHeading}>
                             Health &amp; capability
                         </Heading>
-                        <StatusLight variant={state}>{healthLabel(health, isChecking)}</StatusLight>
+                        <StatusLight variant={state}>{statusLabel}</StatusLight>
                     </div>
                     <div className={classes.checkList}>
                         <HealthCheckRow
-                            label={batchConnection ? 'Batch service' : 'Trainer health endpoint'}
+                            label={
+                                batchConnection
+                                    ? 'Batch service'
+                                    : modalConnection
+                                      ? 'Modal service access'
+                                      : 'Trainer health endpoint'
+                            }
                             detail={trainerHealthDetail(health, isChecking, deviceReportIsInvalid)}
                             state={trainerHealthState}
-                            status={deviceReportIsInvalid ? 'Healthy' : healthLabel(health, isChecking)}
+                            status={deviceReportIsInvalid ? 'Healthy' : statusLabel}
                         />
                         <HealthCheckRow
-                            label={batchConnection ? 'Provisioned compute' : 'Compute capability'}
+                            label={isOnDemand ? 'Provisioned compute' : 'Compute capability'}
                             detail={
                                 batchConnection
                                     ? `${Object.keys(batchConnection.targets).join(', ')} · allocated per job`
-                                    : capabilityDetail(health, isChecking)
+                                    : modalConnection
+                                      ? `${modalConnection.app_name}/${modalConnection.function_name}`
+                                      : capabilityDetail(health, isChecking)
                             }
-                            state={batchConnection ? 'neutral' : capabilityState}
-                            status={batchConnection ? 'On demand' : devicesReported ? 'Available' : 'Unknown'}
+                            state={isOnDemand ? 'neutral' : capabilityState}
+                            status={isOnDemand ? 'On demand' : devicesReported ? 'Available' : 'Unknown'}
                         />
                         <HealthCheckRow
-                            label={batchConnection ? 'Artifact storage' : 'Storage capacity'}
+                            label={isOnDemand ? 'Artifact storage' : 'Storage capacity'}
                             detail={
-                                batchConnection ? `s3://${batchConnection.bucket}` : storageDetail(health, isChecking)
+                                batchConnection
+                                    ? `s3://${batchConnection.bucket}`
+                                    : modalConnection
+                                      ? modalConnection.volume_name
+                                      : storageDetail(health, isChecking)
                             }
-                            state={batchConnection ? 'neutral' : storageState}
-                            status={batchConnection ? 'S3' : health?.storage ? 'Available' : 'Unknown'}
+                            state={isOnDemand ? 'neutral' : storageState}
+                            status={
+                                batchConnection
+                                    ? 'S3'
+                                    : modalConnection
+                                      ? 'Modal Volume'
+                                      : health?.storage
+                                        ? 'Available'
+                                        : 'Unknown'
+                            }
                         />
                     </div>
                 </View>
@@ -157,13 +180,25 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                                 </dd>
                             </>
                         )}
+                        {modalConnection && (
+                            <>
+                                <dt>App / function</dt>
+                                <dd className={classes.definitionListMono}>
+                                    {modalConnection.app_name}/{modalConnection.function_name}
+                                </dd>
+                                <dt>Environment</dt>
+                                <dd className={classes.definitionListMono}>{modalConnection.environment_name}</dd>
+                                <dt>Volume</dt>
+                                <dd className={classes.definitionListMono}>{modalConnection.volume_name}</dd>
+                            </>
+                        )}
                         {sshHost !== undefined && (
                             <>
                                 <dt>SSH host</dt>
                                 <dd className={classes.definitionListMono}>{sshHost}</dd>
                             </>
                         )}
-                        {!batchConnection && (
+                        {!isOnDemand && (
                             <>
                                 <dt>Device type</dt>
                                 <dd className={classes.definitionListMono}>{types.join(', ') || 'Not reported'}</dd>
