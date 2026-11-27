@@ -320,6 +320,7 @@ class LeRobotEngine(TrainingEngine):
         *,
         options: LeRobotExportOptions | None = None,
         interpreter: str | Path | None = None,
+        **export_options: Any,
     ) -> Path:
         """Export or package a LeRobot policy for Physical AI Runtime inference.
 
@@ -336,13 +337,17 @@ class LeRobotEngine(TrainingEngine):
             backend: Target export backend (``"native"``, ``"openvino"``, or ``"executorch_openvino"``).
             options: Optional :class:`LeRobotExportOptions` for ``openvino`` / ``executorch_openvino``.
             interpreter: Optional user-managed Python interpreter bypassing ``envs/export/``.
+            **export_options: Keyword arguments forwarded to :class:`LeRobotExportOptions`
+                (e.g. ``task``, ``quantize``, ``dtype``, ``tolerance``, ``n_action_steps``,
+                ``trust_remote_code``) so callers using ``Engine.create("lerobot")`` do not need
+                to import plugin-specific option classes.
 
         Returns:
             The completed Runtime package directory.
 
         Raises:
-            FileExistsError: If *output_path* already exists.
-            ValueError: If *backend* or policy type is unsupported.
+            ValueError: If *backend* or policy type is unsupported, or both *options* and
+                individual export keyword arguments are given.
         """
         selected_backend = "native" if backend is None else backend
         if selected_backend not in _EXPORT_BACKENDS:
@@ -350,16 +355,24 @@ class LeRobotEngine(TrainingEngine):
             msg = f"{cls.framework} supports export backends ({supported}), got {backend!r}."
             raise ValueError(msg)
 
+        if options is not None and export_options:
+            msg = "Pass either `options=LeRobotExportOptions(...)` or keyword export options, not both."
+            raise ValueError(msg)
+
         if selected_backend == "native":
+            if options is not None or export_options:
+                msg = "Export options are only supported for 'openvino' and 'executorch_openvino' backends."
+                raise ValueError(msg)
             from .package import package_lerobot_checkpoint  # ruff: ignore[import-outside-top-level]
 
             return package_lerobot_checkpoint(source, Path(output_path))
 
+        resolved_options = options if options is not None else LeRobotExportOptions(**export_options)
         return cls._export_bundle(
             source,
             Path(output_path),
             backend=selected_backend,
-            options=options or LeRobotExportOptions(),
+            options=resolved_options,
             interpreter=interpreter,
         )
 

@@ -150,6 +150,51 @@ def test_export_routes_openvino_and_builds_cli_flags(
     assert (package / "act.lerobot-bundle" / "export.json").is_file()
 
 
+def test_export_accepts_direct_kwargs_via_engine_create(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from physicalai.engine import Engine
+
+    ckpt = tmp_path / "ckpt" / "pretrained_model"
+    ckpt.mkdir(parents=True)
+    (ckpt / "config.json").write_text(json.dumps({"type": "act"}), encoding="utf-8")
+
+    captured: list[str] = []
+
+    def fake_run_worker(env, args, *, device, accelerator, interpreter=None, extra_env=None):  # type: ignore[no-untyped-def]
+        del env, device, accelerator, interpreter, extra_env
+        captured.extend(args)
+        out_arg = next(a for a in args if a.startswith("--output_dir=")).split("=", 1)[1]
+        _write_minimal_ov_bundle(Path(out_arg))
+        return Run(framework="lerobot", output_dir=Path(out_arg), checkpoint=Path(out_arg))
+
+    monkeypatch.setattr(engine_module, "run_worker", fake_run_worker)
+
+    engine = Engine.create("lerobot")
+    package = engine.export(
+        ckpt,
+        tmp_path / "exported_via_engine_create",
+        backend="openvino",
+        task="pick cube",
+        quantize="int8",
+        tolerance=0.2,
+    )
+    assert "--task=pick cube" in captured
+    assert "--quantize=int8" in captured
+    assert "--tolerance=0.2" in captured
+    assert (package / "manifest.json").is_file()
+
+    with pytest.raises(ValueError, match="not both"):
+        engine.export(
+            ckpt,
+            tmp_path / "conflict",
+            backend="openvino",
+            options=LeRobotExportOptions(task="a"),
+            task="b",
+        )
+
+
 def test_export_rejects_unknown_backend(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="supports export backends"):
         LeRobotEngine.export(tmp_path, tmp_path / "out", backend="tensorrt")

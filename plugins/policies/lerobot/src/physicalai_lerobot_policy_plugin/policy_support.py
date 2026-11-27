@@ -98,7 +98,7 @@ def require_exportable_policy(policy_type: object, *, trust_remote_code: bool = 
     verified = ", ".join(sorted(VERIFIED_EXPORT_POLICIES))
     msg = (
         f"LeRobot policy {normalized!r} is outside the audited export allowlist ({verified}) and may load "
-        "unpinned remote code. Pass `options=LeRobotExportOptions(trust_remote_code=True)` to opt in."
+        "unpinned remote code. Pass `trust_remote_code=True` to opt in."
     )
     raise ValueError(msg)
 
