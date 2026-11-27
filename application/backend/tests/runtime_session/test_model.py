@@ -365,6 +365,26 @@ async def test_a_failed_inference_reports_the_models_own_error(
     assert NO_FRAME in (status.error or "")
 
 
+async def test_a_plain_graph_under_a_stale_rtc_manifest_runs_as_a_plain_export(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path, rtc_chunk=CHUNK)
+    (Path(model.path) / "exports" / "torch" / "plain_graph").touch()
+    await session.load_model(model, "torch", "cpu")
+    assert session.state().model.rtc is False
+    assert session.state().model.rtc_max_horizon is None
+    for mode in ("sync", "async"):
+        start = session.store.read(STATE).value.copy()
+        execution = ExecutionConfig(mode=mode)
+        await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
+        await _until(lambda start=start: session.store.read(STATE).value[0] > start[0] + 3)
+    with pytest.raises(ValueError, match="without RTC inputs"):
+        await session.set_control(ModelControlConfig(execution=ExecutionConfig(mode="rtc", execution_horizon=5)))
+    await session.set_control(None)
+
+
 async def test_rtc_refuses_an_export_without_rtc_inputs(new_session, fake_cameras, fake_model_worker, tmp_path) -> None:
     session = await new_session()
     await session.load_environment(make_environment())

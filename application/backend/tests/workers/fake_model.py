@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -96,4 +97,9 @@ class FakeModelWorker(ModelWorker):
             raise RuntimeError("the export does not load")
         # A "slow" file in the export makes each inference take 0.5 s, as a real model's does.
         delay_s = 0.5 if (self.export_dir / "slow").exists() else 0.0
+        if (self.export_dir / "plain_graph").exists():
+            # A plain graph under a stale manifest that lists RTC inputs: its adapter says what it takes.
+            oracle = Oracle(list(self.images), delay_s=delay_s, export_dir=self.export_dir)
+            oracle.adapter = SimpleNamespace(input_names=["state", *self.images])  # type: ignore[attr-defined]
+            return oracle
         return Oracle(list(self.images), rtc=self.rtc_chunk is not None, delay_s=delay_s, export_dir=self.export_dir)

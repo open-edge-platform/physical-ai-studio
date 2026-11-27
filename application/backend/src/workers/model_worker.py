@@ -144,22 +144,32 @@ class Inference:
         }
 
 
-def check_graph(model: Predictor, rtc_chunk: tuple[int, int] | None) -> None:
-    """Refuse an export whose manifest lists RTC inputs its graph does not take, where its adapter says.
+def check_graph(model: Predictor, rtc_chunk: tuple[int, int] | None) -> bool:
+    """Whether the loaded graph takes RTC's inputs, where its adapter says; else what the manifest says.
 
-    The Runtime drops inputs the graph lacks, so such an export would run unguided without a word.
+    A graph with none of them runs as a plain export even under a stale manifest that lists them.
 
     Raises:
-        ValueError: The graph lacks one of the RTC inputs.
+        ValueError: The graph takes some RTC inputs but not all, which nothing can feed.
     """
     names = getattr(getattr(model, "adapter", None), "input_names", None)
-    if rtc_chunk is None or not names:
-        return
-    if missing := [name for name in RTC_INPUTS if name not in names]:
+    if not names:
+        return rtc_chunk is not None
+    takes = [name for name in RTC_INPUTS if name in names]
+    if takes and len(takes) < len(RTC_INPUTS):
+        missing = [name for name in RTC_INPUTS if name not in names]
         raise ValueError(
-            f"The export's manifest lists RTC inputs, but its graph does not take {', '.join(missing)}: "
-            "re-export the policy with RTC enabled, or without RTC inputs in its manifest"
+            f"The export's graph takes some RTC inputs but does not take {', '.join(missing)}: "
+            "re-export the policy with RTC enabled, or without RTC"
         )
+    return bool(takes) and rtc_chunk is not None
+
+
+class ModelReady(CommandDone):
+    """The worker's answer once its model is loaded."""
+
+    rtc: bool = False
+    """The graph takes RTC's inputs. ``False`` for a plain graph, even under a manifest that lists them."""
 
 
 class ModelWorker(ProcessWorker[Inference]):
@@ -202,11 +212,11 @@ class ModelWorker(ProcessWorker[Inference]):
         try:
             with Bus.join(self.session_id) as bus:
                 model = self.open_model()
-                check_graph(model, self.rtc_chunk)
-                inference = Inference(model, store, self.images, self.rtc_chunk, self.rtc_dtypes)
+                rtc_chunk = self.rtc_chunk if check_graph(model, self.rtc_chunk) else None
+                inference = Inference(model, store, self.images, rtc_chunk, self.rtc_dtypes)
                 bus.serve(INFER, InferRequest, inference.infer)
                 bus.serve(RESET, Empty, inference.reset)
-                bus.serve(READY, Empty, lambda _request: CommandDone())
+                bus.serve(READY, Empty, lambda _request: ModelReady(rtc=rtc_chunk is not None))
                 yield inference
         finally:
             store.close()

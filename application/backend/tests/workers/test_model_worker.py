@@ -186,13 +186,18 @@ def test_the_worker_sends_rank_zero_arrays_of_the_declared_dtypes() -> None:
         assert sent.ndim == (3 if name == "prev_chunk_left_over" else 0)
 
 
-def test_a_manifest_that_lists_rtc_inputs_its_graph_lacks_is_refused(tmp_path: Path) -> None:
+def test_a_graph_with_none_or_all_rtc_inputs_says_so_and_a_partial_one_is_refused(tmp_path: Path) -> None:
     from physicalai.inference.adapters.onnx import ONNXAdapter
 
-    stale, rtc = ONNXAdapter(), ONNXAdapter()
-    stale.load(_tiny_rtc_onnx(tmp_path / "plain.onnx", rtc=False))
+    plain, rtc = ONNXAdapter(), ONNXAdapter()
+    plain.load(_tiny_rtc_onnx(tmp_path / "plain.onnx", rtc=False))
     rtc.load(_tiny_rtc_onnx(tmp_path / "rtc.onnx"))
-    with pytest.raises(ValueError, match="graph does not take prev_chunk_left_over"):
-        check_graph(cast("Any", SimpleNamespace(adapter=stale)), (10, 2))
-    check_graph(cast("Any", SimpleNamespace(adapter=rtc)), (10, 2))
-    check_graph(cast("Any", SimpleNamespace(adapter=stale)), None)  # a plain export without RTC is fine
+    # A stale manifest that lists RTC inputs on a plain graph: the export runs as a plain one.
+    assert check_graph(cast("Any", SimpleNamespace(adapter=plain)), (10, 2)) is False
+    assert check_graph(cast("Any", SimpleNamespace(adapter=rtc)), (10, 2)) is True
+    assert check_graph(cast("Any", SimpleNamespace(adapter=plain)), None) is False
+    partial = SimpleNamespace(adapter=SimpleNamespace(input_names=["state", "prev_chunk_left_over", "inference_delay"]))
+    with pytest.raises(ValueError, match="does not take max_guidance_weight, execution_horizon"):
+        check_graph(cast("Any", partial), (10, 2))
+    # Where the adapter does not say, the manifest is taken at its word.
+    assert check_graph(cast("Any", SimpleNamespace()), (10, 2)) is True

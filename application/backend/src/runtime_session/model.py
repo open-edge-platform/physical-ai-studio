@@ -14,16 +14,17 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
+from loguru import logger
 
 from runtime_session.bus import Bus, publish_status, until_serving
 from schemas.runtime_session import CommandDone, SessionModel
 from workers import model_worker as model_rpc
-from workers.model_worker import RTC_INPUTS, ActionChunk, InferRequest, ModelWorker, RtcInputs
+from workers.model_worker import RTC_INPUTS, ActionChunk, InferRequest, ModelReady, ModelWorker, RtcInputs
 
 if TYPE_CHECKING:
     from runtime_session.store import FeatureSpec, Store
@@ -218,10 +219,14 @@ class ProcessModel:
             stack.callback(self._report_stopped, bus)
             try:
                 await stack.enter_async_context(self._worker)
-                await until_serving(bus, model_rpc.READY, model_rpc.Empty(), CommandDone, within=_READY_S)
+                ready = await until_serving(bus, model_rpc.READY, model_rpc.Empty(), ModelReady, within=_READY_S)
             except Exception as error:
                 publish_status(bus, COMPONENT, "failed", str(error))
                 raise
+            if not ready.rtc and self.inputs.rtc_chunk is not None:
+                # A plain graph under a manifest that lists RTC inputs: offer it as the plain export it is.
+                logger.warning("Model {!r}: its manifest lists RTC inputs its graph does not take", self.model.name)
+                self.inputs = replace(self.inputs, rtc_chunk=None, rtc_dtypes={})
             watch = asyncio.create_task(self._report_death(bus))
             stack.callback(watch.cancel)
             publish_status(bus, COMPONENT, "running")
