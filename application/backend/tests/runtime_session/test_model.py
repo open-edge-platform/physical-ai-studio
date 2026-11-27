@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import os
 import signal
@@ -22,11 +23,11 @@ from schemas.dataset import Dataset
 from schemas.model import Model
 from schemas.runtime_session import ExecutionConfig, ModelControlConfig, StartEpisodeCommand
 from tests.workers.fake_dataset import FakeDatasetWorker
-from tests.workers.fake_model import CHUNK, FakeModelWorker
+from tests.workers.fake_model import CHUNK, NO_FRAME, FakeModelWorker
 from workers.base import WorkerStartupError
 from workers.dataset_worker import RecordingStatus
 
-from .fixtures import make_environment
+from .fixtures import make_environment, next_status, subscribe_statuses
 
 SPEC = FeatureSpec(("shoulder_pan.pos", "gripper.pos"), {"cam 0": ImageSpec(120, 160, 3)})
 
@@ -192,29 +193,118 @@ async def test_switching_modes_keeps_driving_the_follower(
     assert session.state().control is None
 
 
-async def test_stopping_rtc_while_it_infers_holds_the_follower(
+def _received(export: Path) -> list[dict]:
+    path = export / "received.jsonl"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+async def _gate(export: Path, n: int) -> None:
+    """Wait until the oracle holds inference ``n`` at its gate."""
+    await _until(lambda: (export / f"entered_{n}").exists())
+
+
+def _rows_of(received: list[dict], n: int) -> np.ndarray:
+    return np.asarray(next(row["chunk"] for row in received if row["n"] == n), dtype=np.float32)
+
+
+def _played(action: np.ndarray, chunk: np.ndarray) -> bool:
+    return bool(np.any(np.all(np.isclose(chunk, action, atol=1e-5), axis=1)))
+
+
+async def test_rtc_sends_the_guided_tail_and_settings_across_to_the_model(
     new_session, fake_cameras, fake_model_worker, tmp_path
 ) -> None:
     session: RuntimeSession = await new_session()
     await session.load_environment(make_environment())
     model = _model(tmp_path, rtc_chunk=CHUNK)
-    (Path(model.path) / "exports" / "torch" / "slow").touch()
+    export = Path(model.path) / "exports" / "torch"
+    (export / "record").touch()
+    await session.load_model(model, "torch", "cpu")
+    # 0.06 s at 50 Hz is a delay of 3 actions until the first steady measurement.
+    execution = ExecutionConfig(mode="rtc", execution_horizon=4, max_guidance_weight=3.5, initial_latency_s=0.06)
+    await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
+    await _until(lambda: len(_received(export)) >= 5)
+    await session.set_control(None)
+    received = _received(export)
+
+    first = received[0]["rtc"]  # warmup: RTC's neutral first-chunk inputs, no tail
+    assert (first["inference_delay"], first["execution_horizon"]) == (0, 1)
+    assert first["max_guidance_weight"] == pytest.approx(1e-8)
+    assert not np.any(first["prev_chunk_left_over"])
+    assert received[1]["rtc"]["inference_delay"] == 3  # the seeded latency, not 0
+    for previous, row in itertools.pairwise(received):
+        rtc = row["rtc"]
+        tail = np.asarray(rtc["prev_chunk_left_over"], dtype=np.float32)
+        assert tail.shape == (CHUNK, 2)
+        left = int(np.count_nonzero(np.any(tail != 0, axis=1)))
+        assert left >= 1
+        # The unplayed end of the chunk the model returned last, then zeros.
+        np.testing.assert_allclose(tail[:left], _rows_of(received, previous["n"])[-left:], atol=1e-6)
+        assert not np.any(tail[left:])
+        assert rtc["max_guidance_weight"] == pytest.approx(3.5)
+        assert rtc["execution_horizon"] == min(4, left)
+        assert 0 <= rtc["inference_delay"] <= rtc["execution_horizon"]
+
+
+@pytest.mark.parametrize("gated", [1, 2], ids=["warmup", "refill"])
+async def test_stopping_rtc_mid_inference_keeps_its_late_chunk_out(
+    new_session, fake_cameras, fake_model_worker, tmp_path, gated
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path, rtc_chunk=CHUNK)
+    export = Path(model.path) / "exports" / "torch"
+    (export / "record").touch()
+    (export / f"gate_{gated}").touch()
     await session.load_model(model, "torch", "cpu")
     execution = ExecutionConfig(mode="rtc", execution_horizon=5)
-    await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
-    start = session.store.read(STATE).value.copy()
-    await _until(lambda: session.store.read(STATE).value[0] > start[0] + 1)
+    config = ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0)
+    await session.set_control(config)
+    await _gate(export, gated)
+
     started = time.monotonic()
-    await session.set_control(None)  # an inference is in flight most of the time
-    assert time.monotonic() - started < 10
+    await session.set_control(None)  # inference ``gated`` is inside the model
+    # A refill blocks only RTC's own thread, which the control leaves after RTC's 5 s join. A warmup blocks the
+    # control's thread itself, which the session gives up on after 10 s, as it does for Sync and Async.
+    assert time.monotonic() - started < (8 if gated > 1 else 12)
     assert session.state().control is None
     held = session.store.read(ACTION).value.copy()
-    await asyncio.sleep(1.0)
-    np.testing.assert_allclose(session.store.read(ACTION).value, held)
-    # The model is still loaded and runs again.
+    (export / f"release_{gated}").touch()
+    await _until(lambda: any(row["n"] == gated for row in _received(export)))
+    await asyncio.sleep(0.5)
+    if gated > 1:
+        # RTC's thread discards a chunk that comes back after its run stopped. (After a warmup, the control's own
+        # thread writes it, in every mode: a session-level issue that a separate fix closes.)
+        np.testing.assert_allclose(session.store.read(ACTION).value, held)
+
+    # A new run plays its own chunks, never the one that came back late.
+    await session.set_control(config)
+    late = _rows_of(_received(export), gated)
+    seen: list[np.ndarray] = []
+    deadline = time.monotonic() + 1.5
+    while time.monotonic() < deadline:
+        seen.append(session.store.read(ACTION).value.copy())
+        await asyncio.sleep(0.01)
+    await session.set_control(None)
+    assert not any(_played(action, late) for action in seen)
+    later = [_rows_of(_received(export), row["n"]) for row in _received(export) if row["n"] > gated]
+    assert any(_played(action, chunk) for action in seen for chunk in later)
+
+
+async def test_a_failed_rtc_inference_reports_the_models_own_error(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    await session.load_environment(make_environment())
+    model = _model(tmp_path, rtc_chunk=CHUNK)
+    (Path(model.path) / "exports" / "torch" / "fail").touch()
+    await session.load_model(model, "torch", "cpu")
+    statuses = subscribe_statuses(session)
+    execution = ExecutionConfig(mode="rtc", execution_horizon=5)
     await session.set_control(ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0))
-    again = session.store.read(STATE).value.copy()
-    await _until(lambda: session.store.read(STATE).value[0] > again[0] + 1)
+    status = await next_status(statuses, "control")
+    assert status.state == "failed"
+    assert NO_FRAME in (status.error or "")
 
 
 async def test_rtc_refuses_an_export_without_rtc_inputs(new_session, fake_cameras, fake_model_worker, tmp_path) -> None:
