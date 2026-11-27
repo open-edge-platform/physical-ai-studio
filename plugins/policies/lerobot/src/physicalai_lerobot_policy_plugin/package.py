@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Package native LeRobot checkpoints in the Runtime policy-package format."""
+"""Package native LeRobot checkpoints and exported LeRobot bundles in the Runtime format."""
 
 from __future__ import annotations
 
@@ -12,20 +12,23 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .policy_support import require_supported_policy, validate_processor_configs
+from .policy_support import require_exportable_policy, require_supported_policy, validate_processor_configs
 
 if TYPE_CHECKING:
     from physicalai.engine import Run
 
 _POLICY_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
-_RESET_CALLBACK = "physicalai_lerobot_policy_plugin.runtime.LeRobotResetCallback"
+_NATIVE_RESET_CALLBACK = "physicalai_lerobot_policy_plugin.runtime.LeRobotResetCallback"
+_BUNDLE_RESET_CALLBACK = "physicalai_lerobot_policy_plugin.bundle_runtime.LeRobotBundleResetCallback"
+_ACTION_CHUNK_TRIMMER = "physicalai.inference.postprocessors.ActionChunkTrimmer"
+_PACKAGE_METADATA_FILE = "package.json"
 
 
 def package_lerobot_checkpoint(source: Run | str | Path, output_dir: Path) -> Path:
     """Copy a native LeRobot model directory into a Runtime package.
 
     The native checkpoint remains under ``<policy>.lerobot/pretrained_model``.
-    Runtime v0.3 locates the ``.lerobot`` directory through its adapter suffix
+    Runtime locates the ``.lerobot`` directory through its adapter suffix
     lookup; the manifest also declares that artifact for backend detection.
 
     Args:
@@ -61,7 +64,92 @@ def package_lerobot_checkpoint(source: Run | str | Path, output_dir: Path) -> Pa
         artifact_name = f"{policy_name}.lerobot"
         staged_native_dir = staged_package / artifact_name / "pretrained_model"
         _copy_native_tree(native_dir, staged_native_dir)
-        _write_manifest(staged_package, policy_name, artifact_name)
+        _write_native_manifest(staged_package, policy_name, artifact_name)
+        staged_package.rename(package_root)
+
+    return package_root
+
+
+def package_lerobot_bundle(
+    bundle_dir: Path,
+    output_dir: Path,
+    *,
+    policy_name: str,
+    export_backend: str,
+    worker_env_key: str | None = None,
+    n_action_steps: int | None = None,
+    trust_remote_code: bool = False,
+) -> Path:
+    """Wrap an unmodified ``lerobot-export`` bundle folder in a Physical AI Runtime package.
+
+    The original LeRobot bundle folder is placed verbatim under
+    ``<policy>.lerobot-bundle/`` so the same artifact runs under both
+    ``InferenceModel(package)`` and upstream ``lerobot-rollout --bundle.path=...``.
+
+    Args:
+        bundle_dir: Verified bundle folder produced by ``lerobot-export``.
+        output_dir: New directory where the Runtime package will be created.
+        policy_name: Validated LeRobot policy type.
+        export_backend: Export backend name (``"openvino"`` or ``"executorch_openvino"``).
+        worker_env_key: Content key of the isolated environment for Tier 2 provenance checks.
+        n_action_steps: Optional ``ActionChunkTrimmer`` postprocessor limit.
+        trust_remote_code: Whether *policy_name* was explicitly opted in outside the allowlist.
+
+    Returns:
+        The completed Runtime package directory.
+
+    Raises:
+        FileExistsError: If *output_dir* already exists.
+        FileNotFoundError: If *bundle_dir* does not contain ``export.json``.
+        ValueError: If *bundle_dir* contains symlinks or overlaps with *output_dir*.
+    """
+    validated_policy = require_exportable_policy(policy_name, trust_remote_code=trust_remote_code)
+    resolved_bundle = Path(bundle_dir).expanduser().resolve(strict=True)
+    if not resolved_bundle.is_dir() or not (resolved_bundle / "export.json").is_file():
+        msg = f"LeRobot bundle is missing export.json: {resolved_bundle}"
+        raise FileNotFoundError(msg)
+    if n_action_steps is not None and (isinstance(n_action_steps, bool) or n_action_steps < 1):
+        msg = f"n_action_steps must be a positive integer, got {n_action_steps!r}."
+        raise ValueError(msg)
+
+    output_candidate = Path(output_dir).expanduser()
+    if output_candidate.exists() or output_candidate.is_symlink():
+        msg = f"Export directory already exists: {output_candidate}"
+        raise FileExistsError(msg)
+    package_root = output_candidate.resolve()
+    if package_root.is_relative_to(resolved_bundle) or resolved_bundle.is_relative_to(package_root):
+        msg = "Export directory and source bundle must not contain one another."
+        raise ValueError(msg)
+
+    export_manifest = _read_json_object(resolved_bundle / "export.json")
+    bundle_runtime = export_manifest.get("runtime")
+    package_metadata: dict[str, object] = {
+        "source_framework": "lerobot",
+        "export_backend": export_backend,
+        "bundle_runtime": bundle_runtime,
+        "policy": validated_policy,
+        "tolerance": export_manifest.get("tolerance"),
+    }
+    if worker_env_key is not None:
+        package_metadata["worker_env_key"] = worker_env_key
+
+    package_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{package_root.name}.", dir=package_root.parent) as temporary:
+        staged_package = Path(temporary) / "package"
+        staged_package.mkdir()
+        artifact_name = f"{validated_policy}.lerobot-bundle"
+        _copy_native_tree(resolved_bundle, staged_package / artifact_name)
+        _write_bundle_manifest(
+            staged_package,
+            validated_policy,
+            artifact_name,
+            n_action_steps=n_action_steps,
+            extra=package_metadata,
+        )
+        (staged_package / _PACKAGE_METADATA_FILE).write_text(
+            json.dumps(package_metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         staged_package.rename(package_root)
 
     return package_root
@@ -190,14 +278,14 @@ def _validate_policy_name(value: object) -> str:
 
 
 def _copy_native_tree(source: Path, destination: Path) -> None:
-    """Copy a native model tree after rejecting symbolic links.
+    """Copy a native model or bundle tree after rejecting symbolic links.
 
     Args:
-        source: Validated native LeRobot model directory.
-        destination: New package directory for the native files.
+        source: Validated directory.
+        destination: New package directory for the files.
 
     Raises:
-        ValueError: If the checkpoint contains symbolic links.
+        ValueError: If the directory contains symbolic links.
     """
     for path in source.rglob("*"):
         if path.is_symlink():
@@ -206,14 +294,8 @@ def _copy_native_tree(source: Path, destination: Path) -> None:
     shutil.copytree(source, destination)
 
 
-def _write_manifest(package_root: Path, policy_name: str, artifact_name: str) -> None:
-    """Write Runtime's manifest schema with the directory-suffix workaround.
-
-    Args:
-        package_root: Staging Runtime package directory.
-        policy_name: Validated native LeRobot policy type.
-        artifact_name: Directory name claimed by the LeRobot adapter suffix.
-    """
+def _write_native_manifest(package_root: Path, policy_name: str, artifact_name: str) -> None:
+    """Write Runtime's manifest schema for a native ``.lerobot`` checkpoint package."""
     from physicalai.inference.manifest import (  # ruff: ignore[import-outside-top-level]
         ComponentSpec,
         Manifest,
@@ -227,8 +309,44 @@ def _write_manifest(package_root: Path, policy_name: str, artifact_name: str) ->
         policy=PolicySpec(name=policy_name, source=PolicySource()),
         model=ModelSpec(
             artifacts={"lerobot": artifact_name},
-            callbacks=[ComponentSpec(class_path=_RESET_CALLBACK, init_args={})],
+            callbacks=[ComponentSpec(class_path=_NATIVE_RESET_CALLBACK, init_args={})],
         ),
         metadata=MetadataSpec(created_by="physicalai-lerobot-policy-plugin"),
+    )
+    manifest.save(package_root / "manifest.json")
+
+
+def _write_bundle_manifest(
+    package_root: Path,
+    policy_name: str,
+    artifact_name: str,
+    *,
+    n_action_steps: int | None,
+    extra: dict[str, object],
+) -> None:
+    """Write Runtime's manifest schema for an exported ``.lerobot-bundle`` package."""
+    from physicalai.inference.manifest import (  # ruff: ignore[import-outside-top-level]
+        ComponentSpec,
+        Manifest,
+        MetadataSpec,
+        ModelSpec,
+        PolicySource,
+        PolicySpec,
+    )
+
+    postprocessors = (
+        [ComponentSpec(class_path=_ACTION_CHUNK_TRIMMER, init_args={"n_action_steps": n_action_steps})]
+        if n_action_steps is not None
+        else []
+    )
+    manifest = Manifest(
+        policy=PolicySpec(name=policy_name, source=PolicySource()),
+        model=ModelSpec(
+            artifacts={"lerobot_bundle": artifact_name},
+            postprocessors=postprocessors,
+            callbacks=[ComponentSpec(class_path=_BUNDLE_RESET_CALLBACK, init_args={})],
+        ),
+        metadata=MetadataSpec(created_by="physicalai-lerobot-policy-plugin"),
+        lerobot_bundle=extra,
     )
     manifest.save(package_root / "manifest.json")

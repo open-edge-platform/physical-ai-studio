@@ -517,7 +517,7 @@ def test_lerobot_train_and_run_select_the_policys_environment(
 
 
 def test_lerobot_engine_lists_each_family_environment_once() -> None:
-    assert [env.name for env in LeRobotEngine.environments()] == ["default", "smolvla", "pi", "molmoact2"]
+    assert [env.name for env in LeRobotEngine.environments()] == ["default", "smolvla", "pi", "molmoact2", "export"]
 
 
 def test_lerobot_cli_with_an_interpreter_skips_managed_environment_checks(

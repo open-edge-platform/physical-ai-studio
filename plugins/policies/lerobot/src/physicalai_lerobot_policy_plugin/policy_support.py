@@ -4,9 +4,9 @@
 """LeRobot policy types and saved processors the plugin accepts.
 
 Only policy types whose training, packaging and Runtime inference have been checked are
-allowed; add a type here after checking it. Several LeRobot 0.7 policies (``fineart_vla``,
-``gaussian_actor``, ``groot``, ``pi0_fast``, ``wall_x``) load remote code without a pinned
-revision and must stay out until that is reviewed.
+allowed by default; add a type here after checking it. Several LeRobot 0.7 policies
+(``fineart_vla``, ``gaussian_actor``, ``groot``, ``pi0_fast``, ``wall_x``) load remote code
+without a pinned revision and require explicit ``trust_remote_code=True`` opt-in for export.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 SUPPORTED_POLICY_TYPES = frozenset({"act", "diffusion", "pi05", "smolvla"})
+VERIFIED_EXPORT_POLICIES = frozenset({"act", "diffusion", "pi05", "smolvla"})
 PROCESSOR_CONFIGS = ("policy_preprocessor.json", "policy_postprocessor.json")
 ALLOWED_PROCESSOR_STEPS = frozenset(
     {
@@ -49,11 +50,12 @@ ALLOWED_PROCESSOR_CLASSES = frozenset(
     },
 )
 
+_POLICY_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _STATE_FILE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.safetensors")
 
 
 def require_supported_policy(policy_type: object) -> str:
-    """Return *policy_type* if the plugin supports it.
+    """Return *policy_type* if the plugin supports it for training and native packaging.
 
     Returns:
         The policy type.
@@ -69,6 +71,36 @@ def require_supported_policy(policy_type: object) -> str:
         msg = f"LeRobot policy {policy_type!r} is not supported; supported policies: {supported}."
         raise ValueError(msg)
     return policy_type
+
+
+def require_exportable_policy(policy_type: object, *, trust_remote_code: bool = False) -> str:
+    """Return *policy_type* if it is allowed for bundle export.
+
+    Policies in :data:`VERIFIED_EXPORT_POLICIES` are allowed by default. Other valid LeRobot
+    policy identifiers require ``trust_remote_code=True`` because some upstream policies load
+    unpinned remote Hugging Face code.
+
+    Returns:
+        The validated policy type.
+
+    Raises:
+        ValueError: If *policy_type* is invalid or outside the verified allowlist without opt-in.
+    """
+    if not isinstance(policy_type, str) or not policy_type.strip():
+        msg = "Cannot determine the LeRobot policy type from the checkpoint or repository."
+        raise ValueError(msg)
+    normalized = policy_type.strip()
+    if _POLICY_NAME_RE.fullmatch(normalized) is None:
+        msg = f"LeRobot policy type must match [a-zA-Z0-9_-]{{1,64}}, got {policy_type!r}."
+        raise ValueError(msg)
+    if normalized in VERIFIED_EXPORT_POLICIES or trust_remote_code:
+        return normalized
+    verified = ", ".join(sorted(VERIFIED_EXPORT_POLICIES))
+    msg = (
+        f"LeRobot policy {normalized!r} is outside the audited export allowlist ({verified}) and may load "
+        "unpinned remote code. Pass `options=LeRobotExportOptions(trust_remote_code=True)` to opt in."
+    )
+    raise ValueError(msg)
 
 
 def validate_processor_configs(model_dir: Path) -> None:

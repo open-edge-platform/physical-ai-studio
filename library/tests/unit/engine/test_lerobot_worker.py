@@ -169,7 +169,8 @@ def test_native_worker_rejects_an_unsupported_resolved_model_before_training(
     error: str,
 ) -> None:
     """The worker re-checks what LeRobot will train after config validation."""
-    from physicalai_lerobot_policy_plugin import _worker, policy_support
+    from physicalai_lerobot_policy_plugin import policy_support
+    from physicalai_lerobot_policy_plugin._worker import train as _worker
 
     assert _worker._SUPPORTED_POLICY_TYPES == policy_support.SUPPORTED_POLICY_TYPES
     env, output_dir = _fake_lerobot_worker(monkeypatch, tmp_path)

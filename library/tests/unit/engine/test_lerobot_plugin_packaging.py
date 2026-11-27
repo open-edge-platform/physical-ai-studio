@@ -39,16 +39,20 @@ def test_lerobot_plugin_owns_engine_and_runtime_adapter_entrypoints() -> None:
     assert len(adapter_entries) == 1
     assert adapter_entries[0].value == "physicalai_lerobot_policy_plugin.inference:register"
     package = resources.files("physicalai_lerobot_policy_plugin")
-    assert (package / "env" / "pyproject.toml").is_file()
-    assert (package / "env" / "uv.lock").is_file()
+    assert (package / "envs" / "default" / "pyproject.toml").is_file()
+    assert (package / "envs" / "default" / "uv.lock").is_file()
+    assert (package / "envs" / "export" / "pyproject.toml").is_file()
+    assert (package / "envs" / "export" / "uv.lock").is_file()
 
 
 def test_worker_lock_is_inside_the_range_declared_by_plugin_metadata() -> None:
     assert locked_version(LeRobotEngine.env) in supported_versions(LeRobotEngine.env)
+    export_env = LeRobotEngine.environment("openvino")
+    assert locked_version(export_env) in supported_versions(export_env)
 
 
 def test_worker_project_has_only_locked_framework_dependencies() -> None:
-    project = resources.files("physicalai_lerobot_policy_plugin") / "env"
+    project = resources.files("physicalai_lerobot_policy_plugin") / "envs" / "default"
     pyproject = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
     lock_text = (project / "uv.lock").read_text(encoding="utf-8")
     lock = tomllib.loads(lock_text)
@@ -72,7 +76,7 @@ def test_worker_project_has_only_locked_framework_dependencies() -> None:
 def test_each_policy_family_installs_its_own_extra_of_the_shared_worker_project(family: str, marker_package: str) -> None:
     """Each family gets its own environment from the one locked project, through its extra."""
     env = LeRobotEngine.environment_for_policy({"smolvla": "smolvla", "pi": "pi05", "molmoact2": "molmoact2"}[family])
-    project = resources.files("physicalai_lerobot_policy_plugin") / "env"
+    project = resources.files("physicalai_lerobot_policy_plugin") / "envs" / "default"
     pyproject = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
     lock_packages = {package["name"] for package in tomllib.loads((project / "uv.lock").read_text(encoding="utf-8"))["package"]}
     families = {"smolvla", "pi", "molmoact2"}
@@ -90,10 +94,11 @@ def test_each_policy_family_installs_its_own_extra_of_the_shared_worker_project(
     assert marker_package in lock_packages
 
 
-def test_bundled_worker_projects_share_one_lock() -> None:
+def test_bundled_worker_projects_declare_default_and_export_locks() -> None:
     plugin = resources.files("physicalai_lerobot_policy_plugin")
-    assert not (plugin / "envs").is_dir()
-    assert {env.name for env in LeRobotEngine.environments()} == {"default", "smolvla", "pi", "molmoact2"}
+    assert (plugin / "envs" / "default" / "uv.lock").is_file()
+    assert (plugin / "envs" / "export" / "uv.lock").is_file()
+    assert {env.name for env in LeRobotEngine.environments()} == {"default", "smolvla", "pi", "molmoact2", "export"}
 
 
 def test_runtime_registration_import_does_not_load_the_training_engine() -> None:

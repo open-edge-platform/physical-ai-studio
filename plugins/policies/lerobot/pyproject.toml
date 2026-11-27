@@ -34,8 +34,10 @@ lerobot = "physicalai_lerobot_policy_plugin.inference:register"
 packages = ["src/physicalai_lerobot_policy_plugin"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"src/physicalai_lerobot_policy_plugin/env/pyproject.toml" = "physicalai_lerobot_policy_plugin/env/pyproject.toml"
-"src/physicalai_lerobot_policy_plugin/env/uv.lock" = "physicalai_lerobot_policy_plugin/env/uv.lock"
+"src/physicalai_lerobot_policy_plugin/envs/default/pyproject.toml" = "physicalai_lerobot_policy_plugin/envs/default/pyproject.toml"
+"src/physicalai_lerobot_policy_plugin/envs/default/uv.lock" = "physicalai_lerobot_policy_plugin/envs/default/uv.lock"
+"src/physicalai_lerobot_policy_plugin/envs/export/pyproject.toml" = "physicalai_lerobot_policy_plugin/envs/export/pyproject.toml"
+"src/physicalai_lerobot_policy_plugin/envs/export/uv.lock" = "physicalai_lerobot_policy_plugin/envs/export/uv.lock"
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -45,8 +47,10 @@ include = [
 ]
 
 [tool.hatch.build.targets.sdist.force-include]
-"src/physicalai_lerobot_policy_plugin/env/pyproject.toml" = "src/physicalai_lerobot_policy_plugin/env/pyproject.toml"
-"src/physicalai_lerobot_policy_plugin/env/uv.lock" = "src/physicalai_lerobot_policy_plugin/env/uv.lock"
+"src/physicalai_lerobot_policy_plugin/envs/default/pyproject.toml" = "src/physicalai_lerobot_policy_plugin/envs/default/pyproject.toml"
+"src/physicalai_lerobot_policy_plugin/envs/default/uv.lock" = "src/physicalai_lerobot_policy_plugin/envs/default/uv.lock"
+"src/physicalai_lerobot_policy_plugin/envs/export/pyproject.toml" = "src/physicalai_lerobot_policy_plugin/envs/export/pyproject.toml"
+"src/physicalai_lerobot_policy_plugin/envs/export/uv.lock" = "src/physicalai_lerobot_policy_plugin/envs/export/uv.lock"
 
 [tool.uv.sources]
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "c2535de38a38950f4ad0f4b73178ba53429efa16" }

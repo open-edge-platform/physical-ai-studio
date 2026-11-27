@@ -12,13 +12,15 @@ import re
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Executes the framework's installed native script with shell=False.  # nosec B404
 import tempfile
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from importlib import import_module, metadata, resources  # nosemgrep  # Python 3.10+ only.
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from packaging.version import Version
 from physicalai.engine import (
+    Enablement,
     Run,
     TrainHooks,
     TrainingEngine,
@@ -31,7 +33,19 @@ from physicalai.engine import (
     supported_versions,
 )
 
-from .policy_support import SUPPORTED_POLICY_TYPES, require_supported_policy
+from .environments import (
+    LEROBOT_EXPORT_UPSTREAM_REF,
+    export_family_for_policy,
+    export_worker_env,
+    openvino_enablement_resource,
+    training_worker_env,
+)
+from .policy_support import (
+    SUPPORTED_POLICY_TYPES,
+    VERIFIED_EXPORT_POLICIES,
+    require_exportable_policy,
+    require_supported_policy,
+)
 
 if TYPE_CHECKING:
     from lerobot.configs.train import TrainPipelineConfig
@@ -39,56 +53,80 @@ if TYPE_CHECKING:
 _POLICY_NAME_RE = re.compile(r"[a-zA-Z0-9_-]{1,64}")
 _SETTING_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*")
 _MAX_SETTING_DEPTH = 10
-_PLUGIN_DISTRIBUTION = "physicalai-lerobot-policy-plugin"
-_PLUGIN_ROOT = resources.files(__package__)
 _HUB_REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*")
 # Tells the worker script to run lerobot-train with inherited streams instead of the host protocol.
 _NATIVE_CLI_VARIABLE = "PHYSICALAI_LEROBOT_NATIVE_CLI"
+_ENABLEMENT_OV_DIR_ENV = "PHYSICALAI_LEROBOT_ENABLEMENT_OV_DIR"
 # LeRobot trains `reward_model` instead of `policy` when one is set; the worker also checks this.
 _REWARD_MODEL_UNSUPPORTED = "LeRobot reward-model training is not supported; set only `policy` options."
+_EXPORT_BACKENDS = frozenset({"native", "openvino", "executorch_openvino"})
 
 logger = logging.getLogger(__name__)
 
 
-_ACCELERATOR_EXTRAS = {"cpu": "cpu", "cuda": "cu132", "xpu": "xpu"}
+@dataclass(frozen=True)
+class LeRobotExportOptions:
+    """Options controlling isolated ``lerobot-export`` compilation and packaging.
 
-
-def _worker_env(name: str = "default") -> WorkerEnv:
-    """Declare a LeRobot worker environment from the bundled, locked ``env/`` project.
-
-    ``default`` installs the project as is; a policy family also installs its own extra, so
-    each family gets its own environment while all of them share one lock.
-
-    Returns:
-        The worker environment declaration.
+    Attributes:
+        task: Task prompt for task-conditioned policies.
+        dataset: Optional Hugging Face Hub dataset ``repo_id`` or local dataset directory.
+        dtype: Optional policy dtype override during export (``float32``, ``bfloat16``, ``float16``).
+        device: Target OpenVINO device used for export-time self-check (e.g. ``"CPU"``, ``"GPU"``).
+        quantize: Optional weight compression mode (e.g. ``"fp16"``, ``"int8"``, ``"int4"``).
+        tolerance: Maximum allowed normalized action difference against eager PyTorch.
+        max_task_tokens: Maximum token budget for policies supporting dynamic task prompts.
+        n_action_steps: Optional Runtime ``ActionChunkTrimmer`` postprocessor step limit.
+        seed: Random seed for generating the parity test case.
+        trust_remote_code: Explicitly allow exporting policies outside :data:`VERIFIED_EXPORT_POLICIES`.
     """
-    family = () if name == "default" else (name,)
-    return WorkerEnv(
-        framework="lerobot",
-        project=_PLUGIN_ROOT / "env",
-        worker=_PLUGIN_ROOT / "_worker.py",
-        distribution=_PLUGIN_DISTRIBUTION,
-        package="lerobot",
-        name=name,
-        extras={accelerator: (extra, *family) for accelerator, extra in _ACCELERATOR_EXTRAS.items()},
-    )
+
+    task: str = ""
+    dataset: str | None = None
+    dtype: Literal["float32", "bfloat16", "float16"] | None = None
+    device: str = "CPU"
+    quantize: str | None = None
+    tolerance: float | None = None
+    max_task_tokens: int | None = None
+    n_action_steps: int | None = None
+    seed: int = 1000
+    trust_remote_code: bool = False
 
 
-_SMOLVLA_ENV = _worker_env("smolvla")
-_PI_ENV = _worker_env("pi")
-_MOLMOACT2_ENV = _worker_env("molmoact2")
+_DEFAULT_ENV = training_worker_env()
+_SMOLVLA_ENV = training_worker_env("smolvla")
+_PI_ENV = training_worker_env("pi")
+_MOLMOACT2_ENV = training_worker_env("molmoact2")
+
+_EXPORT_ENV = export_worker_env()
+_EXPORT_FAMILY_ENVS: Mapping[str, WorkerEnv] = MappingProxyType(
+    {
+        "smolvla": export_worker_env("smolvla"),
+        "pi": export_worker_env("pi"),
+        "molmoact2": export_worker_env("molmoact2"),
+        "vla": export_worker_env("vla"),
+    },
+)
+
+
+def _export_env_for_policy(policy_type: str | None) -> WorkerEnv:
+    family = export_family_for_policy(policy_type)
+    if family is not None and family in _EXPORT_FAMILY_ENVS:
+        return _EXPORT_FAMILY_ENVS[family]
+    return _EXPORT_ENV
 
 
 class LeRobotEngine(TrainingEngine):
-    """Run LeRobot's own trainer in its version-locked worker environment.
+    """Run LeRobot's own trainer and exporter in version-locked worker environments.
 
     Policy families with their own dependencies (``smolvla``, the ``pi`` family and
-    ``molmoact2``) train in their own environment, built from ``env/`` with that family's
-    extra; every other policy uses ``env/`` without one.
+    ``molmoact2``) run in their own environment, built from ``envs/default/`` (training)
+    or ``envs/export/`` (export) with that family's extra; every other policy uses the
+    corresponding project without a family extra.
     """
 
     framework: ClassVar[str] = "lerobot"
-    env: ClassVar[WorkerEnv] = _worker_env()
+    env: ClassVar[WorkerEnv] = _DEFAULT_ENV
     policy_envs: ClassVar[Mapping[str, WorkerEnv]] = MappingProxyType(
         {
             "smolvla": _SMOLVLA_ENV,
@@ -99,6 +137,20 @@ class LeRobotEngine(TrainingEngine):
         },
     )
     stock_export_formats: ClassVar[tuple[str, ...]] = ("native",)
+    enablements: ClassVar[tuple[Enablement, ...]] = (
+        Enablement(
+            name="executorch-openvino",
+            provides={policy: {"export": ("executorch_openvino",)} for policy in sorted(VERIFIED_EXPORT_POLICIES)},
+            upstream=LEROBOT_EXPORT_UPSTREAM_REF,
+            env=_EXPORT_ENV,
+        ),
+        Enablement(
+            name="openvino",
+            provides={policy: {"export": ("openvino",)} for policy in sorted(VERIFIED_EXPORT_POLICIES)},
+            upstream="https://github.com/huggingface/lerobot (pending upstream PR)",
+            env=_EXPORT_ENV,
+        ),
+    )
 
     def __init__(self, *, interpreter: str | Path | None = None) -> None:
         """Create a LeRobot engine with a managed or explicitly supplied interpreter."""
@@ -265,21 +317,112 @@ class LeRobotEngine(TrainingEngine):
         source: Run | str | Path,
         output_path: str | Path,
         backend: str | None = "native",
+        *,
+        options: LeRobotExportOptions | None = None,
+        interpreter: str | Path | None = None,
     ) -> Path:
-        """Package a native LeRobot checkpoint for Runtime's adapter.
+        """Export or package a LeRobot policy for Physical AI Runtime inference.
+
+        Supported backends:
+        - ``"native"`` (default): packages the native PyTorch checkpoint (``.lerobot``).
+        - ``"openvino"``: compiles via isolated ``lerobot-export`` to direct OpenVINO IR
+          (``.xml`` + ``.bin``) inside a dual-compatible ``.lerobot-bundle`` Runtime package.
+        - ``"executorch_openvino"``: compiles via isolated ``lerobot-export`` to ExecuTorch
+          ``.pte`` with ``OpenvinoPartitioner`` inside a ``.lerobot-bundle`` Runtime package.
+
+        Args:
+            source: Trained ``Run``, local checkpoint directory, or Hugging Face Hub ``repo_id``.
+            output_path: Destination directory for the Runtime package (must not exist yet).
+            backend: Target export backend (``"native"``, ``"openvino"``, or ``"executorch_openvino"``).
+            options: Optional :class:`LeRobotExportOptions` for ``openvino`` / ``executorch_openvino``.
+            interpreter: Optional user-managed Python interpreter bypassing ``envs/export/``.
 
         Returns:
-            The Runtime package directory.
+            The completed Runtime package directory.
 
         Raises:
-            ValueError: If *backend* is not the native package format.
+            FileExistsError: If *output_path* already exists.
+            ValueError: If *backend* or policy type is unsupported.
         """
-        if backend not in {None, "native"}:
-            msg = f"{cls.framework} supports only the native export format, got {backend!r}."
+        selected_backend = "native" if backend is None else backend
+        if selected_backend not in _EXPORT_BACKENDS:
+            supported = ", ".join(sorted(_EXPORT_BACKENDS))
+            msg = f"{cls.framework} supports export backends ({supported}), got {backend!r}."
             raise ValueError(msg)
-        from .package import package_lerobot_checkpoint  # ruff: ignore[import-outside-top-level]
 
-        return package_lerobot_checkpoint(source, Path(output_path))
+        if selected_backend == "native":
+            from .package import package_lerobot_checkpoint  # ruff: ignore[import-outside-top-level]
+
+            return package_lerobot_checkpoint(source, Path(output_path))
+
+        return cls._export_bundle(
+            source,
+            Path(output_path),
+            backend=selected_backend,
+            options=options or LeRobotExportOptions(),
+            interpreter=interpreter,
+        )
+
+    @classmethod
+    def _export_bundle(
+        cls,
+        source: Run | str | Path,
+        output_path: Path,
+        *,
+        backend: str,
+        options: LeRobotExportOptions,
+        interpreter: str | Path | None,
+    ) -> Path:
+        from .package import package_lerobot_bundle  # ruff: ignore[import-outside-top-level]
+
+        policy_source, policy_type = _resolve_export_source(source)
+        validated_policy = require_exportable_policy(policy_type, trust_remote_code=options.trust_remote_code)
+
+        output_candidate = output_path.expanduser()
+        if output_candidate.exists() or output_candidate.is_symlink():
+            msg = f"Export directory already exists: {output_candidate}"
+            raise FileExistsError(msg)
+        package_root = output_candidate.resolve()
+        package_root.parent.mkdir(parents=True, exist_ok=True)
+
+        export_env = _export_env_for_policy(validated_policy)
+        with tempfile.TemporaryDirectory(prefix=f".{package_root.name}-export-", dir=package_root.parent) as staging:
+            staged_bundle_dir = Path(staging) / f"{validated_policy}.lerobot-bundle"
+            export_args = _build_export_cli_args(
+                policy_source=policy_source,
+                output_dir=staged_bundle_dir,
+                backend=backend,
+                options=options,
+            )
+            if backend == "openvino":
+                with resources.as_file(openvino_enablement_resource()) as ov_dir:
+                    run_worker(
+                        export_env,
+                        export_args,
+                        device="cpu",
+                        accelerator="cpu",
+                        interpreter=interpreter,
+                        extra_env={_ENABLEMENT_OV_DIR_ENV: str(ov_dir)},
+                    )
+            else:
+                run_worker(
+                    export_env,
+                    export_args,
+                    device="cpu",
+                    accelerator="cpu",
+                    interpreter=interpreter,
+                )
+
+            worker_env_key = _EXPORT_ENV.key() if backend == "executorch_openvino" else None
+            return package_lerobot_bundle(
+                staged_bundle_dir,
+                package_root,
+                policy_name=validated_policy,
+                export_backend=backend,
+                worker_env_key=worker_env_key,
+                n_action_steps=options.n_action_steps,
+                trust_remote_code=options.trust_remote_code,
+            )
 
     @classmethod
     def policies(cls) -> list[str]:
@@ -316,6 +459,52 @@ class LeRobotEngine(TrainingEngine):
         schema = _dataclass_json_schema(TrainPipelineConfig)
         schema["properties"]["policy"] = _dataclass_json_schema(policy_config)
         return schema
+
+
+def _resolve_export_source(source: Run | str | Path) -> tuple[str, str | None]:
+    """Resolve an export source (Run, local path, or HF Hub repo_id) to ``(policy_path, policy_type)``."""
+    from .package import _native_model_directory, _policy_name  # ruff: ignore[import-outside-top-level]
+
+    if isinstance(source, str) and not Path(source).expanduser().exists() and _HUB_REPO_RE.fullmatch(source):
+        return source, _hub_policy_type(source)
+
+    native_dir = _native_model_directory(source)
+    return str(native_dir), _policy_name(native_dir)
+
+
+def _build_export_cli_args(
+    *,
+    policy_source: str,
+    output_dir: Path,
+    backend: str,
+    options: LeRobotExportOptions,
+) -> list[str]:
+    args = [
+        f"--policy.path={policy_source}",
+        f"--backend.type={backend}",
+        f"--output_dir={output_dir}",
+        f"--seed={options.seed}",
+    ]
+    if options.task:
+        args.append(f"--task={options.task}")
+    if options.dataset:
+        dataset_path = Path(options.dataset).expanduser()
+        if dataset_path.exists():
+            args.append("--dataset.repo_id=local")
+            args.append(f"--dataset.root={dataset_path.resolve()}")
+        else:
+            args.append(f"--dataset.repo_id={options.dataset}")
+    if options.dtype is not None:
+        args.append(f"--policy.dtype={options.dtype}")
+    if options.quantize is not None:
+        args.append(f"--quantize={options.quantize}")
+    if options.tolerance is not None:
+        args.append(f"--tolerance={options.tolerance}")
+    if options.max_task_tokens is not None:
+        args.append(f"--max_task_tokens={options.max_task_tokens}")
+    if backend == "openvino" and options.device:
+        args.append(f"--backend.ov_device={options.device}")
+    return args
 
 
 def _dataclass_json_schema(config_type: type) -> dict[str, Any]:
@@ -618,4 +807,4 @@ def _host_lerobot_version(env: WorkerEnv) -> Version:
     return host_version
 
 
-__all__ = ["LeRobotEngine", "settings_to_flags"]
+__all__ = ["LeRobotEngine", "LeRobotExportOptions", "settings_to_flags"]
