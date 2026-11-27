@@ -19,6 +19,7 @@ from physicalai.runtime.callbacks.system_monitor import SystemStats, SystemStats
 from physicalai.runtime.events import InferenceEvent, MetricsEvent, TickEvent
 
 from runtime_session.controls.model import ModelControl, _Observation
+from runtime_session.model import ModelInputs
 from runtime_session.rerun import _BACKGROUND_SERVERS, RerunObserver, _listening, _Prediction
 from runtime_session.rerun import _background_server as background_server
 from runtime_session.session import RuntimeSession
@@ -305,6 +306,47 @@ async def test_model_control_emits_predictions_ticks_and_queue_depth(
     assert "inference/latency_ms" in _paths(log)
     assert "queue/remaining" in _paths(log)
     assert "robot/actions" in _paths(log)
+
+
+class _SlowRtcModel:
+    """An RTC export of 10-action chunks whose inference takes 3 ticks at 20 Hz, so each refill drops a few."""
+
+    inputs = ModelInputs(state_size=2, images={}, rtc_chunk=(10, 2))
+    model = MagicMock()
+    backend = "fake"
+    last_error = None
+    calls = 0
+
+    def __call__(self, inputs: dict) -> dict:
+        self.calls += 1
+        time.sleep(0.15)
+        return {"action": np.full((10, 2), float(self.calls), dtype=np.float32) + np.arange(10)[:, None]}
+
+    def predict_action_chunk(self, observation: dict) -> np.ndarray:
+        return self(observation)["action"]
+
+    def reset(self) -> None:
+        pass
+
+
+async def test_rtc_predictions_start_at_the_action_the_queue_plays_next(callback_observer, store: Store) -> None:
+    observer = callback_observer
+    store.write(STATE, [1, 2], timestamp=time.monotonic())
+    execution = ExecutionConfig(mode="rtc", execution_horizon=2, initial_latency_s=0.15)
+    config = ModelControlConfig(hz=20, grace_s=0, execution=execution)
+    async with ModelControl(store, _SlowRtcModel(), config, observer=observer):  # type: ignore[arg-type]
+        async with asyncio.timeout(10):
+            while sum(isinstance(item, _Prediction) for item in observer._events) < 4:  # noqa: ASYNC110
+                await asyncio.sleep(0.02)
+    chunks = [item.event.chunk for item in observer._events if isinstance(item, _Prediction)]
+    # The warmup chunk is installed whole; a refill loses the actions played while it was inferred.
+    assert len(chunks[0]) == 10
+    for chunk in chunks[1:]:
+        dropped = 10 - len(chunk)
+        assert dropped >= 1
+        # Chunk n holds n + i at row i: the plot starts at the first row the queue kept.
+        n = chunk[-1][0] - 9
+        assert chunk[0][0] == n + dropped
 
 
 @pytest.mark.parametrize("grace_remaining", [0, 0.5])

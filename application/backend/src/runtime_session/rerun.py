@@ -24,8 +24,9 @@ from settings import RerunSettings, get_settings
 from workers.base import ThreadWorker
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator, Callable, Iterator
 
+    import numpy as np
     from rerun import RecordingStream
 
     from runtime_session.store import Store
@@ -99,10 +100,15 @@ class _ModelEvents:
     hz: float
     ready_at: float
     step: int = 0
+    dropped_from: Callable[[np.ndarray], int | None] | None = None
+    """How many leading actions of a chunk its queue dropped, where the executor reports offset 0 regardless (RTC)."""
 
     def emit_inference(self, event: InferenceEvent) -> None:
         # Executors have already consumed the offset; plot only the remaining actions.
-        chunk = event.chunk[event.offset :]
+        offset = event.offset
+        if self.dropped_from is not None and (dropped := self.dropped_from(event.chunk)) is not None:
+            offset = dropped
+        chunk = event.chunk[offset:]
         # Only the intentional grace period adds steps. Slow inference does not
         # advance the control loop, so elapsed wall time cannot supply its step.
         delay_steps = max(0, round((self.ready_at - event.timestamp) * self.hz) - 1)

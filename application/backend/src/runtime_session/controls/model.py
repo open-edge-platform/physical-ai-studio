@@ -68,6 +68,7 @@ class ModelControl(Control):
         super().__init__(store, config, name="ModelControl", hz=config.hz)
         self.model = model
         execution, queue = _execution(model, config)
+        self._queue = queue
         self.source = PolicySource(cast("Any", model), execution, queue, task=config.task or None)
         self.step = 0
         self.grace_s = config.grace_s
@@ -78,6 +79,8 @@ class ModelControl(Control):
     def on_start(self) -> None:
         self.started_at = time.monotonic()
         self._events = self._observer.control_events(self.hz, self.grace_s) if self._observer is not None else None
+        if self._events is not None and isinstance(self._queue, _RTCQueue):
+            self._events.dropped_from = self._queue.dropped_from
         session_id = self._observer.session_id if self._observer is not None else ""
         self.source.connect(bus=cast("Any", self._events), session_id=session_id)
 
@@ -117,6 +120,30 @@ class ModelControl(Control):
                 )
             )
         self.step += 1
+
+
+class _RTCQueue(RTCActionQueue):
+    """``RTCActionQueue`` that remembers how many actions of its last chunk it dropped on the merge.
+
+    ``RTCExecution`` reports every chunk with offset 0, though the merge drops the actions played while it was
+    inferred; Rerun would plot those as still to come.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._last: tuple[np.ndarray, int] | None = None
+
+    def merge(self, raw: np.ndarray, processed: np.ndarray, action_index_before_inference: int | None = None) -> None:
+        super().merge(raw, processed, action_index_before_inference)
+        # Only RTC's thread merges, and a pop moves the cursor, not the installed chunk.
+        with self._lock:
+            installed = 0 if self._processed is None else len(self._processed)
+        self._last = (processed, len(processed) - installed)
+
+    def dropped_from(self, chunk: np.ndarray) -> int | None:
+        """How many leading actions of ``chunk`` the last merge dropped, if ``chunk`` is the one it merged."""
+        last = self._last
+        return last[1] if last is not None and last[0] is chunk else None
 
 
 def check_execution(model: ProcessModel, config: ModelControlConfig) -> None:
@@ -159,4 +186,4 @@ def _execution(model: ProcessModel, config: ModelControlConfig) -> tuple[Executi
         queue_threshold=None,  # the horizon plus the measured delay
         initial_latency_s=settings.initial_latency_s,
     )
-    return execution, RTCActionQueue()
+    return execution, _RTCQueue()
