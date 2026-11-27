@@ -1,5 +1,8 @@
+import asyncio
 import functools
 import hashlib
+import os
+import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -7,7 +10,6 @@ from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import FileResponse, Response
 from physicalai_studio_plugin import RobotCatalogDefinition
 from pydantic import BaseModel, Field
-from starlette.concurrency import run_in_threadpool
 
 from api.dependencies import RobotCatalogServiceDep, RobotConnectionManagerDep
 from exceptions import ResourceNotFoundError, ResourceType, RobotIdentifyError
@@ -180,14 +182,27 @@ async def check_robot_online(
 def _content_etag(path: str, inode: int, size: int, mtime_ns: int, ctime_ns: int) -> str:  # noqa: ARG001 - cache key
     """A strong ETag from the file's bytes, computed once per version of the file.
 
-    The stat fields are only the cache key. ctime is in it because a rewrite always changes it, even when
-    the mtime is set back and the size is the same, which would fool an mtime-and-size ETag.
+    The stat fields are only the cache key. ctime is in it because on Linux and macOS a rewrite always changes it,
+    even when the mtime is set back and the size is the same, which would fool an mtime-and-size ETag.
     """
     digest = hashlib.sha256()
     with open(path, "rb") as file:
         while chunk := file.read(1 << 20):
             digest.update(chunk)
     return f'"{digest.hexdigest()[:32]}"'
+
+
+def _stat_and_etag(path: Path) -> tuple[os.stat_result, str]:
+    """Stat ``path`` and return its content ETag, from the cache where the stat fields can key it.
+
+    On Windows ``st_ctime_ns`` is the creation time, which an in-place rewrite keeps, so a same-size rewrite with its
+    mtime set back would keep the cache key and the old ETag. There the file is hashed on every request.
+    """
+    stat = path.stat()
+    key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    if sys.platform == "win32":
+        return stat, _content_etag.__wrapped__(*key)
+    return stat, _content_etag(*key)
 
 
 def _matches_if_none_match(if_none_match: str, etag: str) -> bool:
@@ -210,10 +225,7 @@ async def _revalidated_file(request: Request, path: Path) -> Response:
     ``If-None-Match``, so the check costs a round trip, not the file. ``If-Modified-Since`` alone is answered with
     the file: an mtime can be set back, the content ETag cannot.
     """
-    stat = path.stat()
-    etag = await run_in_threadpool(
-        _content_etag, str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
-    )
+    stat, etag = await asyncio.to_thread(_stat_and_etag, path)
     headers = {"ETag": etag, "Cache-Control": "no-cache"}
     if_none_match = request.headers.get("if-none-match")
     if if_none_match is not None and _matches_if_none_match(if_none_match, etag):

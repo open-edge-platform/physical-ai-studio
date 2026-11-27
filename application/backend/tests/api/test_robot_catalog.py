@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -341,3 +343,62 @@ def test_if_modified_since_alone_gets_the_file(monkeypatch: pytest.MonkeyPatch, 
 
     assert response.status_code == 200
     assert response.content == b"solid mesh"
+
+
+class _StatWithCreationCtime:
+    """A stat result whose ``st_ctime_ns`` is fixed, as Windows reports the creation time there."""
+
+    def __init__(self, stat: os.stat_result, ctime_ns: int) -> None:
+        self._stat = stat
+        self.st_ctime_ns = ctime_ns
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stat, name)
+
+
+class _WindowsLikePath(Path):
+    """A path whose ctime stays at the first stat, so a rewrite keeps the hash cache key."""
+
+    created_ns: int | None = None
+
+    def stat(self, *, follow_symlinks: bool = True) -> Any:
+        stat = super().stat(follow_symlinks=follow_symlinks)
+        if _WindowsLikePath.created_ns is None:
+            _WindowsLikePath.created_ns = stat.st_ctime_ns
+        return _StatWithCreationCtime(stat, _WindowsLikePath.created_ns)
+
+
+@pytest.mark.parametrize(("platform", "rehashed"), [("win32", True), ("linux", False)])
+def test_windows_hashes_every_request_because_its_ctime_is_the_creation_time(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str, rehashed: bool
+) -> None:
+    """A same-size rewrite with its mtime set back keeps size, mtime and (on Windows) ctime: the whole cache key.
+
+    Only hashing the bytes again tells the new mesh apart; the linux case shows the cache alone would answer 304.
+    """
+    monkeypatch.setattr("api.robot_catalog.sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(_WindowsLikePath, "created_ns", None)
+    mesh = _WindowsLikePath(tmp_path / "mesh.stl")
+    mesh.write_bytes(b"old mesh!!")
+    _serve_mesh_from(monkeypatch, mesh)
+    client = TestClient(app)
+    old = client.get(MESH_URL)
+    before = mesh.stat()
+
+    mesh.write_bytes(b"new mesh!!")
+    os.utime(mesh, ns=(before.st_atime_ns, before.st_mtime_ns))
+    after = mesh.stat()
+    assert (after.st_size, after.st_mtime_ns, after.st_ctime_ns) == (
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+
+    response = client.get(MESH_URL, headers={"If-None-Match": old.headers["etag"]})
+
+    if rehashed:
+        assert response.status_code == 200
+        assert response.content == b"new mesh!!"
+        assert response.headers["etag"] != old.headers["etag"]
+    else:
+        assert response.status_code == 304
