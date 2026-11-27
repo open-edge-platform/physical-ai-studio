@@ -255,39 +255,30 @@ async def test_rtc_sends_the_guided_tail_and_settings_across_to_the_model(
         assert 0 <= rtc["inference_delay"] <= rtc["execution_horizon"]
 
 
-@pytest.mark.parametrize("gated", [1, 2], ids=["warmup", "refill"])
-async def test_stopping_rtc_mid_inference_keeps_its_late_chunk_out(
-    new_session, fake_cameras, fake_model_worker, tmp_path, gated
-) -> None:
-    session: RuntimeSession = await new_session()
+async def _stop_mid_inference(session: RuntimeSession, tmp_path: Path, gated: int) -> tuple[Path, Any, float]:
+    """Run RTC until inference ``gated`` is held inside the model, then stop. The stopped control, and how long."""
     await session.load_environment(make_environment())
     model = _model(tmp_path, rtc_chunk=CHUNK)
     export = Path(model.path) / "exports" / "torch"
     (export / "record").touch()
     (export / f"gate_{gated}").touch()
     await session.load_model(model, "torch", "cpu")
-    execution = ExecutionConfig(mode="rtc", execution_horizon=5)
-    config = ModelControlConfig(task="pick", hz=50, execution=execution, grace_s=0)
-    await session.set_control(config)
+    await session.set_control(_GATED_RUN)
     await _gate(export, gated)
-
+    stopped = session._control.value
     started = time.monotonic()
-    await session.set_control(None)  # inference ``gated`` is inside the model
-    # A refill blocks only RTC's own thread, which the control leaves after RTC's 5 s join. A warmup blocks the
-    # control's thread itself, which the session gives up on after 10 s, as it does for Sync and Async.
-    assert time.monotonic() - started < (8 if gated > 1 else 12)
+    await session.set_control(None)
     assert session.state().control is None
-    held = session.store.read(ACTION).value.copy()
-    (export / f"release_{gated}").touch()
-    await _until(lambda: any(row["n"] == gated for row in _received(export)))
-    await asyncio.sleep(0.5)
-    if gated > 1:
-        # RTC's thread discards a chunk that comes back after its run stopped. (After a warmup, the control's own
-        # thread writes it, in every mode: a session-level issue that a separate fix closes.)
-        np.testing.assert_allclose(session.store.read(ACTION).value, held)
+    return export, stopped, time.monotonic() - started
 
-    # A new run plays its own chunks, never the one that came back late.
-    await session.set_control(config)
+
+_GATED_RUN = ModelControlConfig(
+    task="pick", hz=50, execution=ExecutionConfig(mode="rtc", execution_horizon=5), grace_s=0
+)
+
+
+async def _next_run_plays_only_its_own_chunks(session: RuntimeSession, export: Path, gated: int) -> None:
+    await session.set_control(_GATED_RUN)
     late = _rows_of(_received(export), gated)
     seen: list[np.ndarray] = []
     deadline = time.monotonic() + 1.5
@@ -298,6 +289,40 @@ async def test_stopping_rtc_mid_inference_keeps_its_late_chunk_out(
     assert not any(_played(action, late) for action in seen)
     later = [_rows_of(_received(export), row["n"]) for row in _received(export) if row["n"] > gated]
     assert any(_played(action, chunk) for action in seen for chunk in later)
+
+
+async def test_stopping_rtc_mid_refill_keeps_the_late_chunk_out_of_its_queue_and_the_next_run(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    export, stopped, took = await _stop_mid_inference(session, tmp_path, gated=2)
+    # Only RTC's own thread is blocked; the control leaves it after RTC's 5 s join.
+    assert took < 8
+    queue = stopped._queue
+    merged_before = queue._last
+    held = session.store.read(ACTION).value.copy()
+    (export / "release_2").touch()
+    await _until(lambda: any(row["n"] == 2 for row in _received(export)))
+    await asyncio.sleep(0.5)
+    # The stopped queue never took the late chunk, and nothing wrote it over the hold.
+    assert queue._last is merged_before
+    assert not np.allclose(queue._last[0], _rows_of(_received(export), 2))
+    np.testing.assert_allclose(session.store.read(ACTION).value, held)
+    await _next_run_plays_only_its_own_chunks(session, export, gated=2)
+
+
+async def test_stopping_rtc_mid_warmup_times_out_and_the_late_chunk_misses_the_next_run(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    export, _stopped, took = await _stop_mid_inference(session, tmp_path, gated=1)
+    # The warmup blocks the control's own thread, which the session gives up on after its 10 s stop timeout, as
+    # for Sync and Async. Its late write over the hold is the session-level issue the control-switch fix closes.
+    assert 10 <= took < 12
+    (export / "release_1").touch()
+    await _until(lambda: any(row["n"] == 1 for row in _received(export)))
+    await asyncio.sleep(0.5)
+    await _next_run_plays_only_its_own_chunks(session, export, gated=1)
 
 
 @pytest.mark.parametrize("mode", ["sync", "async", "rtc"])
