@@ -21,7 +21,7 @@ from runtime_session.session import RuntimeSession
 from runtime_session.store import ACTION, STATE, FeatureSpec, ImageSpec, Store
 from schemas.dataset import Dataset
 from schemas.model import Model
-from schemas.runtime_session import ExecutionConfig, ModelControlConfig, StartEpisodeCommand
+from schemas.runtime_session import ExecutionConfig, ModelControlConfig, StartEpisodeCommand, TeleopControlConfig
 from tests.workers.fake_dataset import FakeDatasetWorker
 from tests.workers.fake_model import CHUNK, NO_FRAME, FakeModelWorker
 from workers.base import WorkerStartupError
@@ -315,6 +315,66 @@ async def test_rtc_refuses_an_export_without_rtc_inputs(new_session, fake_camera
     with pytest.raises(ValueError, match="without RTC inputs"):
         await session.set_control(ModelControlConfig(execution=ExecutionConfig(mode="rtc")))
     assert session.state().control is None
+
+
+async def _recording(session: RuntimeSession, dataset: Dataset) -> None:
+    await session.load_dataset(dataset)
+    command = StartEpisodeCommand(request_id="", task="pick")
+    await session.bus.request(command_key("start_episode"), command, RecordingStatus, timeout=10)
+    await _until(lambda: session.state().dataset.is_recording)
+
+
+def _new_dataset() -> Dataset:
+    dataset = Dataset(id=uuid4(), name="Blocks", default_task="pick", project_id=uuid4(), environment_id=uuid4())
+    Path(dataset.path).mkdir(parents=True)
+    return dataset
+
+
+async def test_rtc_without_a_model_is_refused_before_teleop_and_the_episode_stop(
+    new_session, fake_cameras, fake_model_worker
+) -> None:
+    session: RuntimeSession = await new_session()
+    with patch("runtime_session.dataset.DatasetWorker", FakeDatasetWorker):
+        await session.load_environment(make_environment())
+        teleop = TeleopControlConfig(grace_s=0)
+        await session.set_control(teleop)
+        await _recording(session, _new_dataset())
+
+        with pytest.raises(ValueError, match="Load a model first"):
+            await session.set_control(ModelControlConfig(execution=ExecutionConfig(mode="rtc")))
+
+        assert session.state().control == teleop
+        assert session.state().dataset.is_recording
+        await session.set_control(None)
+
+
+async def test_a_refused_rtc_export_keeps_the_loaded_model_its_control_and_episode(
+    new_session, fake_cameras, fake_model_worker, tmp_path
+) -> None:
+    session: RuntimeSession = await new_session()
+    with patch("runtime_session.dataset.DatasetWorker", FakeDatasetWorker):
+        await session.load_environment(make_environment())
+        await session.load_model(_model(tmp_path), "torch", "cpu")
+        running = ModelControlConfig(task="pick", hz=50, grace_s=0)
+        await session.set_control(running)
+        await _recording(session, _new_dataset())
+        broken = _model(tmp_path, rtc_chunk=CHUNK)
+        manifest = Path(broken.path) / "exports" / "torch" / "manifest.json"
+        document = json.loads(manifest.read_text())
+        document["model"]["input_features"] = [
+            feature
+            for feature in document["model"]["input_features"]
+            if feature["init_args"]["name"] != "inference_delay"
+        ]
+        manifest.write_text(json.dumps(document))
+
+        with pytest.raises(ValueError, match="missing inference_delay"):
+            await session.load_model(broken, "torch", "cpu")
+
+        assert session.state().model.model_id == session._model.value.model.id
+        assert session.state().control == running
+        assert session.state().dataset.is_recording
+        await session.set_control(None)
 
 
 @pytest.mark.parametrize(("rtc_chunk", "horizon"), [(None, 5), (CHUNK, 6)])

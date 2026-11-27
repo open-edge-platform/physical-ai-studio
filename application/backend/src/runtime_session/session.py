@@ -532,8 +532,10 @@ class RuntimeSession:
             )
         async with self._lock:
             loaded = self._environment.require("Load an environment first.")
-            if isinstance(config, ModelControlConfig) and self._model.value is not None:
+            if isinstance(config, ModelControlConfig) and config.execution.mode == "rtc":
                 # Before the running control and an open episode are stopped for a request that cannot run.
+                if self._model.value is None:
+                    raise ValueError("Load a model first")
                 check_execution(self._model.value, config)
             try:
                 await self._switch_control(loaded.environment, config)
@@ -947,8 +949,10 @@ class RuntimeSession:
         """
         async with self._lock:
             environment = self._environment.require("Load an environment first.")
+            # Read the export first: one that does not fit is refused before the loaded model and its control stop.
+            process_model = self._process_model(model, backend, device)
             await self._unload_model(environment.environment)
-            await self._model.load(self._process_model(model, backend, device))
+            await self._model.load(process_model)
             logger.info("Session {} loaded model {!r} ({}, {})", self.id, model.name, backend, device)
         self._emit(StateMessage(data=self.state()))
 
