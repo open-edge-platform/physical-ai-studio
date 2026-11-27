@@ -707,3 +707,20 @@ async def test_a_worker_that_broke_otherwise_leaves_the_outcome_unknown(new_sess
     assert refused.value.error_code == "recording_outcome_unknown"
     assert "could not tell whether the recording into dataset 'Blocks' was saved" in refused.value.message
     assert refused.value.message.endswith("(ValueError: the worker broke).")
+
+
+async def test_a_worker_killed_while_finishing_leaves_the_outcome_unknown(
+    new_session, fake_cameras, fake_worker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Killed after ``stop_timeout_s``, the worker reports nothing; Finish must not read that as saved."""
+    monkeypatch.setattr(FakeDatasetWorker, "stop_timeout_s", 1.0)
+    dataset = _dataset()
+    session = await new_session()
+    with pytest.raises(RuntimeSessionCommandError) as refused:
+        await _finish_with(session, dataset, "fail_hang")
+    assert refused.value.error_code == "recording_outcome_unknown"
+    assert refused.value.message == (
+        "Studio could not tell whether the recording into dataset 'Blocks' was saved; its worker failed "
+        "(it exited with code -9 before it reported how finishing went)."
+    )
+    assert session.state().dataset is None

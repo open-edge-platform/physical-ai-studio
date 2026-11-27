@@ -177,8 +177,19 @@ class Recording:
 
     @property
     def failure(self) -> str | None:
-        """Why the worker failed, if it did; once it has stopped, also why finishing failed (copying back)."""
-        return self._worker.failure
+        """Why the worker failed, if it did; once it has stopped, also why finishing failed (copying back).
+
+        A worker that was killed, as one still finishing after ``stop_timeout_s`` is, reports nothing itself: its
+        exit says it did not finish.
+        """
+        worker = self._worker
+        if (failure := worker.failure) is not None:
+            return failure
+        if worker.exitcode not in (None, 0):
+            return f"it exited with code {worker.exitcode} before it reported how finishing went"
+        if self._started and self._stack is None and worker.is_alive():  # asked to stop, killed, still there
+            return f"it was still running {worker.stop_timeout_s:.0f} s after it was asked to stop"
+        return None
 
     async def __aenter__(self) -> Self:
         """Start the worker and wait until it answers.

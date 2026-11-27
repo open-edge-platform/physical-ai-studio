@@ -67,6 +67,8 @@ class FakeMutation:
             )
         if self._fails("worker"):  # something else breaks: nobody can say whether the copy landed
             raise ValueError("the worker broke")
+        if self._fails("hang"):  # copying back takes longer than the parent waits, so it kills the worker
+            time.sleep(60)
         self._write("teardown")
         if self._fails("cleanup"):  # as RecordingMutation: whether anything was copied, and confirmed
             if not self.attempted:
