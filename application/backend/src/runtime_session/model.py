@@ -153,6 +153,9 @@ class ProcessModel:
         self._bus: Bus | None = None
         self._stack: AsyncExitStack | None = None
         self._started = False
+        self.last_error: Exception | None = None
+        """Why the last inference failed, or ``None`` once one succeeds. ``RTCExecution`` reports a failed warmup
+        or too many failed refills in its own words; ``ModelControl`` reports this instead, as Sync and Async do."""
 
     def state(self) -> SessionModel:
         return SessionModel(
@@ -219,7 +222,12 @@ class ProcessModel:
         request = InferRequest(
             state=np.asarray(observation[model_rpc.STATE])[0].tolist(), task=task[0] if task else None, rtc=rtc
         )
-        chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
+        try:
+            chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
+        except Exception as error:
+            self.last_error = error
+            raise
+        self.last_error = None
         return np.asarray(chunk.actions, dtype=np.float32)
 
     def __call__(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:

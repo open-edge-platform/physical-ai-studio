@@ -66,6 +66,7 @@ class ModelControl(Control):
         if model.inputs.tasks and config.task not in model.inputs.tasks:
             raise ValueError(f"Pick one of the model's tasks: {', '.join(model.inputs.tasks)}")
         super().__init__(store, config, name="ModelControl", hz=config.hz)
+        self.model = model
         execution, queue = _execution(model, config)
         self.source = PolicySource(cast("Any", model), execution, queue, task=config.task or None)
         self.step = 0
@@ -91,7 +92,13 @@ class ModelControl(Control):
         observation = _Observation(state.value, state.timestamp)
         if self._events is not None:
             self._events.step = self.step
-        action = self.source.update(observation, {}, self.step)
+        try:
+            action = self.source.update(observation, {}, self.step)
+        except Exception as error:
+            # RTC runs the model on its own thread and fails with its own summary; say what the model said.
+            if (cause := self.model.last_error) is not None and cause is not error:
+                raise cause from error
+            raise
         due = max(time.monotonic() + 1 / self.hz, self.started_at + self.grace_s)
         self.store.write(ACTION, action, timestamp=due)
         if self._events is not None:
