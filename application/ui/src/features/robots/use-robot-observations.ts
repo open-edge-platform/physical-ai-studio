@@ -61,7 +61,8 @@ const observationSocketUrl = (project_id: string, robot_id: string): string =>
         params: { path: { project_id, robot_id } },
     })}/observations/ws`;
 
-export const useRobotObservations = (project_id: string, robot_id: string) => {
+/** With `control`, the robot holds its pose and `sendAction` moves joints (by feature name) toward a target. */
+export const useRobotObservations = (project_id: string, robot_id: string, { control = false } = {}) => {
     const [joints, setJoints] = useState<JointsState>([]);
     const [error, setError] = useState<string | null>(null);
     const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -86,9 +87,10 @@ export const useRobotObservations = (project_id: string, robot_id: string) => {
         }
     }, []);
 
-    useWebSocket(observationSocketUrl(project_id, robot_id), {
+    const { sendJsonMessage } = useWebSocket(observationSocketUrl(project_id, robot_id), {
         queryParams: {
             fps: 30,
+            control: String(control),
         },
         share: true,
         shouldReconnect: () => true,
@@ -104,5 +106,10 @@ export const useRobotObservations = (project_id: string, robot_id: string) => {
         },
     });
 
-    return { joints, error, errorCode };
+    const sendAction = useCallback(
+        (name: string, value: number) => sendJsonMessage({ event: 'action', data: { [name]: value } }),
+        [sendJsonMessage]
+    );
+
+    return { joints, error, errorCode, sendAction };
 };

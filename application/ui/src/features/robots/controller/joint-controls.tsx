@@ -5,7 +5,8 @@ import { ChevronDownSmallLight } from '@geti-ui/ui/icons';
 import { radToDeg } from 'three/src/math/MathUtils.js';
 
 import { getRobotConnectionErrorTitle } from '../../../api/errors';
-import { useLoadModelQuery } from '../robot-models-context';
+import { useRobotCatalogDefinitionQuery } from '../robot-catalog.hooks';
+import { featureRange, useLoadModelQuery } from '../robot-models-context';
 import { InlineAlert } from '../setup-wizard/shared/inline-alert';
 import { useRobot, useRobotId } from '../use-robot';
 import { useRobotObservations } from '../use-robot-observations';
@@ -19,7 +20,12 @@ type JointState = {
 };
 type JointsState = Array<JointState>;
 
-const Joint = ({ joint }: { joint: JointState }) => {
+// Without `onChange` the slider only shows the joint.
+const Joint = ({ joint, onChange }: { joint: JointState; onChange?: (value: number) => void }) => {
+    // While dragging, show the target, not the arm still easing toward it.
+    const [target, setTarget] = useState<number | null>(null);
+    const value = target ?? joint.value;
+
     return (
         <li>
             <View backgroundColor={'gray-50'} padding='size-115' UNSAFE_style={{ borderRadius: '4px' }}>
@@ -28,16 +34,22 @@ const Joint = ({ joint }: { joint: JointState }) => {
                         <span>{joint.name}</span>
                     </div>
                     <div style={{ gridArea: 'value', display: 'flex', justifyContent: 'end' }}>
-                        <span style={{ color: 'var(--energy-blue-light)' }}>{joint.value.toFixed(2)}&deg;</span>
+                        <span style={{ color: 'var(--energy-blue-light)' }}>{value.toFixed(2)}&deg;</span>
                     </div>
                     <Flex gridArea='slider' gap='size-200'>
                         <Slider
                             aria-label={joint.name}
-                            value={joint.value}
+                            value={value}
                             minValue={joint.rangeMin}
                             maxValue={joint.rangeMax}
+                            step={(joint.rangeMax - joint.rangeMin) / 1000}
+                            onChange={(next) => {
+                                setTarget(next);
+                                onChange?.(next);
+                            }}
+                            onChangeEnd={() => setTarget(null)}
                             flexGrow={1}
-                            isDisabled={true}
+                            isDisabled={onChange === undefined}
                         />
                     </Flex>
                 </Grid>
@@ -46,12 +58,26 @@ const Joint = ({ joint }: { joint: JointState }) => {
     );
 };
 
-const Joints = ({ joints }: { joints: JointsState }) => {
+const Joints = ({
+    joints,
+    onChange,
+}: {
+    joints: Array<JointState & { isControllable?: boolean }>;
+    onChange?: (name: string, value: number) => void;
+}) => {
     return (
         <ul>
             <Grid gap='size-50' columns={repeat('auto-fit', minmax('size-4600', '1fr'))}>
                 {joints.map((joint) => {
-                    return <Joint key={joint.name} joint={joint} />;
+                    return (
+                        <Joint
+                            key={joint.name}
+                            joint={joint}
+                            onChange={
+                                onChange && joint.isControllable ? (value) => onChange(joint.name, value) : undefined
+                            }
+                        />
+                    );
                 })}
             </Grid>
         </ul>
@@ -78,33 +104,29 @@ const useModelJoints = (): JointsState => {
 };
 
 // Combine the joint range of the urdf model with actual joint state from robot
-const useRobotJointsState = (): {
-    joints: JointsState;
-    error: string | null;
-    errorCode: string | null;
-} => {
+const useRobotJointsState = () => {
     const robot = useRobot();
-    const modelJoints = useModelJoints();
+    const { data: model } = useLoadModelQuery(robot.type);
+    const { data: definition } = useRobotCatalogDefinitionQuery(robot.type);
 
     const { project_id, robot_id } = useRobotId();
-    const { joints, error, errorCode } = useRobotObservations(project_id, robot_id);
+    const { joints, error, errorCode, sendAction } = useRobotObservations(project_id, robot_id, { control: true });
     useSynchronizeModelJoints(joints, robot);
 
     return {
         joints: joints.map((joint) => {
-            const modelJoint = modelJoints.find(({ name }) => name === joint.name);
-            const rangeMax = modelJoint === undefined ? 180 : radToDeg(modelJoint.rangeMax);
-            const rangeMin = modelJoint === undefined ? -180 : radToDeg(modelJoint.rangeMin);
-
-            return { ...joint, rangeMin, rangeMax };
+            const range = model && featureRange(joint.name, model, definition.joint_map, robot);
+            // A joint without a known range only shows: sending it a target could exceed its limits.
+            return { ...joint, rangeMin: range?.min ?? -180, rangeMax: range?.max ?? 180, isControllable: !!range };
         }),
         error,
         errorCode,
+        sendAction,
     };
 };
 
 const EnabledJointControls = ({ isExpanded }: { isExpanded: boolean }) => {
-    const { joints, error, errorCode } = useRobotJointsState();
+    const { joints, error, errorCode, sendAction } = useRobotJointsState();
 
     if (error) {
         return (
@@ -117,7 +139,7 @@ const EnabledJointControls = ({ isExpanded }: { isExpanded: boolean }) => {
     }
 
     if (isExpanded) {
-        return <Joints joints={joints} />;
+        return <Joints joints={joints} onChange={sendAction} />;
     }
 
     return null;
