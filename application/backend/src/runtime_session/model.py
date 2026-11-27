@@ -90,25 +90,31 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
 _REEXPORT = "re-export the policy with RTC enabled, or export it without RTC inputs to run it synchronously"
 
 
+def _shape(feature: dict[str, Any]) -> list[int] | None:
+    """A feature's shape as a list of whole, non-negative sizes, or ``None`` if it is anything else."""
+    shape = feature.get("shape")
+    if isinstance(shape, list) and all(type(size) is int and size >= 0 for size in shape):
+        return shape
+    return None
+
+
 def _rtc_chunk(features: list[dict[str, Any]], joints: int) -> tuple[int, int] | None:
     """``(chunk_size, action_dim)`` of an export that takes all four RTC inputs, or ``None`` if it takes none.
 
     Raises:
         ValueError: The export lists only some RTC inputs, or shapes RTC cannot fill for this follower.
     """
-    shapes = {
-        feature["name"]: list(feature.get("shape") or []) for feature in features if feature["name"] in RTC_INPUTS
-    }
+    shapes = {feature["name"]: _shape(feature) for feature in features if feature["name"] in RTC_INPUTS}
     if not shapes:
         return None
     if missing := [name for name in RTC_INPUTS if name not in shapes]:
         raise ValueError(f"The export takes some RTC inputs but is missing {', '.join(missing)}: {_REEXPORT}")
     tail = shapes[model_rpc.PREV_CHUNK_LEFT_OVER]
-    if len(tail) != 2:
+    if tail is None or len(tail) != 2:  # whole sizes (chunk_size, action_dim)
         raise ValueError(
             f"The export's {model_rpc.PREV_CHUNK_LEFT_OVER} has shape {tail}, not (chunk_size, action_dim): {_REEXPORT}"
         )
-    chunk_size, action_dim = int(tail[0]), int(tail[1])
+    chunk_size, action_dim = tail
     if action_dim != joints:
         raise ValueError(
             f"The export's RTC tail has {action_dim} actions per step, but the follower has {joints} joints: "
@@ -116,7 +122,7 @@ def _rtc_chunk(features: list[dict[str, Any]], joints: int) -> tuple[int, int] |
         )
     if chunk_size < 2:
         raise ValueError(f"The export's RTC tail has a chunk of {chunk_size}, too short to guide: {_REEXPORT}")
-    if scalars := [name for name in RTC_INPUTS[1:] if shapes[name]]:
+    if scalars := [name for name in RTC_INPUTS[1:] if shapes[name] != []]:
         raise ValueError(
             f"The export takes {', '.join(scalars)} with shape {shapes[scalars[0]]}, not a scalar: {_REEXPORT}"
         )

@@ -7,6 +7,7 @@ import os
 import signal
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -124,10 +125,10 @@ def _rtc_export(path: Path, features: list[dict]) -> Path:
     return path
 
 
-def _rtc_features(tail: list[int], scalar: list[int] | None = None, *, drop: str | None = None) -> list[dict]:
+def _rtc_features(tail: list, scalar: Any = (), *, drop: str | None = None) -> list[dict]:
     features = [{"init_args": {"ftype": "COMMON", "shape": tail, "name": "prev_chunk_left_over"}}]
     features += [
-        {"init_args": {"ftype": "COMMON", "shape": scalar or [], "name": name}}
+        {"init_args": {"ftype": "COMMON", "shape": [] if scalar == () else scalar, "name": name}}
         for name in ("inference_delay", "max_guidance_weight", "execution_horizon")
     ]
     return [feature for feature in features if feature["init_args"]["name"] != drop]
@@ -141,6 +142,13 @@ def _rtc_features(tail: list[int], scalar: list[int] | None = None, *, drop: str
         (_rtc_features([1, 2]), "chunk of 1"),
         (_rtc_features([50, 2], [1]), "inference_delay.*a scalar"),
         (_rtc_features([50, 2], drop="execution_horizon"), "missing execution_horizon"),
+        (_rtc_features([50.9, 2]), "prev_chunk_left_over.*\\(chunk_size, action_dim\\)"),
+        (_rtc_features([True, 2]), "prev_chunk_left_over.*\\(chunk_size, action_dim\\)"),
+        (_rtc_features([50, 2], False), "inference_delay.*a scalar"),
+        (
+            [{"init_args": {"ftype": "COMMON", "name": "prev_chunk_left_over"}}, *_rtc_features([50, 2])[1:]],
+            "prev_chunk_left_over.*\\(chunk_size, action_dim\\)",
+        ),
     ],
 )
 def test_an_export_with_broken_rtc_inputs_is_refused_with_a_reason(
