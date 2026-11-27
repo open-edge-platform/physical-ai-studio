@@ -33,27 +33,9 @@ _EXPORT_RECORD = "physicalai_export.json"
 _RUN_INFO = "physicalai_run.json"
 
 
-def _worker_env(declaration: environments.WorkerEnvironmentSpec) -> WorkerEnv:
-    """Adapt a Runtime isolate declaration to the optional Engine API.
-
-    Returns:
-        The equivalent Engine worker declaration.
-    """
-    return WorkerEnv(
-        framework=declaration.framework,
-        name=declaration.name,
-        project=declaration.source,
-        worker=declaration.worker,
-        distribution=declaration.distribution,
-        package=declaration.package,
-        accelerators=declaration.accelerators,
-        python=declaration.profile.python,
-        extras=dict.fromkeys(declaration.accelerators, declaration.profile.extras),
-    )
-
-
-NATIVE = _worker_env(environments.NATIVE)
-OPENVINO = _worker_env(environments.OPENVINO)
+# The engine, the CLI and the Runtime adapter share these declarations and their cached environments.
+NATIVE = environments.NATIVE.worker_env()
+OPENVINO = environments.OPENVINO.worker_env()
 OPENVINO_ENABLEMENT = Enablement(
     name=OPENVINO.name,
     provides={POLICY: {"export": (FORMAT_OPENVINO,)}},
@@ -138,10 +120,10 @@ class Gr00tEngine(TrainingEngine):
         Returns:
             The native command's exit status.
         """
-        python, project, _ = environments.resolve(environments.NATIVE, interpreter=interpreter)
+        target, project, _ = environments.resolve(environments.NATIVE, interpreter=interpreter)
         with resources.as_file(environments.TRAIN_WORKER) as worker:
             return subprocess.call(  # ruff: ignore[subprocess-without-shell-equals-true]  # argv list; shell disabled.  # nosec B603
-                [str(python), str(worker), *argv],
+                [str(target.python), str(worker), *argv],
                 env={**os.environ, environments.PROJECT_ENV: str(project)},
                 shell=False,
             )

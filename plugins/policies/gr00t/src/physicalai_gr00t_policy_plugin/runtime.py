@@ -15,7 +15,7 @@ import contextlib
 import hashlib
 import logging
 import os
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Fixed worker argv; shell is disabled.  # nosec B404
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # Only for DEVNULL; isolate launches the worker.  # nosec B404
 import threading
 import weakref
 from collections.abc import Mapping, Sequence
@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from physicalai import isolate
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.callbacks.base import Callback
@@ -44,6 +45,7 @@ _BATCHED_IMAGE_RANK = 4
 _CLOSE_TIMEOUT_SECONDS = 30.0
 _PROJECT_ENV = "PHYSICALAI_WORKER_PROJECT"
 _CACHE_ENV = "PHYSICALAI_GR00T_CACHE"
+_INFER_WORKER = resources.files(__package__) / "_worker" / "gr00t_infer_worker.py"
 
 
 @adapter_registry.register(BACKEND, extensions=(ARTIFACT_SUFFIX,))
@@ -111,8 +113,8 @@ class Gr00tRuntimeAdapter(RuntimeAdapter):
                 descriptor.get("backbone_source"),
             )
         io = IoSpec.from_dict(descriptor["io"])
-        python, project, env = self._environment(descriptor)
-        worker = _Worker(python, project)
+        target, project, env = self._environment(descriptor)
+        worker = _Worker(target, project)
         try:
             _check_worker(worker.request({"op": "hello"}), env, project)
             info = worker.request(
@@ -189,15 +191,18 @@ class Gr00tRuntimeAdapter(RuntimeAdapter):
         """Whether the loaded package runs the OpenVINO single IR."""
         return bool(self.descriptor and self.descriptor["format"] == FORMAT_OPENVINO)
 
-    def _environment(self, descriptor: Mapping[str, Any]) -> tuple[Path, Path, WorkerEnvironmentSpec | None]:
+    def _environment(
+        self,
+        descriptor: Mapping[str, Any],
+    ) -> tuple[isolate.PreparedEnvironment | isolate.ExternalInterpreter, Path, WorkerEnvironmentSpec | None]:
         """Resolve the worker environment recorded by the package.
 
         The package's stable environment identity must match the installed plugin's
-        pins. Runtime prepares managed environments through ``physicalai.isolate``;
-        user-managed interpreters bypass preparation and lock verification.
+        pins. Managed environments are prepared like the engine's, through
+        ``physicalai.isolate``; user-managed interpreters bypass preparation and lock verification.
 
         Returns:
-            Interpreter, checkout, and the managed environment (``None`` when unverified).
+            What to launch, the checkout, and the managed environment (``None`` when unverified).
 
         Raises:
             ValueError: If a user-managed interpreter has no checkout or the package was built from different pins.
@@ -212,10 +217,10 @@ class Gr00tRuntimeAdapter(RuntimeAdapter):
                 "install the plugin version that produced it."
             )
             raise ValueError(msg)
-        python, checkout, managed = environments.resolve(env, interpreter=self._interpreter, project=self._project)
+        target, checkout, managed = environments.resolve(env, interpreter=self._interpreter, project=self._project)
         if not managed:
             logger.warning("Using a user-managed GR00T environment; the package's lock is not verified.")
-        return python, checkout, env if managed else None
+        return target, checkout, env if managed else None
 
     def _openvino_cache(self, artifact: Path) -> Path:
         if self._cache_dir is not None:
@@ -390,9 +395,14 @@ def _check_modalities(io: IoSpec, info: Mapping[str, Any]) -> None:
 
 
 class _Worker:
-    """One inference worker process and its request/response pipes."""
+    """One inference worker process and its request/response pipes.
 
-    def __init__(self, python: Path, project: Path) -> None:
+    Isolate launches it like the engine's training and export workers: in its own process group,
+    stopped with the host, and from a managed environment with only the worker's own code and
+    the environment's packages importable.
+    """
+
+    def __init__(self, target: isolate.PreparedEnvironment | isolate.ExternalInterpreter, project: Path) -> None:
         request_read, request_write = os.pipe()
         response_read, response_write = os.pipe()
         env = {
@@ -403,12 +413,12 @@ class _Worker:
             "PHYSICALAI_GR00T_RESPONSE_FD": str(response_write),
         }
         try:
-            self.process = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # argv list; shell disabled.  # nosec B603
-                [str(python), str(_infer_worker())],
-                stdin=subprocess.DEVNULL,
+            self.process = isolate.start(
+                target,
+                _INFER_WORKER,
                 env=env,
+                stdin=subprocess.DEVNULL,
                 pass_fds=(request_read, response_write),
-                shell=False,
             )
         finally:
             os.close(request_read)
@@ -434,12 +444,7 @@ class _Worker:
         self._finalizer()
 
 
-def _infer_worker() -> Path:
-    with resources.as_file(resources.files(__package__) / "_worker" / "gr00t_infer_worker.py") as path:
-        return Path(path)
-
-
-def _stop(process: subprocess.Popen[bytes], requests: Any, responses: Any) -> None:  # ruff: ignore[any-type]
+def _stop(process: isolate.Session, requests: Any, responses: Any) -> None:  # ruff: ignore[any-type]
     try:
         if process.poll() is None:
             protocol.write_frame(requests, {"op": "close"})
@@ -448,8 +453,8 @@ def _stop(process: subprocess.Popen[bytes], requests: Any, responses: Any) -> No
     for stream in (requests, responses):
         with contextlib.suppress(OSError):
             stream.close()
-    try:
+    # Let the worker exit on its own first: Session.close() only waits before SIGTERM when it owns
+    # the child's stdin, and this worker's stdin is /dev/null. close() then stops anything left.
+    with contextlib.suppress(subprocess.TimeoutExpired):
         process.wait(timeout=_CLOSE_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
+    process.close()

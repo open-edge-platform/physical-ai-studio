@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tomllib
 from dataclasses import dataclass
 from importlib import resources  # nosemgrep  # Python 3.10+ only.
@@ -23,11 +24,13 @@ from typing import TYPE_CHECKING
 
 from physicalai.isolate import (
     Environment,
+    ExternalInterpreter,
     GitProject,
     PatchFile,
     ProjectSource,
     PublishedPatches,
     SyncProfile,
+    UvProvider,
 )
 from physicalai.isolate import (
     prepare as isolate_prepare,
@@ -35,6 +38,9 @@ from physicalai.isolate import (
 
 if TYPE_CHECKING:
     from importlib.resources.abc import Traversable  # nosemgrep  # Python 3.10+ only.
+
+    from physicalai.engine import WorkerEnv
+    from physicalai.isolate import PreparedEnvironment
 
 from .package import BACKEND as FRAMEWORK
 from .package import FORMAT_NATIVE, FORMAT_OPENVINO
@@ -135,6 +141,28 @@ class WorkerEnvironmentSpec:
         payload = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
+    def worker_env(self) -> WorkerEnv:
+        """Declare this environment to the engine, which prepares the same cached isolate environment.
+
+        Needs ``physicalai-train`` (the plugin's ``train`` extra); Runtime-only installs never call it.
+
+        Returns:
+            The engine's worker declaration for this environment.
+        """
+        from physicalai.engine import WorkerEnv  # ruff: ignore[import-outside-top-level]  # Train extra only.
+
+        return WorkerEnv(
+            framework=self.framework,
+            name=self.name,
+            project=self.source,
+            worker=self.worker,
+            distribution=self.distribution,
+            package=self.package,
+            accelerators=self.accelerators,
+            python=self.profile.python,
+            extras=dict.fromkeys(self.accelerators, self.profile.extras),
+        )
+
 
 NATIVE = WorkerEnvironmentSpec(
     framework=FRAMEWORK,
@@ -163,33 +191,53 @@ ENVIRONMENTS: dict[str, WorkerEnvironmentSpec] = {NATIVE.name: NATIVE, OPENVINO.
 PACKAGE_ENVIRONMENTS: dict[str, WorkerEnvironmentSpec] = {FORMAT_NATIVE: NATIVE, FORMAT_OPENVINO: OPENVINO}
 
 
+def prepare(env: WorkerEnvironmentSpec) -> PreparedEnvironment:
+    """Create or reuse the cached isolate environment for *env*.
+
+    With ``physicalai-train`` installed, the engine prepares it, with the uv installed alongside
+    Studio and the labels ``physicalai engine list`` and ``prune`` rely on. A Runtime-only install
+    prepares the same cached environment through isolate, with the uv this plugin depends on.
+
+    Returns:
+        The prepared isolate environment.
+    """
+    try:
+        from physicalai.engine import prepare_environment  # ruff: ignore[import-outside-top-level]  # Train extra only.
+    except ImportError:
+        return isolate_prepare(env.environment, provider=UvProvider(uv=_installed_uv()))
+    # Each GR00T environment declares exactly one accelerator profile.
+    return prepare_environment(env.worker_env(), env.accelerators[0]).isolate
+
+
 def resolve(
     env: WorkerEnvironmentSpec,
     *,
     interpreter: str | Path | None = None,
     project: str | Path | None = None,
-) -> tuple[Path, Path, bool]:
-    """Return the interpreter and checkout for *env*, preparing it when needed.
+) -> tuple[PreparedEnvironment | ExternalInterpreter, Path, bool]:
+    """Return what to launch for *env* and its Isaac-GR00T checkout, preparing it when needed.
 
     Args:
         env: Runtime-isolate environment declaration.
-        interpreter: User-managed worker interpreter that bypasses provisioning.
+        interpreter: User-managed worker interpreter that bypasses provisioning. A bare name is
+            looked up on ``PATH``.
         project: Checkout used by *interpreter*; defaults to ``$PHYSICALAI_WORKER_PROJECT``.
 
     Returns:
-        Interpreter, upstream checkout, and whether isolate manages the environment.
+        The prepared environment or user-managed interpreter, for ``physicalai.isolate.start``
+        (both expose ``python``); the upstream checkout; and whether isolate manages the environment.
 
     Raises:
         ValueError: If a user-managed interpreter has no checkout.
     """
     if interpreter is None:
-        prepared = isolate_prepare(env.environment)
-        return prepared.python, prepared.project, True
+        prepared = prepare(env)
+        return prepared, prepared.project, True
     checkout = project if project is not None else os.environ.get(PROJECT_ENV)
     if not checkout:
         msg = f"Pass project= or set {PROJECT_ENV} to the Isaac-GR00T checkout used by {interpreter}."
         raise ValueError(msg)
-    return Path(interpreter).expanduser(), Path(checkout).expanduser(), False
+    return ExternalInterpreter(_find_interpreter(interpreter)), Path(checkout).expanduser(), False
 
 
 def locked_version(env: WorkerEnvironmentSpec, project: Path) -> str:
@@ -233,3 +281,38 @@ def provenance(env: WorkerEnvironmentSpec) -> dict[str, object]:
 
 def _normalize_distribution_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _installed_uv() -> str | None:
+    """Return the uv executable installed with this plugin's ``uv`` dependency.
+
+    Returns:
+        The uv path, or ``None`` to let isolate look it up on ``PATH``.
+    """
+    try:
+        from uv import find_uv_bin  # ruff: ignore[import-outside-top-level]  # Optional at import time.
+
+        return find_uv_bin()
+    except (ImportError, FileNotFoundError):
+        return None
+
+
+def _find_interpreter(interpreter: str | Path) -> str | Path:
+    """Look up a bare interpreter name on ``PATH``, as the engine's runner does.
+
+    Isolate makes any other path absolute against the working directory.
+
+    Returns:
+        The interpreter path found on ``PATH``, or ``interpreter`` unchanged if it has a directory.
+
+    Raises:
+        FileNotFoundError: If a bare name is not on ``PATH``.
+    """
+    name = os.fspath(interpreter)
+    if not name or os.sep in name:
+        return interpreter
+    found = shutil.which(name)
+    if found is None:
+        msg = f"Interpreter {name!r} was not found on PATH."
+        raise FileNotFoundError(msg)
+    return found

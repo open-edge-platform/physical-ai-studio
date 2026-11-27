@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from physicalai.engine import Engine, Run, TrainingEngine
+from physicalai.isolate import ExternalInterpreter
 
 from physicalai_gr00t_policy_plugin import engine, environments
 from physicalai_gr00t_policy_plugin.config import Gr00tTrainConfig
@@ -109,7 +110,7 @@ def test_cli_passes_native_arguments_and_the_checkout_unchanged(monkeypatch: pyt
     monkeypatch.setattr(
         environments,
         "resolve",
-        lambda _env, **_: (Path("/envs/default/python"), Path("/envs/default/project"), True),
+        lambda _env, **_: (ExternalInterpreter("/envs/default/python"), Path("/envs/default/project"), True),
     )
     monkeypatch.setattr(engine.subprocess, "call", lambda command, *, env, **_: seen.append((command, env)) or 3)
 

@@ -21,6 +21,8 @@ To materialize the `robotics-ai-suite-openvino` environment, Runtime isolate fet
 
 Runtime isolate caches environments under `~/.cache/physicalai/isolate/<key>` (override with `PHYSICALAI_ISOLATE_CACHE`). The key hashes the source and sync profile, including the Python version; a changed commit, reviewed patched tree, or profile builds a new environment.
 
+With `physicalai-train` installed, the CLI and the Runtime adapter prepare environments through the engine, as training and export do: every path uses the uv installed with Studio and records the labels that let `physicalai engine list` show the environment and `physicalai engine prune` remove it. A Runtime-only install prepares the same cached environment through isolate, with the uv the plugin depends on. The Runtime adapter starts its inference worker through isolate as well, in its own process group, which stops with the host.
+
 ## Where the patches live
 
 The Robotics AI Suite team owns the OpenVINO patches today, so `environments.py` declares them as `PublishedPatches` pinned to the Suite revision. Runtime isolate downloads them, or reads a local mirror in `src/physicalai_gr00t_policy_plugin/patches/robotics-ai-suite-gr00t-n1d7-ov/`, and verifies the per-file digests.

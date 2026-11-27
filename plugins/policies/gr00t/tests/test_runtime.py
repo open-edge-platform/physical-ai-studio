@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import numpy as np
 import pytest
+from physicalai.isolate import ExternalInterpreter
 
 from physicalai_gr00t_policy_plugin import environments, package, runtime
 from physicalai_gr00t_policy_plugin.package import IoSpec
@@ -86,8 +89,8 @@ def test_actions_are_flattened_by_their_modality_slices() -> None:
 class _FakeWorker:
     instances: ClassVar[list[_FakeWorker]] = []
 
-    def __init__(self, python: Path, project: Path) -> None:
-        self.python = python
+    def __init__(self, target: ExternalInterpreter, project: Path) -> None:
+        self.python = target.python
         self.project = project
         self.requests: list[dict[str, Any]] = []
         self.closed = False
@@ -137,7 +140,7 @@ def artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         environments,
         "resolve",
-        lambda env, **_: (Path(f"/envs/{env.name}/python"), Path(f"/envs/{env.name}/project"), False),
+        lambda env, **_: (ExternalInterpreter(f"/envs/{env.name}/python"), Path(f"/envs/{env.name}/project"), False),
     )
     return root
 
@@ -177,8 +180,8 @@ def test_adapter_loads_through_the_package_environment_and_seeds_each_call(
 def test_adapter_rejects_models_whose_modalities_do_not_match_the_package(artifact: Path) -> None:
     original = _FakeWorker.__init__
 
-    def mismatched(self: _FakeWorker, python: Path, project: Path) -> None:
-        original(self, python, project)
+    def mismatched(self: _FakeWorker, target: ExternalInterpreter, project: Path) -> None:
+        original(self, target, project)
         self.info["action_keys"] = ["x", "y"]
 
     _FakeWorker.__init__ = mismatched  # type: ignore[method-assign]
@@ -266,25 +269,68 @@ def test_workers_reporting_another_framework_or_locked_version_are_rejected(tmp_
         runtime._check_worker({"framework": "lerobot", "package": "lerobot"}, None, tmp_path)
 
 
-def test_managed_environment_uses_runtime_isolate_prepare(
+def test_managed_environment_is_prepared_like_the_engines(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     prepared = SimpleNamespace(python=tmp_path / "python", project=tmp_path / "project")
     calls: list[object] = []
 
-    def fake_prepare(environment: object) -> object:
-        calls.append(environment)
+    def fake_prepare(spec: object) -> object:
+        calls.append(spec)
         return prepared
 
-    monkeypatch.setattr(environments, "isolate_prepare", fake_prepare)
+    monkeypatch.setattr(environments, "prepare", fake_prepare)
     adapter = runtime.Gr00tRuntimeAdapter()
     descriptor = {"environment": environments.provenance(environments.NATIVE)}
 
-    python, project, managed = adapter._environment(descriptor)
+    target, project, managed = adapter._environment(descriptor)
 
-    assert (python, project, managed) == (prepared.python, prepared.project, environments.NATIVE)
-    assert calls == [environments.NATIVE.environment]
+    assert (target, project, managed) == (prepared, prepared.project, environments.NATIVE)
+    assert calls == [environments.NATIVE]
+
+
+_ECHO_WORKER = """
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import gr00t_worker_protocol as protocol
+requests = os.fdopen(int(os.environ["PHYSICALAI_GR00T_REQUEST_FD"]), "rb")
+responses = os.fdopen(int(os.environ["PHYSICALAI_GR00T_RESPONSE_FD"]), "wb")
+while (message := protocol.read_frame(requests)) is not None and message["op"] != "close":
+    protocol.write_frame(responses, {
+        "ok": True,
+        "project": os.environ["PHYSICALAI_WORKER_PROJECT"],
+        "framework": os.environ["PHYSICALAI_WORKER_FRAMEWORK"],
+        "process_group": os.getpgid(0),
+    })
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="The worker pipes are POSIX file descriptors.")
+def test_worker_runs_through_isolate_over_its_pipes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    script = tmp_path / "echo_worker.py"
+    script.write_text(_ECHO_WORKER, encoding="utf-8")
+    worker_dir = Path(runtime.__file__).parent / "_worker"
+    real_start = runtime.isolate.start
+    launches: list[dict[str, Any]] = []
+
+    def start(target: object, entrypoint: object, **kwargs: object) -> object:
+        launches.append({"target": target, "entrypoint": entrypoint, **kwargs})
+        # Run the echo script in place of the real worker, which needs GR00T installed.
+        return real_start(target, script, [str(worker_dir)], **kwargs)
+
+    monkeypatch.setattr(runtime.isolate, "start", start)
+    worker = runtime._Worker(ExternalInterpreter(sys.executable), tmp_path / "checkout")
+
+    response = worker.request({"op": "hello"})
+    worker.close()
+
+    assert launches[0]["entrypoint"] == runtime._INFER_WORKER
+    assert response["project"] == str(tmp_path / "checkout")
+    assert response["framework"] == "gr00t"
+    # Isolate starts every worker in its own process group, so stopping it also stops its subprocesses.
+    assert response["process_group"] != os.getpgid(0)
+    assert worker.process.poll() == 0
 
 
 def test_user_managed_environment_still_requires_its_gr00t_checkout(
