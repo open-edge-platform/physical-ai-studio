@@ -1,11 +1,11 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for the `TrainJobPayload` discriminated union.
+"""Tests for strict training requests and backward-compatible saved payloads.
 
 Local training and the direct-URL remote trainer registry (which also covers
 an SSH-tunneled trainer) are mutually exclusive targets, each modeled as its
-own payload class (`LocalTrainJobPayload`, `RemoteTrainJobPayload`). A payload
+own request class (`LocalTrainJobRequest`, `RemoteTrainJobRequest`). A request
 can never express two targets at once: a target's fields simply don't exist
 on another target's class, and `extra="forbid"` rejects any attempt to pass
 them in anyway.
@@ -16,7 +16,9 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingTarget
+from schemas.job import LocalTrainJobRequest as LocalTrainJobPayload
+from schemas.job import RemoteTrainJobRequest as RemoteTrainJobPayload
+from schemas.job import TrainingTarget, TrainJobPayloadAdapter
 
 
 def _base_kwargs() -> dict:
@@ -192,3 +194,34 @@ class TestTrainingOptions:
 
     def test_image_augmentation_can_be_enabled(self) -> None:
         assert LocalTrainJobPayload(**_base_kwargs(), augment_images=True).augment_images is True
+
+
+class TestSavedPayload:
+    def test_removed_policy_and_branch_specific_fields_remain_readable(self) -> None:
+        data = {
+            **_base_kwargs(),
+            "policy": "removed_policy",
+            "training_target": "local",
+            "lora_enabled": True,
+            "snapflow_enabled": True,
+            "plugin_setting": {"layers": [1, 3]},
+        }
+        payload = TrainJobPayloadAdapter.validate_python(data)
+        assert payload.policy == "removed_policy"
+        assert payload.model_dump()["plugin_setting"] == data["plugin_setting"]
+        with pytest.raises(ValidationError):
+            LocalTrainJobPayload.model_validate(data)
+
+    def test_reads_do_not_normalize_saved_limits_or_camera_mapping(self) -> None:
+        payload = TrainJobPayloadAdapter.validate_python(
+            {
+                **_base_kwargs(),
+                "training_target": "local",
+                "max_epochs": 8,
+                "max_steps": 321,
+                "image_key_reorder_map": {"observation.images.front": 0},
+            }
+        )
+        assert payload.max_steps == 321
+        assert payload.max_epochs == 8
+        assert payload.image_key_reorder_map == {"observation.images.front": 0}

@@ -185,7 +185,7 @@ The `type` value must not be casually renamed. It is stored in project data and
 must remain unique across all installed plugins.
 
 The full SDK reference is in
-[`openvinotoolkit/physicalai/packages/physicalai-studio-plugin/README.md`](https://github.com/openvinotoolkit/physicalai/blob/main/packages/physicalai-studio-plugin/README.md).
+[`openvinotoolkit/physicalai/plugins/physicalai-studio-plugin/README.md`](https://github.com/openvinotoolkit/physicalai/blob/main/plugins/physicalai-studio-plugin/README.md).
 
 ## Offer Zero-Pose Calibration
 

@@ -27,6 +27,8 @@ class RuntimeSessionRegistry:
     def __init__(self) -> None:
         self._sessions: dict[str, RuntimeSession] = {}
         self._robots: dict[UUID, RuntimeSession] = {}
+        self._simulations: dict[str, RuntimeSession] = {}
+        """Simulations by the transport name they publish their robot under, and the session driving each."""
         self._watchers: set[asyncio.Queue[None]] = set()
 
     def add(self, session: RuntimeSession) -> None:
@@ -76,6 +78,22 @@ class RuntimeSessionRegistry:
     def release_robots(self, session: RuntimeSession) -> None:
         for robot_id in [robot_id for robot_id, holder in self._robots.items() if holder is session]:
             del self._robots[robot_id]
+        for owner in [owner for owner, holder in self._simulations.items() if holder is session]:
+            del self._simulations[owner]
+
+    def claim_simulation(self, session: RuntimeSession, owner_name: str, robot_name: str) -> None:
+        """Claim the simulation that publishes its robot under *owner_name* for ``session``.
+
+        A robot row is not the simulation: two rows can point at one simulation, by its transport
+        name. Only one session may drive it, whichever row it loaded. Released with the robots.
+
+        Raises:
+            DeviceInUseError: Another session drives that simulation, through any robot row.
+        """
+        holder = self._simulations.get(owner_name)
+        if holder is not None and holder is not session:
+            raise DeviceInUseError(device=f"The simulation {owner_name!r} of robot {robot_name!r}", holder=holder.label)
+        self._simulations[owner_name] = session
 
     def holder_of_robot(self, robot_id: UUID) -> RuntimeSession | None:
         return self._robots.get(robot_id)

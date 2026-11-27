@@ -1,8 +1,13 @@
+import asyncio
+import functools
+import hashlib
+import os
+import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Body, Depends
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Body, Depends, Request
+from fastapi.responses import FileResponse, Response
 from physicalai_studio_plugin import RobotCatalogDefinition
 from pydantic import BaseModel, Field
 
@@ -173,13 +178,68 @@ async def check_robot_online(
     return await definition.probe.is_online(payload)
 
 
+@functools.lru_cache(maxsize=1024)
+def _content_etag(path: str, inode: int, size: int, mtime_ns: int, ctime_ns: int) -> str:  # noqa: ARG001 - cache key
+    """A strong ETag from the file's bytes, computed once per version of the file.
+
+    The stat fields are only the cache key. ctime is in it because on Linux and macOS a rewrite always changes it,
+    even when the mtime is set back and the size is the same, which would fool an mtime-and-size ETag.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        while chunk := file.read(1 << 20):
+            digest.update(chunk)
+    return f'"{digest.hexdigest()[:32]}"'
+
+
+def _stat_and_etag(path: Path) -> tuple[os.stat_result, str]:
+    """Stat ``path`` and return its content ETag, from the cache where the stat fields can key it.
+
+    On Windows ``st_ctime_ns`` is the creation time, which an in-place rewrite keeps, so a same-size rewrite with its
+    mtime set back would keep the cache key and the old ETag. There the file is hashed on every request.
+    """
+    stat = path.stat()
+    key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    if sys.platform == "win32":
+        return stat, _content_etag.__wrapped__(*key)
+    return stat, _content_etag(*key)
+
+
+def _matches_if_none_match(if_none_match: str, etag: str) -> bool:
+    """Whether ``If-None-Match`` names ``etag``, by the weak comparison GET uses (RFC 9110 13.1.2).
+
+    ``*`` matches any file that exists, and a ``W/`` prefix is ignored on either side.
+    """
+    tags = if_none_match.strip()
+    if tags == "*":
+        return True
+    opaque = etag.removeprefix("W/")
+    return any(tag.strip().removeprefix("W/") == opaque for tag in tags.split(","))
+
+
+async def _revalidated_file(request: Request, path: Path) -> Response:
+    """Serve a URDF or mesh that the browser must check before reusing: ``no-cache`` plus a content ETag.
+
+    Without ``Cache-Control`` browsers keep these for hours by their own heuristic, so a mesh that changed on disk
+    (a plugin update, or an LFS pointer replaced by the real file) kept showing the old one. A 304 answers a matching
+    ``If-None-Match``, so the check costs a round trip, not the file. ``If-Modified-Since`` alone is answered with
+    the file: an mtime can be set back, the content ETag cannot.
+    """
+    stat, etag = await asyncio.to_thread(_stat_and_etag, path)
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match is not None and _matches_if_none_match(if_none_match, etag):
+        return Response(status_code=304, headers=headers)
+    return FileResponse(path, headers=headers, stat_result=stat)
+
+
 @router.get("/{robot_type}/urdf")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
 async def get_robot_catalog_urdf(
+    request: Request,
     definition: RobotDefinitionDep,
-) -> FileResponse:
+) -> Response:
     """Return the URDF file for a catalog robot type."""
-    resolved_path = resolve_robot_urdf_path(definition)
-    return FileResponse(resolved_path)
+    return await _revalidated_file(request, resolve_robot_urdf_path(definition))
 
 
 @router.get("/{robot_type}/schema")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
@@ -197,9 +257,9 @@ async def get_robot_catalog_schema(
 
 @router.get("/{robot_type}/{asset_path:path}")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
 async def get_robot_catalog_asset(
+    request: Request,
     definition: RobotDefinitionDep,
     asset_path: Path,
-) -> FileResponse:
+) -> Response:
     """Return an asset referenced by a relative URDF URI."""
-    resolved_path = resolve_robot_relative_asset_path(definition, asset_path=asset_path)
-    return FileResponse(resolved_path)
+    return await _revalidated_file(request, resolve_robot_relative_asset_path(definition, asset_path=asset_path))

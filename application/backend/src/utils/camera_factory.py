@@ -56,6 +56,8 @@ def build_camera_config(config: Camera) -> Config:
 
     payload = config.payload.model_dump()
     init_args: dict[str, Any] = {k: v for k, v in payload.items() if k in allowed and v is not None}
+    if config.driver == "realsense":
+        init_args["enable_depth"] = payload["output_type"] in {"depth", "both"}
 
     fingerprint = config.fingerprint
     if not fingerprint:

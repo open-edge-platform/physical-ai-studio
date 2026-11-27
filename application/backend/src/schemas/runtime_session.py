@@ -67,7 +67,19 @@ class ModelControlConfig(BaseModel):
     )
 
 
-ControlConfig = Annotated[TeleopControlConfig | ModelControlConfig, Field(discriminator="type")]
+class AutopilotControlConfig(BaseModel):
+    """Follow the simulation's demonstrator while autopilot recording runs.
+
+    Only the session starts it, with ``start_autopilot_recording``; ``set_control`` refuses it.
+    """
+
+    type: Literal["autopilot"] = "autopilot"
+    hz: float = Field(100, gt=0, le=500, description="How often the demonstrator's targets are read")
+
+
+ControlConfig = Annotated[
+    TeleopControlConfig | ModelControlConfig | AutopilotControlConfig, Field(discriminator="type")
+]
 
 
 class LoadEnvironmentCommand(BaseModel):
@@ -131,19 +143,74 @@ class UnloadDatasetCommand(BaseModel):
     request_id: str
 
 
+EXPECTED_DATASET = Field(
+    None,
+    description=(
+        "If set, the command is refused unless this dataset is the one recording. "
+        "Automatic recording sets it, since another dataset may be loaded before its command runs"
+    ),
+)
+
+
 class StartEpisodeCommand(BaseModel):
     command: Literal["start_episode"] = "start_episode"
     request_id: str
     task: str
+    dataset_id: UUID | None = EXPECTED_DATASET
+    episode_id: str | None = Field(
+        None, max_length=64, description="The client's name for the episode, for ending exactly this one"
+    )
+
+
+EXPECTED_EPISODE = Field(
+    None,
+    max_length=64,
+    description="Refuse unless the open episode is the one started with this ``episode_id``",
+)
 
 
 class SaveEpisodeCommand(BaseModel):
     command: Literal["save_episode"] = "save_episode"
     request_id: str
+    dataset_id: UUID | None = EXPECTED_DATASET
+    episode_id: str | None = EXPECTED_EPISODE
 
 
 class DiscardEpisodeCommand(BaseModel):
     command: Literal["discard_episode"] = "discard_episode"
+    request_id: str
+    dataset_id: UUID | None = EXPECTED_DATASET
+    episode_id: str | None = EXPECTED_EPISODE
+
+
+class AutopilotRecordingOptions(BaseModel):
+    """How autopilot recording runs. ``None`` keeps the simulation's default for its scene."""
+
+    max_episodes: Annotated[int, Field(ge=0, le=10_000, description="Stop after this many saved episodes; 0 never")] = 0
+    max_attempts: Annotated[int | None, Field(ge=1, le=5, description="The demonstrator's attempts per episode")] = None
+    recovery_fraction: Annotated[
+        float | None,
+        Field(ge=0.0, le=0.5, allow_inf_nan=False, description="Share of episodes that start from a stuck pose"),
+    ] = None
+
+
+class StartAutopilotRecordingCommand(BaseModel):
+    """Record the simulation's demonstrator into the loaded dataset until stopped or the budget is used up.
+
+    The session leads the follower with the demonstrator, starts each episode with the episode's
+    task, and keeps successes only. Manual episode commands are refused meanwhile.
+    """
+
+    command: Literal["start_autopilot_recording"] = "start_autopilot_recording"
+    request_id: str
+    dataset_id: UUID = Field(..., description="The loaded dataset to record into; refused if another is loaded")
+    options: AutopilotRecordingOptions = Field(default_factory=lambda: AutopilotRecordingOptions())  # noqa: PLW0108
+
+
+class StopAutopilotRecordingCommand(BaseModel):
+    """Stop autopilot recording: the follower holds, and an episode being recorded is discarded."""
+
+    command: Literal["stop_autopilot_recording"] = "stop_autopilot_recording"
     request_id: str
 
 
@@ -166,7 +233,9 @@ RuntimeSessionCommand = Annotated[
     | UnloadModelCommand
     | StartEpisodeCommand
     | SaveEpisodeCommand
-    | DiscardEpisodeCommand,
+    | DiscardEpisodeCommand
+    | StartAutopilotRecordingCommand
+    | StopAutopilotRecordingCommand,
     Field(discriminator="command"),
 ]
 
@@ -207,6 +276,8 @@ class SessionEnvironment(BaseModel):
     name: str
     robot_id: UUID
     leader_id: UUID | None
+    autopilot: bool = False
+    """Whether the simulation's autopilot leads the follower: it leads only while autopilot recording runs."""
     joint_names: list[str]
     cameras: list[SessionCamera]
 
@@ -231,6 +302,50 @@ class SessionModel(BaseModel):
     """The tasks the model takes, when it only knows a fixed set; empty if it takes any text."""
 
 
+AutopilotRecordingPhase = Literal[
+    "starting", "preparing", "recording", "saving", "stopping", "stopped", "done", "failed"
+]
+"""``starting``; ``preparing`` an episode (the simulation lays out its scene, then every camera must be fresh);
+``recording`` it; ``saving`` or discarding it; ``stopping``; then ``done`` (the budget is used up), ``stopped``
+(by the user, or by something else the session did) or ``failed``."""
+
+DiscardReason = Literal["failure", "stalled", "aborted", "stale_stream", "too_short", "dataset", "save_failed"]
+"""Why an episode was not kept: the demonstrator failed or stalled; the episode was aborted (by a stop, the
+simulation, or a leader sample of another episode); a camera went stale; too few frames; the dataset discarded
+it (a camera was lost); saving it failed. A success after a retry is kept."""
+
+
+class AutopilotEpisodeSummary(BaseModel):
+    """How the last episode of autopilot recording ended."""
+
+    id: str
+    """The simulation's id of the episode."""
+    task: str | None = None
+    outcome: str | None = None
+    """The simulation's outcome: ``success``, ``failure``, ``stalled`` or ``aborted``."""
+    clean: bool | None = None
+    kept: bool
+    reason: str | None = None
+    """Why it was discarded, or the simulation's note on a kept one (a regrasp, say)."""
+    discard_reason: DiscardReason | None = None
+    frames: int | None = None
+
+
+class AutopilotRecordingState(BaseModel):
+    """Autopilot recording in this session: what it does now, and how many episodes it kept and discarded."""
+
+    phase: AutopilotRecordingPhase
+    message: str = ""
+    scene: str | None = None
+    task: str | None = None
+    """The task of the episode being prepared or recorded."""
+    saved: int = 0
+    discarded: int = 0
+    discards: dict[DiscardReason, int] = Field(default_factory=dict, description="Discarded episodes by reason")
+    max_episodes: int = 0
+    last: AutopilotEpisodeSummary | None = None
+
+
 class SessionState(BaseModel):
     session_id: str
     rerun_url: str | None = None
@@ -240,6 +355,8 @@ class SessionState(BaseModel):
     """What drives the follower; ``None`` holds it still."""
     dataset: SessionDataset | None = None
     model: SessionModel | None = None
+    autopilot_recording: AutopilotRecordingState | None = None
+    """The running or last autopilot recording of this session; ``None`` before the first."""
 
 
 class StateMessage(BaseModel):

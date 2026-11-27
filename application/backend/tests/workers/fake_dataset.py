@@ -7,6 +7,7 @@ test reads it back.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from internal_datasets.mutations.recording_mutation import (
@@ -47,6 +48,9 @@ class FakeMutation:
         if self._fails("save"):
             self.save_failed = True
             raise OSError("the disk is full")
+        slow = self.log.parent / "slow_save"
+        if slow.exists():  # a test makes saving take this many seconds, as encoding a long video does
+            time.sleep(float(slow.read_text()))
         self._write("save", frames=self.frames)
         self.frames = 0
 

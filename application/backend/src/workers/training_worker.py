@@ -15,7 +15,13 @@ from db import get_async_db_session_ctx
 from schemas import Job, Model, Snapshot
 from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import JobStatus
-from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
+from schemas.job import (
+    RemoteTrainJobPayload,
+    TrainingTarget,
+    TrainJobPayload,
+    TrainJobPayloadAdapter,
+    TrainJobRequestAdapter,
+)
 from schemas.model import DORA_PROPERTY, LORA_PROPERTY, SNAPFLOW_PROPERTY
 from services import DatasetService, ModelService
 from services.event_processor import EventType
@@ -29,6 +35,7 @@ from services.training_backends import (
     get_training_backend,
 )
 from services.training_service import TrainingTrackingDispatcher
+from services.training_targets.local import LocalTrainingTargetHandler
 from settings import get_settings
 from workers.base import ProcessWorker
 
@@ -57,7 +64,23 @@ class TrainingWorker(ProcessWorker[None]):
         async with get_async_db_session_ctx() as session:
             job = await JobService(session, RemoteTrainerService(session)).claim_pending_train_job(self.job_id)
         if job is not None:
-            await self._run_training_job(job, TrainJobPayloadAdapter.validate_python(job.payload))
+            try:
+                payload = TrainJobPayloadAdapter.validate_python(job.payload)
+                if payload.training_target == TrainingTarget.LOCAL:
+                    payload = TrainJobRequestAdapter.validate_python(payload.model_dump())
+                    payload = await LocalTrainingTargetHandler().prepare(payload)
+                elif not payload.remote_job_id:
+                    # New remote work must not silently discard fields from another branch.
+                    # Reattachment only observes an existing execution; it does not resubmit its configuration.
+                    payload = TrainJobPayloadAdapter.validate_python(payload.model_dump(), extra="forbid")
+                await self._run_training_job(job, payload)
+            except Exception as error:
+                logger.exception("Training job {} failed during preparation", job.id)
+                async with get_async_db_session_ctx() as session:
+                    failed = await JobService(session).update_job_status(
+                        job.id, JobStatus.FAILED, message=f"Training preparation failed: {error}"
+                    )
+                self.queue.put((EventType.JOB_UPDATE, failed))
 
     async def _run_training_job(self, job: Job, payload: TrainJobPayload) -> None:
         """Prepare and execute one job after its execution target has been reserved."""

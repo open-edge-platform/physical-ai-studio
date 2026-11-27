@@ -539,7 +539,7 @@ async def test_a_start_from_the_socket_takes_one_executor_thread(
     loop.set_default_executor(one_thread)
     try:
         start = json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"})
-        ack = await runtime_ws._request(session.bus, start)
+        ack = await runtime_ws._request(session.bus, start, session.check_command)
     finally:
         loop.set_default_executor(ThreadPoolExecutor())  # the session's teardown uses threads too
         one_thread.shutdown(wait=False)
@@ -559,7 +559,7 @@ async def test_a_start_the_client_gave_up_on_does_not_open_an_episode(
     await session.load_dataset(_dataset())
 
     start = json.dumps({"command": "start_episode", "request_id": "1", "task": "pick"})
-    acked = asyncio.ensure_future(runtime_ws._request(session.bus, start))
+    acked = asyncio.ensure_future(runtime_ws._request(session.bus, start, session.check_command))
     # Right after the request is sent, the loop the session answers on stalls past the client's deadline.
     asyncio.get_running_loop().call_soon(time.sleep, 1.5)
     ack = await acked
@@ -678,7 +678,9 @@ async def test_a_dataset_that_will_not_open_after_the_copy_is_unknown_not_lost(n
         await _start(session, "pick the block")
         await asyncio.sleep(0.4)
         await _save(session)
-        ack = await _request(session.bus, json.dumps({"command": "unload_dataset", "request_id": "1"}))
+        ack = await _request(
+            session.bus, json.dumps({"command": "unload_dataset", "request_id": "1"}), session.check_command
+        )
 
     assert ack.error is not None
     assert ack.error.error_code == "recording_outcome_unknown"

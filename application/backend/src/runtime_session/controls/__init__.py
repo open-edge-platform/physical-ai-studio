@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from runtime_session.controls.base import Control
 from runtime_session.controls.model import ModelControl
 from runtime_session.controls.teleop import TeleopControl
-from schemas.runtime_session import ModelControlConfig
+from schemas.runtime_session import ModelControlConfig, TeleopControlConfig
 
 if TYPE_CHECKING:
     from physicalai.robot import Robot
@@ -37,6 +37,8 @@ def build_control(
         if model is None:
             raise ValueError("Load a model first")
         return ModelControl(store, model, config, observer=observer)
+    if not isinstance(config, TeleopControlConfig):
+        raise ValueError(f"A {config.type} control is not started this way")
     if leader is None:
         raise ValueError("Teleoperation needs a connected leader arm; connect one and reload the environment")
     return TeleopControl(store, leader, config, bus)

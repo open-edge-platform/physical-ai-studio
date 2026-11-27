@@ -118,4 +118,27 @@ def policy_catalog(classes: dict[str, tuple[type, list[str]]]) -> PolicyCatalog:
 
 def declared_policy_catalog(backends: dict[str, list[str]]) -> PolicyCatalog:
     """Describe an image's declared capabilities without importing local policies."""
-    return PolicyCatalog(available=[_STUDIO_POLICIES[name] for name in backends], backends=backends)
+    return PolicyCatalog(
+        available=[
+            _STUDIO_POLICIES.get(name)
+            or AvailablePolicy(id=name, name=name, description="Policy declared by the trainer", min_vram=None)
+            for name in backends
+        ],
+        backends=backends,
+    )
+
+
+def is_local_policy_available(policy: str) -> bool:
+    """Check scheduling eligibility without importing policy implementations or contacting trainers.
+
+    Execution verifies constructors and capabilities separately. Never use the
+    local inventory to gate remote training or reads of saved jobs and models.
+    """
+    try:
+        from physicalai.policies import list_physicalai_policies
+
+        if policy not in list_physicalai_policies() or policy not in _STUDIO_POLICIES:
+            return False
+        return not missing_policy_dependencies(policy)
+    except (ImportError, ValueError, metadata.PackageNotFoundError):
+        return False

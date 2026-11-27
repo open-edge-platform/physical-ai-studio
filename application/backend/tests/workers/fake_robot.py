@@ -29,6 +29,7 @@ class FakeRobot:
         self._position = np.asarray(start, dtype=np.float64)
         self._fail_connect = fail_connect
         self._connected = False
+        self._last: FakeObservation | None = None
 
     @property
     def joint_names(self) -> list[str]:
@@ -50,7 +51,12 @@ class FakeRobot:
         return self._connected
 
     def get_observation(self) -> FakeObservation:
-        return FakeObservation(self._position.copy(), time.monotonic())
+        # A test freezes the robot, as a SharedRobot whose owner is gone returns its last state, by
+        # touching ``<log>.freeze``.
+        if self._last is not None and Path(f"{self.log}.freeze").exists():
+            return self._last
+        self._last = FakeObservation(self._position.copy(), time.monotonic())
+        return self._last
 
     def send_action(self, action: np.ndarray, *, goal_time: float = 0.1) -> None:
         self._position = np.asarray(action, dtype=np.float64)

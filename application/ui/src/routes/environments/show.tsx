@@ -2,7 +2,11 @@ import { Button, Flex, View } from '@geti-ui/ui';
 
 import { useProjectId } from '../../features/projects/use-project';
 import { Preview } from '../../features/robots/environment-form/preview';
-import { EnvironmentForm, EnvironmentFormProvider } from '../../features/robots/environment-form/provider';
+import {
+    EnvironmentForm,
+    EnvironmentFormProvider,
+    toTeleoperator,
+} from '../../features/robots/environment-form/provider';
 import { useEnvironment } from '../../features/robots/use-environment';
 import { SimulationCamerasPrompt } from '../../features/simulation/simulation-cameras-prompt';
 import { paths } from '../../paths';
@@ -42,13 +46,7 @@ export const EnvironmentShow = () => {
                 return {
                     robot_id: robot.robot.id,
                     name: robot.robot.name,
-                    teleoperator:
-                        robot.tele_operator.type === 'robot'
-                            ? {
-                                  type: 'robot',
-                                  robot_id: robot.tele_operator.robot_id,
-                              }
-                            : { type: 'none' },
+                    teleoperator: toTeleoperator(robot.tele_operator),
                 };
             }) ?? [],
     };

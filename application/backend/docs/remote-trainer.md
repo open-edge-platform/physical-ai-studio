@@ -170,10 +170,17 @@ The image is built from
 separately from the Studio application images in
 `application/docker/Dockerfile`.
 
-CI publishes a `<version>-dev-<short-sha>` tag and the moving `main` tag
-together, then attaches an SBOM and provenance attestations to the immutable
-tag and signs it with keyless Sigstore. `protocol-<N>` only advances after
-that signing succeeds, so a failed attestation or signing step leaves it
+CI builds each device image once. On `main`, it pushes a run-specific
+`build-<run-id>-<run-attempt>` tag with SBOM and provenance attestations, then
+pulls that exact digest for smoke testing. After both device tests pass, CI
+promotes the tested digests to `<version>-dev-<short-sha>` and the moving
+`main` tag without rebuilding, verifies the attestations, and signs the
+immutable tags with keyless Sigstore. Pull requests build and test locally
+without pushing images or writing the build cache. Separate caller jobs grant
+`packages: read` to PR and non-main builds and `packages: write` to main-branch
+builds (including manual runs on `main`), sharing the same local composite
+build/smoke-test action. `protocol-<N>` only advances
+after signing succeeds, so a failed attestation or signing step leaves it
 pointing at the previous good build instead of an unsigned one. Use the
 `<version>-dev-<short-sha>` tag or a resolved digest for reproducible
 deployments; `main` and `protocol-<N>` are moving compatibility fallbacks

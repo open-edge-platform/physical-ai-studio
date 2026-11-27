@@ -308,6 +308,20 @@ describe('ModelRow', () => {
         expect(screen.getByRole('button', { name: 'Run model' })).toBeInTheDocument();
     });
 
+    it('keeps missing-policy models visible and lets the training wizard check retraining availability', async () => {
+        const user = userEvent.setup();
+        renderModelRow({
+            modelOverride: {
+                policy: 'removed_policy',
+            },
+        });
+        expect(screen.getByText('REMOVED_POLICY')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Run model' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'options' }));
+        expect(screen.getByRole('menuitem', { name: 'Retrain' })).not.toHaveAttribute('aria-disabled', 'true');
+        expect(screen.getByRole('menuitem', { name: 'Download' })).not.toHaveAttribute('aria-disabled', 'true');
+    });
+
     it('two rows can be expanded simultaneously', async () => {
         const user = userEvent.setup();
         const secondModel: SchemaModel = { ...model, id: 'model-2', name: 'stack-blocks' };

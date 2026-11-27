@@ -19,7 +19,9 @@ const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
     });
     const { data: policyBackends } = $api.useSuspenseQuery('get', '/api/policies/backends');
 
-    const backends = (policyBackends[model.policy] ?? []).filter(isExportBackend);
+    const backends = [...new Set([...model.available_backends, ...(policyBackends[model.policy] ?? [])])].filter(
+        isExportBackend
+    );
 
     return (
         <Grid

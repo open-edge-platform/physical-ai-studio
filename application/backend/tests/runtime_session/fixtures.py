@@ -26,7 +26,11 @@ LEADER_ID = uuid4()
 JOINTS = ["shoulder_pan", "gripper"]
 
 
-def make_environment(*, leader: bool = True, cameras: int = 1) -> EnvironmentWithRelations:
+def make_environment(
+    *, leader: bool = True, cameras: int = 1, autopilot_url: str | None = None
+) -> EnvironmentWithRelations:
+    """With ``autopilot_url``, a simulated follower serving there, led by its simulation's autopilot."""
+
     def robot(robot_id, name):
         return {
             "id": str(robot_id),
@@ -35,14 +39,16 @@ def make_environment(*, leader: bool = True, cameras: int = 1) -> EnvironmentWit
             "payload": {"connection_string": "", "serial_number": name},
         }
 
+    follower = robot(FOLLOWER_ID, "Follower")
     teleoperator = {"type": "robot", "robot_id": str(LEADER_ID), "robot": robot(LEADER_ID, "Leader")}
+    if autopilot_url is not None:
+        follower = {**follower, "type": "MuJoCo_SO101_Follower", "payload": {"http_url": autopilot_url}}
+        teleoperator = {"type": "autopilot"}
     return EnvironmentWithRelations.model_validate(
         {
             "id": str(uuid4()),
             "name": "Bench",
-            "robots": [
-                {"robot": robot(FOLLOWER_ID, "Follower"), "tele_operator": teleoperator if leader else {"type": "none"}}
-            ],
+            "robots": [{"robot": follower, "tele_operator": teleoperator if leader else {"type": "none"}}],
             "cameras": [
                 {
                     "id": str(uuid4()),

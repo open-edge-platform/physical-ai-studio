@@ -18,7 +18,7 @@ const DeviceStatuses = ({
     environment: SchemaSessionEnvironment;
 }) => {
     const label = (device: string) =>
-        ({ follower: 'Follower', leader: 'Leader' })[device] ??
+        ({ follower: 'Follower', leader: environment.autopilot ? 'Autopilot' : 'Leader' })[device] ??
         environment.cameras.find((camera) => camera.key === device)?.name ??
         device;
 

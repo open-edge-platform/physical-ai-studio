@@ -197,6 +197,18 @@ class Store:
         """The latest joint vector ``key``, or ``None`` if nothing has written it."""
         return self._read(self._vectors[key], self._views[key], self.spec.joint_names)
 
+    def stamp(self, key: str) -> float | None:
+        """When the joint vector ``key`` was last written, without copying it; ``None`` if unwritten."""
+        return self._stamp(self._vectors[key])
+
+    def observation_stamp(self, camera: str) -> float | None:
+        """When ``camera``'s frame was last written, without copying the frame; ``None`` if unreadable."""
+        return self._stamp(self._images[camera])
+
+    def _stamp(self, slot: _Slot) -> float | None:
+        timestamp = float(self._stamps[slot.stamp_index])
+        return None if math.isnan(timestamp) else timestamp
+
     def write_observation(self, camera: str, frame: ArrayLike, *, timestamp: float) -> None:
         self._write(self._images[camera], self._views["camera:" + camera], frame, timestamp)
 
@@ -206,6 +218,10 @@ class Store:
     def invalidate_observation(self, camera: str) -> None:
         """Make a lost camera unreadable until its next frame is written."""
         self._stamps[self._images[camera].stamp_index] = math.nan
+
+    def invalidate_all(self) -> None:
+        """Forget every sample: what a device that is gone wrote must not pass for a new one."""
+        self._stamps[:] = math.nan
 
     def _write(self, slot: _Slot, view: np.ndarray, values: ArrayLike, timestamp: float) -> None:
         array = np.asarray(values)

@@ -96,6 +96,14 @@ describe('TrainingRow', () => {
         expect(screen.getByText('ACT')).toBeInTheDocument();
     });
 
+    it.each(['pending', 'failed', 'completed'] as const)('shows the saved policy identifier for a %s job', (status) => {
+        renderTrainingRow({
+            status,
+            payload: getMockedTrainJobPayload({ policy: 'removed_policy', plugin_option: { layers: [1, 3] } }),
+        });
+        expect(screen.getByText('REMOVED_POLICY')).toBeInTheDocument();
+    });
+
     it('shows "..." when extra_info[\'train/loss_step\'] is missing', () => {
         renderTrainingRow({ extra_info: null });
 

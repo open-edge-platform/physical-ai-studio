@@ -20,7 +20,7 @@ from repositories import JobRepository
 from schemas import Job
 from schemas.aws_auth import AwsAuthenticationIssue
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload, TrainJobRequestAdapter
 from services.job_handlers import get_job_handler
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
@@ -61,6 +61,7 @@ class JobService:
 
     async def submit_train_job(self, payload: TrainJobPayload) -> Job:
         """Validate and persist a training job with its execution target pinned."""
+        payload = TrainJobRequestAdapter.validate_python(payload.model_dump())
         trainer_id = payload.remote_trainer_id if isinstance(payload, RemoteTrainJobPayload) else None
         async with RemoteTrainerService.allow_job_submission(trainer_id):
             handler = get_training_target_handler(payload, self.session, self.remote_trainer_service)

@@ -45,6 +45,7 @@ from internal_datasets.mutations.recording_mutation import (
     UnconfirmedCleanupError,
     UnusedCacheCleanupError,
 )
+from runtime_session.autopilot_recording import AutopilotRecording
 from runtime_session.bus import (
     DEADLINE,
     EVENTS,
@@ -67,6 +68,7 @@ from runtime_session.rerun import RerunObserver
 from runtime_session.slot import Slot
 from runtime_session.store import ACTION, STATE, FeatureSpecMismatchError, Store
 from schemas.runtime_session import (
+    AutopilotControlConfig,
     CommandDone,
     DiscardEpisodeCommand,
     ErrorMessage,
@@ -80,9 +82,12 @@ from schemas.runtime_session import (
     SessionEnvironment,
     SessionState,
     SetControlCommand,
+    StartAutopilotRecordingCommand,
     StartEpisodeCommand,
     StateMessage,
     StatusMessage,
+    StopAutopilotRecordingCommand,
+    TeleopControlConfig,
     UnloadDatasetCommand,
     UnloadEnvironmentCommand,
     UnloadModelCommand,
@@ -98,9 +103,11 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
     from uuid import UUID
 
+    import httpx
     from physicalai.robot import Robot
 
     from robots.robot_client_factory import RobotClientFactory
+    from runtime_session.autopilot_recording import AutopilotControl
     from runtime_session.controls import Control
     from runtime_session.environment import EnvironmentDescription
     from runtime_session.registry import RuntimeSessionRegistry
@@ -127,6 +134,18 @@ _COMMAND_WAIT_S = 600.0
 _CONTROL = "control"
 """What the session reports a control as: a control is a thread in the session, not on the bus itself."""
 
+_MANUAL_EPISODE_COMMANDS = frozenset({"start_episode", "save_episode", "discard_episode"})
+"""A client's commands to the dataset worker that autopilot recording refuses while it runs."""
+
+
+@dataclass(frozen=True, slots=True)
+class SimulationEndpoint:
+    """A simulation Studio started and supervises, as its ``ready`` event reported it."""
+
+    http_url: str
+    run: str
+    """Which start of the simulation this is (``simulation_run``); a new start is a new run."""
+
 
 @dataclass(frozen=True, slots=True)
 class Resolvers:
@@ -135,6 +154,8 @@ class Resolvers:
     environment: Callable[[EnvironmentDraft], Awaitable[EnvironmentWithRelations]]
     dataset: Callable[[UUID], Awaitable[Dataset]]
     model: Callable[[UUID], Awaitable[Model]]
+    simulation: Callable[[UUID], SimulationEndpoint | None] | None = None
+    """The simulation Studio started for a robot, while it runs; autopilot recording records only that one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +176,7 @@ class RuntimeSession:
         camera_claims: CameraClaimRegistry,
         robot_factory: RobotClientFactory,
         resolve: Resolvers,
+        autopilot_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.id = uuid4().hex
         self.project_id = project_id
@@ -183,6 +205,15 @@ class RuntimeSession:
         """Where each robot's simulation was last reported running, and which run (``follow_simulation``)."""
         self._followed: tuple[int, str, str] | None = None
         """The generation, run and address the environment last followed a simulation to, once each."""
+        self._connected_runs: dict[UUID, str] = {}
+        """Which run of each robot's simulation the environment's devices last connected to."""
+        self._autopilot: AutopilotRecording | None = None
+        """Autopilot recording while it runs; its control drives the follower meanwhile."""
+        self._autopilot_shown: AutopilotRecording | None = None
+        """The running or last autopilot recording, whose state the session reports."""
+        self._autopilot_transport = autopilot_transport
+        """How autopilot recording reaches the simulation; tests replace it."""
+        self._background: set[asyncio.Task[None]] = set()
         self._store: Store | None = None
         """Joints and frames, for the environment's devices and the dataset. Outlives a reloaded
         environment while the spec stays the same, so the dataset recording from it stays loaded."""
@@ -212,6 +243,7 @@ class RuntimeSession:
         with anyio.CancelScope(shield=True):
             try:
                 async with self._lock:
+                    await self._stop_autopilot("The session closed.")
                     await self._control.unload()
                     await self._model.unload()
                     await self._dataset.unload()
@@ -243,6 +275,11 @@ class RuntimeSession:
             "unload_environment": (UnloadEnvironmentCommand, lambda _command: self.unload_environment()),
             "reload_environment": (ReloadEnvironmentCommand, lambda _command: self.reload_environment()),
             "set_control": (SetControlCommand, lambda command: self.set_control(command.control)),
+            "start_autopilot_recording": (StartAutopilotRecordingCommand, self.start_autopilot_recording),
+            "stop_autopilot_recording": (
+                StopAutopilotRecordingCommand,
+                lambda _command: self.stop_autopilot_recording(),
+            ),
             "load_dataset": (
                 LoadDatasetCommand,
                 lambda command: self._load_dataset_by_id(command.dataset_id, command.fps),
@@ -316,6 +353,7 @@ class RuntimeSession:
             control=control.config if control else None,
             dataset=dataset.state() if dataset else None,
             model=model.state() if model else None,
+            autopilot_recording=self._autopilot_shown.state if self._autopilot_shown is not None else None,
         )
 
     def info(self) -> RuntimeSessionInfo:
@@ -376,6 +414,7 @@ class RuntimeSession:
                 keep_model = None
             if incompatible and not unload_incompatible:
                 raise IncompatiblePartsError(incompatible)
+            await self._stop_autopilot("Another environment was loaded.")
             await self._control.unload()
             await self._environment.unload()
             if not reuse_store:
@@ -387,8 +426,11 @@ class RuntimeSession:
                     self._observer.set_store(self._store)
             self._draft = draft
             self._generation += 1
+            self._connected_runs.clear()
             try:
+                run = self._run_now(description)
                 await self._environment.load(self._loaded_environment(environment, description))
+                self._note_connected(description, run)
                 logger.info("Session {} loaded environment {!r}", self.id, environment.name)
             finally:
                 # Also when the load was refused: the dataset records from the store, which is there either way.
@@ -483,6 +525,9 @@ class RuntimeSession:
             )
         self._registry.claim_robots(self, dict(description.robot_names))
         try:
+            if description.simulation_owner is not None:
+                follower = description.robot_names.get(description.follower.robot_id, "")
+                self._registry.claim_simulation(self, description.simulation_owner, follower)
             generation = self._camera_claims.claim(claims)
             try:
                 yield
@@ -494,11 +539,18 @@ class RuntimeSession:
     async def set_control(self, config: ControlConfig | None) -> None:
         """Stop the running control, hold the follower where it is, then start ``config``.
 
+        Autopilot recording stops first, if it runs.
+
         Raises:
             RuntimeSessionCommandError: No environment is loaded.
             ValueError: The environment cannot run ``config`` (no leader, or no model loaded).
             WorkerStartupError: The control failed to start; the follower holds.
         """
+        if isinstance(config, AutopilotControlConfig):
+            raise RuntimeSessionCommandError(
+                "Autopilot recording starts its own control: use start_autopilot_recording.",
+                error_code="invalid_session_command",
+            )
         async with self._lock:
             loaded = self._environment.require("Load an environment first.")
             try:
@@ -508,18 +560,23 @@ class RuntimeSession:
 
     async def _switch_control(self, environment: Environment, config: ControlConfig | None) -> None:
         """Hold the lock. One control at a time, by construction: the old one is joined before the next starts."""
+        await self._stop_autopilot("The control was switched.")
         # An episode records one way of driving the follower; a switch mid-episode would mix two.
         await self._stop_recording()
         await self._control.unload()
         # Hold: the follower stays where it is now, not where the old control last pointed it.
-        if (state := environment.store.read(STATE)) is not None:
-            environment.store.write(ACTION, state.value, timestamp=time.monotonic())
+        _hold(environment.store)
         if config is not None:
             await self._control.load(self._watched_control(config, environment))
             logger.info("Session {} switched to {} control", self.id, config.type)
 
     @asynccontextmanager
     async def _watched_control(self, config: ControlConfig, environment: Environment) -> AsyncIterator[Control]:
+        if isinstance(config, TeleopControlConfig) and environment.description.autopilot:
+            raise ValueError(
+                "The simulation's autopilot leads this follower only while it records automatically: "
+                "use Record automatically on the recording page"
+            )
         try:
             if isinstance(config, ModelControlConfig):
                 await self._start_observer(environment.store, hz=config.hz)
@@ -547,6 +604,173 @@ class RuntimeSession:
             logger.exception("Session {} could not start Rerun; continuing without visualization", self.id)
         else:
             self._observer = observer
+
+    @asynccontextmanager
+    async def _autopilot_control(self, control: AutopilotControl) -> AsyncIterator[Control]:
+        async with self._reported(_CONTROL, control):
+            yield control
+
+    def check_command(self, command: str) -> None:
+        """Refuse a client's manual episode command while autopilot recording runs: it starts and ends the episodes.
+
+        Raises:
+            RuntimeSessionCommandError: Refused.
+        """
+        if command in _MANUAL_EPISODE_COMMANDS and (shown := self._autopilot_shown) is not None and shown.running:
+            raise RuntimeSessionCommandError("Stop automatic recording first.", error_code="autopilot_recording")
+
+    async def start_autopilot_recording(self, command: StartAutopilotRecordingCommand) -> None:
+        """Record the simulation's demonstrator into the loaded dataset (see ``autopilot_recording.py``).
+
+        Its control replaces the one driving the follower now, as any control change does.
+
+        Raises:
+            RuntimeSessionCommandError: Nothing to record from or into, it runs already, or the simulation
+                refuses; nothing changed. Or its control did not start: the follower holds.
+        """
+        async with self._lock:
+            loaded = self._environment.require("Load an environment first.")
+            description, endpoint = self._autopilot_preconditions(loaded, command)
+            try:
+                recording = AutopilotRecording(
+                    bus=self.bus,
+                    store=loaded.environment.store,
+                    dataset_id=command.dataset_id,
+                    http_url=endpoint.http_url,
+                    spec=description.autopilot_spec,
+                    payload=description.follower_payload,
+                    options=command.options,
+                    emit=lambda: self._emit(StateMessage(data=self.state())),
+                    transport=self._autopilot_transport,
+                )
+            except ValueError as error:  # not an address on this machine
+                raise RuntimeSessionCommandError(str(error), error_code="autopilot_refused") from error
+            control = await recording.open()
+            self._autopilot_shown = recording
+            await self._control.unload()
+            _hold(loaded.environment.store)
+            try:
+                await self._control.load(self._autopilot_control(control))
+            except Exception:
+                await recording.abandon()
+                self._emit(StateMessage(data=self.state()))
+                raise
+            self._autopilot = recording
+            recording.start(self._on_autopilot_end)
+            name = description.robot_names.get(description.follower.robot_id)
+            logger.info("Session {} records the autopilot of {!r} ({})", self.id, name, recording.state.scene)
+        self._emit(StateMessage(data=self.state()))
+
+    def _autopilot_preconditions(
+        self, loaded: LoadedEnvironment, command: StartAutopilotRecordingCommand
+    ) -> tuple[EnvironmentDescription, SimulationEndpoint]:
+        """Hold the lock. What autopilot recording starts from, or why it cannot start; changes nothing.
+
+        Raises:
+            RuntimeSessionCommandError: Why it cannot start.
+        """
+        if self._autopilot is not None:
+            raise RuntimeSessionCommandError(
+                "Automatic recording is already running.", error_code="autopilot_recording"
+            )
+        description = loaded.environment.description
+        name = description.robot_names.get(description.follower.robot_id, "the follower")
+        if not description.autopilot:
+            raise RuntimeSessionCommandError(
+                "Automatic recording needs an environment whose teleoperator is the simulation's autopilot.",
+                error_code="autopilot_refused",
+            )
+        if description.autopilot_spec is None:
+            raise RuntimeSessionCommandError(
+                f"The simulation of {name!r} has no autopilot to record: update its plugin.",
+                error_code="autopilot_refused",
+            )
+        recording = self._dataset.value
+        if recording is None:
+            raise RuntimeSessionCommandError("Load a dataset to record into first.", error_code="no_dataset")
+        if recording.dataset.id != command.dataset_id:
+            raise RuntimeSessionCommandError(
+                "Another dataset is loaded than the one to record into.", error_code="dataset_changed"
+            )
+        if recording.status.is_recording:
+            raise RuntimeSessionCommandError(
+                "Save or discard the episode being recorded first.", error_code="episode_open"
+            )
+        endpoint = self._resolve.simulation(description.follower.robot_id) if self._resolve.simulation else None
+        if endpoint is None:
+            raise RuntimeSessionCommandError(
+                f"Start the simulation of {name!r} from Studio first: automatic recording records only a "
+                "simulation Studio started.",
+                error_code="simulation_not_running",
+            )
+        if (
+            endpoint.http_url != description.simulation_url
+            or self._connected_runs.get(description.follower.robot_id, endpoint.run) != endpoint.run
+        ):
+            raise RuntimeSessionCommandError(
+                f"The simulation of {name!r} started again since the environment connected: reload the environment.",
+                error_code="environment_stale",
+            )
+        return description, endpoint
+
+    async def stop_autopilot_recording(self) -> None:
+        """Stop autopilot recording: the follower holds, and an episode being recorded is discarded. A no-op
+        when it does not run."""
+        async with self._lock:
+            await self._stop_autopilot("Stopped.")
+        self._emit(StateMessage(data=self.state()))
+
+    async def _stop_autopilot(self, message: str, *, failed: bool = False) -> None:
+        """Hold the lock. End autopilot recording if it runs, and take its control out: the follower holds.
+
+        Waits for its stop (a save in progress finishes first), so nothing else touches the dataset or the
+        follower meanwhile.
+        """
+        recording, self._autopilot = self._autopilot, None
+        if recording is None:
+            return
+        await recording.stop(message, failed=failed)
+        await self._drop_autopilot_control(recording)
+
+    async def _drop_autopilot_control(self, recording: AutopilotRecording) -> None:
+        """Hold the lock. Unload *recording*'s control if it still drives; it already wrote its hold."""
+        if recording.control is not None and self._control.value is recording.control:
+            await self._control.unload()
+
+    def _on_autopilot_end(self, recording: AutopilotRecording) -> None:
+        """Autopilot recording ended by itself (done, failed): take its control out, in the background."""
+        task = asyncio.create_task(self._autopilot_ended(recording))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _autopilot_ended(self, recording: AutopilotRecording) -> None:
+        async with self._lock:
+            if self._autopilot is not recording:
+                return  # stopped meanwhile, which took the control out
+            self._autopilot = None
+            await self._drop_autopilot_control(recording)
+        self._emit(StateMessage(data=self.state()))
+
+    def _run_now(self, description: EnvironmentDescription) -> str | None:
+        """Which run of the follower's simulation serves where the description points, if known.
+
+        Studio's own simulation knows it from its supervisor; otherwise the last one reported.
+        """
+        robot = description.follower.robot_id
+        if self._resolve.simulation is not None and (endpoint := self._resolve.simulation(robot)) is not None:
+            return endpoint.run if endpoint.http_url == description.simulation_url else None
+        if (reported := self._simulations.get(robot)) is not None and reported[0] == description.simulation_url:
+            return reported[1]
+        return None
+
+    def _note_connected(self, description: EnvironmentDescription, run: str | None) -> None:
+        """Hold the lock. Remember which run the devices connected to: *run*, taken before they connected.
+
+        Taken before: a simulation that starts again while (or after) the devices connect is then a
+        new run when it is reported, even on the same address.
+        """
+        if run is not None:
+            self._connected_runs[description.follower.robot_id] = run
 
     async def reload_environment(self) -> None:
         """Ask the environment to connect its devices again; the store and the dataset stay.
@@ -587,10 +811,15 @@ class RuntimeSession:
                     lookup_failed(error)
                     return False
             # The control borrows the leader, and the episode records the devices being replaced.
+            await self._stop_autopilot("The environment was reloaded.")
             await self._control.unload()
             await self._stop_recording()
+            # What the old devices left must not pass for what the new ones measure.
+            loaded.environment.store.invalidate_all()
             try:
+                run = self._run_now(loaded.environment.description)
                 await self.bus.request(RELOAD, ReloadEnvironment(), CommandDone, timeout=_RELOAD_S)
+                self._note_connected(loaded.environment.description, run)
             except BusRequestError as error:
                 raise RuntimeSessionCommandError(error.message, error_code=error.error_code) from error
             finally:
@@ -627,26 +856,51 @@ class RuntimeSession:
             await self._follow()
 
     async def _follow(self) -> None:
-        """Reload the environment where its follower's simulation was last reported, if elsewhere.
+        """Follow a new run of the follower's simulation: a restart (a new instance), on any address.
 
-        A failure before the devices reload (the simulation stopped again, serves other cameras
-        now) fails the environment, saying why, as nothing else would; it can be reloaded.
+        What the devices connected to is gone, so whatever drives or records the follower stops first:
+        autopilot recording ends, the follower holds, an open episode is discarded, and the store
+        forgets every sample. Only an idle session (no control, no episode) reloads by itself, on the
+        new address; any other one reports its environment failed, to reload when the user chooses.
+        A failure before the devices reload (the simulation stopped again, serves other cameras now)
+        fails the environment, saying why, as nothing else would; it can be reloaded.
         """
         async with self._lock:  # a load in progress finishes first
             loaded = self._environment.value
             if self.closed.is_set() or loaded is None:
                 return
             description = loaded.environment.description
-            reported = self._simulations.get(description.follower.robot_id)
-            generation = self._generation
-            if description.simulation_url is None or reported is None or reported[0] == description.simulation_url:
+            robot = description.follower.robot_id
+            reported = self._simulations.get(robot)
+            if description.simulation_url is None or reported is None:
                 return
             target, run = reported
+            connected = self._connected_runs.get(robot)
+            if target == description.simulation_url and connected in {None, run}:
+                # Same address and run, or loaded before this session heard of the simulation: it
+                # connected to the one serving there now.
+                self._connected_runs[robot] = run
+                return
+            generation = self._generation
             if self._followed == (generation, run, target):
                 return
             self._followed = (generation, run, target)
-        name = description.robot_names.get(description.follower.robot_id)
-        logger.info("Session {}: the simulation of {!r} moved to {}; reloading the environment", self.id, name, target)
+            name = description.robot_names.get(robot)
+            busy = self._autopilot is not None or self._control.value is not None or self._recording_open()
+            if busy:
+                message = f"The simulation of {name!r} started again; reload the environment to go on."
+                logger.info("Session {}: {}", self.id, message)
+                await self._stop_autopilot(f"The simulation of {name!r} started again.", failed=True)
+                await self._control.unload()
+                await self._stop_recording()
+                loaded.environment.store.invalidate_all()
+                loaded.environment.failure = message  # what Start checks, as for a device that failed
+                publish_status(self.bus, ENVIRONMENT, "failed", message)
+                self._emit(StateMessage(data=self.state()))
+                return
+        logger.info(
+            "Session {}: the simulation of {!r} runs again at {}; reloading the environment", self.id, name, target
+        )
 
         def lookup_failed(error: Exception) -> None:
             message = f"The simulation of {name!r} started again at {target}: {_command_error(error).message}"
@@ -661,6 +915,10 @@ class RuntimeSession:
             # The devices did not reconnect: the environment reported that itself, failed.
             logger.warning("Session {} could not follow: {}", self.id, _command_error(error).message)
 
+    def _recording_open(self) -> bool:
+        recording = self._dataset.value
+        return recording is not None and recording.status.is_recording
+
     async def unload_environment(self) -> None:
         """Stop the control and disconnect the environment. A no-op when none is loaded.
 
@@ -669,10 +927,12 @@ class RuntimeSession:
         async with self._lock:
             if (environment := self.environment) is None:
                 return
+            await self._stop_autopilot("The environment was unloaded.")
             await self._control.unload()
             await self._environment.unload()
             self._draft = None
             self._generation += 1
+            self._connected_runs.clear()
             logger.info("Session {} unloaded environment {!r}", self.id, environment.name)
         self._emit(StateMessage(data=self.state()))
 
@@ -686,6 +946,7 @@ class RuntimeSession:
         """
         async with self._lock:
             environment = self._environment.require("Load an environment first.")
+            await self._stop_autopilot("Another dataset was loaded.")
             # Swapping: the loaded one is finished (copied back) first.
             await self._dataset.unload()
             await self._dataset.load(self._recording(dataset, environment.robot_type, fps))
@@ -779,6 +1040,7 @@ class RuntimeSession:
     async def _unload_dataset(self) -> tuple[Recording | None, str | None]:
         """Unload the dataset as before; what was loaded, and why its worker failed, if it did."""
         async with self._lock:
+            await self._stop_autopilot("The dataset was unloaded.")
             recording = self._dataset.value
             await self._dataset.unload()
         self._emit(StateMessage(data=self.state()))
@@ -868,6 +1130,7 @@ class RuntimeSession:
         """A failed environment stays loaded, to be reloaded; nothing drives or records it meanwhile."""
         if status.state == "failed":
             async with self._lock:
+                await self._stop_autopilot(f"The environment failed: {status.error}", failed=True)
                 await self._control.unload()
                 await self._stop_recording()
             self._emit(StateMessage(data=self.state()))
@@ -876,6 +1139,9 @@ class RuntimeSession:
         """A failed control is dropped, and the follower holds; the environment stays loaded."""
         if status.state == "failed":
             async with self._lock:
+                recording = self._autopilot
+                if recording is not None and self._control.value is recording.control:
+                    await self._stop_autopilot(f"Following the demonstrator failed: {status.error}", failed=True)
                 if (loaded := self._environment.value) is not None and self._control.value is not None:
                     await self._switch_control(loaded.environment, None)
             self._emit(StateMessage(data=self.state()))
@@ -905,6 +1171,12 @@ class RuntimeSession:
             self._bus.publish(EVENTS, event)
         if event.type == "state":
             self._registry.changed()
+
+
+def _hold(store: Store) -> None:
+    """Command the follower to stay where it is now, not where the last control pointed it."""
+    if (state := store.read(STATE)) is not None:
+        store.write(ACTION, state.value, timestamp=time.monotonic())
 
 
 def _model_mismatch(model: ProcessModel, spec: FeatureSpec) -> str | None:

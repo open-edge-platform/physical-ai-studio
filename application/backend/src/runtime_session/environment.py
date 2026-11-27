@@ -62,8 +62,17 @@ class EnvironmentDescription:
     """Connected as a plain driver by the session, for controls to borrow."""
     cameras: Mapping[str, Camera]
     """Camera rows by store key, the key a dataset records them under."""
+    autopilot: bool = False
+    """Whether the simulation's autopilot leads the follower (the teleoperator ``autopilot``); it leads
+    only through autopilot recording, which builds its leader from ``autopilot_spec``."""
     simulation_url: str | None = None
     """For a simulated follower: where its simulation served when this was described."""
+    simulation_owner: str | None = None
+    """For a simulated follower: the transport name its simulation publishes it under, which the session claims."""
+    autopilot_spec: Any = None
+    """The follower type's ``AutopilotSpec`` (plugin SDK), if its simulation's demonstrator can be recorded."""
+    follower_payload: Any = None
+    """The follower's payload, for ``autopilot_spec`` to build the leader from."""
 
     def session_environment(self) -> SessionEnvironment:
         """What the session's ``state`` message says about this environment."""
@@ -72,6 +81,7 @@ class EnvironmentDescription:
             name=self.name,
             robot_id=self.follower.robot_id,
             leader_id=self.leader.robot_id if self.leader is not None else None,
+            autopilot=self.autopilot,
             joint_names=list(self.spec.joint_names),
             cameras=[
                 SessionCamera(
@@ -91,6 +101,9 @@ async def describe_environment(
 ) -> EnvironmentDescription:
     """Build the follower's driver (unconnected) and derive the session's spec.
 
+    The leader is the teleoperator's robot arm. With the simulation's autopilot as teleoperator there
+    is none: autopilot recording builds the leader it follows when it starts.
+
     Raises:
         ValueError: The environment does not have exactly one robot, or two
             cameras share a store key.
@@ -101,11 +114,13 @@ async def describe_environment(
             "a session drives exactly one robot for now"
         )
     robot = environment.robots[0].robot
-    driver, _definition = await factory.build_robot_driver(robot, factory)
+    driver, definition = await factory.build_robot_driver(robot, factory)
     follower = RobotRecipe.from_driver(robot.id, driver)
     robot_names = {robot.id: robot.name}
+    tele_operator = environment.robots[0].tele_operator
     leader = None
-    if (leader_robot := getattr(environment.robots[0].tele_operator, "robot", None)) is not None:
+    leader_robot = getattr(tele_operator, "robot", None) if tele_operator.type == "robot" else None
+    if leader_robot is not None:
         leader_driver, _definition = await factory.build_robot_driver(leader_robot, factory)
         leader = RobotRecipe.from_driver(leader_robot.id, leader_driver)
         robot_names[leader_robot.id] = leader_robot.name
@@ -125,8 +140,23 @@ async def describe_environment(
         follower=follower,
         leader=leader,
         cameras=cameras,
+        autopilot=tele_operator.type == "autopilot",
         simulation_url=getattr(robot.payload, "http_url", None),
+        simulation_owner=_simulation_owner(definition, robot.payload),
+        autopilot_spec=getattr(getattr(definition, "simulation", None), "autopilot", None),
+        follower_payload=robot.payload,
     )
+
+
+def _simulation_owner(definition: object, payload: object) -> str | None:
+    """The transport name a simulated robot's simulation publishes it under, from its ``SimulationLaunch``."""
+    launch = getattr(definition, "simulation", None)
+    if launch is None:
+        return None
+    try:
+        return launch.owner_name(payload)
+    except ValueError:
+        return None
 
 
 COMPONENT = "environment"

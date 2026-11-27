@@ -6,9 +6,47 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
+import textwrap
 
 from trainer.main import health
 from trainer.schemas import _DEFAULT_PROTOCOL_VERSION, _installed_library_version
+
+
+def test_trainer_starts_without_studio_schemas() -> None:
+    """The trainer image ships only trainer/training, not Studio's schemas package."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent("""\
+                import importlib.abc
+                import sys
+
+                class NoStudioSchemas(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        if fullname == "schemas" or fullname.startswith("schemas."):
+                            raise ModuleNotFoundError("Studio schemas are absent from trainer images")
+                        return None
+
+                sys.meta_path.insert(0, NoStudioSchemas())
+                from fastapi.testclient import TestClient
+                from trainer.main import app
+                from training.policy_catalog import declared_policy_catalog
+
+                response = TestClient(app).get("/health")
+                assert response.status_code == 200, response.text
+                assert response.json()["status"] == "healthy"
+                assert declared_policy_catalog({"act": ["torch"]}).available[0].id == "act"
+                """),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_health_reports_image_compatibility_metadata(monkeypatch) -> None:

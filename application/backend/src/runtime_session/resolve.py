@@ -6,13 +6,15 @@ from typing import TYPE_CHECKING
 
 from exceptions import ResourceNotFoundError, ResourceType
 from runtime_session.environment import UNSAVED_ENVIRONMENT_ID
-from runtime_session.session import Resolvers
+from runtime_session.session import Resolvers, SimulationEndpoint
 from schemas.environment import (
     EnvironmentWithRelations,
     RobotWithTeleoperator,
+    TeleoperatorAutopilotWithRobot,
     TeleoperatorNoneWithRobot,
     TeleoperatorRobotWithRobot,
 )
+from schemas.simulation import SimulationStatus, simulation_run
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -37,16 +39,23 @@ def project_resolvers(
 ) -> Resolvers:
     """Resolvers backed by the database, scoped to ``project_id``.
 
-    With ``simulations``, a leader that reads from a simulation is pointed at its follower's. With
+    With ``simulations``, a leader that reads from a simulation is pointed at its follower's, and the
+    session finds the simulation Studio started for a robot, and which run of it (``simulation``). With
     ``robot_simulations``, a simulation camera streams from where its simulation runs now.
     """
 
     async def environment(draft: EnvironmentDraft) -> EnvironmentWithRelations:
         configured = []
         for robot in draft.robots:
-            teleoperator: TeleoperatorRobotWithRobot | TeleoperatorNoneWithRobot = TeleoperatorNoneWithRobot()
+            teleoperator: TeleoperatorRobotWithRobot | TeleoperatorNoneWithRobot | TeleoperatorAutopilotWithRobot
+            teleoperator = TeleoperatorNoneWithRobot()
             follower = await robots.get_robot_by_id(project_id, robot.robot_id)
-            if robot.tele_operator.type == "robot":
+            if robot.tele_operator.type == "autopilot":
+                # Only a simulated follower: autopilot recording builds the leader it follows when it starts.
+                if simulations is None or not simulations.is_simulated(follower):
+                    raise ValueError(f"Robot {follower.name!r} has no simulation, so no autopilot can lead it")
+                teleoperator = TeleoperatorAutopilotWithRobot()
+            elif robot.tele_operator.type == "robot":
                 leader = await robots.get_robot_by_id(project_id, robot.tele_operator.robot_id)
                 if simulations is not None:
                     follower, leader = await simulations.point_leader_at_follower(project_id, follower, leader)
@@ -74,4 +83,17 @@ def project_resolvers(
             raise ResourceNotFoundError(ResourceType.MODEL, str(model_id))
         return found
 
-    return Resolvers(environment=environment, dataset=dataset, model=model)
+    def simulation(robot_id: UUID) -> SimulationEndpoint | None:
+        if simulations is None:
+            return None
+        state = simulations.state()
+        if (
+            state.status is not SimulationStatus.RUNNING
+            or state.project_id != project_id
+            or state.robot_id != robot_id
+            or state.http_url is None
+        ):
+            return None
+        return SimulationEndpoint(http_url=state.http_url, run=simulation_run(state))
+
+    return Resolvers(environment=environment, dataset=dataset, model=model, simulation=simulation)

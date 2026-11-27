@@ -1,6 +1,8 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import { type ReactNode } from 'react';
+
 import { Button, Flex, Heading, Text, View } from '@geti-ui/ui';
 
 /**
@@ -12,6 +14,9 @@ export const SimulationNotRunning = ({
     onStart,
     onReconnect,
     isStarting = false,
+    title,
+    description,
+    actions,
 }: {
     robot: { name: string };
     onStart?: () => void;
@@ -19,6 +24,12 @@ export const SimulationNotRunning = ({
     onReconnect?: () => void;
     /** Studio is starting (or stopping) the simulation: offer its progress instead. */
     isStarting?: boolean;
+    /** In place of the heading the simulation's state gives. */
+    title?: string;
+    /** What the simulation is needed for, in place of the default. */
+    description?: ReactNode;
+    /** More buttons, after the start button. */
+    actions?: ReactNode;
 }) => {
     return (
         <View width='100%' height='100%' padding='size-300'>
@@ -31,11 +42,12 @@ export const SimulationNotRunning = ({
                 gap='size-200'
             >
                 <Heading level={3} margin={0}>
-                    {isStarting ? 'Simulation starting' : 'Simulation not running'}
+                    {title ?? (isStarting ? 'Simulation starting' : 'Simulation not running')}
                 </Heading>
                 <Text>
-                    {robot.name} needs a running simulation. Start it to see it here, move its joints and use it in
-                    environments.
+                    {description ??
+                        `${robot.name} needs a running simulation. ` +
+                            'Start it to see it here, move its joints and use it in environments.'}
                 </Text>
                 <Flex gap='size-100'>
                     {onStart !== undefined ? (
@@ -48,6 +60,7 @@ export const SimulationNotRunning = ({
                             Reconnect
                         </Button>
                     ) : null}
+                    {actions}
                 </Flex>
             </Flex>
         </View>
