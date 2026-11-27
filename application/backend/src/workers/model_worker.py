@@ -115,7 +115,7 @@ class Inference:
                 raise ValueError("This export takes no RTC inputs; it cannot run with RTC execution")
             return {}
         # Sync or async: what RTC sends for a first chunk, which leaves the chunk unguided. Drop this once the
-        # runtime's InferenceModel fills these itself for an RTC export (proposed in openvinotoolkit/physicalai).
+        # runtime's InferenceModel fills these itself (physicalai branch fix/inference-rtc-inputs-any-mode, not merged).
         if rtc is None:
             return {
                 PREV_CHUNK_LEFT_OVER: np.zeros((1, *self.rtc_chunk), dtype=np.float32),
