@@ -5,7 +5,8 @@ exports, and reports as ``model`` on the session's bus. To ``ModelControl``'s
 executor it is the model itself: ``predict_action_chunk`` sends the state and
 the task to the worker, which adds the frames from the store, and returns the
 whole chunk. Queueing it, smoothing and deciding when to ask again stays with
-the executor, as ``physicalai.runtime`` runs it.
+the executor, as ``physicalai.runtime`` runs it. ``RTCExecution`` calls the
+model itself instead, with its RTC inputs added; those cross to the worker too.
 """
 
 from __future__ import annotations
@@ -13,16 +14,17 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
+from loguru import logger
 
 from runtime_session.bus import Bus, publish_status, until_serving
 from schemas.runtime_session import CommandDone, SessionModel
 from workers import model_worker as model_rpc
-from workers.model_worker import ActionChunk, InferRequest, ModelWorker
+from workers.model_worker import RTC_INPUTS, ActionChunk, InferRequest, ModelReady, ModelWorker, RtcInputs
 
 if TYPE_CHECKING:
     from runtime_session.store import FeatureSpec, Store
@@ -49,6 +51,10 @@ class ModelInputs:
     """Model input name to the store camera it reads."""
     tasks: tuple[str, ...] = ()
     """The only tasks a policy trained on a fixed set takes, such as a multi-task ACT; empty if any text goes."""
+    rtc_chunk: tuple[int, int] | None = None
+    """``prev_chunk_left_over``'s shape, ``(chunk_size, action_dim)``, when the export takes RTC inputs."""
+    rtc_dtypes: dict[str, str] = field(default_factory=dict)
+    """Each RTC input's dtype, as the export declares it, when it takes RTC inputs."""
 
 
 def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
@@ -62,6 +68,8 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     reasons: list[str] = []
     state_size = 0
     images: dict[str, str] = {}
+    rtc_chunk = _rtc_chunk(features, len(spec.joint_names))
+    rtc_dtypes = _rtc_dtypes(features) if rtc_chunk is not None else {}
     for feature in features:
         name: str = feature["name"]
         if feature["ftype"] == "STATE":
@@ -80,7 +88,72 @@ def model_inputs(export_dir: Path, spec: FeatureSpec) -> ModelInputs:
     tasks = next(
         (spec["tasks"] for spec in manifest["model"].get("preprocessors", []) if spec["type"] == "task_index"), ()
     )
-    return ModelInputs(state_size, images, tuple(tasks))
+    return ModelInputs(state_size, images, tuple(tasks), rtc_chunk, rtc_dtypes)
+
+
+_REEXPORT = "re-export the policy with RTC enabled, or export it without RTC inputs to run it synchronously"
+
+
+def _shape(feature: dict[str, Any]) -> list[int] | None:
+    """A feature's shape as a list of whole, non-negative sizes, or ``None`` if it is anything else."""
+    shape = feature.get("shape")
+    if isinstance(shape, list) and all(type(size) is int and size >= 0 for size in shape):
+        return shape
+    return None
+
+
+def _rtc_chunk(features: list[dict[str, Any]], joints: int) -> tuple[int, int] | None:
+    """``(chunk_size, action_dim)`` of an export that takes all four RTC inputs, or ``None`` if it takes none.
+
+    Raises:
+        ValueError: The export lists only some RTC inputs, or shapes RTC cannot fill for this follower.
+    """
+    shapes = {feature["name"]: _shape(feature) for feature in features if feature["name"] in RTC_INPUTS}
+    if not shapes:
+        return None
+    if missing := [name for name in RTC_INPUTS if name not in shapes]:
+        raise ValueError(f"The export takes some RTC inputs but is missing {', '.join(missing)}: {_REEXPORT}")
+    tail = shapes[model_rpc.PREV_CHUNK_LEFT_OVER]
+    if tail is None or len(tail) != 2:  # whole sizes (chunk_size, action_dim)
+        raise ValueError(
+            f"The export's {model_rpc.PREV_CHUNK_LEFT_OVER} has shape {tail}, not (chunk_size, action_dim): {_REEXPORT}"
+        )
+    chunk_size, action_dim = tail
+    if action_dim != joints:
+        raise ValueError(
+            f"The export's RTC tail has {action_dim} actions per step, but the follower has {joints} joints: "
+            f"{_REEXPORT} for this robot"
+        )
+    if chunk_size < 2:
+        raise ValueError(f"The export's RTC tail has a chunk of {chunk_size}, too short to guide: {_REEXPORT}")
+    if scalars := [name for name in RTC_INPUTS[1:] if shapes[name] != []]:
+        raise ValueError(
+            f"The export takes {', '.join(scalars)} with shape {shapes[scalars[0]]}, not a scalar: {_REEXPORT}"
+        )
+    return chunk_size, action_dim
+
+
+def _rtc_dtypes(features: list[dict[str, Any]]) -> dict[str, str]:
+    """Each RTC input's dtype as the export declares it, or the usual one where it does not say.
+
+    Raises:
+        ValueError: A declared dtype is not one RTC can fill: whole numbers for the delay and horizon, floats else.
+    """
+    dtypes = dict(model_rpc.RTC_DTYPES)
+    for feature in features:
+        name = feature["name"]
+        if name not in dtypes or "dtype" not in feature:
+            continue
+        declared = feature["dtype"]
+        kind = "iu" if name in {model_rpc.INFERENCE_DELAY, model_rpc.EXECUTION_HORIZON} else "f"
+        try:
+            valid = isinstance(declared, str) and np.dtype(declared).kind in kind
+        except TypeError:
+            valid = False
+        if not valid:
+            raise ValueError(f"The export takes {name} as {declared!r}, which RTC cannot fill: {_REEXPORT}")
+        dtypes[name] = declared
+    return dtypes
 
 
 class ProcessModel:
@@ -107,11 +180,16 @@ class ProcessModel:
             store_name=store.name,
             spec=store.spec,
             images=self.inputs.images,
+            rtc_chunk=self.inputs.rtc_chunk,
+            rtc_dtypes=self.inputs.rtc_dtypes or None,
         )
         self._session_id = session_id
         self._bus: Bus | None = None
         self._stack: AsyncExitStack | None = None
         self._started = False
+        self.last_error: Exception | None = None
+        """Why the last inference failed, or ``None`` once one succeeds. ``RTCExecution`` reports a failed warmup
+        or too many failed refills in its own words; ``ModelControl`` reports this instead, as Sync and Async do."""
 
     def state(self) -> SessionModel:
         return SessionModel(
@@ -120,7 +198,14 @@ class ProcessModel:
             backend=self.backend,
             device=self.device,
             tasks=list(self.inputs.tasks),
+            rtc=self.inputs.rtc_chunk is not None,
+            rtc_max_horizon=self.inputs.rtc_chunk[0] // 2 if self.inputs.rtc_chunk is not None else None,
         )
+
+    @property
+    def chunk_size(self) -> int:
+        """The export's chunk size when it says (an RTC export does), else 1 as ``InferenceModel`` reports."""
+        return self.inputs.rtc_chunk[0] if self.inputs.rtc_chunk is not None else 1
 
     async def __aenter__(self) -> Self:
         """Start the worker and wait until the model is loaded.
@@ -134,10 +219,14 @@ class ProcessModel:
             stack.callback(self._report_stopped, bus)
             try:
                 await stack.enter_async_context(self._worker)
-                await until_serving(bus, model_rpc.READY, model_rpc.Empty(), CommandDone, within=_READY_S)
+                ready = await until_serving(bus, model_rpc.READY, model_rpc.Empty(), ModelReady, within=_READY_S)
             except Exception as error:
                 publish_status(bus, COMPONENT, "failed", str(error))
                 raise
+            if not ready.rtc and self.inputs.rtc_chunk is not None:
+                # A plain graph under a manifest that lists RTC inputs: offer it as the plain export it is.
+                logger.warning("Model {!r}: its manifest lists RTC inputs its graph does not take", self.model.name)
+                self.inputs = replace(self.inputs, rtc_chunk=None, rtc_dtypes={})
             watch = asyncio.create_task(self._report_death(bus))
             stack.callback(watch.cancel)
             publish_status(bus, COMPONENT, "running")
@@ -161,11 +250,33 @@ class ProcessModel:
             NoResponderError: The model is no longer loaded.
         """
         task = observation.get(model_rpc.TASK)
+        rtc = None
+        if model_rpc.PREV_CHUNK_LEFT_OVER in observation:
+            rtc = RtcInputs(
+                prev_chunk_left_over=np.asarray(observation[model_rpc.PREV_CHUNK_LEFT_OVER])[0].tolist(),
+                inference_delay=int(observation[model_rpc.INFERENCE_DELAY]),
+                max_guidance_weight=float(observation[model_rpc.MAX_GUIDANCE_WEIGHT]),
+                execution_horizon=int(observation[model_rpc.EXECUTION_HORIZON]),
+            )
         request = InferRequest(
-            state=np.asarray(observation[model_rpc.STATE])[0].tolist(), task=task[0] if task else None
+            state=np.asarray(observation[model_rpc.STATE])[0].tolist(), task=task[0] if task else None, rtc=rtc
         )
-        chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
+        try:
+            chunk = self._loaded_bus().request_sync(model_rpc.INFER, request, ActionChunk, timeout=_INFER_S)
+        except Exception as error:
+            self.last_error = error
+            raise
+        self.last_error = None
         return np.asarray(chunk.actions, dtype=np.float32)
+
+    def __call__(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
+        """What ``RTCExecution`` calls: the chunk for ``inputs``, RTC inputs included, as ``{"action": chunk}``.
+
+        Raises:
+            BusRequestError: The model failed on it.
+            NoResponderError: The model is no longer loaded.
+        """
+        return {"action": self.predict_action_chunk(inputs)}
 
     def reset(self) -> None:
         self._loaded_bus().request_sync(model_rpc.RESET, model_rpc.Empty(), CommandDone, timeout=_INFER_S)

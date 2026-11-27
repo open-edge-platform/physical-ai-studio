@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { Button, Flex, Item, Picker, Slider, TextArea, toast } from '@geti-ui/ui';
+import { Button, Flex, Item, Picker, Slider, Text, TextArea, toast } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { SchemaExecutionConfig, SchemaModelControlConfig } from '../../../api/openapi-spec';
@@ -9,7 +9,14 @@ import { ERROR_TOAST, failureOf, useRuntimeSession } from '../runtime-session-pr
 const EXECUTION_MODES: { key: SchemaExecutionConfig['mode']; label: string }[] = [
     { key: 'sync', label: 'Synchronous' },
     { key: 'async', label: 'Asynchronous' },
+    { key: 'rtc', label: 'Real-time chunking (RTC)' },
 ];
+
+// The settings the RTC trials on the reBot ran with: guide 25 of a 50-action chunk, weight 5.
+const RTC_HORIZON = 25;
+const RTC_GUIDANCE = 5;
+// The API's own bound on execution_horizon (ExecutionConfig).
+const API_MAX_HORIZON = 100;
 
 /** The default task of the dataset the loaded model was trained on, or none. */
 const useDefaultTask = (model_id: string | undefined) => {
@@ -36,11 +43,19 @@ export const InferenceMode = () => {
     const [task, setTask] = useState(defaultTask);
     const [mode, setMode] = useState<SchemaExecutionConfig['mode']>('sync');
     const [threshold, setThreshold] = useState(0.5);
+    // An export guides at most half its chunk; the default is the reBot trials' 25 when the chunk has room.
+    const maxHorizon = Math.min(state?.model?.rtc_max_horizon ?? RTC_HORIZON, API_MAX_HORIZON);
+    const [horizon, setHorizon] = useState(Math.min(RTC_HORIZON, maxHorizon));
+    const [guidance, setGuidance] = useState(RTC_GUIDANCE);
+    // In ms; 0 lets RTC measure the delay on the first inferences instead.
+    const [latencyMs, setLatencyMs] = useState(0);
+    const modelTakesRtc = state?.model?.rtc === true;
     // shortcut: set by hand, upgrade to the model's training fps once exports record it.
     const [hz, setHz] = useState(30);
     const [isPending, setIsPending] = useState(false);
 
     useEffect(() => setTask(defaultTask), [defaultTask]);
+    useEffect(() => setHorizon(Math.min(RTC_HORIZON, maxHorizon)), [maxHorizon]);
 
     // A model trained on a fixed set of tasks only takes one of them.
     const tasks = state?.model?.tasks ?? [];
@@ -70,7 +85,14 @@ export const InferenceMode = () => {
             type: 'model',
             task: selectedTask,
             hz,
-            execution: { mode, request_threshold: threshold },
+            // Each mode reads its own settings: the threshold for sync and async, the rest for RTC.
+            execution: {
+                mode,
+                request_threshold: threshold,
+                execution_horizon: Math.min(horizon, maxHorizon),
+                max_guidance_weight: guidance,
+                initial_latency_s: latencyMs > 0 ? latencyMs / 1000 : null,
+            },
             // The follower eases onto the model's actions, which may start far from where it is.
             grace_s: 3,
         });
@@ -101,6 +123,9 @@ export const InferenceMode = () => {
             >
                 {(item) => <Item key={item.key}>{item.label}</Item>}
             </Picker>
+            {mode === 'rtc' && state?.model != null && !modelTakesRtc && (
+                <Text>This model was exported without RTC inputs. Load an RTC export, or choose another mode.</Text>
+            )}
             <Slider
                 label='Action rate'
                 width='100%'
@@ -112,23 +137,64 @@ export const InferenceMode = () => {
                 getValueLabel={(value) => `${value} Hz`}
                 isDisabled={isRunning}
             />
-            <Slider
-                label='Request the next chunk at'
-                width='100%'
-                minValue={0}
-                maxValue={1}
-                step={0.05}
-                value={threshold}
-                onChange={setThreshold}
-                formatOptions={{ style: 'percent' }}
-                isDisabled={isRunning}
-            />
+            {mode === 'rtc' ? (
+                <>
+                    {maxHorizon > 1 ? (
+                        <Slider
+                            label='Guided actions (horizon)'
+                            width='100%'
+                            minValue={1}
+                            maxValue={maxHorizon}
+                            step={1}
+                            value={horizon}
+                            onChange={setHorizon}
+                            isDisabled={isRunning}
+                        />
+                    ) : (
+                        // A chunk of 2 or 3 actions guides exactly one: nothing to choose.
+                        <Text>Guided actions (horizon): 1</Text>
+                    )}
+                    <Slider
+                        label='Guidance weight'
+                        width='100%'
+                        minValue={0}
+                        maxValue={10}
+                        step={0.5}
+                        value={guidance}
+                        onChange={setGuidance}
+                        isDisabled={isRunning}
+                    />
+                    <Slider
+                        label='Expected inference latency'
+                        width='100%'
+                        minValue={0}
+                        maxValue={1000}
+                        step={10}
+                        value={latencyMs}
+                        onChange={setLatencyMs}
+                        getValueLabel={(value) => (value > 0 ? `${value} ms` : 'Measure')}
+                        isDisabled={isRunning}
+                    />
+                </>
+            ) : (
+                <Slider
+                    label='Request the next chunk at'
+                    width='100%'
+                    minValue={0}
+                    maxValue={1}
+                    step={0.05}
+                    value={threshold}
+                    onChange={setThreshold}
+                    formatOptions={{ style: 'percent' }}
+                    isDisabled={isRunning}
+                />
+            )}
             {isRunning ? (
                 <Button variant='secondary' isPending={isPending} onPress={() => void setControl(null)}>
                     Stop
                 </Button>
             ) : (
-                <Button isPending={isPending} isDisabled={!canRun} onPress={play}>
+                <Button isPending={isPending} isDisabled={!canRun || (mode === 'rtc' && !modelTakesRtc)} onPress={play}>
                     Play
                 </Button>
             )}
