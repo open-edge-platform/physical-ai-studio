@@ -139,16 +139,21 @@ export const InferenceMode = () => {
             />
             {mode === 'rtc' ? (
                 <>
-                    <Slider
-                        label='Guided actions (horizon)'
-                        width='100%'
-                        minValue={1}
-                        maxValue={maxHorizon}
-                        step={1}
-                        value={horizon}
-                        onChange={setHorizon}
-                        isDisabled={isRunning}
-                    />
+                    {maxHorizon > 1 ? (
+                        <Slider
+                            label='Guided actions (horizon)'
+                            width='100%'
+                            minValue={1}
+                            maxValue={maxHorizon}
+                            step={1}
+                            value={horizon}
+                            onChange={setHorizon}
+                            isDisabled={isRunning}
+                        />
+                    ) : (
+                        // A chunk of 2 or 3 actions guides exactly one: nothing to choose.
+                        <Text>Guided actions (horizon): 1</Text>
+                    )}
                     <Slider
                         label='Guidance weight'
                         width='100%'

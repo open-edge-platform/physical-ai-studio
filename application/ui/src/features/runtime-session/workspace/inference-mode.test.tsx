@@ -104,6 +104,32 @@ describe('InferenceMode', () => {
         expect(sent.control.execution.execution_horizon).toBeLessThanOrEqual(100);
     });
 
+    it('fixes the horizon at 1 for an export of 2 or 3 actions, with no slider', async () => {
+        model = {
+            model_id: 'p',
+            name: 'tiny',
+            backend: 'onnx',
+            device: 'CPU',
+            tasks: [],
+            rtc: true,
+            rtc_max_horizon: 1,
+        };
+        render(<InferenceMode />);
+
+        await chooseRtc();
+        expect(screen.queryByRole('slider', { name: 'Guided actions (horizon)' })).not.toBeInTheDocument();
+        expect(screen.getByText('Guided actions (horizon): 1')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+        expect(send).toHaveBeenCalledWith(
+            expect.objectContaining({
+                control: expect.objectContaining({
+                    execution: expect.objectContaining({ mode: 'rtc', execution_horizon: 1 }),
+                }),
+            })
+        );
+    });
+
     it('will not run RTC on an export without RTC inputs, and says why', async () => {
         render(<InferenceMode />);
 
