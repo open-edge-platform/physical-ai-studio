@@ -27,5 +27,6 @@ class LogConfig:
     worker_log_info: ClassVar[dict[str | None, str]] = {
         "TrainingWorker": "training.log",
         "DatasetImportWorker": "dataset_import.log",
+        "ModelWorker": "inference.log",
         None: "app.log",
     }
