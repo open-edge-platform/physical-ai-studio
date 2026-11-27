@@ -86,6 +86,7 @@ def setup_logging(config: LogConfig | None = None) -> None:
                 filter=worker_log_filter,
                 serialize=config.serialize,
                 enqueue=True,
+                diagnose=worker_name not in config.workers_without_locals,
             )
         except Exception as e:
             logger.error(f"Failed to add log sink for {worker_name}: {e}")

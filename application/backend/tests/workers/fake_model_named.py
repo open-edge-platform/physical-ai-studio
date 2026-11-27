@@ -6,8 +6,16 @@ where a real ``ModelWorker`` does. Module-level so the spawned child can import 
 
 from __future__ import annotations
 
-from .fake_model import FakeModelWorker
+from .fake_model import FakeModelWorker, Oracle
+
+SENTINEL = "sentinel-local-7f3a9c"
+"""A local on the failing call's line, which Loguru's ``diagnose`` would print in the traceback."""
 
 
 class ModelWorker(FakeModelWorker):
-    pass
+    def open_model(self) -> Oracle:
+        sentinel = SENTINEL
+        return self._open_with(sentinel)
+
+    def _open_with(self, _sentinel: str) -> Oracle:
+        return super().open_model()

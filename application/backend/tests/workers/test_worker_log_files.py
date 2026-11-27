@@ -16,7 +16,7 @@ from runtime_session.store import FeatureSpec, ImageSpec, Store
 from services.log_service import STATIC_SOURCES
 from workers.base import WorkerStartupError
 
-from .fake_model_named import ModelWorker
+from .fake_model_named import SENTINEL, ModelWorker
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -70,4 +70,6 @@ async def test_a_model_that_fails_to_load_is_logged_with_its_traceback(log_dir: 
     assert failure["record"]["exception"]["type"] == "RuntimeError"
     assert "Traceback (most recent call last):" in failure["text"]
     assert "in open_model" in failure["text"]
+    # The file keeps the traceback but not the values of its local variables.
+    assert SENTINEL not in failure["text"]
     assert "RuntimeError: the export does not load" in failure["text"]
