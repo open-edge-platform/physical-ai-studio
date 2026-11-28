@@ -6,6 +6,8 @@
 model:
   class_path: physicalai.policies.SmolVLA
   init_args:
+    # Fine-tune the pretrained SmolVLA (this is also the default). Set to null to train from scratch.
+    pretrained_name_or_path: lerobot/smolvla_base
     # Optional camera remapping for pretrained SmolVLA checkpoints.
     # Example: map dataset camera keys to pretrained camera slot indices.
     # image_key_reorder_map:
@@ -40,7 +42,7 @@ data:
                 - 1.2
 
 trainer:
-  max_epochs: 100
+  max_epochs: 50 # ~20k steps at batch 64 (400 steps/epoch), the usual SmolVLA fine-tuning budget
   accelerator: gpu
   devices: 1
   precision: 32
