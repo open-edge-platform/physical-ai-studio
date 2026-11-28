@@ -87,6 +87,9 @@ def _dispatch(method_name: str) -> Callable[[ArgumentParser, Namespace], int]:
         # for some jsonargparse versions, so this must run first.
         weights_from = getattr(cfg, "weights_from", None)
         model_init_args = _model_init_args(cfg) if weights_from else {}
+        if weights_from and cfg.get("model.init_args.pretrained_name_or_path") is not None:
+            # The checkpoint replaces the weights, so skip loading the pretrained base first.
+            cfg["model.init_args.pretrained_name_or_path"] = None
 
         cfg_init = cast("Namespace", parser.instantiate(cfg))
         model = cfg_init.model

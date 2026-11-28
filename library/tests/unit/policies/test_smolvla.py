@@ -95,12 +95,13 @@ class TestSmolVLAPolicy:
 
     def test_lazy_initialization(self) -> None:
         """Test lazy initialization doesn't create model."""
-        policy = SmolVLA()
+        policy = SmolVLA(pretrained_name_or_path=None)
         assert policy.model is None
 
     def test_hyperparameters_saved(self) -> None:
         """Test hyperparameters are saved for checkpoint."""
         policy = SmolVLA(
+            pretrained_name_or_path=None,
             chunk_size=100,
             optimizer_lr=2e-4,
             freeze_vision_encoder=False,
@@ -114,12 +115,12 @@ class TestSmolVLAPolicy:
 
     def test_save_hyperparameters_ignores_compile_model(self) -> None:
         """Test compile_model is excluded from saved hyperparameters."""
-        policy = SmolVLA(compile_model=True)
+        policy = SmolVLA(pretrained_name_or_path=None, compile_model=True)
         assert "compile_model" not in policy.hparams
 
     def test_config_attribute(self) -> None:
         """Test SmolVLA policy has config attribute."""
-        policy = SmolVLA(chunk_size=100, optimizer_lr=2e-4)
+        policy = SmolVLA(pretrained_name_or_path=None, chunk_size=100, optimizer_lr=2e-4)
 
         assert policy.config is not None
         assert policy.config.chunk_size == 100
@@ -127,7 +128,7 @@ class TestSmolVLAPolicy:
 
     def test_n_action_steps(self) -> None:
         """Test n_action_steps is correctly set."""
-        policy = SmolVLA(n_action_steps=25, chunk_size=50)
+        policy = SmolVLA(pretrained_name_or_path=None, n_action_steps=25, chunk_size=50)
         assert policy._n_action_steps == 25
         assert policy.config.n_action_steps == 25
 
@@ -136,14 +137,14 @@ class TestSmolVLAPolicy:
         """Test methods raise ValueError if model not initialized."""
         from physicalai.data import Observation
 
-        policy = SmolVLA()
+        policy = SmolVLA(pretrained_name_or_path=None)
         dummy_obs = Observation(state=torch.randn(1, 10))
         with pytest.raises(ValueError, match="not initialized"):
             getattr(policy, method)(dummy_obs)
 
     def test_on_load_checkpoint_inserts_missing_target_time_params(self) -> None:
         """Legacy checkpoints missing target-time MLP params are migrated."""
-        policy = SmolVLA()
+        policy = SmolVLA(pretrained_name_or_path=None)
         policy.model = SimpleNamespace(
             _model=SimpleNamespace(
                 target_time_mlp_in=SimpleNamespace(
@@ -1148,7 +1149,7 @@ class TestNoiseDefault:
     def test_random_noise_is_on_by_default(self) -> None:
         """The model uses this flag for the training noise too; zero training noise lets the
         flow-matching target be read off ``x_t``, so the loss collapses and the policy learns nothing."""
-        assert SmolVLA().config.use_random_input_noise is True
+        assert SmolVLA(pretrained_name_or_path=None).config.use_random_input_noise is True
 
 
 class TestNoiseInput:

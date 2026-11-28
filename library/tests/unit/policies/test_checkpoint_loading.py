@@ -8,16 +8,19 @@ Simple tests that validate export/import round-trips without downloading weights
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 import torch
+from lightning.pytorch import LightningModule
 from lightning.pytorch import __version__ as lightning_version
 from physicalai.inference import InferenceModel
 from physicalai.policies.pi05 import Pi05, Pi05Config
 from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
+from physicalai.policies.xr0 import XR0
 
 
 def _minimal_export_stats() -> dict[str, dict[str, Any]]:
@@ -53,12 +56,31 @@ def _minimal_export_stats() -> dict[str, dict[str, Any]]:
     }
 
 
+@pytest.mark.parametrize(
+    ("policy_cls", "base_repo"),
+    [
+        (Pi05, "lerobot/pi05_base"),
+        (SmolVLA, "lerobot/smolvla_base"),
+        (XR0, "XiaomiRobotics/Xiaomi-Robotics-0-Pretrain"),
+    ],
+)
+def test_pretrained_base_is_default_but_skipped_on_checkpoint_load(policy_cls: Any, base_repo: str) -> None:
+    """Fine-tune from the base by default; a checkpoint replaces those weights, so don't fetch them."""
+    assert inspect.signature(policy_cls).parameters["pretrained_name_or_path"].default == base_repo
+
+    with patch.object(LightningModule, "load_from_checkpoint") as lightning_load:
+        policy_cls.load_from_checkpoint("policy.ckpt", pretrained_name_or_path=base_repo)
+
+    assert lightning_load.call_args.kwargs["pretrained_name_or_path"] is None
+
+
 @pytest.mark.parametrize("legacy_vision_keys", [False, True])
 @pytest.mark.parametrize("missing_key", [False, True])
 def test_pi05_checkpoint_vision_keys(tmp_path: Path, legacy_vision_keys: bool, missing_key: bool) -> None:
     """Load old and current vision keys strictly without allocating model weights."""
     with torch.device("meta"):
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=_minimal_export_stats(),
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",

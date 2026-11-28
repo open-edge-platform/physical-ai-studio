@@ -341,7 +341,7 @@ class TestBakeIngraphExport:
         """Sets ``export_state_passthrough`` from ``action_mode`` and calls prepare."""
         from physicalai.policies.xr0 import XR0
 
-        policy = XR0(action_mode=action_mode)
+        policy = XR0(pretrained_name_or_path=None, action_mode=action_mode)
         # Sentinel model with a settable pass-through flag; avoids the 4B build.
         policy.model = types.SimpleNamespace(export_state_passthrough=None)  # type: ignore[assignment]
 
@@ -367,7 +367,7 @@ class TestBakeIngraphExport:
         """Skips the pass-through toggle (guarded) when no model is built yet."""
         from physicalai.policies.xr0 import XR0
 
-        policy = XR0(action_mode="delta")
+        policy = XR0(pretrained_name_or_path=None, action_mode="delta")
         assert policy.model is None
 
         called: dict[str, object] = {}

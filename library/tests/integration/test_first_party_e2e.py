@@ -52,10 +52,11 @@ class CoreE2ETests:
             return get_policy(
                 policy_name,
                 source="physicalai",
+                pretrained_name_or_path=None,
                 freeze_vision_encoder=True,
                 train_expert_only=True,
             )
-        return get_policy(policy_name, source="physicalai")
+        return get_policy(policy_name, source="physicalai", pretrained_name_or_path=None)
 
     @pytest.fixture(scope="class")
     def trained_policy(self, policy: Policy, datamodule: LeRobotDataModule, trainer: Trainer) -> Policy:
@@ -66,7 +67,12 @@ class CoreE2ETests:
     @pytest.fixture(scope="class")
     def initialized_policy(self, policy_name: str, datamodule: LeRobotDataModule) -> Policy:
         """Create first-party policy instance for export/inference."""
-        return get_policy(policy_name, source="physicalai", dataset_stats=datamodule.train_dataset.stats).eval()
+        return get_policy(
+            policy_name,
+            source="physicalai",
+            pretrained_name_or_path=None,
+            dataset_stats=datamodule.train_dataset.stats,
+        ).eval()
 
     def test_train_policy(self, trained_policy: Policy, trainer: Trainer) -> None:
         """Test that policy was trained successfully."""
