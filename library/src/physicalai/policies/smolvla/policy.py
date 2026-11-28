@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import IO, TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
@@ -39,6 +39,8 @@ from .model import SmolVLAModel, VLAFlowMatching
 from .pretrained_utils import extract_dataset_stats, fix_state_dict_keys
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from physicalai.data import Observation
 
     from .preprocessor import SmolVLAPostprocessor, SmolVLAPreprocessor
@@ -52,11 +54,12 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
     Lightning wrapper for training and inference with SmolVLA model.
 
     Uses dual-path initialization:
-    - **Lazy path**: `SmolVLA()` + `trainer.fit()` - model built in setup()
+    - **Lazy path**: `SmolVLA(pretrained_name_or_path=None)` + `trainer.fit()` - model built in setup()
     - **Eager path**: `SmolVLA.load_from_checkpoint()` - model built immediately
 
     Args:
         pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
+            Default: "lerobot/smolvla_base". Pass ``None`` to train from random initialization.
         dtype : Precision used for model weights. Can be either "bfloat16" or "float32". Default: "bfloat16".
         n_obs_steps: Number of observation steps to use. Default: 1.
         chunk_size: Size of action chunks for prediction. Default: 50.
@@ -115,7 +118,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
     def __init__(  # noqa: PLR0913
         self,
         # Pretrained model id
-        pretrained_name_or_path: str | Path | None = None,
+        pretrained_name_or_path: str | Path | None = "lerobot/smolvla_base",
         dtype: Literal["bfloat16", "float32"] = "bfloat16",
         # Input / output structure.
         n_obs_steps: int = 1,
@@ -540,6 +543,31 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         self._initialize_model(stats_dict)
 
         reformat_dataset_to_match_policy(self, datamodule)
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: str | Path | IO[bytes],
+        map_location: torch.device | str | int | Callable | dict | None = None,
+        hparams_file: str | Path | None = None,
+        strict: bool | None = None,  # noqa: FBT001
+        weights_only: bool | None = None,  # noqa: FBT001
+        **kwargs: Any,  # noqa: ANN401
+    ) -> SmolVLA:
+        """Restore a checkpoint without first loading the pretrained base weights it replaces.
+
+        Returns:
+            The restored policy.
+        """
+        kwargs["pretrained_name_or_path"] = None
+        return super().load_from_checkpoint(
+            checkpoint_path,
+            map_location=map_location,
+            hparams_file=hparams_file,
+            strict=strict,
+            weights_only=weights_only,
+            **kwargs,
+        )
 
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Migrate legacy checkpoints missing target-time MLP parameters.

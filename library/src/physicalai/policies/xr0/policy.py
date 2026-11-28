@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import IO, TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
@@ -34,7 +34,7 @@ from .pretrained_utils import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from os import PathLike
     from pathlib import Path
 
@@ -224,10 +224,10 @@ class XR0(XR0ExportablePolicyMixin, Policy):
     Lightning wrapper for training and inference with :class:`XR0Model`.
 
     Args:
-        pretrained_name_or_path: Optional local path or HuggingFace repo id of a
-            pretrained XR0 checkpoint (e.g.
-            ``"XiaomiRobotics/Xiaomi-Robotics-0-LIBERO"``). When given, the
-            weights are loaded into the model once it is built.
+        pretrained_name_or_path: Local path or HuggingFace repo id of a
+            pretrained XR0 checkpoint, loaded into the model once it is built.
+            Defaults to ``"XiaomiRobotics/Xiaomi-Robotics-0-Pretrain"``; pass
+            ``None`` to train from random initialization.
         input_features: Optional explicit observation feature schema
             (``list[Feature]``). When omitted, it is traced back from the
             training dataset in :meth:`setup`. Must be given together with
@@ -310,7 +310,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
 
     def __init__(  # noqa: PLR0913
         self,
-        pretrained_name_or_path: str | Path | None = None,
+        pretrained_name_or_path: str | Path | None = "XiaomiRobotics/Xiaomi-Robotics-0-Pretrain",
         vlm_model_id: str = "Qwen/Qwen3-VL-4B-Instruct",
         vlm_attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "sdpa",
         dtype: Literal["bfloat16", "float16", "float32"] = "float32",
@@ -638,6 +638,31 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         # runs before Lightning's eval-mode check, so this also clears the warning.
         if stage == "fit" and self.model is not None:
             self.model.train()
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: str | Path | IO[bytes],
+        map_location: torch.device | str | int | Callable | dict | None = None,
+        hparams_file: str | Path | None = None,
+        strict: bool | None = None,  # noqa: FBT001
+        weights_only: bool | None = None,  # noqa: FBT001
+        **kwargs: Any,  # noqa: ANN401
+    ) -> XR0:
+        """Restore a checkpoint without first loading the pretrained base weights it replaces.
+
+        Returns:
+            The restored policy.
+        """
+        kwargs["pretrained_name_or_path"] = None
+        return super().load_from_checkpoint(
+            checkpoint_path,
+            map_location=map_location,
+            hparams_file=hparams_file,
+            strict=strict,
+            weights_only=weights_only,
+            **kwargs,
+        )
 
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Restore the action stats the checkpointed weights were trained with.

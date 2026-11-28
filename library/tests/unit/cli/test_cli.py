@@ -290,9 +290,9 @@ class TestDispatch:
     def test_fit_dispatch_weights_from_strips_pretrained_path_and_unset_dataset_stats(self) -> None:
         """``--weights_from`` must not shadow the checkpoint's own weights/dataset stats.
 
-        Both ``pretrained_name_or_path`` and ``dataset_stats`` are filled in by
-        jsonargparse with their class defaults (``None``) when a config omits them.
-        Passing that ``None`` through to ``load_from_checkpoint`` would overwrite the
+        ``dataset_stats`` is filled in by jsonargparse with its class default (``None``)
+        when a config omits it, and ``pretrained_name_or_path`` with the base repo.
+        Passing either through to ``load_from_checkpoint`` would overwrite the
         checkpoint's saved pretrained path / dataset stats and, for ``dataset_stats``,
         prevent the policy from being built eagerly (regression: see
         ``docs/how-to/training/snapflow_distillation.md``).
@@ -304,6 +304,7 @@ class TestDispatch:
                 "--weights_from=/tmp/phase1.ckpt",
             ],
         )
+        assert cfg.model.init_args.pretrained_name_or_path == "lerobot/pi05_base"
         trainer = MagicMock()
         datamodule = object()
 
@@ -319,10 +320,12 @@ class TestDispatch:
             parser,
             "instantiate",
             return_value=Namespace(trainer=trainer, model=_FakePolicy(), data=datamodule),
-        ):
+        ) as instantiate:
             exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
 
         assert exit_code == 0
+        # The discarded model must not load the pretrained base the checkpoint replaces.
+        assert instantiate.call_args.args[0].model.init_args.pretrained_name_or_path is None
         assert _FakePolicy.last_call is not None
         _, init_args = _FakePolicy.last_call
         assert "pretrained_name_or_path" not in init_args

@@ -156,12 +156,13 @@ class TestPi05Policy:
 
     def test_lazy_initialization(self) -> None:
         """Test lazy initialization doesn't create model."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         assert policy.model is None
 
     def test_hyperparameters_saved(self) -> None:
         """Test hyperparameters are saved for checkpoint."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             chunk_size=100,
             optimizer_lr=1e-4,
             freeze_vision_encoder=True,
@@ -174,7 +175,7 @@ class TestPi05Policy:
 
     def test_config_attribute(self) -> None:
         """Test Pi05 policy has config attribute."""
-        policy = Pi05(chunk_size=100, optimizer_lr=1e-4)
+        policy = Pi05(pretrained_name_or_path=None, chunk_size=100, optimizer_lr=1e-4)
 
         assert policy.config is not None
         assert policy.config.chunk_size == 100
@@ -182,18 +183,18 @@ class TestPi05Policy:
 
     def test_n_action_steps(self) -> None:
         """Test n_action_steps is correctly set."""
-        policy = Pi05(n_action_steps=25, chunk_size=50)
+        policy = Pi05(pretrained_name_or_path=None, n_action_steps=25, chunk_size=50)
         assert policy._n_action_steps == 25
         assert policy.config.n_action_steps == 25
 
     def test_dataset_stats_none_by_default(self) -> None:
         """Test dataset_stats is None when not provided."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         assert policy._dataset_stats is None
 
     def test_preprocessor_none_by_default(self) -> None:
         """Test preprocessors are None before initialization."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         assert policy._preprocessor is None
         assert policy._postprocessor is None
 
@@ -202,7 +203,7 @@ class TestPi05Policy:
         """Test methods raise ValueError if model not initialized."""
         from physicalai.data import Observation
 
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         dummy_obs = Observation(state=torch.randn(1, 10))
         with pytest.raises(ValueError, match="not initialized"):
             getattr(policy, method)(dummy_obs)
@@ -229,6 +230,7 @@ class TestPi05Policy:
         }
         # Use smallest variants to keep memory usage low in CI (~300M params instead of ~2.6B)
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=stats,
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",
@@ -241,6 +243,7 @@ class TestPi05Policy:
     def test_config_passed_through(self) -> None:
         """Test all config parameters are passed through to config object."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",
             dtype="float32",
@@ -265,7 +268,7 @@ class TestPi05ConfigureOptimizersLoraLR:
     def _policy_with_dummy_param(**kwargs: object) -> Pi05:
         from unittest.mock import MagicMock
 
-        policy = Pi05(**kwargs)
+        policy = Pi05(pretrained_name_or_path=None, **kwargs)
         policy.dummy_param = torch.nn.Parameter(torch.randn(3))
         policy.trainer = MagicMock(estimated_stepping_batches=100_000)
         return policy
@@ -987,22 +990,22 @@ class TestPi05FineTuning:
 
     def test_gradient_checkpointing_default_true(self) -> None:
         """Test gradient_checkpointing defaults to True in Pi05 policy."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         assert policy.config.gradient_checkpointing is True
 
     def test_gradient_checkpointing_false(self) -> None:
         """Test gradient_checkpointing can be set to False."""
-        policy = Pi05(gradient_checkpointing=False)
+        policy = Pi05(pretrained_name_or_path=None, gradient_checkpointing=False)
         assert policy.config.gradient_checkpointing is False
 
     def test_save_hyperparameters_ignores_pretrained(self) -> None:
         """Test pretrained_name_or_path is excluded from saved hyperparameters."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         assert "pretrained_name_or_path" not in policy.hparams
 
     def test_save_hyperparameters_ignores_compile_model(self) -> None:
         """Test compile_model is excluded from saved hyperparameters."""
-        policy = Pi05(compile_model=True)
+        policy = Pi05(pretrained_name_or_path=None, compile_model=True)
         assert "compile_model" not in policy.hparams
 
     def test_update_preprocessor_stats(self) -> None:
@@ -1027,6 +1030,7 @@ class TestPi05FineTuning:
         }
         # Use smallest variants to keep memory usage low
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=stats,
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",
@@ -1081,6 +1085,7 @@ class TestPi05FineTuning:
             },
         }
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=stats,
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",
@@ -1110,6 +1115,7 @@ class TestPi05FineTuning:
     def test_config_with_all_optimizer_params(self) -> None:
         """Test all optimizer/scheduler params are stored in config."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             optimizer_lr=1e-3,
             optimizer_betas=(0.8, 0.99),
             optimizer_eps=1e-7,
@@ -1160,14 +1166,14 @@ class TestPi05ExtraExportArgs:
 
     def test_raises_without_dataset_stats(self) -> None:
         """extra_export_args should raise if dataset_stats are unavailable."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         with pytest.raises(ValueError, match="Dataset stats are required"):
             _ = policy.extra_export_args
 
     @pytest.mark.parametrize(("backend", "expected"), [("onnx", [[50, 32]]), ("openvino", [[50, 32]]), ("torch", [])])
     def test_manifest_draws_the_noise_for_graph_exports(self, backend: str, expected: list) -> None:
         """Graph exports get the start noise from the runtime; eager torch samples it itself."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         policy._dataset_stats = self._mock_stats()
 
         specs = policy.extra_export_args[backend].preprocessors_specs
@@ -1179,7 +1185,7 @@ class TestPi05ExtraExportArgs:
         """With ``use_random_input_noise=False`` eager inference starts from zeros; exports must too."""
         from physicalai.data.constants import NOISE
 
-        policy = Pi05(use_random_input_noise=False)
+        policy = Pi05(pretrained_name_or_path=None, use_random_input_noise=False)
         policy._dataset_stats = self._mock_stats()
 
         specs = [spec for args in policy.extra_export_args.values() for spec in args.preprocessors_specs]
@@ -1189,7 +1195,7 @@ class TestPi05ExtraExportArgs:
 
     def test_preprocessor_order_normalize_before_pi05(self) -> None:
         """Normalize must run before the pi05 image transform; tokenizer runs last."""
-        policy = Pi05()
+        policy = Pi05(pretrained_name_or_path=None)
         # Inject mock stats directly to avoid building the heavy model.
         policy._dataset_stats = self._mock_stats()
 
@@ -1920,6 +1926,7 @@ class TestPi05LoRAConfig:
     def test_lora_injection_reduces_trainable_params(self) -> None:
         """Test enabling LoRA drastically reduces the number of trainable parameters."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",
@@ -1940,6 +1947,7 @@ class TestPi05LoRAConfig:
     def test_lora_adapters_default_to_float32_under_bfloat16_base(self) -> None:
         """Test LoRA adapter parameters are fp32 even when the base model is bf16."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",
@@ -1954,6 +1962,7 @@ class TestPi05LoRAConfig:
     def test_lora_adapter_dtype_auto_inherits_base_dtype(self) -> None:
         """Test lora_adapter_dtype='auto' lets adapters inherit the base layer's dtype."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",
@@ -1969,6 +1978,7 @@ class TestPi05LoRAConfig:
     def test_dora_injection_on_full_model(self) -> None:
         """Test lora_use_dora=True injects DoRA adapters (magnitude vector) on Pi05Model."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_300m",
             action_expert_variant="gemma_300m",

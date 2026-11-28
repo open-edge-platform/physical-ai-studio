@@ -30,7 +30,8 @@ model:
     freeze_vision_encoder: false
     train_expert_only: false
 
-    # LoRA (Low-Rank Adaptation) fine-tuning. Requires a pretrained_name_or_path.
+    # LoRA (Low-Rank Adaptation) fine-tuning. Needs pretrained weights (the default
+    # pretrained_name_or_path, lerobot/pi05_base).
     # `peft` is a core dependency (see pyproject.toml); the `pi05` extra is only
     # needed for Pi0.5's transformers/tokenizer stack, not for `peft` itself.
     # Set lora_enabled: true to enable; lora_rank/lora_alpha already have sensible defaults

@@ -65,6 +65,7 @@ class TestPi05LoRAForward:
     def test_merge_dora_before_export_preserves_predictions(self) -> None:
         """Test that merging DoRA adapters (like LoRA) preserves model predictions."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",
@@ -111,6 +112,7 @@ class TestPi05LoRAForward:
         ``tests/unit/policies/test_pi05.py::TestPi05LoRAIntegration``).
         """
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",
@@ -143,6 +145,7 @@ class TestPi05LoRAForward:
         And restores the live model's adapters and weights once the scope exits.
         """
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",
@@ -183,6 +186,7 @@ class TestPi05LoRAForward:
     def test_checkpoint_roundtrip_preserves_lora_weights(self) -> None:
         """Test LoRA adapter weights survive a Lightning checkpoint save/load cycle."""
         policy = Pi05(
+            pretrained_name_or_path=None,
             dataset_stats=self._stats(),
             paligemma_variant="gemma_2b",
             action_expert_variant="gemma_300m",

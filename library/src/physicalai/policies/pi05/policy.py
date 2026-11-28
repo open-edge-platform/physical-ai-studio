@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import IO, TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
@@ -44,6 +44,8 @@ from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
 from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from physicalai.data import Observation
 
     from .preprocessor import Pi05Postprocessor, Pi05Preprocessor
@@ -57,11 +59,12 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
     Lightning wrapper for training and inference with Pi05 model.
 
     Uses dual-path initialization:
-    - **Lazy path**: `Pi05()` + `trainer.fit()` - model built in setup()
+    - **Lazy path**: `Pi05(pretrained_name_or_path=None)` + `trainer.fit()` - model built in setup()
     - **Eager path**: `Pi05.load_from_checkpoint()` - model built immediately
 
     Args:
         pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
+            Default: "lerobot/pi05_base". Pass ``None`` to train from random initialization.
         paligemma_variant: Gemma variant for VLM backbone. Default: "gemma_2b".
         action_expert_variant: Gemma variant for action expert. Default: "gemma_300m".
         dtype: Model precision. Default: "bfloat16".
@@ -116,7 +119,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
     def __init__(  # noqa: PLR0913
         self,
         # Pretrained model id
-        pretrained_name_or_path: str | Path | None = None,
+        pretrained_name_or_path: str | Path | None = "lerobot/pi05_base",
         # Model architecture
         paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b",
         action_expert_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_300m",
@@ -563,6 +566,31 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
         return config, dataset_stats, weights_file
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: str | Path | IO[bytes],
+        map_location: torch.device | str | int | Callable | dict | None = None,
+        hparams_file: str | Path | None = None,
+        strict: bool | None = None,  # noqa: FBT001
+        weights_only: bool | None = None,  # noqa: FBT001
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Pi05:
+        """Restore a checkpoint without first loading the pretrained base weights it replaces.
+
+        Returns:
+            The restored policy.
+        """
+        kwargs["pretrained_name_or_path"] = None
+        return super().load_from_checkpoint(
+            checkpoint_path,
+            map_location=map_location,
+            hparams_file=hparams_file,
+            strict=strict,
+            weights_only=weights_only,
+            **kwargs,
+        )
 
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Migrate vision-tower keys from checkpoints saved before Transformers 5.15."""
