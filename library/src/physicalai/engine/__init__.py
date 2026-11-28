@@ -106,7 +106,11 @@ class Engine(ABC):
         for env in cls.policy_envs.values():
             if env not in declared:
                 declared.append(env)
-        declared.extend(enablement.env for enablement in cls.enablements if enablement.env is not None)
+        enablement_envs: list[WorkerEnv] = []
+        for enablement in cls.enablements:
+            if enablement.env is not None and enablement.env not in enablement_envs:
+                enablement_envs.append(enablement.env)
+        declared.extend(enablement_envs)
         names = [env.name for env in declared]
         if len(names) != len(set(names)):
             msg = f"Engine {cls.framework!r} declares duplicate environment names: {names}."

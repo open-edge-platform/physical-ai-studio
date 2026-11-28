@@ -1,0 +1,32 @@
+[project]
+name = "physicalai-lerobot-export-worker"
+version = "0.0.0"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "lerobot[export,diffusion,dataset]",
+    "openvino>=2025.0",
+    "nncf>=2.16.0",
+]
+
+[project.optional-dependencies]
+# ExecuTorch 1.6.0 on Linux x86_64 links against PyPI torch==2.15.0 (which bundles CUDA runtime libs
+# required by its C++ pybindings even for CPU execution), so torch/torchvision come from PyPI.
+cpu = []
+smolvla = ["lerobot[smolvla]"]
+pi = ["lerobot[pi]"]
+molmoact2 = ["lerobot[molmoact2]"]
+vla = ["lerobot[smolvla,pi,molmoact2,groot,xvla,eo1]"]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+lerobot = { git = "https://github.com/shoumikhin/lerobot.git", rev = "4e618de14b4a22e87a18d93f8ffe79bfa6efd6bc" }
+torchcodec = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'arm64')" },
+]
