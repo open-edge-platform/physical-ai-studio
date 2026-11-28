@@ -13,16 +13,17 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import shutil
-import statistics
 import subprocess
-import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
 import openvino as ov
+from physicalai.benchmark.performance import InferenceLatencyBenchmark
 from physicalai.engine import Engine, prepare_environment
 from physicalai_lerobot_policy_plugin.environments import LEROBOT_EXPORT_UPSTREAM_REV, export_worker_env
 
@@ -83,22 +84,52 @@ def _detect_devices(requested: list[str]) -> list[str]:
     return requested
 
 
-def _benchmark_loaded(model: object, obs: dict[str, object], *, warmup: int = 1, iters: int = 3) -> tuple[list[int], float]:
+_PARITY_RE = re.compile(r"max normalized diff ([0-9.eE+-]+)")
+
+
+class _ParityCaptureHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_diff: float | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        match = _PARITY_RE.search(record.getMessage())
+        if match:
+            self.last_diff = float(match.group(1))
+
+
+def _benchmark_loaded(
+    model: object,
+    obs: dict[str, object],
+    *,
+    warmup: int = 2,
+    iters: int = 20,
+    max_duration_ms: int = 15000,
+) -> tuple[list[int], dict[str, float | int]]:
     has_history = bool(getattr(model.adapter._executor, "has_history", False))
-    for _ in range(warmup):
-        out = model.select_action(obs) if has_history else model.predict_action_chunk(obs)
-        assert np.isfinite(out).all()
+    probe = model.select_action(obs) if has_history else model.predict_action_chunk(obs)
+    assert np.isfinite(probe).all()
     model.reset()
-    latencies_ms = []
-    for _ in range(iters):
-        t0 = time.monotonic()
-        out = model.select_action(obs) if has_history else model.predict_action_chunk(obs)
-        latencies_ms.append((time.monotonic() - t0) * 1000.0)
-        assert np.isfinite(out).all()
-        if has_history:
-            model.reset()
+
+    def _inputs() -> Iterator[dict[str, object]]:
+        while True:
+            if has_history:
+                model.reset()
+            yield obs
+
+    benchmark = InferenceLatencyBenchmark(max_iters=iters, warmup_iters=warmup, max_duration=max_duration_ms)
+    metrics = benchmark.run(model, inputs=_inputs())
     model.reset()
-    return list(out.shape), round(statistics.median(latencies_ms), 2)
+    latency_ms: dict[str, float | int] = {
+        "num_iters": int(metrics["num_iters"]),
+        "warmup_ms": round(float(metrics["avg_warmup_iter_time"]) * 1000.0, 2),
+        "median_ms": round(float(metrics["median_iter_time"]) * 1000.0, 2),
+        "mean_ms": round(float(metrics["mean_iter_time"]) * 1000.0, 2),
+        "min_ms": round(float(metrics["min_iter_time"]) * 1000.0, 2),
+        "max_ms": round(float(metrics["max_iter_time"]) * 1000.0, 2),
+        "std_ms": round(float(metrics["std_iter_time"]) * 1000.0, 2),
+    }
+    return list(probe.shape), latency_ms
 
 
 def main() -> None:
@@ -107,11 +138,18 @@ def main() -> None:
     parser.add_argument("--backends", nargs="+", default=["openvino", "executorch_openvino"], choices=["openvino", "executorch_openvino"])
     parser.add_argument("--devices", nargs="+", default=["auto"], help="OpenVINO runtime devices (e.g. CPU GPU NPU, or auto).")
     parser.add_argument("--cache-dir", type=Path, default=Path("/tmp/ov_cache_poc"))
+    parser.add_argument("--warmup-iters", type=int, default=2, help="InferenceLatencyBenchmark warmup iterations.")
+    parser.add_argument("--iters", type=int, default=20, help="InferenceLatencyBenchmark max measured iterations.")
+    parser.add_argument("--max-duration-ms", type=int, default=15000, help="InferenceLatencyBenchmark max duration (ms).")
     parser.add_argument("--group-norm", action="store_true", help="Enable use_group_norm=True on diffusion/vqbet.")
     parser.add_argument("--output-json", type=Path, default=Path("tmp_local_validation_results.json"))
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    parity_handler = _ParityCaptureHandler()
+    bundle_logger = logging.getLogger("physicalai_lerobot_policy_plugin.bundle_runtime")
+    bundle_logger.setLevel(logging.INFO)
+    bundle_logger.addHandler(parity_handler)
     devices = _detect_devices(args.devices)
 
     needs_helpers = any(POLICY_SPECS[p][2] for p in args.policies)
@@ -181,7 +219,15 @@ def main() -> None:
                     run_devices = devices if backend == "openvino" else ["CPU"]
                     device_results: dict[str, dict[str, object]] = {}
                     for dev in run_devices:
-                        dev_entry: dict[str, object] = {"status": "FAIL", "load_s": None, "infer_ms": None, "error": None}
+                        dev_entry: dict[str, object] = {
+                            "status": "FAIL",
+                            "load_s": None,
+                            "parity_diff": None,
+                            "infer_ms": None,
+                            "latency": None,
+                            "error": None,
+                        }
+                        parity_handler.last_diff = None
                         t1 = time.monotonic()
                         try:
                             load_kwargs: dict[str, object] = {"device": dev}
@@ -189,15 +235,23 @@ def main() -> None:
                                 load_kwargs["cache_dir"] = args.cache_dir / dev.lower()
                             with Engine.load(pkg, **load_kwargs) as model:
                                 dev_entry["load_s"] = round(time.monotonic() - t1, 2)
+                                dev_entry["parity_diff"] = parity_handler.last_diff
                                 ex = model.adapter._executor
                                 if hasattr(ex, "torch_loaded"):
                                     dev_entry["worker_torch_loaded"] = ex.torch_loaded
                                 obs = {k: np.zeros(s, dtype=ex.frame_dtypes[k]) for k, s in ex.frame_shapes.items()}
                                 if task:
                                     obs["task"] = task
-                                shape, latency_ms = _benchmark_loaded(model, obs)
+                                shape, latency = _benchmark_loaded(
+                                    model,
+                                    obs,
+                                    warmup=args.warmup_iters,
+                                    iters=args.iters,
+                                    max_duration_ms=args.max_duration_ms,
+                                )
                                 dev_entry["action_shape"] = shape
-                                dev_entry["infer_ms"] = latency_ms
+                                dev_entry["infer_ms"] = latency["median_ms"]
+                                dev_entry["latency"] = latency
                                 if export_json.get("task_tokens"):
                                     obs_alt = dict(obs, task="stop")
                                     alt_out = model.predict_action_chunk(obs_alt)
