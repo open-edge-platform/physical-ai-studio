@@ -77,6 +77,9 @@ class OpenVINOConfig(ExportBackendConfig):
                     ov_model,
                     mode=nncf.CompressWeightsMode.INT4_ASYM,
                     group_size=128,
+                    advanced_parameters=nncf.AdvancedCompressionParameters(
+                        group_size_fallback_mode=nncf.GroupSizeFallbackMode.ADJUST,
+                    ),
                 )
 
         compress_to_fp16 = self.compression == "fp16"
